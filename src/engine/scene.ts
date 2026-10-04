@@ -57,14 +57,18 @@ export interface Click {
 }
 
 export interface Keystroke {
-  keys: string[] // keycaps in order, e.g. ['⌘', '⇧', 'P']
+  keys: string[] // keycaps in macOS order, e.g. ['⇧', '⌘', 'P']; specials as symbols ('↩', '⎋', '←'), 'Space', 'F5'
   opacity: number
-  age: number
+  age: number // seconds since the latest press in this group
+  count: number // presses merged into this group (⌘Z ⌘Z ⌘Z = 3); key repeat while held does not count
+  y: number // bottom edge of the group, unzoomed output px, stacking and entrance applied
+  size: number // style.keystrokes.size
 }
 
 export interface Caption {
-  words: Array<{ text: string; active: boolean }>
-  progress: number // 0..1 entrance animation
+  // active = being spoken now; line = line index in this caption; progress = 0..1 reveal (word mode)
+  words: Array<{ text: string; active: boolean; line: number; progress: number }>
+  progress: number // 0..1 entrance animation (falls back to 0 when fading out)
   style: Style['captions']
 }
 
