@@ -55,6 +55,7 @@ let run = 0 // id of the current run
 let runAudio = false // the run is clocked by the audio context (else by the wall clock)
 let runOut = 0 // output time heard at clock time runCtx
 let runCtx = 0
+let runHold = false // before runCtx: hold at runOut (play, seek) or keep running (splice)
 let runFrames = 0 // frames scheduled so far in this run
 let requesting = false
 let pump: ReturnType<typeof setInterval> | undefined
@@ -294,7 +295,8 @@ function now(): number {
 
 /** Output time being heard now. */
 function clock(): number {
-  return runOut + Math.max(0, now() - runCtx)
+  const d = now() - runCtx
+  return runOut + (runHold ? Math.max(0, d) : d)
 }
 
 /** Begin a new run of audio LEAD seconds from now. `splice`: continue the clock (edits while
@@ -306,6 +308,7 @@ function startRun(splice: boolean) {
   run++
   runCtx = at / SR
   runOut = splice ? heard + (runCtx - now()) : heard
+  runHold = !splice
   runFrames = 0
   post({ type: 'run', id: run, at })
   void feed()

@@ -7,6 +7,7 @@ import { createRequire } from 'node:module'
 import { BlobSource } from 'mediabunny'
 import type { Clip } from '../../shared/project.ts'
 import { createProject } from '../../shared/project.ts'
+import { timeMap, toOutput } from '../../shared/timemap.ts'
 import { CEILING, Limiter, LoudnessMeter, SR, sincTable, interpolate } from './dsp.ts'
 import { Mixer, planOf, type Env, type Plan } from './mix.ts'
 import { analyze, openAudio, queryPeaks, Reader } from './source.ts'
@@ -105,6 +106,27 @@ test('output stays in sync with the time map through cuts and speed changes', as
   assert.equal(got.length, want.length, `onsets ${got}`)
   got.forEach((t, i) => near(t, want[i], 0.002, 'burst center'))
   assert.deepEqual(L, R, 'a mono source plays centered on both channels')
+})
+
+test('hundreds of cuts and speed changes stay in sync to the millisecond', async () => {
+  // 100 bursts, one every 0.5 s. Each lives in a clip with its own speed; between bursts the source
+  // is cut or split into more clips at other speeds: 300 clips, 100 cuts.
+  const at = Array.from({ length: 100 }, (_, i) => 0.25 + i * 0.5)
+  files.set('many', wav([bursts(51, at)]))
+  let seed = 3
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+  const clips: Clip[] = []
+  for (const t of at) {
+    clips.push(clip(t - 0.1, t + 0.1, [1, 1.25, 1.5, 2, 2.5][Math.floor(rnd() * 5)]))
+    clips.push(clip(t + 0.1, t + 0.15, 1 + rnd()))
+    clips.push(clip(t + 0.15 + rnd() * 0.1, t + 0.4, 1 + rnd() * 2)) // the gap before it is cut
+  }
+  const p = plan(clips, [{ url: 'many', label: 'many.wav', volume: 1 }])
+  const [L] = await render(p, 0, Math.round(p.duration * SR), 9600)
+  const got = onsets(L)
+  assert.equal(got.length, at.length)
+  const m = timeMap(clips)
+  got.forEach((t, i) => near(t, toOutput(m, at[i] + 0.025)!, 0.002, `burst ${i}`))
 })
 
 test('a 2x clip renders half the duration at the same pitch', async () => {

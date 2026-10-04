@@ -6,7 +6,8 @@
   import { createProject, type Project } from '../../../shared/project.ts'
   import { prepare } from '../../../engine/scene.ts'
   import { fileUrl, openVideo } from '../../../engine/media/index.ts'
-  import { peaks, renderAudio } from '../../../engine/audio/index.ts'
+  import { mix, peaks, planOf, renderAudio, voiceGains } from '../../../engine/audio/index.ts'
+  import { parseEvents } from '../../../shared/events.ts'
 
   let { params }: { params: URLSearchParams } = $props()
   type Check = { name: string; ok: boolean; detail: string }
@@ -170,6 +171,25 @@
         const cached = await fetch(fileUrl(`${fixture}/cache/sources_mic.m4a.${(await fetch(mic, { method: 'HEAD' })).headers.get('content-length')}.analysis`), { method: 'HEAD' })
         assert(cached.ok, 'analysis cache file in the bundle')
         return `24 s rendered in ${ms.toFixed(0)} ms (${((24000 / ms) | 0)}x realtime), peak ${peak.toFixed(3)}, cache written`
+      })
+      await check('preview and export mix are bit-identical through 200 cuts and speed changes', async () => {
+        const p: Project = structuredClone(project)
+        p.style.cursor.clickSound = true
+        p.clips = Array.from({ length: 200 }, (_, i) => ({ id: `${i}`, start: i * 0.12, end: i * 0.12 + 0.1, speed: [1, 1.2, 2, 2.5][i % 4], volume: 1 }))
+        const events = parseEvents(await (await fetch(fileUrl(`${fixture}/${p.sources.events}`))).text())
+        // Preview: what the player sends, 200 ms at a time from the start.
+        const plan = planOf(p, events, fixture, await voiceGains(p, fixture))
+        const total = Math.round(plan.duration * 48000)
+        const preview: number[] = []
+        for (let s = 0; s < total; s += 9600) preview.push(...(await mix('parity', plan, s, Math.min(9600, total - s)))[0])
+        // Export: renderAudio in 1 s chunks.
+        const pe = prepare({ project: p, events, transcript: null, width: 640, height: 400 })
+        const exported: number[] = []
+        for (let t = 0; t < pe.map.duration; t += 1) exported.push(...(await renderAudio(pe, fixture, t, Math.min(pe.map.duration, t + 1))).getChannelData(0))
+        assert(preview.length === exported.length, `lengths ${preview.length} vs ${exported.length}`)
+        const diff = preview.findIndex((v, i) => v !== exported[i])
+        assert(diff < 0, `first difference at sample ${diff}`)
+        return `${plan.duration.toFixed(2)} s, ${preview.length} samples identical, ${plan.clicks.length} click sounds`
       })
     }
     done = true
