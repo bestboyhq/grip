@@ -2,7 +2,7 @@
      on the timeline; these settings apply to every layout. -->
 <script lang="ts" module>
   import { doc } from '../../../lib/doc.svelte.ts'
-  import { invoke, on } from '../../../lib/ipc.ts'
+  import { invoke, listen } from '../../../lib/ipc.ts'
   import { owesCameraAnalysis, reason } from '../helpers.ts'
 
   // Background removal and face follow need the camera analysis (matte and face track). It runs after
@@ -11,8 +11,8 @@
   // switching inspector tabs.
   const analysis = $state({ progress: null as number | null, failed: '' })
   let tried = ''
-  on('camera:progress', (e: { bundle: string; progress: number }) => e.bundle === doc.path && (analysis.progress = e.progress))
-  on('camera:analyzed', (e: { bundle: string; error?: string }) => {
+  listen('camera:progress', (e: { bundle: string; progress: number }) => e.bundle === doc.path && (analysis.progress = e.progress))
+  listen('camera:analyzed', (e: { bundle: string; error?: string }) => {
     if (e.bundle !== doc.path) return
     analysis.progress = null
     analysis.failed = e.error ?? ''

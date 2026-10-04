@@ -28,6 +28,7 @@ const redoStack: Snapshot[] = []
 const LIMIT = 300 // ponytail: full JSON snapshots; switch to patches if projects grow past a few MB
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined
+let writing: Promise<unknown> = Promise.resolve() // the latest write
 
 function changed() {
   doc.rev++
@@ -37,20 +38,23 @@ function changed() {
 }
 
 /** Write the project to disk. A failed save keeps the edits dirty (the next autosave or close retries)
- *  and sets doc.saveError; it still rejects, for callers that must know (close, Move to Trash). */
+ *  and sets doc.saveError; it still rejects, for callers that must know (close, Move to Trash). With
+ *  nothing new to write, it settles with the write in flight, so close never goes before an autosave
+ *  that may still fail. */
 export async function save() {
-  if (!doc.project || !doc.dirty) return
+  if (!doc.project || !doc.dirty) return writing
   clearTimeout(saveTimer)
   const snap = $state.snapshot(doc.project)
   doc.dirty = false
-  try {
-    await invoke('projects:save', doc.path, snap)
-    doc.saveError = ''
-  } catch (e) {
-    doc.dirty = true
-    doc.saveError = (e as Error).message
-    throw e
-  }
+  writing = invoke('projects:save', doc.path, snap).then(
+    () => (doc.saveError = ''),
+    (e: Error) => {
+      doc.dirty = true
+      doc.saveError = e.message
+      throw e
+    },
+  )
+  await writing
 }
 
 let mergeKey = ''

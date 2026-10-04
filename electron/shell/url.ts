@@ -5,7 +5,8 @@
 //   studio://open?url=<shared project link>               download it and open it (electron/share.ts)
 // Launch arguments: `[--open] <bundle.studio | video.mp4>`, `studio://` URLs, `--lab <Name>` (dev).
 // Pure: no electron imports, so node:test can run it.
-import { resolve } from 'node:path'
+import { closeSync, constants, mkdirSync, openSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 
 export type Mode = 'display' | 'window' | 'area' | 'device'
 export type UrlAction = { kind: 'record'; mode?: Mode } | { kind: 'stop' } | { kind: 'open'; path: string } | { kind: 'import'; url: string }
@@ -54,5 +55,25 @@ function decode(s: string): string {
     return decodeURIComponent(s)
   } catch {
     return s // a stray "%" in a raw name
+  }
+}
+
+const O_EXLOCK = 0x20 // macOS open(2): wait for an exclusive flock on the file
+
+/** Wait for this launch's turn at the single-instance lock, then run `fn`: launches that start at the
+ *  same moment take turns. The flock is released when `fn` returns, or when the process ends, even in
+ *  a crash. Without a lockable file (read-only or unsupported volume), `fn` runs at once. */
+export function inTurn<T>(file: string, fn: () => T): T {
+  let fd: number | null = null
+  try {
+    mkdirSync(dirname(file), { recursive: true })
+    fd = openSync(file, constants.O_CREAT | constants.O_RDWR | O_EXLOCK, 0o600)
+  } catch {
+    // run without turns
+  }
+  try {
+    return fn()
+  } finally {
+    if (fd !== null) closeSync(fd)
   }
 }

@@ -91,6 +91,18 @@ export function commandFor(e: KeyboardEvent): Command | undefined {
   return list.find((c) => c.keys?.includes(k) && (!e.repeat || c.repeat) && isEnabled(c))
 }
 
+/** The Edit menu items (electron/shell/menu.ts) and the keys of their shortcuts ('Z' is with ⇧). */
+const MENU_KEYS = new Map(Object.entries({ undo: 'z', redo: 'Z', cut: 'x', copy: 'c', paste: 'v', selectAll: 'a' }))
+
+/** What an Edit menu item does with `target` focused: the command its shortcut runs there, or none
+ *  where the shortcut is not the editor's (text fields edit natively). */
+export function commandForMenu(item: string, target: EventTarget | null): Command | undefined {
+  const key = MENU_KEYS.get(item)
+  if (!key) return
+  const e = { key, code: `Key${key.toUpperCase()}`, shiftKey: key === 'Z', metaKey: true, ctrlKey: false, altKey: false, repeat: false, isComposing: false, target }
+  return commandFor(e as unknown as KeyboardEvent)
+}
+
 /** Commands matching a query, best first: every word must appear; title prefix, then word starts, rank higher. */
 export function search(cmds: Command[], query: string): Command[] {
   const q = query.trim().toLowerCase()

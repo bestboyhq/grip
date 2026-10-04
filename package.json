@@ -48,14 +48,6 @@
     ],
     "fileAssociations": [
       {
-        "ext": "studio",
-        "name": "Studio Project",
-        "description": "Studio Project",
-        "role": "Editor",
-        "rank": "Owner",
-        "isPackage": true
-      },
-      {
         "ext": [
           "mp4",
           "mov"
@@ -86,6 +78,18 @@
         "NSAudioCaptureUsageDescription": "Studio records the sound your Mac plays when system audio is on.",
         "NSBluetoothAlwaysUsageDescription": "Studio uses Bluetooth only for devices you connect, like headphones or a microphone.",
         "NSBluetoothPeripheralUsageDescription": "Studio uses Bluetooth only for devices you connect, like headphones or a microphone.",
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "Studio Project",
+            "CFBundleTypeRole": "Editor",
+            "LSHandlerRank": "Owner",
+            "LSItemContentTypes": [
+              "com.szymeo.studio.project"
+            ],
+            "LSTypeIsPackage": true,
+            "CFBundleTypeIconFile": "icon.icns"
+          }
+        ],
         "UTExportedTypeDeclarations": [
           {
             "UTTypeIdentifier": "com.szymeo.studio.project",

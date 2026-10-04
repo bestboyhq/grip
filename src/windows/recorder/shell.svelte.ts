@@ -2,7 +2,7 @@
 // onboarding windows: settings, shell state, and the engines' contracts: capture ("recording:*",
 // electron/recording.ts) and camera ("camera:*", electron/camera.ts).
 // electron/shell/fake-recording.ts is a runnable stand-in for both.
-import { invoke, on } from '../../lib/ipc.ts'
+import { invoke, listen } from '../../lib/ipc.ts'
 import type { Settings } from '../../../electron/shell/settings.ts'
 import type { Permission } from '../../../electron/shell/errors.ts'
 
@@ -66,9 +66,9 @@ const applySettings = (s: Settings) => {
   shell.settings = s
 }
 invoke('settings:get').then(applySettings)
-on('settings:changed', applySettings)
+listen('settings:changed', applySettings)
 invoke('shell:state').then(applyState)
-on('shell:state', applyState)
+listen('shell:state', applyState)
 
 export const setSettings = (patch: Partial<Settings>) => invoke('settings:set', patch)
 
