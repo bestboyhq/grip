@@ -3,6 +3,12 @@ import assert from 'node:assert/strict'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { editorCloser, NO_ANSWER, type Choice } from './closing.ts'
 
+/** Let every queued hop run (answers come back through setImmediate, prompts through promises).
+ *  Turns of the loop, not wall time: a timer can fire before pending immediates on a busy machine. */
+const settle = async () => {
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r))
+}
+
 /** Editor windows driven by a fake shell: each `ask` is answered by the window's next queued save
  *  result, each prompt by the next queued choice. */
 function setup(timeout = 1000) {
@@ -37,22 +43,22 @@ test('a close waits for the save; a failed one asks and never drops the edits on
   const a = win('a', [''])
   assert.equal(closer.closing(a), false)
   assert.equal(closer.closing(a), false, 'closing again while it saves asks once')
-  await sleep(5)
+  await settle()
   assert.deepEqual(log.splice(0), ['ask a', 'close a'])
   assert.ok(a.closed)
 
   const b = win('b', ['disk full', 'disk full', ''], ['cancel', 'save'])
   closer.closing(b)
-  await sleep(5)
+  await settle()
   assert.deepEqual(log.splice(0), ['ask b', 'prompt b: disk full'], 'Cancel keeps the window')
   assert.ok(!b.closed)
   closer.closing(b)
-  await sleep(5)
+  await settle()
   assert.deepEqual(log.splice(0), ['ask b', 'prompt b: disk full', 'ask b', 'close b'], 'Save Again, then it closes')
 
   const c = win('c', ['disk full'], ['discard'])
   closer.closing(c)
-  await sleep(5)
+  await settle()
   assert.deepEqual(log.splice(0), ['ask c', 'prompt c: disk full', 'close c'], 'Discard Edits closes')
 })
 
@@ -62,7 +68,7 @@ test('no answer in time asks too, and a late answer changes nothing', async () =
   closer.closing(a)
   await sleep(30)
   closer.answered(a, '')
-  await sleep(5)
+  await settle()
   assert.deepEqual(log, ['ask a', `prompt a: ${NO_ANSWER}`])
   assert.ok(!a.closed)
 })
@@ -73,13 +79,13 @@ test('quitting: every editor saves first; Cancel cancels the quit and keeps them
   const b = win('b', ['disk full', ''], ['cancel'])
   quit()
   assert.deepEqual([closer.closing(a), closer.closing(b)], [false, false])
-  await sleep(5)
+  await settle()
   assert.deepEqual(log.splice(0), ['ask a', 'ask b', 'prompt b: disk full', 'stay'])
   assert.ok(!a.closed && !b.closed)
   // The next quit asks both again (a may have changed since), and resumes once both are saved.
   quit()
   assert.deepEqual([closer.closing(a), closer.closing(b)], [false, false])
-  await sleep(5)
+  await settle()
   assert.deepEqual(log.splice(0), ['ask a', 'ask b', 'quit'])
   assert.deepEqual([closer.closing(a), closer.closing(b)], [true, true], 'the resumed quit closes them')
 })
