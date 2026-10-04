@@ -4,8 +4,7 @@
   import type { Component } from 'svelte'
   let { params }: { params: URLSearchParams } = $props()
   const labs = import.meta.glob<{ default: Component<{ params: URLSearchParams }> }>('./labs/*.svelte')
-  const name = params.get('lab') ?? ''
-  const load = labs[`./labs/${name}.svelte`]
+  const load = $derived(labs[`./labs/${params.get('lab') ?? ''}.svelte`])
 </script>
 
 {#if load}
