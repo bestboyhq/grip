@@ -25,6 +25,7 @@ import { registerFakeRecording } from './shell/fake-recording.ts'
 // Dev: per-worktree user data, so parallel checkouts do not share locks, settings, or projects.
 if (!app.isPackaged) app.setPath('userData', join(import.meta.dirname, '../.context/userdata'))
 if (process.env.STUDIO_CDP_PORT) app.commandLine.appendSwitch('remote-debugging-port', process.env.STUDIO_CDP_PORT)
+if (process.env.STUDIO_HIDDEN) app.commandLine.appendSwitch('mute-audio') // hidden runs (agents, tests) never play sound
 // Dev stand-in engine: Chromium's fake camera too, so the preview runs without a camera prompt.
 if (!app.isPackaged && process.env.STUDIO_FAKE_RECORDING) app.commandLine.appendSwitch('use-fake-device-for-media-stream')
 
