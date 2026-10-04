@@ -438,7 +438,7 @@
     if (!key || !draft?.[key] || JSON.stringify(draft[key]) === JSON.stringify(base![key])) return
     const next = draft[key]
     edit((p) => void Object.assign(p, { [key]: next }))
-    if (d.kind === 'trim') seek(player.time) // the playhead stays put; the saved source moment follows what it shows now
+    if (d.kind === 'trim' && !player.playing) seek(player.time) // the playhead stays put; the saved source moment follows what it shows (pausing saves it while playing)
     if (d.kind === 'create') selection.ids = [(next as M.Item[]).at(-1)!.id]
     else if (d.select && d.kind !== 'move') selection.ids = [d.select] // a moved multi-selection stays selected
   }
