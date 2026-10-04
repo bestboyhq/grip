@@ -235,10 +235,10 @@ fn primary_face(observations: Option<&NSArray<VNFaceObservation>>, previous: Opt
         })
         .collect();
     let by = |f: &dyn Fn(&Rect) -> f64| faces.iter().copied().max_by(|a, b| f(a).total_cmp(&f(b)));
-    if let Some(p) = previous {
-        if let Some(best) = by(&|r| iou(*r, p)).filter(|r| iou(*r, p) > 0.2) {
-            return Some(best);
-        }
+    if let Some(p) = previous
+        && let Some(best) = by(&|r| iou(*r, p)).filter(|r| iou(*r, p) > 0.2)
+    {
+        return Some(best);
     }
     by(&|r| r.w * r.h)
 }
