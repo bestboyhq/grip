@@ -105,7 +105,7 @@
     }
     if (scene.cursor && s.cursor) scene.cursor.image = s.cursor
     if (s.loupe && scene.cursor) scene.loupe = { x: scene.cursor.x, y: scene.cursor.y, radius: 150 * scene.unit, scale: 2.2, opacity: 1 }
-    if (s.overlay) scene.keystrokes = [{ keys: ['⌘', 'K'], opacity: 1, age: 0.2 }]
+    if (s.overlay) scene.keystrokes = [{ keys: ['⌘', 'K'], opacity: 1, age: 0.2, count: 1, y: height - 80 * scene.unit, size: 1 }]
     if (s.motion) {
       const n = 9
       const views = Array.from({ length: n }, (_, i) => ({ ...scene.view, scale: scene.view.scale * (1 + s.motion * (i / (n - 1) - 0.5)) }))

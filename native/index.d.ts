@@ -2,6 +2,168 @@
 /* eslint-disable */
 
 /**
+ * Person matte + face track for a camera video, on a background thread. Writes
+ * `<outDir>/camera-matte.mp4` and `<outDir>/camera-faces.json` (atomically). Progress is 0..1.
+ * Aborting the signal stops it and removes partial output; the promise then rejects.
+ */
+export declare function analyzeCamera(path: string, outDir: string, onProgress: (progress: number) => void, signal?: AbortSignal | undefined | null): Promise<CameraAnalysis>
+
+/** Matches AudioSource in src/shared/project.ts. */
+export interface AudioSourceInfo {
+  file: string
+  channels: number
+  sampleRate: number
+}
+
+export interface CameraAnalysis {
+  /** Absolute path of the grayscale person matte video (same timing as the camera). */
+  matte: string
+  /** Absolute path of the face track JSON: [{t, x, y, w, h}], normalized, top-left origin. */
+  faces: string
+  frames: number
+  /** Face samples (about 10 per second) after gap filling; 0 when no face was ever seen. */
+  faceSamples: number
+}
+
+export interface CameraDevice {
+  id: string
+  name: string
+  kind: 'built-in' | 'external' | 'continuity' | 'ios'
+  /**
+   * Distinct sizes, tallest first (webcams: landscape only). Recording resolves the quality
+   * the user picked (720, 1080, 2160) to the closest of these at 30 fps before it starts.
+   */
+  formats: Array<CameraFormat>
+}
+
+export interface CameraFormat {
+  width: number
+  height: number
+  /** Highest frame rate of this size. */
+  fps: number
+}
+
+export declare function cancelRecording(): Promise<RecState>
+
+export interface Display {
+  id: number
+  name: string
+  /** Global points, origin top-left of the main display. */
+  frame: Rect
+  pixelWidth: number
+  pixelHeight: number
+  scale: number
+  refreshRate: number
+  isMain: boolean
+}
+
+/** Webcams, Continuity Cameras, and iPhone/iPad screens connected over USB. */
+export declare function listCameras(): Array<CameraDevice>
+
+export declare function listDisplays(): Array<Display>
+
+export declare function listMicrophones(): Array<Microphone>
+
+export declare function listWindows(): Promise<Array<Window>>
+
+export interface MicLevel {
+  /** Linear 0..1 over the last ~33 ms. */
+  peak: number
+  rms: number
+}
+
+export interface Microphone {
+  id: string
+  name: string
+  isDefault: boolean
+  isBuiltIn: boolean
+}
+
+/** Open the System Settings pane where the user turns `kind` on. */
+export declare function openPermissionSettings(kind: Permission): void
+
+export declare function pauseRecording(): RecState
+
+export type Permission = 'screen' | 'accessibility' | 'inputMonitoring' | 'microphone' | 'camera'
+
+/** Current status. Screen Recording and Accessibility cannot tell "never asked" from "denied". */
+export declare function permissionStatus(kind: Permission): PermissionStatus
+
+export type PermissionStatus = 'granted' | 'denied' | 'notDetermined' | 'restricted'
+
+export type RecordingEvent =
+  | { type: 'state'; state: RecState }
+  | { type: 'warning'; code: string; message: string }
+  | { type: 'finished'; bundleDir: string; reason: string; message?: string; sources: RecordingSources }
+  | { type: 'cancelled'; bundleDir: string }
+
+/** Matches Sources in src/shared/project.ts. */
+export interface RecordingSources {
+  duration: number
+  screen?: VideoSourceInfo
+  camera?: VideoSourceInfo
+  mic?: AudioSourceInfo
+  system?: AudioSourceInfo
+  events?: string
+}
+
+export declare function recordingState(): RecState
+
+/** Recover a recording a crash interrupted (no project.json): remux its files and return its sources. */
+export declare function recoverRecording(bundleDir: string): Promise<RecordingSources>
+
+export type RecState = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping'
+
+export interface Rect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * Ask for `kind` (the system prompt appears only the first time) and return the new status.
+ * If it stays denied, send the user to `openPermissionSettings`.
+ */
+export declare function requestPermission(kind: Permission): Promise<PermissionStatus>
+
+export declare function restartRecording(): Promise<RecState>
+
+export declare function resumeRecording(): RecState
+
+/** Meter `micId` (default mic when absent) at ~30 Hz until `stopMicMonitor`. Replaces a running meter. */
+export declare function startMicMonitor(micId: string | undefined | null, onLevel: ((arg: MicLevel) => void)): Promise<void>
+
+export interface StartOptions {
+  /** The `.studio` bundle; files go to `<bundleDir>/sources/`. */
+  bundleDir: string
+  target: Target
+  cameraId?: string
+  micId?: string
+  systemAudio: boolean
+  /** Frames per second; default the display refresh rate, capped at 60. */
+  fps?: number
+}
+
+/**
+ * Start recording. Resolves with the state once capture runs, rejects with a one-line reason.
+ * `onEvent` receives state changes, warnings, and the finished recording (also when it ends on its own).
+ */
+export declare function startRecording(options: StartOptions, onEvent: ((arg: RecordingEvent) => void)): Promise<RecState>
+
+export declare function stopMicMonitor(): void
+
+/** Stop and finalize. Resolves with the sources (null when nothing was recording). */
+export declare function stopRecording(): Promise<RecordingSources | null>
+
+/** What to record. An area rect is in points relative to its display's top-left corner. */
+export type Target =
+  | { kind: 'display'; displayId: number }
+  | { kind: 'window'; windowId: number }
+  | { kind: 'area'; displayId: number; rect: Rect }
+  | { kind: 'synthetic'; width?: number; height?: number }
+
+/**
  * Transcribe the first audio track of `path`. `onProgress` gets 0..1; aborting `signal` stops
  * within one chunk and rejects with "Transcription cancelled".
  */
@@ -19,3 +181,29 @@ export interface TranscriptWord {
 }
 
 export declare function version(): string
+
+/** Matches VideoSource in src/shared/project.ts. */
+export interface VideoSourceInfo {
+  file: string
+  width: number
+  height: number
+  fps: number
+  scale: number
+}
+
+/**
+ * Call `onChange` whenever a camera or iPhone/iPad is plugged in or out (then re-list).
+ * Delivered through the main run loop. A later call replaces the previous callback.
+ */
+export declare function watchCameras(onChange: (() => void)): void
+
+export interface Window {
+  id: number
+  title: string
+  app: string
+  bundleId: string
+  /** Global points, origin top-left of the main display. */
+  frame: Rect
+  /** Small JPEG as a data URL; absent when the window could not be captured. */
+  thumbnail?: string
+}

@@ -22,7 +22,7 @@ import type { InputEvent } from '../../shared/events.ts'
 import { mapRange, toOutput, type TimeMap } from '../../shared/timemap.ts'
 import type { Loupe, SceneInput, View } from '../scene.ts'
 import { layoutAt, type prepareLayout } from '../layout.ts'
-import { cursorAt, prepareCursor } from '../motion/index.ts'
+import { cursorPoint, type prepareCursor } from '../motion/index.ts'
 import { springDuration, springProgress, mix, type SpringConfig } from '../motion/spring.ts'
 import { typingSegments, type Segment } from '../input/index.ts'
 
@@ -147,8 +147,8 @@ export function prepareZoom(input: SceneInput, map: TimeMap, layout: ReturnType<
   const { project, events, width: W, height: H } = input
   const screen = project.sources.screen
   // The camera follows the cursor even where the cursor is not drawn.
-  const st = project.style
-  const cur = st.cursor.visible ? cursor : prepareCursor({ ...input, project: { ...project, style: { ...st, cursor: { ...st.cursor, visible: true } } } }, map, layout)
+  // cursorPoint ignores visibility (style or idle hide), so a hidden cursor is still followed.
+  const cur = cursor
   const enabled = project.zooms.filter((z) => z.enabled)
   const loupes = pieces(enabled.filter((z) => z.mode === 'loupe'), map)
   const n = Math.ceil(map.duration / DT)
@@ -160,7 +160,7 @@ export function prepareZoom(input: SceneInput, map: TimeMap, layout: ReturnType<
   const layerAt = (t: number) => (layer = layoutAt(layout, t).screen ?? layer)
   const toPx = (r: Rect, x: number, y: number): Pt => ({ x: r.x + (x * r.w) / screen.width, y: r.y + (y * r.h) / screen.height })
   const cursorPt = (t: number, r: Rect): Pt | null => {
-    const c = cursorAt(cur, clamp(t, 0, map.duration))
+    const c = cursorPoint(cur, clamp(t, 0, map.duration))
     // Off the captured area (another display): nothing to follow.
     return c && c.x >= r.x && c.x <= r.x + r.w && c.y >= r.y && c.y <= r.y + r.h ? { x: c.x, y: c.y } : null
   }
@@ -262,7 +262,7 @@ export function loupeAt(z: ReturnType<typeof prepareZoom>, t: number): Loupe | n
   let c: Pt = { x: r.x + r.w / 2, y: r.y + r.h / 2 }
   if (zoom.target.kind === 'point') c = { x: r.x + zoom.target.x * r.w, y: r.y + zoom.target.y * r.h }
   else {
-    const cur = cursorAt(z.cursor, t)
+    const cur = cursorPoint(z.cursor, t)
     if (cur) c = cur
   }
   // Keep the lens over the screen, so it never magnifies background.

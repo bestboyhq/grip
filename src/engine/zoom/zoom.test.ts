@@ -6,7 +6,7 @@ import { createProject, type Clip, type Project, type Zoom } from '../../shared/
 import { parseEvents, type InputEvent } from '../../shared/events.ts'
 import { prepare, type View } from '../scene.ts'
 import { layoutAt } from '../layout.ts'
-import { cursorAt } from '../motion/index.ts'
+import { cursorPoint as cursorAt } from '../motion/index.ts'
 import { generateAutoZooms, loupeAt, viewAt } from './index.ts'
 
 const SCREEN = { file: 'sources/screen.mp4', width: 2880, height: 1800, fps: 30, scale: 2 }

@@ -12,7 +12,7 @@ import { join } from 'node:path'
 const stub = (code: string) => `data:text/javascript,${encodeURIComponent(code)}`
 register(
   stub(`export async function resolve(specifier, context, next) {
-    if (specifier === 'electron') return { url: ${JSON.stringify(stub('export const app = {}, BrowserWindow = {}, dialog = {}, ipcMain = {}'))}, shortCircuit: true }
+    if (specifier === 'electron') return { url: ${JSON.stringify(stub('export const app = {}, BrowserWindow = {}, dialog = {}, ipcMain = {}; export default { app }'))}, shortCircuit: true }
     if (specifier === './native.ts') return { url: ${JSON.stringify(stub('export const native = {}'))}, shortCircuit: true }
     return next(specifier, context)
   }`),
