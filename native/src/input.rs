@@ -8,6 +8,7 @@
 //!   silent, no tap at all); one shared state per button makes the first source to see a change
 //!   record it, so nothing doubles. It also reads the system cursor image (on moves, and at 30 Hz
 //!   while still), polls secure input, flushes every 250 ms and fsyncs every 2 s.
+//!
 //! Keyboard layouts are read on the main thread (TIS asserts the main queue on macOS 14+ in GUI
 //! apps) and translated on any thread with UCKeyTranslate.
 
@@ -935,14 +936,18 @@ mod tests {
                 assert!(rec.warning().unwrap().starts_with("Keystrokes and scrolling are not recorded"));
             }
             std::thread::sleep(Duration::from_millis(400));
+            let here = || CGEvent::location(CGEvent::new(None).as_deref());
+            let p = here();
+            std::thread::sleep(Duration::from_millis(50)); // several polls
             rec.stop().unwrap();
+            let still = here() == p;
             let ev = read_events(&dir);
-            let p = CGEvent::location(CGEvent::new(None).as_deref());
             let first = ev.iter().find(|e| e["type"] == "move").expect("initial pointer position");
             assert!(first["t"].as_f64().unwrap() < 0.1);
-            // Someone may move the mouse meanwhile: the last recorded position is where it is now.
+            // Someone (a person, another process) may move the mouse meanwhile: when it held still
+            // over the last polls, the last recorded position is where it is.
             let last = ev.iter().rev().find(|e| e["type"] == "move").unwrap();
-            assert!((last["x"].as_f64().unwrap() - p.x * 2.0).abs() < 1.0, "{last} vs {p:?}");
+            assert!(!still || (last["x"].as_f64().unwrap() - p.x * 2.0).abs() < 1.0, "{last} vs {p:?}");
             let cur = ev.iter().find(|e| e["type"] == "cursor").expect("cursor image");
             assert!(dir.join("cursors").join(format!("{}.png", cur["id"].as_str().unwrap())).exists());
             assert!(cur["scale"].as_f64().unwrap() > 0.0);

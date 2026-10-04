@@ -76,10 +76,12 @@ fn sample(pb: &CVPixelBuffer, host_ns: u64) -> CFRetained<CMSampleBuffer> {
     unsafe { CFRetained::from_raw(NonNull::new(out).unwrap()) }
 }
 
-/// Decoded frames: (pts seconds, (w, h), mean luma of the left half, top quarter, bottom quarter,
+/// A decoded frame: (pts seconds, (w, h), mean luma of the left half, top quarter, bottom quarter,
 /// lower middle (where a webcam subject sits), left edge).
+type Frame = (f64, (usize, usize), f64, f64, f64, f64, f64);
+
 #[allow(deprecated)]
-fn decode(path: &Path) -> Vec<(f64, (usize, usize), f64, f64, f64, f64, f64)> {
+fn decode(path: &Path) -> Vec<Frame> {
     let url = NSURL::from_file_path(path).unwrap();
     unsafe {
         let asset = AVURLAsset::URLAssetWithURL_options(&url, None);
@@ -266,7 +268,7 @@ fn device_rotation_is_undone_and_recorded_with_gapless_audio() {
     let chunk = 1024u64;
     let mut pos = 0u64; // samples
     while pos < 72_000 {
-        let jitter = if (pos / chunk) % 2 == 0 { 0 } else { MS / 2 };
+        let jitter = if (pos / chunk).is_multiple_of(2) { 0 } else { MS / 2 };
         let host = t0 + 20 * MS + pos * 1_000_000_000 / AUDIO_RATE as u64 + jitter;
         let samples: Vec<f32> = (0..chunk as usize * 2).map(|i| ((i / 2) as f32 * 0.05).sin() * 0.5).collect();
         let pts = CMTime { value: host as i64, timescale: 1_000_000_000, flags: CMTimeFlags::Valid, epoch: 0 };

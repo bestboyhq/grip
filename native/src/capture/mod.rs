@@ -867,7 +867,7 @@ mod tests {
     }
 
     /// Decodes every frame, start to end, without a single error.
-    fn decodes(file: &Path) -> bool {
+    pub(super) fn decodes(file: &Path) -> bool {
         let out = Command::new("ffprobe")
             .args(["-v", "error", "-count_frames", "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0"])
             .arg(file)

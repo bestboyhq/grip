@@ -146,6 +146,15 @@ test('an interrupted recording is rebuilt from the files on disk', async () => {
 
   const found = await recoverBundles(dir)
   assert.deepEqual(found.map((r) => r.name).sort(), ['Backup', 'Crashed #1 ✨'])
+  const screen = await readFile(join(src, 'screen.mp4'))
+  const boxes: string[] = []
+  for (let at = 0, size = 0; at + 8 <= screen.length; at += size) {
+    size = screen.readUInt32BE(at)
+    size = size === 1 ? Number(screen.readBigUInt64BE(at + 8)) : size || screen.length - at
+    boxes.push(screen.toString('latin1', at + 4, at + 8))
+  }
+  // Repaired into a regular MP4; native/src/capture/recover.rs tests that it keeps every whole sample.
+  assert.deepEqual(boxes.filter((b) => b === 'moov' || b === 'moof'), ['moov'], `${boxes}`)
   const p = await readProject(crashed)
   assert.equal(p.name, 'Crashed #1 ✨')
   assert.ok(p.sources.duration >= 3 && p.sources.duration < 6, `duration ${p.sources.duration}`)
