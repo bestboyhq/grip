@@ -1,13 +1,13 @@
 <!-- Auto-zoom lab: the zoom camera on a real bundle, drawn with Canvas 2D (no GPU compositor needed).
      #/dev?lab=AutoZoom&project=<encoded bundle path>[&aspect=9:16][&t=6][&strip=4-15]
-     Zooms come from the project, or from generateAutoZooms when it has none. The strip shows
+     Zooms come from the project, or from autoZoomOnce (the editor's first open) when it has none. The strip shows
      frames across a time range; the plot shows zoom spans (bars), scale (line), and the playhead. -->
 <script lang="ts">
   import type { Aspect, Project, Rect } from '../../../shared/project.ts'
   import { parseEvents, type InputEvent } from '../../../shared/events.ts'
   import { mapRange } from '../../../shared/timemap.ts'
   import { prepare, sceneAt, outputSize, type Prepared, type Scene } from '../../../engine/scene.ts'
-  import { generateAutoZooms } from '../../../engine/zoom/index.ts'
+  import { autoZoomOnce } from '../../../engine/zoom/index.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
 
   let { params }: { params: URLSearchParams } = $props()
@@ -44,7 +44,7 @@
     events = project.sources.events ? parseEvents(await get(project.sources.events)) : []
     const aspect = params.get('aspect')
     if (aspect) project.style.aspect = aspect as Aspect
-    if (!project.zooms.length) project.zooms = generateAutoZooms(events, project.sources, project.style.autoZoom)
+    autoZoomOnce(project, events)
     video.src = fileUrl(`${bundle}/${project.sources.screen.file}`)
     await new Promise((ok, fail) => ((video.onloadeddata = ok), (video.onerror = () => fail(new Error('Cannot decode the screen video')))))
     const { width, height } = outputSize(project, 1080)

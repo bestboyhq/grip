@@ -6,6 +6,8 @@ import type { Clip, Transcript, Word } from '../../shared/project.ts'
 import { mapRange, removeSourceRange, timeMap, type TimeMap } from '../../shared/timemap.ts'
 
 const EPS = 1e-6
+const MIN_WORD = 0.04 // s: zero-length ASR words still get a frame
+const HOLD = 0.7 // s: a cue stays this long after its last word, unless the next cue or a cut comes first
 
 /** A word as it plays: output seconds, caption fix applied. `i` indexes transcript.words;
  *  `first`/`last` are the clips it plays in (more than one when a split runs through it). */
@@ -19,9 +21,11 @@ export interface OutWord {
 }
 
 /** The words that survive the cuts, in output order. A word cut through keeps each piece that
- *  holds more than half of it; a word in a repeated clip plays, and shows, each time. */
+ *  holds more than half of it; a word in a repeated clip plays, and shows, each time. Words last
+ *  at least MIN_WORD, so a zero-length word from the recognizer is never lost. */
 export function outputWords(t: Transcript, m: TimeMap, edits: Record<number, string> = {}): OutWord[] {
   const words = t.words
+  const endOf = (w: Word) => Math.max(w.end, w.start + MIN_WORD)
   const out: Array<OutWord & { heard: number }> = []
   m.clips.forEach((c, k) => {
     // First word that reaches into the clip: binary search on start, then step back over long words.
@@ -32,11 +36,11 @@ export function outputWords(t: Transcript, m: TimeMap, edits: Record<number, str
       if (words[mid].start < c.start) lo = mid + 1
       else hi = mid
     }
-    while (lo > 0 && words[lo - 1].end > c.start) lo--
+    while (lo > 0 && endOf(words[lo - 1]) > c.start) lo--
     for (let i = lo; i < words.length && words[i].start < c.end; i++) {
       const w = words[i]
       const s = Math.max(w.start, c.start)
-      const e = Math.min(w.end, c.end)
+      const e = Math.min(endOf(w), c.end)
       if (e - s <= EPS) continue
       const start = m.outStarts[k] + (s - c.start) / c.speed
       const end = m.outStarts[k] + (e - c.start) / c.speed
@@ -53,7 +57,7 @@ export function outputWords(t: Transcript, m: TimeMap, edits: Record<number, str
     }
   })
   return out
-    .filter((o) => o.heard > (words[o.i].end - words[o.i].start) / 2)
+    .filter((o) => o.heard > (endOf(words[o.i]) - words[o.i].start) / 2)
     .map(({ heard: _, ...o }) => o)
 }
 
@@ -66,7 +70,8 @@ export interface Cue {
 
 /** Readable subtitle lines. A phrase ends at a cut (so no cue shows a word the viewer no longer
  *  hears), at a pause over 1 s, and after a sentence; a phrase too long for one line (42 characters,
- *  7 seconds) splits into lines of even length rather than leaving one word dangling. */
+ *  7 seconds) splits into lines of even length rather than leaving one word dangling. A cue stays
+ *  HOLD after its last word for reading, but never over the next cue or across a cut. */
 export function cues(words: OutWord[], m: TimeMap): Cue[] {
   const phrases: OutWord[][] = []
   for (const w of words) {
@@ -91,7 +96,21 @@ export function cues(words: OutWord[], m: TimeMap): Cue[] {
       }
     }
   }
+  // Output end of the run of contiguous clips each clip belongs to: where the next cut is.
+  const n = m.clips.length
+  const runEnd = new Float64Array(n)
+  for (let k = n - 1; k >= 0; k--) {
+    const c = m.clips[k]
+    runEnd[k] = k + 1 < n && Math.abs(c.end - m.clips[k + 1].start) < EPS ? runEnd[k + 1] : m.outStarts[k] + (c.end - c.start) / c.speed
+  }
+  out.forEach((c, i) => (c.end = Math.max(c.end, Math.min(c.end + HOLD, out[i + 1]?.start ?? Infinity, runEnd[c.words[c.words.length - 1].last]))))
   return out
+}
+
+/** The captions: what the video shows and what SRT and VTT export, so both agree on which words
+ *  show when. Filler words stay out unless a caption fix brings one back. */
+export function captionCues(t: Transcript, m: TimeMap, edits: Record<number, string> = {}): Cue[] {
+  return cues(outputWords(t, m, edits).filter((w) => !t.words[w.i].filler || edits[w.i] !== undefined), m)
 }
 
 /** Whether source time is missing between clip a and a later clip b: a cut, or clips out of order. */
@@ -107,16 +126,14 @@ function stamp(s: number, sep: ',' | '.'): string {
 }
 
 export function toSRT(t: Transcript, clips: Clip[], edits: Record<number, string> = {}): string {
-  const m = timeMap(clips)
-  return cues(outputWords(t, m, edits), m)
+  return captionCues(t, timeMap(clips), edits)
     .map((c, i) => `${i + 1}\n${stamp(c.start, ',')} --> ${stamp(c.end, ',')}\n${c.text}\n`)
     .join('\n')
 }
 
 export function toVTT(t: Transcript, clips: Clip[], edits: Record<number, string> = {}): string {
-  const m = timeMap(clips)
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  const body = cues(outputWords(t, m, edits), m).map((c) => `${stamp(c.start, '.')} --> ${stamp(c.end, '.')}\n${esc(c.text)}\n`)
+  const body = captionCues(t, timeMap(clips), edits).map((c) => `${stamp(c.start, '.')} --> ${stamp(c.end, '.')}\n${esc(c.text)}\n`)
   return ['WEBVTT\n', ...body].join('\n')
 }
 

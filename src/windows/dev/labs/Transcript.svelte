@@ -11,7 +11,7 @@
   import { parseEvents } from '../../../shared/events.ts'
   import { timeMap } from '../../../shared/timemap.ts'
   import type { Transcript } from '../../../shared/project.ts'
-  import { cues, outputWords, toSRT } from '../../../engine/transcript/index.ts'
+  import { captionCues, toSRT } from '../../../engine/transcript/index.ts'
   import TranscriptPanel from '../../editor/transcript/TranscriptPanel.svelte'
 
   let { params }: { params: URLSearchParams } = $props()
@@ -43,7 +43,7 @@
   $effect(() => {
     if (map) player.duration = map.duration
   })
-  const lines = $derived(doc.transcript && map ? cues(outputWords($state.snapshot(doc.transcript) as Transcript, map, $state.snapshot(doc.project!.captionEdits)), map) : [])
+  const lines = $derived(doc.transcript && map ? captionCues($state.snapshot(doc.transcript) as Transcript, map, $state.snapshot(doc.project!.captionEdits)) : [])
   const line = $derived(lines.find((c) => c.start <= player.time && player.time < c.end))
   const srt = $derived(doc.transcript && doc.project ? toSRT($state.snapshot(doc.transcript) as Transcript, $state.snapshot(doc.project.clips), $state.snapshot(doc.project.captionEdits)) : '')
 

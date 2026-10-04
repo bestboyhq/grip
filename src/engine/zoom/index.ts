@@ -8,7 +8,7 @@
 // lands mid-animation blends into the next state.
 //
 // Screen rect assumption (layout.ts belongs to the compositor): layoutAt(...).screen.rect is where
-// the whole screen frame sits, in unzoomed output px. It may change over time and may be larger than
+// the recording sits, in unzoomed output px. It may change over time and may be larger than
 // the output. Zoomed views stay inside it, so they never show background past the screen edge.
 // On outputs narrower than that rect (9:16, or 1:1 from a landscape screen) the rest view scales up
 // until the screen covers the output height and follows the cursor. If the layout already makes the
@@ -17,7 +17,7 @@
 // whole), so on those narrow outputs a zoom only adds what the base view does not already give:
 // scale = max(base, level). Multiplying instead would put a 2x zoom on a 9:16 output at ~6.7x.
 
-import { uid, type Rect, type Sources, type Style, type Zoom } from '../../shared/project.ts'
+import { uid, type Project, type Rect, type Sources, type Style, type Zoom } from '../../shared/project.ts'
 import type { InputEvent } from '../../shared/events.ts'
 import { mapRange, toOutput, type TimeMap } from '../../shared/timemap.ts'
 import type { Loupe, SceneInput, View } from '../scene.ts'
@@ -299,4 +299,14 @@ export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZo
     .map((g) => ({ ...g, start: Math.max(0, g.start), end: Math.min(sources.duration, g.end) }))
     .filter((g) => g.end - g.start >= MIN_AUTO && !erratic(g))
     .map((g): Zoom => ({ id: uid(), start: g.start, end: g.end, level, target: { kind: 'cursor' }, auto: true, enabled: true }))
+}
+
+/** The first open after recording or import: generate the auto zooms once (when auto zoom is on
+ *  and the project has no zooms yet), then mark the project so zooms the user deletes never come
+ *  back. Mutates `p`; returns whether it changed. */
+export function autoZoomOnce(p: Project, events: InputEvent[]): boolean {
+  if (p.autoZoomed) return false
+  if (!p.zooms.length) p.zooms = generateAutoZooms(events, p.sources, p.style.autoZoom)
+  p.autoZoomed = true
+  return true
 }

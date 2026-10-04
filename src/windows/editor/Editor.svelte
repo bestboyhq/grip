@@ -8,6 +8,7 @@
   import { fileUrl } from '../../engine/media/index.ts'
   import { parseEvents } from '../../shared/events.ts'
   import type { Project, Sources, Transcript } from '../../shared/project.ts'
+  import { autoZoomOnce } from '../../engine/zoom/index.ts'
   import Icon from '../../ui/Icon.svelte'
   import { tooltip } from '../../ui/tooltip.ts'
   import Preview from './Preview.svelte'
@@ -48,8 +49,9 @@
     const t = transcript as Transcript | null
     doc.events = raw(events)
     doc.transcript = t && Array.isArray(t.words) ? { ...t, words: raw(t.words) } : null
-    doc.project = project // the player seeks to the saved playhead when the preview attaches
+  import { autoZoomOnce } from '../../engine/zoom/index.ts'
   }
+
 
   onMount(() => {
     load(params.get('project') ?? '').catch((e) => (error = reason(e)))
@@ -65,6 +67,7 @@
   // Main-process domains (camera analysis) add sources after recording; keep the open document current.
   $effect(() =>
     on('projects:sources', (path: string, sources: Sources) => {
+      if (path !== doc.path || !doc.project) return
       if (path !== doc.path || !doc.project) return
       doc.project.sources = sources
       doc.rev++

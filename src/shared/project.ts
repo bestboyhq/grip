@@ -178,6 +178,9 @@ export interface Project {
   audio: AudioMix
   /** Saved playhead, in source seconds (survives cuts). */
   playhead: number
+  /** Auto zooms were generated, once, on the first open after recording or import; zooms the user
+   *  deletes never come back. Absent in older files = not yet (migrate fills false). */
+  autoZoomed: boolean
 }
 
 export const defaultStyle = (): Style => ({
@@ -234,5 +237,6 @@ export function createProject(name: string, sources: Sources): Project {
     style: defaultStyle(),
     audio: { mic: { volume: 1, muted: false, enhance: true }, system: { volume: 1, muted: false } },
     playhead: 0,
+    autoZoomed: false,
   }
 }

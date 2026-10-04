@@ -3,7 +3,7 @@
   import { doc, edit, selection } from '../../../lib/doc.svelte.ts'
   import type { Zoom } from '../../../shared/project.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
-  import * as zoomEngine from '../../../engine/zoom/index.ts'
+  import { generateAutoZooms } from '../../../engine/zoom/index.ts'
   import Section from '../../../ui/Section.svelte'
   import Segmented from '../../../ui/Segmented.svelte'
   import Slider from '../../../ui/Slider.svelte'
@@ -15,17 +15,12 @@
   const z = $derived(selected[0])
   const screen = $derived(project.sources.screen)
 
-  // generateAutoZooms(events, sources) lands with the auto-zoom engine; until then enabling only
-  // re-enables existing automatic zooms.
-  const generate = (zoomEngine as unknown as { generateAutoZooms?: (e: typeof doc.events, s: typeof project.sources) => Zoom[] }).generateAutoZooms
-
+  // Turning auto zoom on brings back the automatic zooms, generating them if there are none.
   function setAuto(enabled: boolean) {
     edit((p) => {
       p.style.autoZoom.enabled = enabled
       const autos = p.zooms.filter((x) => x.auto)
-      if (enabled && !autos.length && generate) {
-        p.zooms.push(...generate(doc.events, p.sources).map((x) => ({ ...x, auto: true, level: p.style.autoZoom.level })))
-      }
+      if (enabled && !autos.length) p.zooms.push(...generateAutoZooms(doc.events, p.sources, p.style.autoZoom))
       for (const x of autos) x.enabled = enabled
     })
   }

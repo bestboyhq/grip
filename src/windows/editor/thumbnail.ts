@@ -23,6 +23,7 @@ export async function sendThumbnail(): Promise<void> {
     const { screen, camera } = project.sources
     if (screen) media.screen = await openVideo(url(screen.file))
     if (camera) media.camera = await openVideo(url(camera.file))
+    if (camera?.matte && project.style.camera.removeBackground) media.matte = await openVideo(url(camera.matte))
     const prepared = prepare({ project, events: doc.events, transcript: doc.transcript, width, height })
     // The frame the user last looked at; a fifth in when they never moved the playhead.
     const t = resumeAt(project.clips, project.playhead) || timeMap(project.clips).duration * 0.2
@@ -32,6 +33,7 @@ export async function sendThumbnail(): Promise<void> {
   } finally {
     media.screen?.close()
     media.camera?.close()
+    media.matte?.close()
     renderer.destroy()
   }
 }

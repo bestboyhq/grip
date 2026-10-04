@@ -1,7 +1,7 @@
 <!-- Compositor lab: renders a real project through the GPU compositor with style overrides.
      #/dev?lab=Render&project=<absolute .studio path>
      Frames come from <video> elements (new VideoFrame(video)); the media engine replaces this in the app.
-     Driven over CDP through window.lab: set(patch), render(), capture(), bench(), offscreen(). -->
+     Driven over CDP through window.lab: set(patch), render(), capture(), png(patch), bench(), offscreen(). -->
 <script lang="ts">
   import { onMount } from 'svelte'
   import type { Aspect, CameraLayoutKind, Mask, Project, Style } from '../../../shared/project.ts'
@@ -13,6 +13,7 @@
   import { WALLPAPERS } from '../../../engine/backgrounds/index.ts'
   import { wallpaperThumbnails } from '../../../engine/backgrounds/thumbnails.ts'
   import { invoke } from '../../../lib/ipc.ts'
+  import { CURSORS, type BuiltinName } from '../../../assets/cursors.ts'
 
   let { params }: { params: URLSearchParams } = $props()
   const bundle = $derived(params.get('project') ?? '')
@@ -25,6 +26,7 @@
     blur: 0,
     padding: 80,
     radius: 14,
+    inset: 0,
     shadow: 0.6,
     device: 'none' as Style['device'],
     layout: 'pip' as CameraLayoutKind,
@@ -37,7 +39,8 @@
     zy: 0.5,
     loupe: false,
     motion: 0, // simulated zoom speed: scale change across the shutter
-    cursor: '' as string, // built-in override: arrow, pointer, ibeam
+    cursor: '' as string, // built-in override: arrow, pointer, ibeam, touch
+    set: 'system' as NonNullable<Style['cursor']['set']>,
     cursorSize: 1.6,
     inspect: 4, // inspector magnification
     ix: 0.5,
@@ -73,7 +76,8 @@
       : kind === 'color' ? { kind, color: value }
       : kind === 'image' ? { kind, file: value }
       : { kind: 'gradient', stops: value.split(','), angle: 135 }
-    Object.assign(st, { backgroundBlur: s.blur, padding: s.padding, radius: s.radius, shadow: s.shadow, device: s.device })
+    Object.assign(st, { backgroundBlur: s.blur, padding: s.padding, radius: s.radius, inset: s.inset, shadow: s.shadow, device: s.device })
+    st.cursor.set = s.set
     Object.assign(st.camera, { shape: s.shape, mirror: s.mirror, position: s.position, removeBackground: s.removeBg, followFace: s.followFace })
     if (!s.lut) st.camera.lut = undefined
     st.cursor.size = s.cursorSize
@@ -103,7 +107,8 @@
       scene.view = { center: { x: s.zx * width, y: s.zy * height }, scale: s.zoom }
       if (motion) motion = { ...motion, views: motion.views.map(() => scene.view) }
     }
-    if (scene.cursor && s.cursor) scene.cursor.image = s.cursor
+    const art = CURSORS[s.cursor as BuiltinName]
+    if (scene.cursor && art) Object.assign(scene.cursor, { image: s.cursor, hotX: art.hotX, hotY: art.hotY })
     if (s.loupe && scene.cursor) scene.loupe = { x: scene.cursor.x, y: scene.cursor.y, radius: 150 * scene.unit, scale: 2.2, opacity: 1 }
     if (s.overlay) scene.keystrokes = [{ keys: ['⌘', 'K'], opacity: 1, age: 0.2, count: 1, y: height - 80 * scene.unit, size: 1 }]
     if (s.motion) {
@@ -266,6 +271,7 @@
     <label>blur <input type="range" min="0" max="1" step="0.05" bind:value={s.blur} /></label>
     <label>padding <input type="range" min="0" max="200" step="2" bind:value={s.padding} /> {s.padding}</label>
     <label>radius <input type="range" min="0" max="60" step="1" bind:value={s.radius} /> {s.radius}</label>
+    <label>inset <input type="range" min="0" max="120" step="1" bind:value={s.inset} /> {s.inset}</label>
     <label>shadow <input type="range" min="0" max="1" step="0.05" bind:value={s.shadow} /></label>
     <label>device <select bind:value={s.device}>{#each ['none', 'macbook', 'iphone', 'ipad'] as d}<option>{d}</option>{/each}</select></label>
     <label>layout <select bind:value={s.layout}>{#each ['pip', 'fullscreen', 'hidden', 'split'] as k}<option>{k}</option>{/each}</select></label>
@@ -280,7 +286,8 @@
     <label><input type="checkbox" bind:checked={s.overlay} /> overlay</label>
     <label>zoom <input type="range" min="1" max="4" step="0.05" bind:value={s.zoom} /> {s.zoom}</label>
     <label>motion <input type="range" min="0" max="0.3" step="0.01" bind:value={s.motion} /></label>
-    <label>cursor <select bind:value={s.cursor}><option value="">recorded</option><option>arrow</option><option>pointer</option><option>ibeam</option></select></label>
+    <label>cursor set <select bind:value={s.set}><option>system</option><option>builtin</option><option>touch</option></select></label>
+    <label>cursor <select bind:value={s.cursor}><option value="">from set</option>{#each Object.keys(CURSORS) as n}<option>{n}</option>{/each}</select></label>
     <p class="status">{status}</p>
   </aside>
   <main>

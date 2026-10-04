@@ -1,4 +1,4 @@
-<!-- Motion lab: the built-in cursor set at 1x/2x/4x (red dot = hotspot), the recorded path (grey)
+<!-- Motion lab: the built-in cursor set (src/assets/cursors.ts) at 1x/2x/4x (red dot = hotspot), the recorded path (grey)
      against the smoothed one (accent) with clicks, and the cursor itself in motion.
      #/dev?lab=Cursor[&bundle=<abs .studio path>][&t=<output s, freezes playback>][&set=builtin|touch]
      [&cut=<source a>-<source b>][&loop=1][&smooth=0][&zoom=<view scale around the cursor>] -->
@@ -7,14 +7,15 @@
   import { parseEvents, type InputEvent } from '../../../shared/events.ts'
   import { removeSourceRange, timeMap } from '../../../shared/timemap.ts'
   import { layoutAt, prepareLayout } from '../../../engine/layout.ts'
-  import { CURSORS, cursorAt, cursorPoint, prepareCursor, type BuiltinCursor } from '../../../engine/motion/index.ts'
+  import { cursorAt, cursorPoint, prepareCursor } from '../../../engine/motion/index.ts'
+  import { CURSORS, type BuiltinName } from '../../../assets/cursors.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
   import { invoke } from '../../../lib/ipc.ts'
 
   let { params }: { params: URLSearchParams } = $props()
   const W = 600
   const H = 380
-  const names = Object.keys(CURSORS) as BuiltinCursor[]
+  const names = Object.keys(CURSORS) as BuiltinName[]
   let pathCanvas = $state<HTMLCanvasElement>()
   let playCanvas = $state<HTMLCanvasElement>()
   let info = $state('loading')
@@ -48,7 +49,16 @@
     return { project, events: parseEvents(text) }
   }
 
-  const images = Object.fromEntries(names.map((n) => [n, Object.assign(new Image(), { src: CURSORS[n].url })]))
+  /** A built-in cursor at s CSS px per point, sharp at the device pixel ratio. */
+  const paint = (n: BuiltinName, s: number) => (canvas: HTMLCanvasElement) => {
+    const a = CURSORS[n]
+    const k = s * devicePixelRatio
+    canvas.width = Math.ceil(a.w * k)
+    canvas.height = Math.ceil(a.h * k)
+    const ctx = canvas.getContext('2d')!
+    ctx.scale(k, k)
+    a.draw(ctx, k)
+  }
 
   $effect(() => {
     if (!pathCanvas || !playCanvas) return
@@ -126,21 +136,23 @@
         }
         const l = cursorAt(c, t)
         if (l) {
-          const a = CURSORS[l.image as BuiltinCursor] ?? CURSORS.arrow
-          const img = images[l.image] ?? images.arrow
+          // Recorded images are not loaded here: they show as the arrow at its own hotspot.
+          const own = CURSORS[l.image as BuiltinName]
+          const a = own ?? CURSORS.arrow
           g.save()
           g.globalAlpha = l.opacity
           g.translate(l.x, l.y)
           g.rotate(l.angle)
           g.scale(l.scale, l.scale)
-          g.drawImage(img, -l.hotX, -l.hotY, a.w, a.h)
+          g.translate(-(own ? l.hotX : a.hotX), -(own ? l.hotY : a.hotY))
+          a.draw(g, l.scale * zoom * devicePixelRatio)
           g.restore()
         }
         info = `t ${t.toFixed(3)} / ${map.duration.toFixed(2)} s · prepare ${prepMs.toFixed(1)} ms · ${events.length} events, ${project.clips.length} clips · ` +
           (l ? `${l.image} angle ${l.angle.toFixed(3)} opacity ${l.opacity.toFixed(2)} scale ${l.scale.toFixed(3)}` : 'hidden')
         if (fixed === null) raf = requestAnimationFrame(draw)
       }
-      Promise.all(Object.values(images).map((i) => i.decode())).then(draw)
+      draw()
     }, (e) => (info = String(e)))
     return () => {
       alive = false
@@ -173,7 +185,7 @@
         {#each names as n (n)}
           {#each [1, 2, 4] as s (s)}
             <figure style:width="{CURSORS[n].w * s}px" style:height="{CURSORS[n].h * s}px">
-              <img src={CURSORS[n].url} alt={n} width={CURSORS[n].w * s} height={CURSORS[n].h * s} />
+              <canvas {@attach paint(n, s)} aria-label={n} style:width="{CURSORS[n].w * s}px" style:height="{CURSORS[n].h * s}px"></canvas>
               <i style:left="{CURSORS[n].hotX * s}px" style:top="{CURSORS[n].hotY * s}px"></i>
             </figure>
           {/each}
@@ -213,8 +225,9 @@
     position: relative;
     margin: 0;
   }
-  img {
+  figure canvas {
     display: block;
+    border-radius: 0;
   }
   i {
     position: absolute;
