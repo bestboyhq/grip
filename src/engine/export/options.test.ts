@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cleanOptions, frameCount, gifDelay, safeFileName, uniqueName } from './options.ts'
+import { Stall, cleanOptions, frameCount, gifDelay, passes, safeFileName, uniqueName, watch } from './options.ts'
 
 test('frame counts and GIF delays add up to the timeline', () => {
   assert.equal(frameCount(24, 30), 720)
@@ -32,4 +32,15 @@ test('options from storage or IPC snap to valid values', () => {
   assert.equal(cleanOptions({ format: 'gif' }).size, 720)
   assert.equal(cleanOptions({ codec: 'prores' as never }).codec, 'h264')
   assert.equal(cleanOptions(null).format, 'mp4')
+})
+
+test('a stalled step rejects with Stall; retried passes never move the bar backwards', async () => {
+  assert.equal(await watch(Promise.resolve(7), 'video encoder', 50), 7)
+  await assert.rejects(watch(new Promise(() => {}), 'video encoder', 20), (e) => e instanceof Stall && e.what === 'video encoder')
+  const shown: number[] = []
+  const next = passes({ write: async () => {}, progress: (p) => shown.push(p) })
+  next().progress(0.3, 'Rendering')
+  const retry = next() // e.g. the hardware encoder stalled at 30%
+  for (const p of [0, 0.5, 0.99]) retry.progress(p, 'Rendering')
+  assert.deepEqual(shown.map((p) => +p.toFixed(2)), [0.3, 0.3, 0.65, 0.99])
 })

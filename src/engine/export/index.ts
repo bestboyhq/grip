@@ -6,26 +6,19 @@
 //      so memory stays flat and files of any size work. Audio: renderAudio -> AAC 48 kHz stereo,
 //      exactly as many samples as the video lasts.
 // GIF: the same frames, read back at GIF size and encoded in gif.worker.ts.
+// A wedged hardware codec never errors, it just stops: every step runs under a watchdog, and a
+// stalled hardware encoder is retried in software.
 
 import { AudioBufferSource, CanvasSource, Mp4OutputFormat, Output, Quality, StreamTarget, canEncodeVideo, type StreamTargetChunk } from 'mediabunny'
 import { outputSize, prepare, type SceneInput } from '../scene.ts'
 import { renderFrame, type Media } from '../compose.ts'
 import { Renderer } from '../gpu/renderer.ts'
-import { fileUrl, openVideo, type FrameSource } from '../media/index.ts'
+import { fileUrl, openVideo } from '../media/index.ts'
 import { renderAudio } from '../audio/index.ts'
 import { parseEvents } from '../../shared/events.ts'
 import type { Transcript } from '../../shared/project.ts'
-import { AUDIO_BITRATE, SAMPLE_RATE, frameCount, videoBitrate, type ExportOptions, type JobSpec } from './options.ts'
+import { AUDIO_BITRATE, SAMPLE_RATE, Stall, frameCount, passes, videoBitrate, watch, type ExportIO, type ExportOptions, type JobSpec } from './options.ts'
 import { AAC_PRIMING, setEditDuration } from './mp4.ts'
-
-export interface ExportIO {
-  /** Write bytes at a file position; resolves once written (backpressure). */
-  write(position: number, data: Uint8Array): Promise<void>
-  /** 0..0.99 while encoding. The file is only complete (1) once the caller has closed it. */
-  progress(p: number, phase: string): void
-  /** Video opener, openVideo unless a test swaps it. */
-  open?: (url: string) => Promise<FrameSource>
-}
 
 type Input = Omit<SceneInput, 'width' | 'height'>
 
@@ -43,9 +36,8 @@ export async function exportProject(job: JobSpec, io: ExportIO): Promise<number>
     s.events ? read(s.events, 'input events').then((r) => r.text()).then(parseEvents) : [],
     s.transcript ? read(s.transcript, 'transcript').then((r) => r.json() as Promise<Transcript>) : null,
   ])
-  const open = io.open ?? openVideo
   const video = (file: string, what: string) =>
-    open(url(file)).catch((e) => {
+    openVideo(url(file)).catch((e) => {
       throw new Error(`Could not read the ${what} (${file}): ${e instanceof Error ? e.message : e}`)
     })
   const media: Media = {}
@@ -65,12 +57,13 @@ export async function exportProject(job: JobSpec, io: ExportIO): Promise<number>
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2)
 
 /** The largest size with the same aspect the encoder accepts: hardware H.264 stops at 4096 px a
- *  side, so a 4K ultrawide export scales down to fit (HEVC goes to 8192). Software only as a last resort. */
-export async function fitEncoder(o: Pick<ExportOptions, 'codec' | 'fps' | 'quality'>, width: number, height: number) {
+ *  side, so a 4K ultrawide export scales down to fit (HEVC goes to 8192). Software only as a last
+ *  resort, or only software with `tiers` = [false]. */
+export async function fitEncoder(o: Pick<ExportOptions, 'codec' | 'fps' | 'quality'>, width: number, height: number, tiers = [true, false]) {
   const codec = o.codec === 'hevc' ? 'hevc' : 'avc'
   const ok = (w: number, h: number, hw: boolean) =>
-    canEncodeVideo(codec, { width: w, height: h, frameRate: o.fps, quality: new Quality({ bitrate: videoBitrate(w, h, o) }), hardwareAcceleration: hw ? 'prefer-hardware' : 'no-preference' })
-  for (const hardware of [true, false]) {
+    canEncodeVideo(codec, { width: w, height: h, frameRate: o.fps, quality: new Quality({ bitrate: videoBitrate(w, h, o) }), hardwareAcceleration: hw ? 'prefer-hardware' : 'prefer-software' })
+  for (const hardware of tiers) {
     if (await ok(width, height, hardware)) return { width, height, hardware }
     let lo = 0
     let hi = 1
@@ -94,7 +87,23 @@ async function stage(job: JobSpec, input: Input, width: number, height: number) 
 async function mp4(job: JobSpec, input: Input, media: Media, io: ExportIO): Promise<number> {
   const o = job.options
   const base = outputSize(input.project, o.size)
-  const { width, height, hardware } = await fitEncoder(o, base.width, base.height)
+  const fit = await fitEncoder(o, base.width, base.height)
+  const next = passes(io)
+  try {
+    return await mp4Pass(job, input, media, next(), fit)
+  } catch (e) {
+    // A wedged hardware encoder (it happens after sleep, or while other apps hammer the media
+    // engine) never errors, it just stops: start over in software, which has no such state.
+    if (!(e instanceof Stall && e.what === 'video encoder' && fit.hardware)) throw e
+    const soft = await fitEncoder(o, base.width, base.height, [false]).catch(() => {
+      throw new Error('The hardware video encoder stopped responding, and this Mac has no software encoder for this format. Export as H.264, or restart your Mac.')
+    })
+    return mp4Pass(job, input, media, next(), soft)
+  }
+}
+
+async function mp4Pass(job: JobSpec, input: Input, media: Media, io: ExportIO, { width, height, hardware }: { width: number; height: number; hardware: boolean }): Promise<number> {
+  const o = job.options
   const { p, r } = await stage(job, input, width, height)
   try {
     const n = frameCount(p.map.duration, o.fps)
@@ -112,13 +121,14 @@ async function mp4(job: JobSpec, input: Input, media: Media, io: ExportIO): Prom
     let moov: { data: Uint8Array; position: number } | null = null
     const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'reserve', onMoov: (data, position) => (moov = { data: data.slice(), position }) }), target })
     let encoded = 0
+    let phase = 'Rendering'
     const video = new CanvasSource(r.canvas, {
       codec: o.codec === 'hevc' ? 'hevc' : 'avc',
       quality: new Quality({ bitrate: videoBitrate(width, height, o) }),
       keyFrameInterval: 2,
       latencyMode: 'quality',
-      hardwareAcceleration: hardware ? 'prefer-hardware' : 'no-preference',
-      onEncodedPacket: () => io.progress((0.99 * ++encoded) / n, 'Rendering'),
+      hardwareAcceleration: hardware ? 'prefer-hardware' : 'prefer-software',
+      onEncodedPacket: () => io.progress((0.99 * ++encoded) / n, phase),
     })
     // Starting at -priming makes mediabunny write an edit list that skips the encoder's priming.
     const audio = new AudioBufferSource({ codec: 'aac', quality: new Quality({ bitrate: AUDIO_BITRATE }) }, { startTimestamp: -AAC_PRIMING / SAMPLE_RATE })
@@ -131,29 +141,33 @@ async function mp4(job: JobSpec, input: Input, media: Media, io: ExportIO): Prom
       const audioUntil = async (t: number) => {
         while (a < samples && a < t * SAMPLE_RATE) {
           const b = Math.min(samples, a + SAMPLE_RATE)
-          await audio.add(exactly(await renderAudio(p, job.bundle, a / SAMPLE_RATE, b / SAMPLE_RATE), b - a))
+          const buf = await watch(renderAudio(p, job.bundle, a / SAMPLE_RATE, b / SAMPLE_RATE), 'audio engine')
+          await watch(audio.add(exactly(buf, b - a)), 'audio encoder')
           a = b
         }
       }
+      let gpu = Promise.resolve()
       for (let i = 0; i < n; i++) {
         const t = i / o.fps
-        ;(globalThis as any).__step = ['audio', i]
         await audioUntil(t + 0.5)
-        ;(globalThis as any).__step = ['render', i]
-        await renderFrame(r, p, media, t)
-        ;(globalThis as any).__step = ['add', i]
-        await video.add(t, 1 / o.fps)
+        await watch(renderFrame(r, p, media, t), 'renderer')
+        // add() takes the VideoFrame from the canvas synchronously, before anything else draws.
+        await watch(video.add(t, 1 / o.fps), 'video encoder')
+        // GPU backpressure: at most two frames in flight, so a slow GPU never queues up memory.
+        await watch(gpu, 'GPU')
+        gpu = r.finished()
       }
       await audioUntil(Infinity)
-      io.progress(0.99, 'Finalizing')
-      await output.finalize()
+      phase = 'Finalizing' // the encoder's last packets come out while it flushes
+      io.progress((0.99 * encoded) / n, phase)
+      await watch(output.finalize(), 'video encoder')
       const m = moov as { data: Uint8Array; position: number } | null
       if (!m) throw new Error('The MP4 header was not written.')
       setEditDuration(m.data, n / o.fps)
       await io.write(m.position, m.data)
       return size
     } catch (e) {
-      await output.cancel().catch(() => {})
+      await watch(output.cancel(), 'video encoder', 2000).catch(() => {})
       throw e
     }
   } finally {
@@ -175,8 +189,9 @@ async function gif(job: JobSpec, input: Input, media: Media, io: ExportIO): Prom
   const base = outputSize(input.project, o.size)
   const limit = o.maxMB * 1e6
   let k = 1
+  const next = passes(io)
   for (let pass = 1; ; pass++) {
-    const res = await gifPass(job, input, media, io, even(base.width * k), even(base.height * k), limit, pass === 1 ? 'Rendering' : `Fitting under ${o.maxMB} MB`)
+    const res = await gifPass(job, input, media, next(), even(base.width * k), even(base.height * k), limit, pass === 1 ? 'Rendering' : `Fitting under ${o.maxMB} MB`)
     if ('size' in res) return res.size
     // Over the limit: bytes scale with pixel count, so shrink by the projected overshoot and retry.
     k *= Math.sqrt(limit / res.projected) * 0.92
@@ -216,20 +231,21 @@ async function gifPass(job: JobSpec, input: Input, media: Media, io: ExportIO, w
     await put(await send({ start: { width, height, fps: o.fps, loop: o.loop } }))
     const inflight: Promise<Uint8Array>[] = []
     for (let i = 0; i < n; i++) {
-      await renderFrame(r, p, media, i / o.fps)
+      await watch(renderFrame(r, p, media, i / o.fps), 'renderer')
       readback.drawImage(r.canvas, 0, 0)
       const { data } = readback.getImageData(0, 0, width, height)
       inflight.push(send({ frame: data.buffer }, [data.buffer]))
       // Two frames in flight: the worker encodes one while the next renders.
       while (inflight.length > 1) {
-        await put(await inflight.shift()!)
+        await put(await watch(inflight.shift()!, 'GIF encoder'))
         io.progress((0.99 * ++written) / n, phase)
       }
-      // Over the limit, or clearly headed there a quarter of the way in: stop and refit now.
-      if (limit && written && (size > limit || (written > n / 4 && (size * n) / written > 2 * limit))) return { projected: (size * n) / written }
+      // Over the limit, or headed there a quarter of the way in: stop and refit now, so a refit costs a
+      // quarter pass, not a whole one (a GIF that only overshoots late still refits at the end).
+      if (limit && written && (size > limit || (written > n / 4 && (size * n) / written > limit))) return { projected: (size * n) / written }
     }
     inflight.push(send({ finish: true }))
-    for (const b of inflight) await put(await b)
+    for (const b of inflight) await put(await watch(b, 'GIF encoder'))
     io.progress(0.99, 'Finalizing')
     return limit && size > limit ? { projected: size } : { size }
   } finally {

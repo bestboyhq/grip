@@ -7,7 +7,9 @@ import type { Project } from '../../shared/project.ts'
 export type Format = 'mp4' | 'gif'
 export type Codec = 'h264' | 'hevc'
 export type Quality = 'studio' | 'social' | 'web' | 'small'
-export type Destination = 'file' | 'clipboard' | 'share'
+// temp: an MP4 in Studio's temp folder for another feature to take (the Share button uploads it).
+export type Destination = 'file' | 'clipboard' | 'share' | 'temp'
+export const DESTINATIONS: Destination[] = ['file', 'clipboard', 'share', 'temp']
 
 export interface ExportOptions {
   format: Format
@@ -76,6 +78,41 @@ export interface JobSpec extends JobInfo {
   project: Project
 }
 
+export interface ExportIO {
+  /** Write bytes at a file position; resolves once written (backpressure). */
+  write(position: number, data: Uint8Array): Promise<void>
+  /** 0..0.99 while encoding. The file is only complete (1) once the caller has closed it. */
+  progress(p: number, phase: string): void
+}
+
+/** No step of a healthy export takes this long: one frame, one audio chunk, finalizing. */
+export const STALL_MS = 10_000
+
+export class Stall extends Error {
+  readonly what: string
+  constructor(what: string) {
+    super(`The ${what} stopped responding.`)
+    this.what = what
+  }
+}
+
+/** `p`, or a Stall error once it has taken STALL_MS. */
+export function watch<T>(p: Promise<T>, what: string, ms = STALL_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const stall = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Stall(what)), ms)))
+  return Promise.race([p, stall]).finally(() => clearTimeout(timer))
+}
+
+/** Progress for an export that may run more than one pass (a GIF refit, a software retry): each
+ *  pass fills the rest of the bar from where the last one stopped, so it never moves backwards. */
+export function passes(io: ExportIO): () => ExportIO {
+  let shown = 0
+  return () => {
+    const from = shown
+    return { ...io, progress: (p, phase) => io.progress((shown = from + ((0.99 - from) * p) / 0.99), phase) }
+  }
+}
+
 export const SAMPLE_RATE = 48_000
 export const AUDIO_BITRATE = 160_000
 
@@ -95,12 +132,12 @@ export function videoBitrate(width: number, height: number, o: Pick<ExportOption
 
 /** File size in bytes: an upper bound for MP4 (the encoder's average bitrate is a ceiling; mostly
  *  static screen content lands at 5-20% of it), a typical size for GIF. */
-// ponytail: GIF constants measured on the synthetic fixture (1.3-1.6 MB for 24 s at 720p15); GIF size
-// swings with content, which is why the size limit exists.
+// ponytail: GIF constants measured on the synthetic fixture with a camera bubble (3.0 MB for 24 s at
+// 720p15, 4.4 MB at 642p30); GIF size swings with content, which is why the size limit exists.
 export function estimateBytes(duration: number, width: number, height: number, o: ExportOptions): number {
   if (o.format === 'gif') {
-    // One full frame, then small changed regions per frame.
-    const est = width * height * (0.5 + 0.0035 * frameCount(duration, o.fps))
+    // One full frame, then the changed regions of each frame.
+    const est = width * height * (0.5 + 0.0085 * frameCount(duration, o.fps))
     return o.maxMB ? Math.min(est, o.maxMB * 1e6) : est
   }
   return ((videoBitrate(width, height, o) + AUDIO_BITRATE) * duration) / 8

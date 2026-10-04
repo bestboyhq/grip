@@ -4,22 +4,26 @@
 // the queue drains. The window streams the file here through export:write: positioned writes into
 // a hidden ".<name>.partial" beside the destination, renamed into place only once complete.
 //
-// Editor and project list:
+// Editor:
 //   export:enqueue(ExportRequest[]) -> JobInfo[] | null   asks for every destination first; null = canceled
+//   export:batch(ExportOptions) -> JobInfo[] | null       pick projects, then a folder, then export them all
 //   export:list() -> JobInfo[]       export:cancel(id)    export:reveal(id)    export:clear()
 //   event export:update(JobInfo) on every change
 // Export window (only the job's own window may call these):
 //   export:job(id) -> JobSpec    export:write(id, position, bytes)    export:progress(id, p, phase)
-//   export:done(id, size) -> { upload?: path }    export:shared(id, url)    export:fail(id, message)
+//   export:done(id, size)        export:fail(id, message)
+// Share links: once the file is complete, main hands it to share:upload (electron/share.ts) and the
+// queue moves on; the job is done when the link exists.
 import { app, BrowserWindow, ClipboardItem, clipboard, dialog, ipcMain, Notification, shell, type IpcMainInvokeEvent } from 'electron'
-import { open, mkdir, readdir, rename, rm, stat, type FileHandle } from 'node:fs/promises'
+import { open, mkdir, readdir, readFile, rename, rm, stat, type FileHandle } from 'node:fs/promises'
 import { existsSync, rmSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { openWindow } from './windows.ts'
-import { readProject } from './projects.ts'
+import { projectsDir, readProject } from './projects.ts'
+import { invokeHandler } from './shell/recorder.ts'
 import type { Project } from '../src/shared/project.ts'
-import { cleanOptions, safeFileName, uniqueName, type ExportRequest, type JobInfo, type JobSpec, type JobState } from '../src/engine/export/options.ts'
+import { DESTINATIONS, cleanOptions, safeFileName, uniqueName, type ExportOptions, type ExportRequest, type JobInfo, type JobSpec, type JobState } from '../src/engine/export/options.ts'
 
 interface Job extends JobInfo {
   project?: Project // dropped once the job ends
@@ -35,9 +39,6 @@ let batch = { done: 0, failed: 0, last: undefined as Job | undefined }
 let lastDir = ''
 const tmpRoot = () => join(app.getPath('temp'), 'Studio Exports')
 const active = (j: Job) => j.state === 'queued' || j.state === 'running' || j.state === 'uploading'
-
-/** Exports queued or in progress, for the quit prompt. */
-export const activeExports = () => [...jobs.values()].filter(active).length
 
 function info(j: Job): JobInfo {
   const { id, name, bundle, options, dest, path, state, progress, phase, error, url, bytes, startedAt, finishedAt } = j
@@ -63,29 +64,38 @@ function fsMessage(err: unknown, path: string): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+/** Close the job's window (stopping its work at once) and let the next job start. */
+function release(j: Job) {
+  const win = j.win
+  j.win = undefined // before destroy: the window's 'closed' handler then knows it was us
+  if (win && !win.isDestroyed()) win.destroy()
+  if (running === j) running = undefined
+  void pump()
+}
+
 async function finish(j: Job, state: JobState, error?: string) {
   if (!active(j)) return
   Object.assign(j, { state, error, finishedAt: Date.now(), project: undefined }, state === 'done' && { progress: 1, phase: 'Done' })
-  const win = j.win
-  j.win = undefined
-  if (win && !win.isDestroyed()) win.destroy()
+  release(j)
   await j.writes.catch(() => {})
   await j.fh?.close().catch(() => {})
   j.fh = undefined
   if (j.tmp) await rm(j.tmp, { force: true }).catch(() => {})
   j.tmp = undefined
-  if (state === 'done') batch.done++
-  if (state === 'failed') batch.failed++
-  if (state !== 'canceled') batch.last = j
-  if (running === j) running = undefined
+  // The Share button's own exports (temp) report through the Share button, not a notification.
+  if (j.dest !== 'temp') {
+    if (state === 'done') batch.done++
+    if (state === 'failed') batch.failed++
+    if (state !== 'canceled') batch.last = j
+  }
   broadcast(j)
-  void pump()
+  if (!running) notifyIfIdle()
 }
 
 async function pump() {
   if (running) return
   const j = [...jobs.values()].find((x) => x.state === 'queued')
-  if (!j) return notify()
+  if (!j) return
   running = j
   try {
     await mkdir(dirname(j.path), { recursive: true })
@@ -96,13 +106,15 @@ async function pump() {
   }
   Object.assign(j, { state: 'running', phase: 'Starting', startedAt: Date.now() })
   const win = (j.win = openWindow(`export?job=${encodeURIComponent(j.id)}`, { show: false, width: 480, height: 320, webPreferences: { backgroundThrottling: false } }))
-  win.webContents.on('render-process-gone', (_e, d) => void finish(j, 'failed', `The export stopped unexpectedly (${d.reason}).`))
-  win.on('closed', () => void finish(j, 'failed', 'The export window closed.'))
+  win.webContents.on('render-process-gone', (_e, d) => j.win === win && void finish(j, 'failed', `The export stopped unexpectedly (${d.reason}).`))
+  win.on('closed', () => j.win === win && void finish(j, 'failed', 'The export window closed.'))
   broadcast(j)
 }
 
-/** Unattended exports end with a notification; a single export with Studio in front does not. */
-function notify() {
+/** Unattended exports end with a notification once nothing is left to do; a single export with
+ *  Studio in front does not. */
+function notifyIfIdle() {
+  if ([...jobs.values()].some(active)) return
   const { done, failed, last } = batch
   batch = { done: 0, failed: 0, last: undefined }
   if (done + failed === 0 || (done + failed === 1 && BrowserWindow.getFocusedWindow()) || !Notification.isSupported()) return
@@ -146,11 +158,43 @@ async function chooseFiles(parent: BrowserWindow | null, items: Array<{ name: st
   return true
 }
 
-/** Clipboard and share exports land in a per-job temp folder, so the file keeps the project's name. */
+async function enqueue(parent: BrowserWindow | null, reqs: ExportRequest[]): Promise<JobInfo[] | null> {
+  if (!Array.isArray(reqs) || !reqs.length) throw new Error('Nothing to export.')
+  const items = await Promise.all(
+    reqs.map(async (r) => {
+      if (typeof r?.bundle !== 'string' || !isAbsolute(r.bundle)) throw new Error('Export needs the absolute path of a project.')
+      if (r.path !== undefined && (typeof r.path !== 'string' || !isAbsolute(r.path))) throw new Error('Export paths must be absolute.')
+      const project = r.project ?? (await readProject(r.bundle))
+      const dest = DESTINATIONS.includes(r.dest) ? r.dest : 'file'
+      const options = cleanOptions(dest === 'temp' ? { ...r.options, format: 'mp4' } : r.options)
+      return { project, options, dest, bundle: r.bundle, name: project.name || basename(r.bundle, '.studio'), ext: options.format, path: r.path }
+    }),
+  )
+  if (!(await chooseFiles(parent, items.filter((it) => it.dest === 'file' && !it.path)))) return null
+  const out = items.map((it) => {
+    const id = crypto.randomUUID()
+    // Clipboard, share, and temp exports land in a per-job temp folder, so the file keeps the project's name.
+    const path = it.path ?? join(tmpRoot(), id, `${safeFileName(it.name)}.${it.ext}`)
+    const j: Job = { id, name: it.name, bundle: it.bundle, options: it.options, dest: it.dest, path, project: it.project, state: 'queued', progress: 0, phase: 'Waiting', writes: Promise.resolve() }
+    jobs.set(id, j)
+    broadcast(j)
+    return info(j)
+  })
+  void pump()
+  return out
+}
+
+/** Temp exports older than a day go, except files a share upload still reads (uploads survive restarts). */
 async function sweepTemp() {
   const root = tmpRoot()
+  // ponytail: reads the sharing domain's state file; a share:busy(path) contract if more callers need it.
+  const uploading: string[] = await readFile(join(app.getPath('userData'), 'share.json'), 'utf8').then(
+    (s) => (JSON.parse(s).jobs ?? []).filter((x: { state: string }) => !['done', 'failed', 'canceled'].includes(x.state)).map((x: { path: string }) => x.path),
+    () => [],
+  )
   for (const d of await readdir(root).catch(() => [])) {
     const p = join(root, d)
+    if (uploading.some((u) => u.startsWith(p + '/'))) continue
     const s = await stat(p).catch(() => null)
     if (s && Date.now() - s.mtimeMs > 864e5) await rm(p, { recursive: true, force: true }).catch(() => {})
   }
@@ -162,36 +206,32 @@ export function registerExport() {
     for (const j of jobs.values()) if (j.tmp) rmSync(j.tmp, { force: true })
   })
 
-  ipcMain.handle('export:enqueue', async (e, reqs: ExportRequest[]) => {
-    if (!Array.isArray(reqs)) throw new Error('export:enqueue expects a list of requests.')
-    const items = await Promise.all(
-      reqs.map(async (r) => {
-        if (typeof r?.bundle !== 'string' || !isAbsolute(r.bundle)) throw new Error('Export needs the absolute path of a project.')
-        if (r.path !== undefined && (typeof r.path !== 'string' || !isAbsolute(r.path))) throw new Error('Export paths must be absolute.')
-        const project = r.project ?? (await readProject(r.bundle))
-        const options = cleanOptions(r.options)
-        const dest = (['file', 'clipboard', 'share'] as const).includes(r.dest) ? r.dest : 'file'
-        return { project, options, dest, bundle: r.bundle, name: project.name || basename(r.bundle, '.studio'), ext: options.format, path: r.path }
-      }),
-    )
-    if (!(await chooseFiles(BrowserWindow.fromWebContents(e.sender), items.filter((it) => it.dest === 'file' && !it.path)))) return null
-    const out = items.map((it) => {
-      const id = crypto.randomUUID()
-      const path = it.path ?? join(tmpRoot(), id, `${safeFileName(it.name)}.${it.ext}`)
-      const j: Job = { id, name: it.name, bundle: it.bundle, options: it.options, dest: it.dest, path, project: it.project, state: 'queued', progress: 0, phase: 'Waiting', writes: Promise.resolve() }
-      jobs.set(id, j)
-      broadcast(j)
-      return info(j)
-    })
-    void pump()
-    return out
+  ipcMain.handle('export:enqueue', (e, reqs: ExportRequest[]) => enqueue(BrowserWindow.fromWebContents(e.sender), reqs))
+
+  ipcMain.handle('export:batch', async (e, options: ExportOptions) => {
+    const parent = BrowserWindow.fromWebContents(e.sender)
+    // Bundles are packages in the built app and plain folders in development: allow both.
+    const opts = {
+      title: 'Batch Export',
+      message: 'Choose the projects to export',
+      buttonLabel: 'Choose',
+      defaultPath: projectsDir(),
+      properties: ['openFile', 'openDirectory', 'multiSelections'] as Array<'openFile' | 'openDirectory' | 'multiSelections'>,
+      filters: [{ name: 'Studio Projects', extensions: ['studio'] }],
+    }
+    const res = await (parent ? dialog.showOpenDialog(parent, opts) : dialog.showOpenDialog(opts))
+    if (res.canceled) return null
+    const bundles = res.filePaths.filter((p) => /\.studio\/?$/i.test(p))
+    if (!bundles.length) throw new Error('Choose one or more Studio projects.')
+    return enqueue(parent, bundles.map((bundle) => ({ bundle, options, dest: 'file' as const })))
   })
 
   ipcMain.handle('export:list', () => [...jobs.values()].map(info))
 
   ipcMain.handle('export:cancel', (_e, id: string) => {
     const j = jobs.get(id)
-    if (j) return finish(j, 'canceled')
+    // An upload belongs to the Share button once the file is complete; it can be deleted there.
+    if (j && j.state !== 'uploading') return finish(j, 'canceled')
   })
 
   ipcMain.handle('export:reveal', (_e, id: string) => {
@@ -249,24 +289,22 @@ export function registerExport() {
         // A file reference, like Finder's Copy: pasting into Finder, Slack, or Mail attaches the file.
         await clipboard.write([new ClipboardItem({ 'electron application/osclipboard;format="public.file-url"': new Blob([pathToFileURL(j.path).href]) })])
       }
-      if (j.dest === 'share') {
-        Object.assign(j, { state: 'uploading', phase: 'Uploading', progress: 1 })
-        broadcast(j)
-        return { upload: j.path }
-      }
     } catch (err) {
       await finish(j, 'failed', fsMessage(err, j.path))
       throw err
     }
-    await finish(j, 'done')
-    return {}
-  })
-
-  ipcMain.handle('export:shared', (e, id: string, url: string) => {
-    const j = own(e, id)
-    if (typeof url !== 'string' || !/^https?:\/\//.test(url)) return finish(j, 'failed', 'The upload finished without a link.')
-    j.url = url
-    return finish(j, 'done')
+    if (j.dest !== 'share') return finish(j, 'done')
+    // The file is complete: free the queue while share.ts uploads it (in the background, across restarts).
+    Object.assign(j, { state: 'uploading', phase: 'Uploading', progress: 1 })
+    release(j)
+    broadcast(j)
+    invokeHandler('share:upload', j.path, { title: j.name, project: j.bundle }).then(
+      (url: unknown) => {
+        if (typeof url === 'string' && /^https?:\/\//.test(url)) return finish(Object.assign(j, { url }), 'done')
+        return url === null ? finish(j, 'canceled') : finish(j, 'failed', 'The upload finished without a link.')
+      },
+      (err: unknown) => finish(j, 'failed', `The video was saved, but the upload failed: ${String((err as Error)?.message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`),
+    )
   })
 
   ipcMain.handle('export:fail', (e, id: string, message: string) => {
