@@ -1,6 +1,7 @@
 <!-- The preview: a canvas the player renders into, letterboxed to the output aspect (pure CSS: container
-     query units). Clicking or dragging on it aims the selected zooms; dragging the camera moves it to
-     the corner it is dropped in. Hit-testing uses the same Scene the renderer draws, so it matches. -->
+     query units). Clicking or dragging on it aims the selected zooms, or draws and moves the selected mask;
+     dragging the camera moves it to the corner it is dropped in. Hit-testing uses the same Scene the
+     renderer draws, so it matches. -->
 <script lang="ts">
   import { untrack } from 'svelte'
   import { doc, edit, selection } from '../../lib/doc.svelte.ts'
@@ -14,6 +15,7 @@
   // size works for hit-testing; 1080p keeps the numbers familiar.
   const size = $derived(outputSize(project, 1080))
   const zooms = $derived(project.zooms.filter((z) => selection.ids.includes(z.id)))
+  const mask = $derived(zooms.length ? undefined : project.masks.find((m) => selection.ids.includes(m.id)))
 
   let frame = $state<HTMLElement>()
   let failed = $state('')
@@ -61,10 +63,43 @@
     return p && { x: (p.x / s.width) * 100, y: (p.y / s.height) * 100 }
   })
 
+  // The selected mask's area, in % of the frame (it zooms with the content).
+  const maskBox = $derived.by(() => {
+    if (!mask) return null
+    doc.rev
+    player.time
+    const s = untrack(scene)
+    const r = mask.rect
+    const a = s && outputPoint(s, r.x, r.y)
+    const b = s && outputPoint(s, r.x + r.w, r.y + r.h)
+    return a && b && { left: pct(a.x, s.width), top: pct(a.y, s.height), width: pct(b.x - a.x, s.width), height: pct(b.y - a.y, s.height) }
+  })
+
   let gesture = 0
   let aiming = false
+  // Dragging inside the selected mask moves it; dragging anywhere else draws it anew. Screen-normalized.
+  let shaping: { id: string; from: { x: number; y: number }; move: { x: number; y: number } | null } | null = null
+
+  function shape(e: PointerEvent) {
+    const s = scene()
+    const p = s && screenPoint(s, local(e).x, local(e).y)
+    if (!p || !shaping) return
+    const { id, from, move } = shaping
+    edit((pr) => {
+      const m = pr.masks.find((x) => x.id === id)
+      if (!m) return
+      if (move) {
+        m.rect = { ...m.rect, x: Math.min(Math.max(p.x - move.x, 0), 1 - m.rect.w), y: Math.min(Math.max(p.y - move.y, 0), 1 - m.rect.h) }
+      } else {
+        const w = Math.abs(p.x - from.x)
+        const h = Math.abs(p.y - from.y)
+        if (w > 0.005 && h > 0.005) m.rect = { x: Math.min(p.x, from.x), y: Math.min(p.y, from.y), w, h }
+      }
+    }, `mask:${gesture}`)
+  }
   let drag = $state<{ ox: number; oy: number; x: number; y: number; w: number; h: number; corner: CameraPosition } | null>(null)
-  let hover = $state<'camera' | 'aim' | ''>('')
+  let hover = $state<'camera' | 'aim' | 'move' | ''>('')
+  const onMask = (q: { x: number; y: number }) => !!mask && inside(q, mask.rect)
 
   function aim(e: PointerEvent) {
     const s = scene()
@@ -88,6 +123,11 @@
       aiming = true
       gesture++
       aim(e)
+    } else if (mask && s) {
+      const q = screenPoint(s, p.x, p.y)
+      if (!q) return
+      shaping = { id: mask.id, from: q, move: onMask(q) ? { x: q.x - mask.rect.x, y: q.y - mask.rect.y } : null }
+      gesture++
     } else return
     frame!.setPointerCapture(e.pointerId)
     e.preventDefault()
@@ -100,9 +140,12 @@
       const y = p.y - drag.oy
       drag = { ...drag, x, y, corner: cornerAt(x + drag.w / 2, y + drag.h / 2, size.width, size.height) }
     } else if (aiming) aim(e)
+    else if (shaping) shape(e)
     else if (e.buttons === 0) {
-      const cam = scene()?.camera
-      hover = cam && cam.opacity > 0.01 && inside(p, cam.rect) ? 'camera' : zooms.length ? 'aim' : ''
+      const s = scene()
+      const cam = s?.camera
+      const q = mask && s && screenPoint(s, p.x, p.y)
+      hover = cam && cam.opacity > 0.01 && inside(p, cam.rect) ? 'camera' : q && onMask(q) ? 'move' : zooms.length || mask ? 'aim' : ''
     }
   }
 
@@ -113,6 +156,7 @@
     }
     drag = null
     aiming = false
+    shaping = null
   }
 
   const pct = (v: number, of: number) => `${(v / of) * 100}%`
@@ -131,12 +175,15 @@
       onpointerdown={pointerdown}
       onpointermove={pointermove}
       onpointerup={pointerup}
-      onpointercancel={() => ((drag = null), (aiming = false))}
+      onpointercancel={() => ((drag = null), (aiming = false), (shaping = null))}
       onpointerleave={() => !drag && !aiming && (hover = '')}
     >
       <canvas {@attach render}>Video preview</canvas>
       {#if marker}
         <span class="marker" style:left="{marker.x}%" style:top="{marker.y}%" aria-hidden="true"></span>
+      {/if}
+      {#if maskBox}
+        <span class="mask-box" style:left={maskBox.left} style:top={maskBox.top} style:width={maskBox.width} style:height={maskBox.height} aria-hidden="true"></span>
       {/if}
       {#if drag}
         <span class="quadrant {drag.corner}" aria-hidden="true"></span>
@@ -156,6 +203,7 @@
     background: #0a0a0b; box-shadow: 0 0 0 1px var(--border); overflow: hidden; touch-action: none;
   }
   .frame.aim { cursor: crosshair; }
+  .frame.move { cursor: move; }
   .frame.camera { cursor: grab; }
   .frame.dragging { cursor: grabbing; }
   canvas { display: block; width: 100%; height: 100%; }
@@ -163,6 +211,7 @@
     position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; pointer-events: none;
     border: 2px solid #fff; background: var(--accent); box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 2px 8px rgb(0 0 0 / 0.5);
   }
+  .mask-box { position: absolute; border: 1.5px dashed #fff; border-radius: 3px; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35); pointer-events: none; }
   .ghost { position: absolute; border-radius: 10px; border: 2px solid #fff; background: rgb(255 255 255 / 0.12); box-shadow: 0 6px 24px rgb(0 0 0 / 0.45); pointer-events: none; }
   .quadrant { position: absolute; width: 50%; height: 50%; background: var(--accent-soft); pointer-events: none; transition: inset 160ms var(--ease-out); }
   .quadrant.top-left { left: 0; top: 0; }

@@ -5,7 +5,7 @@
 </script>
 
 <script lang="ts">
-  import { doc, selection } from '../../../lib/doc.svelte.ts'
+  import { selection } from '../../../lib/doc.svelte.ts'
   import * as A from './actions.svelte.ts'
 
   let { x, y, t, target, onclose }: { x: number; y: number; t: number; target: Target; onclose: () => void } = $props()
@@ -111,9 +111,9 @@
     {@render item('Delete', A.remove, '⌫')}
   {:else if target.kind === 'lane'}
     {@render item({ zooms: 'Add zoom here', layouts: 'Add camera layout here', masks: 'Add mask here' }[target.track], () => A.add(target.track, t))}
-    {@render item('Paste at playhead', A.paste, '⌘V')}
+    {@render item('Paste at playhead', A.paste, '⌘V', !A.canPaste())}
   {:else}
-    {@render item('Paste at playhead', A.paste, '⌘V', !doc.project)}
+    {@render item('Paste at playhead', A.paste, '⌘V', !A.canPaste())}
   {/if}
 </div>
 

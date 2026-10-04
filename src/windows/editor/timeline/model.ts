@@ -244,13 +244,13 @@ export function mergeClips(clips: Clip[], i: number): Clip[] {
   return [...clips.slice(0, i), { ...a, end: b.end }, ...clips.slice(i + 2)]
 }
 
-/** Insert copies of `copies` at output time t, splitting the clip there. */
+/** Insert `copies` (ids already fresh) at output time t, splitting the clip there. */
 export function insertClips(clips: Clip[], t: number, copies: Clip[]): Clip[] {
   const next = splitAt(clips, t)
   const m = timeMap(next)
   let k = m.outStarts.findIndex((s) => s >= t - EPS)
   if (k < 0) k = next.length
-  return [...next.slice(0, k), ...copies.map((c) => ({ ...c, id: uid() })), ...next.slice(k)]
+  return [...next.slice(0, k), ...copies, ...next.slice(k)]
 }
 
 /** Copies of the clips in `ids`, placed right after the last of them. */
@@ -373,26 +373,6 @@ export function ticks(pps: number, px = 72): { major: number; minor: number } {
   const major = STEPS.find((s) => s * pps >= px) ?? 14400
   const minor = STEPS.find((s) => s < major && s * pps >= 18 && Math.abs(major / s - Math.round(major / s)) < 1e-9) ?? major
   return { major, minor }
-}
-
-/** Ruler label: "0:05", "1:05:00", or "0:05.5" for sub-second steps. */
-export function label(t: number, step: number, hours: boolean): string {
-  const r = Math.round(t * 10) / 10
-  const h = Math.floor(r / 3600)
-  const m = Math.floor((r % 3600) / 60)
-  const s = r % 60
-  const ss = step < 1 ? s.toFixed(1).padStart(4, '0') : String(Math.floor(s)).padStart(2, '0')
-  return hours ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${Math.floor(r / 60)}:${ss}`
-}
-
-/** Toolbar clock: "0:08.27" (hundredths), "1:02:03.45" past an hour. */
-export function clock(t: number): string {
-  const c = Math.max(0, Math.round(t * 100))
-  const h = Math.floor(c / 360000)
-  const m = Math.floor((c % 360000) / 6000)
-  const s = Math.floor((c % 6000) / 100)
-  const tail = `${String(s).padStart(2, '0')}.${String(c % 100).padStart(2, '0')}`
-  return h ? `${h}:${String(m).padStart(2, '0')}:${tail}` : `${m}:${tail}`
 }
 
 /** Short duration for badges: "8s", "1.5s", "2m 05s", "1h 02m". */

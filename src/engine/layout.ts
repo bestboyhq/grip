@@ -3,7 +3,7 @@
 // fullscreen, hidden, split) with spring transitions in output time, face-follow crop, hide when
 // silent, and masks locked to the screen. Pure: prepareLayout precomputes, layoutAt evaluates.
 
-import type { CameraLayoutKind, Rect, Style, Word } from '../shared/project.ts'
+import type { CameraLayoutKind, Mask, Rect, Style, Word } from '../shared/project.ts'
 import { mapRange, toSource, type TimeMap } from '../shared/timemap.ts'
 import { springDuration, springProgress, type SpringConfig } from './motion/spring.ts'
 import type { CameraLayer, FaceSample, MaskLayer, ScreenLayer, SceneInput } from './scene.ts'
@@ -34,8 +34,7 @@ export function prepareLayout(input: SceneInput, map: TimeMap, unit: number) {
   const targets = Object.fromEntries(KINDS.map((k) => [k, target(input, unit, k)])) as Record<Kind, State>
   const changes = input.project.sources.camera ? kindChanges(input, map) : [{ t: -Infinity, kind: 'pip' as Kind }]
   const faces = (input.faces ?? []).filter((f) => f && [f.t, f.x, f.y, f.w, f.h].every(Number.isFinite)).sort((a, b) => a.t - b.t)
-  const masks = input.project.masks.map((m) => ({ m, ranges: mapRange(map, m.start, m.end) }))
-  return { input, map, unit, targets, changes, faces, masks }
+  return { input, map, unit, targets, changes, faces, masks: maskIndex(input.project.masks, map) }
 }
 
 export type PreparedLayout = ReturnType<typeof prepareLayout>
@@ -273,9 +272,33 @@ export function faceAt(faces: FaceSample[], t: number): Omit<FaceSample, 't'> | 
 
 // ---- Masks. ----
 
+/** Masks with their output pieces, sorted by the start of their fade window, with a running max of
+ *  window ends: masksAt visits only the masks around t. The zoom camera and the cursor ask for the
+ *  layout at every 120 Hz step of a 2-hour project, so a scan over every mask per call adds up. */
+function maskIndex(masks: Mask[], map: TimeMap) {
+  const list = masks
+    .map((m, i) => ({ m, i, ranges: mapRange(map, m.start, m.end) }))
+    .filter((x) => x.ranges.length)
+    .map((x) => ({ ...x, lo: x.ranges[0][0] - MASK_FADE, hi: x.ranges.at(-1)![1] + MASK_FADE }))
+    .sort((a, b) => a.lo - b.lo)
+  const maxHi: number[] = []
+  list.forEach((x, k) => maxHi.push(Math.max(k ? maxHi[k - 1] : -Infinity, x.hi)))
+  return { list, maxHi }
+}
+
 function masksAt(l: PreparedLayout, t: number, screen: Rect): MaskLayer[] {
   const out: MaskLayer[] = []
-  for (const { m, ranges } of l.masks) {
+  const { list, maxHi } = l.masks
+  let lo = 0
+  let hi = list.length // first window starting after t
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (list[mid].lo <= t) lo = mid + 1
+    else hi = mid
+  }
+  const near: typeof list = []
+  for (let k = lo - 1; k >= 0 && maxHi[k] >= t; k--) if (list[k].hi >= t) near.push(list[k])
+  for (const { m, ranges } of near.sort((a, b) => a.i - b.i)) {
     let opacity = 0
     for (const [a, b] of ranges) opacity = Math.max(opacity, 1 - Math.max(a - t, t - b, 0) / MASK_FADE)
     if (opacity <= 0) continue

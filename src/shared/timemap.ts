@@ -70,7 +70,8 @@ function indexOf(m: TimeMap) {
   return ix
 }
 
-/** A source range -> the output ranges that survive cuts, in output order. */
+/** A source range -> the output ranges that survive cuts, in output order. A split that removes
+ *  nothing (consecutive clips continuing the same source) does not break a range in two. */
 export function mapRange(m: TimeMap, start: number, end: number): Array<[number, number]> {
   const { order, maxEnd } = indexOf(m)
   let lo = 0
@@ -83,11 +84,16 @@ export function mapRange(m: TimeMap, start: number, end: number): Array<[number,
   const hits: number[] = []
   for (let k = lo - 1; k >= 0 && maxEnd[k] > start; k--) if (m.clips[order[k]].end > start) hits.push(order[k])
   const out: Array<[number, number]> = []
+  let prev = -1
   for (const i of hits.sort((a, b) => a - b)) {
     const c = m.clips[i]
     const s = Math.max(start, c.start)
     const e = Math.min(end, c.end)
-    if (e - s > EPS) out.push([m.outStarts[i] + (s - c.start) / c.speed, m.outStarts[i] + (e - c.start) / c.speed])
+    if (e - s <= EPS) continue
+    const b = m.outStarts[i] + (e - c.start) / c.speed
+    if (i > 0 && prev === i - 1 && s === c.start && Math.abs(m.clips[prev].end - s) < EPS) out[out.length - 1][1] = b
+    else out.push([m.outStarts[i] + (s - c.start) / c.speed, b])
+    prev = i
   }
   return out
 }

@@ -45,13 +45,16 @@ export function cornerAt(x: number, y: number, w: number, h: number): CameraPosi
   return `${y < h / 2 ? 'top' : 'bottom'}-${x < w / 2 ? 'left' : 'right'}`
 }
 
-/** 0:05.58, 12:03.10, 1:02:03.45 (floored to the centisecond, like a timecode). */
-export function formatTime(t: number): string {
-  const cs = Math.floor(Math.max(0, t) * 100 + 1e-6)
-  const s = Math.floor(cs / 100)
-  const ss = String(s % 60).padStart(2, '0') + '.' + String(cs % 100).padStart(2, '0')
+/** The one time display: 0:05.58, 12:03.10, 1:02:03.45, or 0:05 / 0:05.5 with fewer `digits`.
+ *  Floored like a timecode, so every place shows the same digits for the same moment; `hours` keeps
+ *  the hour field under an hour too (ruler labels of a long project line up). */
+export function formatTime(t: number, digits = 2, hours = false): string {
+  const k = 10 ** digits
+  const n = Math.floor(Math.max(0, t) * k + 1e-6) // the epsilon absorbs float noise (11.37 * 100 = 1136.99...)
+  const s = Math.floor(n / k)
+  const ss = String(s % 60).padStart(2, '0') + (digits ? '.' + String(n % k).padStart(digits, '0') : '')
   const m = Math.floor(s / 60)
-  return m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}:${ss}` : `${m}:${ss}`
+  return hours || m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}:${ss}` : `${m}:${ss}`
 }
 
 const CODES: Record<string, string> = {

@@ -69,6 +69,7 @@
   })
 
   const aiming = $derived(!!doc.project?.zooms.some((z) => selection.ids.includes(z.id)))
+  const masking = $derived(!aiming && !!doc.project?.masks.some((m) => selection.ids.includes(m.id)))
   const undoable = $derived.by(() => (doc.rev, { undo: canUndo(), redo: canRedo() }))
 
   $effect(() => {
@@ -220,7 +221,8 @@
       <section class="stage">
         <div class="toolbar">
           <AspectPicker />
-          {#if aiming}<span class="aim-hint"><Icon name="target" size={15} />Click the preview to aim the selected zoom</span>{/if}
+          {#if aiming}<span class="aim-hint"><Icon name="target" size={15} />Click the preview to aim the selected zoom</span>
+          {:else if masking}<span class="aim-hint"><Icon name="target" size={15} />Drag on the preview to draw the mask, or drag the mask to move it</span>{/if}
         </div>
         <Preview />
       </section>
@@ -262,8 +264,9 @@
   .toolbar { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; }
   .aim-hint { display: flex; align-items: center; gap: 6px; margin-left: auto; color: var(--text-faint); font-size: 12px; }
 
-  /* As tall as its lanes, so every lane shows; the preview takes the rest. */
-  .timeline { flex: none; max-height: 45vh; overflow: auto; }
+  /* As tall as its lanes, so every lane shows; the preview takes the rest. 60vh fits all six lanes (312 px)
+     at the 600 px minimum window height, so lanes never scroll out of reach (the canvas takes the wheel). */
+  .timeline { flex: none; max-height: 60vh; overflow: auto; }
 
   .notice {
     position: fixed; z-index: 10; top: 58px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; margin: 0;
