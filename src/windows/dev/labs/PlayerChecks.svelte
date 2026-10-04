@@ -106,6 +106,29 @@
       assert(back < 10 * fwd, `backward ${back.toFixed(0)} ms vs forward ${fwd.toFixed(0)} ms for ${steps.length} frames`)
       return `backward ${back.toFixed(0)} ms, forward ${fwd.toFixed(0)} ms`
     })
+    await check('across a cut, the next clip decoded ahead (prefetch) shows without waiting, exact', async () => {
+      // Play 0.2 s, then jump 4 s ahead to 14 frames past a keyframe (1 s keyframe interval, like recordings).
+      const jump = async (ahead: boolean) => {
+        const src = await openVideo(fileUrl(`${dir}/gop.mp4`))
+        for (let t = 0; t < 0.2; t += 1 / 30) (await src.frameAt(t))?.close()
+        if (ahead) {
+          src.prefetch(4.47, 0.2)
+          await new Promise((r) => setTimeout(r, 300))
+        }
+        const t0 = performance.now()
+        const f = await src.frameAt(4.47)
+        const ms = performance.now() - t0
+        const at = f!.timestamp / 1e6
+        f!.close()
+        src.close()
+        assert(Math.abs(at - 134 / 30) < 1e-3, `frame at ${at} for 4.47`)
+        return ms
+      }
+      const cold = await jump(false)
+      const warm = await jump(true)
+      assert(warm < cold / 2, `prefetched jump ${warm.toFixed(1)} ms vs cold ${cold.toFixed(1)} ms`)
+      return `prefetched jump ${warm.toFixed(1)} ms, cold ${cold.toFixed(1)} ms`
+    })
 
     await check('AAC audio stays aligned through encoder priming', async () => {
       const buf = await renderAudio(prepared(audioOnly(`${dir}/click.m4a`, 4)), '/', 0, 4)

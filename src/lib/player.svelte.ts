@@ -13,7 +13,7 @@
 import { doc, save } from './doc.svelte.ts'
 import type { InputEvent } from '../shared/events.ts'
 import type { Project, Transcript } from '../shared/project.ts'
-import { mapRange, timeMap, toOutput, toSource } from '../shared/timemap.ts'
+import { clipAt, mapRange, timeMap, toOutput, toSource } from '../shared/timemap.ts'
 import { outputSize, prepare, type FaceSample, type Prepared } from '../engine/scene.ts'
 import { renderFrame, type Media } from '../engine/compose.ts'
 import { Renderer } from '../engine/gpu/renderer.ts'
@@ -210,6 +210,7 @@ function frame(ts: number) {
     } else player.time = t
   }
   if (!prepared || !renderer) return
+  if (player.playing) prefetchCut(prepared, player.time)
   if (inFlight) {
     if (player.playing) stats.dropped++
     return
@@ -229,6 +230,17 @@ function frame(ts: number) {
     })
     .catch(fail)
     .finally(() => (inFlight = false))
+}
+
+/** Half a second before playback reaches a cut, start decoding where the next clip begins, so the
+ *  frame after the cut is ready instead of waiting for a keyframe decode. */
+let warmed = NaN
+function prefetchCut(p: Prepared, t: number) {
+  const i = clipAt(p.map, t) + 1
+  const src = p.map.clips[i]?.start
+  if (src === undefined || src === warmed || p.map.outStarts[i] - t > 0.5) return
+  warmed = src
+  for (const k of Object.keys(media) as Array<keyof Media>) media[k]?.prefetch(src, toSource(p.map, t))
 }
 
 function rebuild(project: Project, width: number, height: number, splice = true) {

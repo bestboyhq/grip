@@ -1,9 +1,9 @@
 // Decoding needs WebCodecs, so these checks run in Electron: this file generates test media with
 // ffmpeg, starts Vite, and launches itself as Electron's main script, which opens the
 // PlayerChecks lab (src/windows/dev/labs/PlayerChecks.svelte) hidden and reports its results.
-// Covers: frameAt on VFR H.264 with B-frames, HEVC, and the fixture; stepping backward; AAC priming
-// alignment; a full-level head on every music loop; an imported .mp4 as its own audio; renderAudio
-// length, 2x, chunk joins; peaks cache.
+// Covers: frameAt on VFR H.264 with B-frames, HEVC, and the fixture; stepping backward; decoding
+// ahead across a cut; AAC priming alignment; a full-level head on every music loop; an imported .mp4
+// as its own audio; renderAudio length, 2x, chunk joins; peaks cache.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile, execFileSync } from 'node:child_process'
@@ -44,6 +44,8 @@ if (process.versions.electron) {
     // HEVC, 30 fps, gray level 16 + 3 i.
     ff(dir, ['-f', 'lavfi', '-i', "nullsrc=s=128x128:r=30:d=2,format=yuv420p,geq=lum='16+3*N':cb=128:cr=128",
       '-c:v', 'libx265', '-tag:v', 'hvc1', '-crf', '4', '-x265-params', 'bframes=3:keyint=15:log-level=error', '-pix_fmt', 'yuv420p', 'hevc.mp4'])
+    // 6 s at 30 fps with a keyframe every second, like a recording.
+    ff(dir, ['-f', 'lavfi', '-i', 'testsrc2=s=128x128:r=30:d=6', '-c:v', 'libx265', '-tag:v', 'hvc1', '-x265-params', 'keyint=30:log-level=error', '-pix_fmt', 'yuv420p', 'gop.mp4'])
     // AAC with 2 ms clicks at exactly 1.0 s and 2.5 s.
     const clicks = "aevalsrc='0.8*(between(t,1,1.002)+between(t,2.5,2.502))':s=48000:d=4"
     ff(dir, ['-f', 'lavfi', '-i', clicks, '-c:a', 'aac', '-b:a', '192k', 'click.m4a'])
