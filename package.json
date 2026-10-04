@@ -11,7 +11,8 @@
     "build:native": "cd native && napi build --platform --release --dts index.d.ts --no-js",
     "start": "electron .",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "node --test 'src/**/*.test.ts' 'electron/**/*.test.ts'"
+    "server": "node server/server.ts",
+    "test": "node --test 'src/**/*.test.ts' 'electron/**/*.test.ts' 'server/**/*.test.ts'"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.10.6",

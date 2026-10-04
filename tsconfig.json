@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "isolatedModules": true
   },
-  "include": ["src", "electron", "scripts", "native/index.d.ts"]
+  "include": ["src", "electron", "scripts", "server", "native/index.d.ts"]
 }
