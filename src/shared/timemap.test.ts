@@ -24,6 +24,13 @@ test('mapRange splits a range across a cut', () => {
   assert.deepEqual(mapRange(m, 12, 18), [])
 })
 
+test('mapRange keeps a range whole across a split that removes nothing, at any speed', () => {
+  const m = timeMap(setSpeed(splitAt([clip(0, 30)], 10), 10, 30, 2)) // 0-10 at 1x, 10-30 at 2x
+  assert.deepEqual(mapRange(m, 8, 14), [[8, 12]])
+  const cut = timeMap([clip(0, 10), clip(10, 20), clip(25, 30)])
+  assert.deepEqual(mapRange(cut, 5, 28), [[5, 20], [20, 23]]) // a real cut still splits it
+})
+
 test('edits', () => {
   let c = [clip(0, 30)]
   c = splitAt(c, 10)

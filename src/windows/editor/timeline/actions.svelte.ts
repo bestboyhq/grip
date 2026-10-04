@@ -3,7 +3,7 @@
 // keep the source time, seek through toOutput afterwards.
 
 import { tick } from 'svelte'
-import type { CameraLayout, CameraLayoutKind, Clip, Mask, Project, Zoom } from '../../../shared/project.ts'
+import { uid, type CameraLayout, type CameraLayoutKind, type Clip, type Mask, type Project, type Zoom } from '../../../shared/project.ts'
 import { clipAt, splitAt, timeMap, toSource } from '../../../shared/timemap.ts'
 import { canRedo, canUndo, doc, edit, redo, selection, undo } from '../../../lib/doc.svelte.ts'
 import { player, seek, toggle } from '../../../lib/player.svelte.ts'
@@ -50,8 +50,14 @@ export async function keepingPlayhead(fn: () => void) {
 
 /** Edit only when `next` differs, so no-ops leave no undo step. */
 function set<K extends keyof Items>(k: K, next: Items[K]) {
-  if (next !== project()[k]) edit((p) => { p[k] = next as Project[K] })
+  if (JSON.stringify(next) !== JSON.stringify(project()[k])) edit((p) => { p[k] = next as Project[K] })
 }
+
+/** Change the items of kind `k` in `ids` (every one when absent). */
+function each<K extends keyof Items>(k: K, ids: Set<string> | null, fn: (x: Items[K][number]) => Items[K][number]) {
+  if (ids?.size !== 0) set(k, (project()[k] as Items[K][number][]).map((x) => (!ids || ids.has(x.id) ? fn(x) : x)) as Items[K])
+}
+const ids = (k: Kind) => new Set(selected(k).map((x) => x.id))
 
 // ---- Clips ----
 
@@ -76,24 +82,21 @@ export function remove() {
 }
 
 export function setSpeed(speed: number) {
-  const ids = targetClips()
-  if (ids.size) keepingPlayhead(() => edit((q) => { q.clips = q.clips.map((c) => (ids.has(c.id) ? { ...c, speed } : c)) }))
+  const target = targetClips()
+  keepingPlayhead(() => each('clips', target, (c) => ({ ...c, speed })))
 }
 
-export function setVolume(volume: number) {
-  const ids = targetClips()
-  if (ids.size) edit((q) => { q.clips = q.clips.map((c) => (ids.has(c.id) ? { ...c, volume, muted: false } : c)) })
-}
+export const setVolume = (volume: number) => each('clips', targetClips(), (c) => ({ ...c, volume, muted: false }))
 
 export function toggleMute() {
-  const ids = targetClips()
-  const muted = !project().clips.filter((c) => ids.has(c.id)).every((c) => c.muted)
-  if (ids.size) edit((q) => { q.clips = q.clips.map((c) => (ids.has(c.id) ? { ...c, muted } : c)) })
+  const target = targetClips()
+  const muted = !project().clips.filter((c) => target.has(c.id)).every((c) => c.muted)
+  each('clips', target, (c) => ({ ...c, muted }))
 }
 
 export function speedToAll() {
   const speed = selected('clips')[0]?.speed
-  if (speed) keepingPlayhead(() => edit((q) => { q.clips = q.clips.map((c) => ({ ...c, speed })) }))
+  if (speed) keepingPlayhead(() => each('clips', null, (c) => ({ ...c, speed })))
 }
 
 /** Merge the selected clip with its neighbor. */
@@ -113,38 +116,41 @@ export function restore(after: number) {
   keepingPlayhead(() => set('clips', M.restoreCut(project().clips, after, project().sources.duration)))
 }
 
+/** The cut marker nearest the playhead (what clicking its marker restores), for the keyboard. */
+const nearestCut = () =>
+  M.cuts(mapNow(), project().sources.duration).reduce<M.Cut | null>((a, c) => (!a || Math.abs(c.t - player.time) < Math.abs(a.t - player.time) ? c : a), null)
+
 // ---- Zooms, layouts, masks ----
 
-export function setLevel(level: number) {
-  const ids = new Set(selected('zooms').map((z) => z.id))
-  if (ids.size) edit((q) => { q.zooms = q.zooms.map((z) => (ids.has(z.id) ? { ...z, level } : z)) })
-}
+export const setLevel = (level: number) => each('zooms', ids('zooms'), (z) => ({ ...z, level }))
+// Toggles turn a setting on for every selected zoom unless all of them have it already.
 export function toggleZooms() {
-  const zs = selected('zooms')
-  const enabled = !zs.every((z) => z.enabled)
-  const ids = new Set(zs.map((z) => z.id))
-  if (ids.size) edit((q) => { q.zooms = q.zooms.map((z) => (ids.has(z.id) ? { ...z, enabled } : z)) })
+  const enabled = !selected('zooms').every((z) => z.enabled)
+  each('zooms', ids('zooms'), (z) => ({ ...z, enabled }))
 }
+export function toggleInstant() {
+  const instant = !selected('zooms').every((z) => z.instant)
+  each('zooms', ids('zooms'), (z) => ({ ...z, instant }))
+}
+export function toggleLoupe() {
+  const mode = selected('zooms').every((z) => z.mode === 'loupe') ? 'zoom' : 'loupe'
+  each('zooms', ids('zooms'), (z) => ({ ...z, mode }))
+}
+export const followCursor = () => each('zooms', ids('zooms'), (z) => ({ ...z, target: { kind: 'cursor' } }))
 export function levelToAll() {
   const level = selected('zooms')[0]?.level
-  if (level) edit((q) => { q.zooms = q.zooms.map((z) => ({ ...z, level })) })
+  if (level) each('zooms', null, (z) => ({ ...z, level }))
 }
-export function setLayout(kind: CameraLayoutKind) {
-  const ids = new Set(selected('layouts').map((l) => l.id))
-  if (ids.size) edit((q) => { q.layouts = q.layouts.map((l) => (ids.has(l.id) ? { ...l, kind } : l)) })
-}
+export const setLayout = (kind: CameraLayoutKind) => each('layouts', ids('layouts'), (l) => ({ ...l, kind }))
 export function layoutToAll() {
   const kind = selected('layouts')[0]?.kind
-  if (kind) edit((q) => { q.layouts = q.layouts.map((l) => ({ ...l, kind })) })
+  if (kind) each('layouts', null, (l) => ({ ...l, kind }))
 }
-export function setMask(kind: Mask['kind']) {
-  const ids = new Set(selected('masks').map((m) => m.id))
-  if (ids.size) edit((q) => { q.masks = q.masks.map((m) => (ids.has(m.id) ? { ...m, kind } : m)) })
-}
+export const setMask = (kind: Mask['kind']) => each('masks', ids('masks'), (m) => ({ ...m, kind }))
 
 /** A new item of `track` over source [start, end]. */
 export function make(track: M.ItemTrack, start: number, end: number): Zoom | CameraLayout | Mask {
-  const id = crypto.randomUUID().slice(0, 8)
+  const id = uid()
   if (track === 'zooms') return { id, start, end, level: project().style.autoZoom.level || 2, target: { kind: 'cursor' }, enabled: true } satisfies Zoom
   if (track === 'layouts') return { id, start, end, kind: 'fullscreen' } satisfies CameraLayout
   return { id, start, end, kind: 'blur', rect: { x: 0.3, y: 0.3, w: 0.4, h: 0.3 } } satisfies Mask
@@ -167,6 +173,7 @@ export function add(track: M.ItemTrack, t = player.time, len = 3) {
 // ---- Selection, clipboard ----
 
 let clipboard: Items | null = null
+export const canPaste = () => !!doc.project && !!clipboard
 
 export function copy() {
   if (selection.ids.length) clipboard = Object.fromEntries(KINDS.map((k) => [k, plain(selected(k))])) as Items
@@ -176,14 +183,16 @@ export function copy() {
  *  other items land at the playhead's source moment, keeping their spacing. */
 export function paste() {
   if (!clipboard || !doc.project) return
-  const before = new Set(KINDS.flatMap((k) => list(k).map((x) => x.id)))
   if (clipboard.clips.length) {
-    set('clips', M.insertClips(project().clips, player.time, clipboard.clips))
-  } else {
-    const first = Math.min(...ITEM_KINDS.flatMap((k) => clipboard![k].map((x) => x.start)))
-    if (!isFinite(first)) return
-    placeItems(clipboard, toSource(mapNow(), player.time) - first)
+    const copies = clipboard.clips.map((c) => ({ ...c, id: uid() }))
+    set('clips', M.insertClips(project().clips, player.time, copies))
+    selection.ids = copies.map((c) => c.id) // not the clip the paste split in two
+    return
   }
+  const before = new Set(KINDS.flatMap((k) => list(k).map((x) => x.id)))
+  const first = Math.min(...ITEM_KINDS.flatMap((k) => clipboard![k].map((x) => x.start)))
+  if (!isFinite(first)) return
+  placeItems(clipboard, toSource(mapNow(), player.time) - first)
   selection.ids = KINDS.flatMap((k) => list(k).map((x) => x.id)).filter((id) => !before.has(id))
 }
 
@@ -260,7 +269,7 @@ export function timelineCommands(view: { zoom: (f: number) => void; fit: () => v
       hint: 'ripple delete for clips',
     }),
     c('copy', 'Edit', 'Copy', copy, () => open() && selection.ids.length > 0, ['⌘C']),
-    c('paste', 'Edit', 'Paste at playhead', paste, () => open() && !!clipboard, ['⌘V']),
+    c('paste', 'Edit', 'Paste at playhead', paste, canPaste, ['⌘V']),
     c('duplicate', 'Edit', 'Duplicate', duplicate, () => open() && selection.ids.length > 0, ['⌘D']),
     c('selectAll', 'Edit', 'Select all', selectAll, open, ['⌘A']),
     c('deselect', 'Edit', 'Deselect', () => { selection.ids = [] }, () => selection.ids.length > 0, ['⎋']),
@@ -271,12 +280,16 @@ export function timelineCommands(view: { zoom: (f: number) => void; fit: () => v
     c('mute', 'Clip', 'Mute / unmute clip', toggleMute, clipTarget, ['M']),
     c('mergePrev', 'Clip', 'Merge with previous clip', () => merge(-1), () => open() && canMerge(-1)),
     c('mergeNext', 'Clip', 'Merge with next clip', () => merge(1), () => open() && canMerge(1)),
+    c('restoreCut', 'Clip', 'Restore the nearest cut', () => restore(nearestCut()!.after), () => open() && !!nearestCut(), [], { hint: 'brings back what was cut there' }),
 
     c('addZoom', 'Zoom', 'Add zoom at playhead', () => add('zooms'), open, ['Z']),
     ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((d) =>
       c(`level${d}`, 'Zoom', `Set zoom level ${M.levelForDigit(d)}×`, () => setLevel(M.levelForDigit(d)), () => open() && has('zooms'), [String(d)]),
     ),
     c('toggleZoom', 'Zoom', 'Enable / disable zoom', toggleZooms, () => open() && has('zooms'), ['E']),
+    c('instant', 'Zoom', 'Instant / animated zoom', toggleInstant, () => open() && has('zooms'), [], { hint: 'cut in and out' }),
+    c('loupe', 'Zoom', 'Loupe / full zoom', toggleLoupe, () => open() && has('zooms'), [], { hint: 'magnify in place' }),
+    c('followCursor', 'Zoom', 'Zoom follows the cursor', followCursor, () => open() && has('zooms'), [], { hint: 'or click the preview to aim' }),
     c('levelAll', 'Zoom', 'Apply zoom level to all zooms', levelToAll, () => open() && has('zooms')),
 
     c('addLayout', 'Camera layout', 'Add camera layout at playhead', () => add('layouts'), () => open() && !!project().sources.camera, ['L']),

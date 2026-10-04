@@ -64,9 +64,9 @@ test('clip edits', () => {
   assert.equal(M.removeClips(clips, new Set(clips.map((c) => c.id))), clips, 'never removes every clip')
   assert.deepEqual(M.removeClips(clips, new Set(['c10'])).map((c) => c.start), [0, 25])
   assert.deepEqual(M.mergeClips(clips, 1).map((c) => [c.start, c.end]), [[0, 10], [10, 30]])
-  const pasted = M.insertClips(clips, 5, [clips[2]])
+  const pasted = M.insertClips(clips, 5, [{ ...clips[2], id: 'copy' }])
   assert.deepEqual(pasted.map((c) => [c.start, c.end]), [[0, 5], [25, 30], [5, 10], [10, 20], [25, 30]])
-  assert.notEqual(pasted[1].id, clips[2].id)
+  assert.equal(pasted[1].id, 'copy') // the caller's fresh id: paste selects the copies, not the clip it split
   assert.deepEqual(M.duplicateClips(clips, new Set(['c0'])).map((c) => c.start), [0, 0, 10, 25])
 })
 
@@ -106,11 +106,6 @@ test('keystroke chips: shortcuts stand alone, typing runs merge', () => {
 
 test('formatting', () => {
   assert.deepEqual(M.ticks(50), { major: 2, minor: 0.5 })
-  assert.equal(M.label(65, 5, false), '1:05')
-  assert.equal(M.label(65.5, 0.5, false), '1:05.5')
-  assert.equal(M.label(3725, 300, true), '1:02:05')
-  assert.equal(M.clock(8.27), '0:08.27')
-  assert.equal(M.clock(3723.456), '1:02:03.46')
   assert.equal(M.span(8.04), '8s')
   assert.equal(M.span(125), '2m 05s')
   assert.equal(M.levelForDigit(2), 2)

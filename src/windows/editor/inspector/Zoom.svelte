@@ -66,7 +66,7 @@
 {#if z}
   <Section title={selected.length > 1 ? `${selected.length} zooms selected` : z.auto ? 'Selected zoom (automatic)' : 'Selected zoom'}>
     <Toggle label="Enabled" checked={z.enabled} onchange={(v) => each((s) => (s.enabled = v))} />
-    <Slider label="Level" value={z.level} min={1.1} max={4} step={0.05} initial={auto.level} format={(v) => `${v.toFixed(1)}×`} onchange={(v, m) => each((s) => (s.level = v), m)} />
+    <Slider label="Level" value={z.level} min={1.1} max={6} step={0.05} initial={auto.level} format={(v) => `${v.toFixed(1)}×`} onchange={(v, m) => each((s) => (s.level = v), m)} />
     <Segmented
       label="Type"
       value={z.mode ?? 'zoom'}

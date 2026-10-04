@@ -43,6 +43,13 @@ test('formatTime', () => {
   assert.equal(formatTime(723.1), '12:03.10')
   assert.equal(formatTime(3723.456), '1:02:03.45')
   assert.equal(formatTime(-1), '0:00.00')
+  // One formatter for clock, ruler, and clip labels: the same moment reads the same everywhere.
+  assert.equal(formatTime(11.365384615384615), '0:11.36')
+  assert.equal(formatTime(11.37), '0:11.37') // float noise never shows the previous hundredth
+  assert.equal(formatTime(11.96, 0), '0:11')
+  assert.equal(formatTime(0.1 * 29, 1), '0:02.9')
+  assert.equal(formatTime(65.5, 1), '1:05.5')
+  assert.equal(formatTime(300, 0, true), '0:05:00')
 })
 
 test('reason strips the IPC wrapper', () => {

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createProject, type Project, type Rect } from '../shared/project.ts'
-import { timeMap } from '../shared/timemap.ts'
+import { mapRange, timeMap } from '../shared/timemap.ts'
 import { prepareLayout, layoutAt, fitScreen, deviceGeometry, deviceBounds, cameraCrop, faceAt, silentRanges, voiceRanges } from './layout.ts'
 
 const W = 1920, H = 1080
@@ -154,6 +154,29 @@ test('masks are locked to the screen and fade outside their range, never inside 
   assert.ok(at(p, 4.9).masks[0].opacity > 0 && at(p, 4.9).masks[0].opacity < 1)
   assert.equal(at(p, 4).masks.length, 0)
   assert.equal(at(p, 8).masks[0].opacity, 1)
+})
+
+test('masks around t are found by index: same layers, in project order, as a scan over every mask', () => {
+  let seed = 3
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+  const p = project((p) => {
+    p.clips = [{ id: 'a', start: 0, end: 12, speed: 1, volume: 1 }, { id: 'b', start: 14, end: 30, speed: 2, volume: 1 }]
+    p.masks = Array.from({ length: 60 }, (_, i) => {
+      const start = rnd() * 28
+      return { id: `m${i}`, start, end: start + 0.1 + rnd() * (i % 7 ? 2 : 20), kind: 'blur' as const, rect: { x: rnd() * 0.5, y: 0, w: 0.1, h: 0.1 } }
+    })
+  })
+  const map = timeMap(p.clips)
+  const l = prepareLayout({ project: p, events: [], transcript: null, width: W, height: H }, map, 1)
+  for (let t = -0.5; t < map.duration + 0.5; t += 0.037) {
+    const s = layoutAt(l, t).screen!.rect
+    const scan = p.masks.flatMap((m) => {
+      let o = 0
+      for (const [a, b] of mapRange(map, m.start, m.end)) o = Math.max(o, 1 - Math.max(a - t, t - b, 0) / 0.2)
+      return o > 0 ? [{ x: s.x + m.rect.x * s.w, o: Math.min(o, 1) }] : []
+    })
+    assert.deepEqual(layoutAt(l, t).masks.map((m) => [m.rect.x, m.opacity]), scan.map((m) => [m.x, m.o]), `t=${t}`)
+  }
 })
 
 test('camera crop keeps the tile aspect, stays inside the frame, and centers the face', () => {

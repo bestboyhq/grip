@@ -4,6 +4,7 @@
 
 import type { CameraLayout, Clip, Mask, Zoom } from '../../../shared/project.ts'
 import * as M from './model.ts'
+import { formatTime } from '../helpers.ts'
 import type { Waveforms } from './waveform.ts'
 
 export const PAD = 16 // px before output time 0 and after the end
@@ -232,10 +233,10 @@ function ruler(ctx: CanvasRenderingContext2D, s: Scene, bottom: number) {
     const isMajor = Math.abs(t / major - Math.round(t / major)) < 1e-6
     if (isMajor) {
       ctx.fillStyle = C.rulerText
-      const text = M.label(t, major, hours)
+      const text = formatTime(t, major < 1 ? 1 : 0, hours)
       const half = measure(ctx, F_RULER, text) / 2 + 2
       ctx.font = F_RULER
-      ctx.fillText(text, M.clamp(x, half, v.W - half), 24) // the first and last labels stay whole
+      ctx.fillText(text, M.clamp(x, half, v.W - half), 23) // the first and last labels stay whole
       ctx.fillStyle = C.major
       dot(ctx, x, 31, 1.25)
       ctx.fillStyle = C.grid
@@ -301,6 +302,7 @@ function clipBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, c: Clip, b
 
   // Labels stay centered in the visible part of a long clip.
   const cx = sticky(v, xa, xb)
+  const vw = Math.min(xb, v.W) - Math.max(xa, 0) // labels fit the visible part they are centered in
   const len = (c.end - c.start) / c.speed
   const meta: Seg[] = [{ text: M.span(len), font: F_META, color: C.clipMeta }]
   meta.push({ icon: gauge, text: `${c.speed}×`, font: F_META, color: c.speed === 1 ? C.clipMeta : C.clipText, pill: c.speed === 1 ? undefined : C.pill })
@@ -313,21 +315,25 @@ function clipBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, c: Clip, b
     ctx.beginPath()
     ctx.rect(xa + 4, y, w - 8, h)
     ctx.clip()
-    if (fitsRow(ctx, title, w - 16) && fitsRow(ctx, meta, w - 16)) {
+    if (fitsRow(ctx, title, vw - 16) && fitsRow(ctx, meta, vw - 16)) {
       row1(ctx, title, cx, y + 18)
       row1(ctx, meta, cx, y + 33)
     } else {
       const compact = c.speed === 1 ? [meta[0]] : [meta[1]]
-      if (fitsRow(ctx, compact, w - 8)) row1(ctx, compact, cx, y + 22)
+      if (fitsRow(ctx, compact, vw - 8)) row1(ctx, compact, cx, y + 22)
     }
     ctx.restore()
     if (w > 200) {
+      // Source in and out, above the waveform: only whole, and clear of the title centered between them.
+      const a = formatTime(c.start, 0)
+      const b = formatTime(c.end, 0)
+      const half = rowWidth(ctx, title) / 2 + 8
       ctx.font = F_SMALL
       ctx.fillStyle = C.clipMeta
       ctx.textAlign = 'left'
-      if (xa > -40) ctx.fillText(M.label(c.start, 1, false), xa + 9, y + 15) // source in and out, above the waveform
+      if (xa + 9 >= 0 && xa + 9 + measure(ctx, F_SMALL, a) <= cx - half) ctx.fillText(a, xa + 9, y + 15)
       ctx.textAlign = 'right'
-      if (xb < v.W + 40) ctx.fillText(M.label(c.end, 1, false), xb - 9, y + 15)
+      if (xb - 9 <= v.W && xb - 9 - measure(ctx, F_SMALL, b) >= cx + half) ctx.fillText(b, xb - 9, y + 15)
     }
   }
 }
@@ -422,7 +428,7 @@ function itemBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.I
   }
   if (w < 18) return
   const cx = sticky(v, xa + cw, xb - cw)
-  const room = w - 2 * cw - 8
+  const room = Math.min(xb, v.W) - Math.max(xa, 0) - 2 * cw - 8 // the visible part the labels are centered in
   ctx.save()
   ctx.beginPath()
   ctx.rect(xa + cw, y, w - 2 * cw, h)
@@ -513,19 +519,19 @@ function cutMarks(ctx: CanvasRenderingContext2D, s: Scene, tA: number, tB: numbe
     right = l + w
     pills.push({ x0: l, x1: l + w, cut: c })
     const hot = s.hover?.kind === 'cut' && s.hover.cut === c
-    const y = RULER - 15
+    const y = RULER - 14 // clear of the ruler labels above
     ctx.fillStyle = hot ? C.cutHot : C.cut
     ctx.beginPath()
-    ctx.roundRect(l, y, w, 15, 7.5)
-    ctx.moveTo(x - 4, y + 14)
-    ctx.lineTo(x, y + 19)
-    ctx.lineTo(x + 4, y + 14)
+    ctx.roundRect(l, y, w, 14, 7)
+    ctx.moveTo(x - 4, y + 13)
+    ctx.lineTo(x, y + 18)
+    ctx.lineTo(x + 4, y + 13)
     ctx.fill()
     ctx.strokeStyle = C.cutText
     ctx.fillStyle = C.cutText
-    scissors(ctx, l + 6, y + 3, 9)
+    scissors(ctx, l + 6, y + 2.5, 9)
     ctx.font = F_SMALL
-    ctx.fillText(text, l + 19, y + 11)
+    ctx.fillText(text, l + 19, y + 10.5)
   })
 }
 
