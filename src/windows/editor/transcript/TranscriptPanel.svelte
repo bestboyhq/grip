@@ -343,14 +343,13 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    background: var(--bg);
     color: var(--text);
   }
   header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 40px;
+    height: 46px; /* title on the same line as the other inspector tabs' */
     padding: 0 12px 0 16px;
     flex: none;
   }

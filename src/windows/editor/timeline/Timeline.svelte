@@ -17,6 +17,7 @@
   import { PAD, RULER, draw, hit, rows as layoutRows, thumb, timeOf, xOf, type Audio, type Hit, type View } from './draw.ts'
   import { Waveforms, type PeaksFn } from './waveform.ts'
   import Menu, { type Target } from './Menu.svelte'
+  import { tooltip } from '../../../ui/tooltip.ts'
 
   let { peaks = enginePeaks }: { peaks?: PeaksFn } = $props()
 
@@ -279,7 +280,7 @@
   // ---- Input ----
 
   function onwheel(e: WheelEvent) {
-    if (!model) return
+    if (!model || lanesScroll(e)) return
     e.preventDefault()
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? view.W : 1
     if (e.ctrlKey || e.metaKey) {
@@ -295,6 +296,15 @@
       if (pointer) hovered()
       requestDraw()
     }
+  }
+
+  /** In a window too short for every lane, the editor scrolls the timeline: a vertical scroll then
+   *  moves the lanes, and panning is a horizontal swipe or ⇧-scroll. */
+  function lanesScroll(e: WheelEvent) {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return false
+    for (let box = canvas?.parentElement; box; box = box.parentElement)
+      if (box.scrollHeight > box.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(box).overflowY)) return true
+    return false
   }
 
   const local = (e: MouseEvent) => {
@@ -540,7 +550,7 @@
 <section class="timeline" aria-label="Timeline">
   <div class="bar" role="toolbar" aria-label="Timeline tools">
     <div class="left">
-      <button class="commands" title="Command menu (⌘K)" onclick={() => run('menu.toggle')}>
+      <button class="commands" onclick={() => run('menu.toggle')}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5" /><path d="M12.5 12.5L16.5 16.5" /></svg>
         <span>Commands</span>
         <kbd>⌘K</kbd>
@@ -548,17 +558,17 @@
     </div>
     <div class="center">
       <span class="time now">{M.clock(player.time)}</span>
-      <button class="icon" title="Go to start" aria-label="Go to start" onclick={() => seek(0)}>
+      <button class="icon" aria-label="Go to start" onclick={() => seek(0)} {@attach tooltip('Go to start')}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 4.5v11" /><path class="fill" d="M15.5 4.8v10.4L8 10z" /></svg>
       </button>
-      <button class="icon play" title="Play / pause (Space)" aria-label={player.playing ? 'Pause' : 'Play'} onclick={toggle}>
+      <button class="icon play" aria-label={player.playing ? 'Pause' : 'Play'} onclick={toggle} {@attach tooltip(player.playing ? 'Pause' : 'Play', 'Space')}>
         {#if player.playing}
           <svg viewBox="0 0 20 20" aria-hidden="true"><path class="fill" d="M6 4.5h2.6v11H6zM11.4 4.5H14v11h-2.6z" /></svg>
         {:else}
           <svg viewBox="0 0 20 20" aria-hidden="true"><path class="fill" d="M7 4.3v11.4L15.6 10z" /></svg>
         {/if}
       </button>
-      <button class="icon" title="Go to end" aria-label="Go to end" onclick={() => seek(duration)}>
+      <button class="icon" aria-label="Go to end" onclick={() => seek(duration)} {@attach tooltip('Go to end')}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15 4.5v11" /><path class="fill" d="M4.5 4.8v10.4L12 10z" /></svg>
       </button>
       <span class="time">{M.clock(duration)}</span>
@@ -566,14 +576,14 @@
     <div class="right">
       <button
         class={['icon', { armed: splitTool || alt }]}
-        title="Split tool (S, or hold ⌥)"
         aria-label="Split tool"
         aria-pressed={splitTool}
         onclick={() => (splitTool = !splitTool)}
+        {@attach tooltip('Split tool, or hold ⌥', 'S')}
       >
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.5l8.5 10M14 3.5l-8.5 10" /><circle cx="5.2" cy="15.3" r="2.3" /><circle cx="14.8" cy="15.3" r="2.3" /></svg>
       </button>
-      <button class="icon" title="Fit timeline (⌘0)" aria-label="Fit timeline" onclick={() => zoomTo(minPps())}>
+      <button class="icon" aria-label="Fit timeline" onclick={() => zoomTo(minPps())} {@attach tooltip('Fit timeline', '⌘0')}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h14M6 7l-3 3 3 3M14 7l3 3-3 3" /></svg>
       </button>
       <input
@@ -614,6 +624,10 @@
     border-top: 1px solid rgb(255 255 255 / 0.06);
   }
   .bar {
+    position: sticky; /* the transport stays put while lanes scroll in a short window */
+    top: 0;
+    z-index: 1;
+    background: inherit;
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cornerAt, formatTime, outputPoint, reason, resumeAt, screenPoint } from './helpers.ts'
-import type { Clip } from '../../shared/project.ts'
+import { cornerAt, formatTime, outputPoint, owesCameraAnalysis, reason, resumeAt, screenPoint } from './helpers.ts'
+import { createProject, type Clip } from '../../shared/project.ts'
 import type { Scene } from '../../engine/scene.ts'
 
 const clip = (start: number, end: number, speed = 1): Clip => ({ id: `${start}`, start, end, speed, volume: 1 })
@@ -49,4 +49,20 @@ test('reason strips the IPC wrapper', () => {
   assert.equal(reason(new Error("Error invoking remote method 'editor:importAsset': Error: The disk is full.")), 'The disk is full.')
   assert.equal(reason('plain'), 'plain')
   assert.match(reason(new Error("Error invoking remote method 'projects:open': Error: ENOENT: no such file or directory, open '/x/project.json'")), /moved, renamed, or deleted/)
+})
+
+test('owesCameraAnalysis: an effect that needs the analysis is on and its output is missing', () => {
+  const camera = { file: 'sources/camera.mp4', width: 1280, height: 720, fps: 30, scale: 1 }
+  const p = createProject('t', { duration: 10, camera })
+  assert.equal(owesCameraAnalysis(p), false) // no effect on
+  p.style.camera.removeBackground = true
+  assert.equal(owesCameraAnalysis(p), true)
+  p.sources.camera = { ...camera, matte: 'sources/camera-matte.mp4' }
+  assert.equal(owesCameraAnalysis(p), true) // the face track is still missing
+  p.sources.camera = { ...camera, matte: 'sources/camera-matte.mp4', faces: 'sources/camera-faces.json' }
+  assert.equal(owesCameraAnalysis(p), false)
+  p.style.camera.followFace = true
+  delete p.sources.camera
+  assert.equal(owesCameraAnalysis(p), false) // no camera, nothing to analyze
+  assert.equal(owesCameraAnalysis(null), false)
 })

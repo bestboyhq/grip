@@ -1,7 +1,38 @@
 <!-- Picture-in-picture camera: look, position, and on-device effects. Layout changes over time live
      on the timeline; these settings apply to every layout. -->
+<script lang="ts" module>
+  import { doc } from '../../../lib/doc.svelte.ts'
+  import { invoke, on } from '../../../lib/ipc.ts'
+  import { owesCameraAnalysis, reason } from '../helpers.ts'
+
+  // Background removal and face follow need the camera analysis (matte and face track). It runs after
+  // recording; when it is missing (interrupted by quitting, or failed) and either effect is on, the
+  // editor runs it (the main process dedupes a run in progress). State is per window, so it survives
+  // switching inspector tabs.
+  const analysis = $state({ progress: null as number | null, failed: '' })
+  let tried = ''
+  on('camera:progress', (e: { bundle: string; progress: number }) => e.bundle === doc.path && (analysis.progress = e.progress))
+  on('camera:analyzed', (e: { bundle: string; error?: string }) => {
+    if (e.bundle !== doc.path) return
+    analysis.progress = null
+    analysis.failed = e.error ?? ''
+  })
+
+  /** Start the camera analysis if an effect needs it. Once per project unless `retry` (a toggle). */
+  export function ensureCameraAnalysis(retry = false) {
+    if (!owesCameraAnalysis(doc.project) || (tried === doc.path && !retry)) return
+    tried = doc.path
+    analysis.failed = ''
+    analysis.progress ??= 0
+    invoke('camera:analyze', doc.path).catch((e) => {
+      analysis.progress = null
+      analysis.failed = reason(e)
+    })
+  }
+</script>
+
 <script lang="ts">
-  import { doc, edit } from '../../../lib/doc.svelte.ts'
+  import { edit } from '../../../lib/doc.svelte.ts'
   import { defaultStyle, type CameraPosition, type Style } from '../../../shared/project.ts'
   import Section from '../../../ui/Section.svelte'
   import Segmented from '../../../ui/Segmented.svelte'
@@ -32,6 +63,13 @@
       if (v === 'circle') p.style.camera.aspect = 1 // a circle is square by definition
     })
   }
+
+  const analyzed = $derived(!!source?.matte && !!source?.faces)
+  const analysisHint = (done?: string) =>
+    analyzed ? done
+    : analysis.failed ? `Camera analysis failed: ${analysis.failed}`
+    : analysis.progress !== null ? `Analyzing the camera… ${Math.round(analysis.progress * 100)}%`
+    : 'Applies once the camera analysis finishes.'
 
   async function loadLut() {
     error = ''
@@ -101,17 +139,17 @@
   <Section title="Effects">
     <Toggle
       label="Remove background"
-      hint={source.matte ? undefined : 'Applies once the camera analysis finishes.'}
+      hint={analysisHint()}
       checked={c.removeBackground}
       disabled={off}
-      onchange={set('removeBackground')}
+      onchange={(v) => (set('removeBackground')(v), ensureCameraAnalysis(true))}
     />
     <Toggle
       label="Follow face"
-      hint={source.faces ? 'Keeps your face centered in the frame.' : 'Applies once the camera analysis finishes.'}
+      hint={analysisHint('Keeps your face centered in the frame.')}
       checked={c.followFace}
       disabled={off}
-      onchange={set('followFace')}
+      onchange={(v) => (set('followFace')(v), ensureCameraAnalysis(true))}
     />
     <Toggle label="Hide when silent" hint="Shows the camera only while you speak." checked={c.hideWhenSilent} disabled={off || !doc.project!.sources.mic} onchange={set('hideWhenSilent')} />
     <div class="row lut" class:off>

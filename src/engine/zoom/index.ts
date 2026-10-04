@@ -112,9 +112,11 @@ function spans(zooms: Zoom[], map: TimeMap): Span[] {
   return out
 }
 
-/** Scale at which the screen covers an output narrower than it; 1 otherwise. */
-function baseScale(W: number, H: number, r: Rect): number {
-  return W / H < (r.w / r.h) * 0.98 ? Math.max(1, H / r.h) : 1
+/** Scale at which the screen's corner-safe `bounds` cover an output narrower than the screen `r`; 1
+ *  otherwise. Narrower is judged on `r` itself: the uniform corner inset of `bounds` widens its
+ *  aspect, and a large roundness would otherwise zoom in on an output that fits the screen. */
+function baseScale(W: number, H: number, r: Rect, bounds: Rect): number {
+  return W / H < (r.w / r.h) * 0.98 ? Math.max(1, H / bounds.h) : 1
 }
 
 /** The part of the screen a zoomed view may show: inset so its corners stay clear of the rounded ones
@@ -191,7 +193,7 @@ export function prepareZoom(input: SceneInput, map: TimeMap, layout: ReturnType<
     while (si < cam.length && cam[si].b <= ts) si++
     const span = si < cam.length && cam[si].a <= ts ? cam[si] : null
     const zoom = span?.zoom
-    const s = Math.max(baseScale(W, H, bounds), zoom ? zoom.level : 1)
+    const s = Math.max(baseScale(W, H, r, bounds), zoom ? zoom.level : 1)
 
     let c: Pt = { x: W / 2, y: H / 2 }
     if (zoom?.target.kind === 'point') c = aim = { x: r.x + zoom.target.x * r.w, y: r.y + zoom.target.y * r.h }

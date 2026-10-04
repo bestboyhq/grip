@@ -11,7 +11,7 @@
   import { tooltip } from '../../ui/tooltip.ts'
   import Background from './inspector/Background.svelte'
   import Cursor from './inspector/Cursor.svelte'
-  import Camera from './inspector/Camera.svelte'
+  import Camera, { ensureCameraAnalysis } from './inspector/Camera.svelte'
   import Zoom from './inspector/Zoom.svelte'
   import Captions from './inspector/Captions.svelte'
   import Audio from './inspector/Audio.svelte'
@@ -41,6 +41,9 @@
       if (doc.project?.zooms.some((z) => selection.ids.includes(z.id))) tab = 'zoom'
     })
   })
+
+  // Owed camera analysis (an effect on, its matte or face track missing) runs whatever tab is open.
+  $effect(() => ensureCameraAnalysis())
 
   const rail = $state<HTMLButtonElement[]>([])
   function onkeydown(e: KeyboardEvent) {
@@ -78,8 +81,9 @@
   </div>
 
   <div class="panel" id="panel" role="tabpanel" aria-labelledby="tab-{tab}">
-    <h2>{current.label}</h2>
-    {#key tab}<div class="content">
+    <!-- The transcript brings its own title bar (with subtitle export) and scrolls its text itself. -->
+    {#if tab !== 'transcript'}<h2>{current.label}</h2>{/if}
+    {#key tab}<div class="content" class:bare={tab === 'transcript'}>
       {#if tab === 'background'}
         <Background />
       {:else if tab === 'cursor'}
@@ -110,10 +114,16 @@
 
 <style>
   .inspector { flex: none; display: flex; padding: 0 10px 10px 0; }
-  .rail { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 52px; padding-top: 6px; }
+  /* In a short window the tabs scroll instead of squashing. */
+  .rail { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 52px; padding: 6px 0; overflow-y: auto; scrollbar-width: none; }
   .rail button {
+    flex: none;
     display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 9px;
     background: none; color: var(--text-faint); transition: background-color 120ms, color 120ms;
+  }
+  @media (max-height: 700px) {
+    .rail { gap: 2px; }
+    .rail button { height: 32px; }
   }
   .rail button:hover { color: var(--text); background: rgb(255 255 255 / 0.06); }
   .rail button.on { color: var(--accent-text); background: var(--accent-soft); }
@@ -123,5 +133,11 @@
   }
   h2 { flex: none; margin: 0; padding: 14px 16px 4px; font-size: 13px; font-weight: 600; }
   /* Content fades out under the title instead of being cut by a hard edge when scrolled. */
-  .content { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px 8px; --label-w: 88px; mask-image: linear-gradient(transparent, #000 10px); }
+  /* The scrollbar gutter is always reserved (and counted in the right padding), so controls keep
+     their place whether or not a tab overflows. */
+  .content {
+    flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding: 0 6px 8px 16px; --label-w: 88px;
+    mask-image: linear-gradient(transparent, #000 10px);
+  }
+  .content.bare { display: flex; flex-direction: column; overflow: hidden; padding: 0; mask-image: none; }
 </style>

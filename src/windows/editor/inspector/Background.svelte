@@ -54,6 +54,7 @@
   // The tab follows the background (undo, presets) but can be switched to browse other kinds.
   let kind = $derived<Background['kind']>(bg.kind)
   let error = $state('')
+  let missing = $state('') // the image file that failed to load
   let thumbs = $state<Map<string, string>>()
   thumbnails().then((m) => (thumbs = m), () => {})
 
@@ -116,10 +117,16 @@
       <ColorPicker label="To" value={stops.at(-1)!} onchange={(c, m) => setBg({ kind: 'gradient', stops: [...stops.slice(0, -1), c], angle }, m)} />
       <Slider label="Angle" value={angle} min={0} max={360} step={1} initial={135} format={(v) => `${Math.round(v)}°`} onchange={(a, m) => setBg({ kind: 'gradient', stops: [...stops], angle: a }, m)} />
     {:else if kind === 'color'}
-      <ColorPicker label="Color" value={color} swatches={COLORS} onchange={(c, m) => setBg({ kind: 'color', color: c }, m)} />
+      <ColorPicker label="Color" value={color} active={bg.kind === 'color'} swatches={COLORS} onchange={(c, m) => setBg({ kind: 'color', color: c }, m)} />
     {:else}
       {#if bg.kind === 'image'}
-        <img class="preview" src={fileUrl(`${doc.path}/${bg.file}`)} alt="Current background" />
+        {#key bg.file}
+          {#if missing !== bg.file}
+            <img class="preview" src={fileUrl(`${doc.path}/${bg.file}`)} alt="Current background" onerror={() => (missing = bg.kind === 'image' ? bg.file : '')} />
+          {:else}
+            <p class="preview missing" role="alert">The background image is missing from this project, so the default wallpaper shows. Choose another image.</p>
+          {/if}
+        {/key}
       {/if}
       <button class="btn wide" onclick={pickImage}><Icon name="upload" size={15} />{bg.kind === 'image' ? 'Replace image…' : 'Choose image…'}</button>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
@@ -130,7 +137,8 @@
 
 <Section title="Shape">
   <Slider label="Padding" value={st.padding} min={0} max={300} step={1} initial={init.padding} onchange={set('padding')} />
-  <Slider label="Roundness" value={st.radius} min={0} max={80} step={1} initial={init.radius} onchange={set('radius')} />
+  <!-- A device frame brings its own screen corners. -->
+  <Slider label="Roundness" value={st.radius} min={0} max={80} step={1} initial={init.radius} disabled={st.device !== 'none'} onchange={set('radius')} />
   <Slider label="Inset" value={st.inset ?? 0} min={0} max={120} step={1} initial={0} onchange={set('inset')} />
   <Slider label="Shadow" value={st.shadow} initial={init.shadow} format={(v) => `${Math.round(v * 100)}%`} onchange={set('shadow')} />
 </Section>
@@ -157,6 +165,7 @@
   .tile.on { box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1), 0 0 0 2px var(--bg-panel), 0 0 0 4px var(--accent); }
   .wide { width: 100%; }
   .preview { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--border); background: var(--bg-raised); }
+  .missing { display: grid; place-items: center; margin: 0; padding: 16px; font-size: 12px; line-height: 1.45; text-align: center; color: var(--text-dim); }
   .empty, .error { margin: 0; padding: 4px 0; font-size: 12px; line-height: 1.45; color: var(--text-faint); }
   .error { color: var(--danger); }
 </style>
