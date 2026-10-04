@@ -47,7 +47,7 @@ export function layoutAt(l: PreparedLayout, t: number): { screen: ScreenLayer | 
   const screen: ScreenLayer | null = project.sources.screen ? { rect: s.screen, radius: s.screenRadius, shadow: st.shadow, device: st.device } : null
   const cs = project.sources.camera
   let camera: CameraLayer | null = null
-  if (cs && s.cameraOpacity > 1e-3) {
+  if (cs && st.camera.visible !== false && s.cameraOpacity > 1e-3) {
     const src = toSource(l.map, t)
     camera = {
       rect: s.camera,

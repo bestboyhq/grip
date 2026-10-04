@@ -40,12 +40,18 @@ export async function save() {
   await invoke('projects:save', doc.path, snap)
 }
 
-/** Apply an edit. `fn` mutates the project in place. */
-export function edit(fn: (p: Project) => void) {
+let mergeKey = ''
+
+/** Apply an edit. `fn` mutates the project in place. Consecutive edits with the same `merge` key
+ *  (one slider drag, one color-panel session) share one undo step. */
+export function edit(fn: (p: Project) => void, merge?: string) {
   if (!doc.project) return
-  undoStack.push({ json: JSON.stringify(doc.project) })
-  if (undoStack.length > LIMIT) undoStack.shift()
-  redoStack.length = 0
+  if (!merge || merge !== mergeKey) {
+    undoStack.push({ json: JSON.stringify(doc.project) })
+    if (undoStack.length > LIMIT) undoStack.shift()
+    redoStack.length = 0
+  }
+  mergeKey = merge ?? ''
   fn(doc.project)
   changed()
 }
@@ -53,6 +59,7 @@ export function edit(fn: (p: Project) => void) {
 function swap(from: Snapshot[], to: Snapshot[]) {
   const s = from.pop()
   if (!s || !doc.project) return
+  mergeKey = ''
   to.push({ json: JSON.stringify(doc.project) })
   doc.project = JSON.parse(s.json)
   changed()
