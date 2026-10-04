@@ -45,7 +45,7 @@
   <Segmented
     stacked
     value={c.click}
-    disabled={off}
+    disabled={!hasEvents}
     onchange={set('click')}
     options={[
       { value: 'none', label: 'None' },
@@ -54,7 +54,8 @@
       { value: 'shockwave', label: 'Shockwave' },
     ]}
   />
-  <Toggle label="Click sound" checked={c.clickSound} disabled={off} onchange={set('clickSound')} />
+  <!-- Click effects and sounds play with the cursor hidden too, so they stay switchable. -->
+  <Toggle label="Click sound" checked={c.clickSound} disabled={!hasEvents} onchange={set('clickSound')} />
 </Section>
 
 <style>

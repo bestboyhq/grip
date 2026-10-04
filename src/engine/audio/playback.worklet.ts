@@ -1,7 +1,8 @@
 // AudioWorklet for preview output: plays pre-rendered stereo chunks (from the mixer) at exact
 // context frames, so chunks join sample-exactly and a late chunk plays from where it should be
-// (audio stays in sync, the gap is silence). A run is one stretch of playback: starting a new run
-// (seek, edit, pause) fades the old one out over 5 ms while the new one fades in.
+// (audio stays in sync, the gap is silence; a late first chunk fades in). A run is one stretch of
+// playback: starting a new run (seek, edit, pause) fades the old one out over 5 ms while the new
+// one fades in.
 
 declare const currentFrame: number
 declare function registerProcessor(name: string, ctor: unknown): void
@@ -21,6 +22,7 @@ interface Run {
   start: number
   end: number
   chunks: Array<{ at: number; L: Float32Array; R: Float32Array }>
+  played?: boolean // some of it was heard
 }
 
 class Playback extends AudioWorkletProcessor {
@@ -31,8 +33,12 @@ class Playback extends AudioWorkletProcessor {
   constructor() {
     super()
     this.port.onmessage = ({ data: m }: MessageEvent<PlaybackMessage>) => {
-      if (m.type === 'chunk') this.runs.find((r) => r.id === m.run)?.chunks.push(m)
-      else {
+      if (m.type === 'chunk') {
+        const r = this.runs.find((r) => r.id === m.run)
+        // A first chunk that arrives after its run began fades in from now, not mid-wave (no click).
+        if (r && !r.chunks.length && !r.played) r.start = Math.max(r.start, currentFrame + 128)
+        r?.chunks.push(m)
+      } else {
         for (const r of this.runs) r.end = Math.min(r.end, m.at)
         if (m.type === 'run') this.runs.push({ id: m.id, start: m.at, end: Infinity, chunks: [] })
       }
@@ -56,6 +62,7 @@ class Playback extends AudioWorkletProcessor {
         }
         covered += Math.max(0, b - a)
       }
+      if (covered) run.played = true
       const live = Math.max(0, Math.min(f0 + n, run.end) - Math.max(f0, run.start))
       this.starved += Math.max(0, live - covered)
       run.chunks = run.chunks.filter((c) => c.at + c.L.length > f0 + n)

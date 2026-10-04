@@ -45,7 +45,7 @@
   .label { flex: none; width: var(--label-w, 92px); color: var(--text-dim); font-size: 12px; }
   .seg { flex: 1; min-width: 0; display: flex; gap: 2px; padding: 2px; border-radius: 7px; background: var(--bg-raised); }
   label {
-    flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 5px;
+    flex: 1 1 0; min-width: min-content; display: flex; align-items: center; justify-content: center; gap: 5px; /* equal widths, but never cut a label short */
     height: 24px; padding: 0 3px; border-radius: 5px; color: var(--text-dim); font-size: 12px; font-weight: 500;
     transition: background-color 120ms, color 120ms;
   }

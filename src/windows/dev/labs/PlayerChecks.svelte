@@ -91,6 +91,21 @@
     await check('frameAt is exact on variable frame rate H.264 with B-frames', () => frames('vfr.mp4', vfr, (i) => Math.round(1.164 * 8 * i)))
     const cfr = Array.from({ length: 60 }, (_, i) => i / 30)
     await check('frameAt is exact on HEVC', () => frames('hevc.mp4', cfr, (i) => Math.round(1.164 * 3 * i)))
+    await check('scrubbing backward frame by frame does not decode from the keyframe at every step', async () => {
+      const src = await openVideo(fileUrl(`${dir}/hevc.mp4`))
+      const walk = async (ts: number[]) => {
+        const t0 = performance.now()
+        for (const t of ts) (await src.frameAt(t))?.close()
+        return performance.now() - t0
+      }
+      const steps = cfr.map((t) => t + 0.01)
+      const fwd = await walk(steps)
+      const back = await walk([...steps].reverse())
+      src.close()
+      // Kept frames: a restart per keyframe interval (4 here). Without them: one per step, about 25x forward.
+      assert(back < 10 * fwd, `backward ${back.toFixed(0)} ms vs forward ${fwd.toFixed(0)} ms for ${steps.length} frames`)
+      return `backward ${back.toFixed(0)} ms, forward ${fwd.toFixed(0)} ms`
+    })
 
     await check('AAC audio stays aligned through encoder priming', async () => {
       const buf = await renderAudio(prepared(audioOnly(`${dir}/click.m4a`, 4)), '/', 0, 4)
@@ -106,6 +121,18 @@
       const pk = await peaks(fileUrl(`${dir}/av.mp4`), 0, 3, 300)
       assert(pk.length === 600 && Math.max(...pk) > 0.3, 'peaks of the mp4 audio')
       return `click at ${a.toFixed(4)} s`
+    })
+    await check('AAC music starts at full level, every loop (no silent head)', async () => {
+      const p = createProject('t', { duration: 6 })
+      p.audio.music = { file: `${dir}/tone44.m4a`, volume: 1 } // 2 s of 44.1 kHz sine: loops at 2 s and 4 s
+      const x = (await renderAudio(prepared(p), '/', 0, 6)).getChannelData(0)
+      const rms = (a: number, b: number) => Math.sqrt(x.subarray(a, b).reduce((s, v) => s + v * v, 0) / (b - a))
+      const steady = rms(24000, 48000)
+      // After the 5 ms edge fade (start) and past the 10 ms loop crossfade (seam).
+      const head = rms(240, 480) / steady
+      const seam = rms(96240, 96480) / steady
+      assert(head > 0.9 && seam > 0.9, `head ${head.toFixed(2)}, loop seam ${seam.toFixed(2)} of the steady level`)
+      return `head ${head.toFixed(2)}, seam ${seam.toFixed(2)}`
     })
     await check('renderAudio length is exact; a 2x clip renders half the duration; chunks join exactly', async () => {
       const p = audioOnly(`${dir}/click.m4a`, 4)

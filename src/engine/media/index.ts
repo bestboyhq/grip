@@ -2,8 +2,10 @@
 // decode). Frames stay on the GPU as VideoFrame handles; JS never touches pixel bytes.
 // Sequential access (playback, export) is fast: one decoder keeps running ahead (mediabunny queues
 // decoded frames) and frameAt walks forward through it. Random access (scrubbing, cuts) restarts the
-// decoder at the keyframe before t. Either way the answer is exact: the frame whose timestamp <= t
-// < the next frame's, which is what variable frame rate (ScreenCaptureKit) needs.
+// decoder at the keyframe before t; stepping backward keeps the frames decoded on the way, so a
+// backward scrub decodes from the keyframe once per several frames, not at every frame. Either way
+// the answer is exact: the frame whose timestamp <= t < the next frame's, which is what variable
+// frame rate (ScreenCaptureKit) needs.
 
 import { ALL_FORMATS, EncodedPacketSink, Input, UrlSource, VideoSampleSink, type VideoSample } from 'mediabunny'
 
@@ -47,6 +49,8 @@ export async function openVideo(url: string): Promise<FrameSource> {
 
 const EPS = 1e-6
 const REACH = 1 // seconds: decoding forward this far is never slower than a seek
+const BEHIND = 30 // frames kept for scrubbing backward, at most...
+const BEHIND_BYTES = 128e6 // ...and at most this much decoded video (9 frames of 4K)
 
 class VideoFile implements FrameSource {
   readonly width: number
@@ -57,7 +61,9 @@ class VideoFile implements FrameSource {
   private sink: VideoSampleSink
   private packets: EncodedPacketSink
   private first: number
-  private frames: VideoSample[] = [] // consecutive decoded frames in presentation order; [0] is the last one shown
+  private frames: VideoSample[] = [] // consecutive decoded frames in presentation order; [behind] is the last one shown
+  private behind = 0 // frames kept before the one shown: while stepping backward (see restart), else none
+  private last = -Infinity // the previous request
   private it: AsyncGenerator<VideoSample, void, unknown> | null = null
   private ended = false // the decoder delivered the last frame
   private queue: Promise<unknown> = Promise.resolve()
@@ -84,6 +90,8 @@ class VideoFile implements FrameSource {
   private async locate(t: number): Promise<VideoFrame | null> {
     if (this.closed || !(t <= this.duration + EPS)) return null
     t = Math.max(t, this.first)
+    this.behind = t < this.last ? Math.min(BEHIND, Math.floor(BEHIND_BYTES / (1.5 * this.width * this.height))) : 0
+    this.last = t
     let i = this.find(t)
     if (i < 0) {
       try {
@@ -119,7 +127,10 @@ class VideoFile implements FrameSource {
 
   private async restart(t: number) {
     await this.reset()
-    this.it = this.sink.samples(t) // starts with the frame shown at t
+    // Stepping backward (scrubbing back): decode from the keyframe instead, which costs the same, and
+    // keep the frames before t (see pull), so the next steps back show without decoding.
+    const key = this.behind ? await this.packets.getKeyPacket(t, { metadataOnly: true }) : null
+    this.it = this.sink.samples(key?.timestamp ?? t) // starts with the frame shown at that time
     await this.pull(t)
   }
 
@@ -130,8 +141,8 @@ class VideoFile implements FrameSource {
       return
     }
     this.frames.push(r.value)
-    // Keep the frame shown at t and what follows; close everything older.
-    while (this.frames.length > 2 && this.frames[1].timestamp <= t + EPS) this.frames.shift()!.close()
+    // Keep the frame shown at t, `behind` frames before it, and what follows; close everything older.
+    while (this.frames.length > 2 + this.behind && this.frames[1 + this.behind].timestamp <= t + EPS) this.frames.shift()!.close()
   }
 
   private async reset() {

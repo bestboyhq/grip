@@ -212,6 +212,19 @@ export function interpolate(buf: Float32Array, pos: number, table: Float32Array,
   return s
 }
 
+/** `x` squeezed or stretched to `n` samples, reversed when scrubbing backward: a record under the
+ *  finger, whose pitch follows the drag. Linear interpolation; ends map to ends. */
+export function scrubGrain(x: Float32Array, n: number, reverse: boolean): Float32Array {
+  const out = new Float32Array(n)
+  const k = (x.length - 1) / Math.max(n - 1, 1)
+  for (let i = 0; i < n; i++) {
+    const p = (reverse ? n - 1 - i : i) * k
+    const j = Math.floor(p)
+    out[i] = x[j] + ((x[Math.min(j + 1, x.length - 1)] - x[j]) * (p - j))
+  }
+  return out
+}
+
 // ---- True-peak brickwall limiter ----
 // Gain is the min of the required gain over a 5 ms look-ahead, released over 80 ms, then smoothed
 // with a 5 ms moving average. Every gain in that average is <= the gain the peak needs, so the

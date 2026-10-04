@@ -1,8 +1,9 @@
 // Decoding needs WebCodecs, so these checks run in Electron: this file generates test media with
 // ffmpeg, starts Vite, and launches itself as Electron's main script, which opens the
 // PlayerChecks lab (src/windows/dev/labs/PlayerChecks.svelte) hidden and reports its results.
-// Covers: frameAt on VFR H.264 with B-frames, HEVC, and the fixture; AAC priming alignment; an
-// imported .mp4 as its own audio; renderAudio length, 2x, chunk joins; peaks cache.
+// Covers: frameAt on VFR H.264 with B-frames, HEVC, and the fixture; stepping backward; AAC priming
+// alignment; a full-level head on every music loop; an imported .mp4 as its own audio; renderAudio
+// length, 2x, chunk joins; peaks cache.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile, execFileSync } from 'node:child_process'
@@ -46,6 +47,8 @@ if (process.versions.electron) {
     // AAC with 2 ms clicks at exactly 1.0 s and 2.5 s.
     const clicks = "aevalsrc='0.8*(between(t,1,1.002)+between(t,2.5,2.502))':s=48000:d=4"
     ff(dir, ['-f', 'lavfi', '-i', clicks, '-c:a', 'aac', '-b:a', '192k', 'click.m4a'])
+    // 2 s of a 44.1 kHz sine, for music loops.
+    ff(dir, ['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100:duration=2', '-af', 'volume=4', '-c:a', 'aac', '-b:a', '192k', 'tone44.m4a'])
     // An "imported" video with its own audio track.
     ff(dir, ['-f', 'lavfi', '-i', 'testsrc2=s=128x128:r=30:d=3', '-f', 'lavfi', '-i', clicks.replace('d=4', 'd=3'),
       '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-shortest', 'av.mp4'])
