@@ -48,6 +48,7 @@
   import { tooltip } from '../../../ui/tooltip.ts'
   import { importFile } from '../files.ts'
 
+  const uid = $props.id()
   const st = $derived(doc.project!.style)
   const bg = $derived(st.background)
   const init = defaultStyle()
@@ -99,8 +100,16 @@
         <button class="btn wide" onclick={randomWallpaper}><Icon name="shuffle" size={15} />Pick random wallpaper</button>
         <div class="grid" role="radiogroup" aria-label="Wallpaper">
           {#each wallpapers as w (w.id)}
-            {@const on = bg.kind === 'wallpaper' && bg.id === w.id}
-            <button class="tile" class:on role="radio" aria-checked={on} aria-label={w.name} style:background={thumbs?.has(w.id) ? `center / cover url("${thumbs.get(w.id)}")` : sketch(w)} onclick={() => setBg({ kind: 'wallpaper', id: w.id })} {@attach tooltip(w.name)}></button>
+            <input
+              class="tile"
+              type="radio"
+              name="{uid}-wallpaper"
+              checked={bg.kind === 'wallpaper' && bg.id === w.id}
+              aria-label={w.name}
+              style:background={thumbs?.has(w.id) ? `center / cover url("${thumbs.get(w.id)}")` : sketch(w)}
+              onchange={() => setBg({ kind: 'wallpaper', id: w.id })}
+              {@attach tooltip(w.name)}
+            />
           {/each}
         </div>
       {:else}
@@ -109,8 +118,16 @@
     {:else if kind === 'gradient'}
       <div class="grid" role="radiogroup" aria-label="Gradient presets">
         {#each GRADIENTS as g (g.name)}
-          {@const on = bg.kind === 'gradient' && bg.stops.join() === g.stops.join()}
-          <button class="tile" class:on role="radio" aria-checked={on} aria-label={g.name} style:background={gradient(g.stops, g.angle)} onclick={() => setBg({ kind: 'gradient', stops: [...g.stops], angle: g.angle })} {@attach tooltip(g.name)}></button>
+          <input
+            class="tile"
+            type="radio"
+            name="{uid}-gradient"
+            checked={bg.kind === 'gradient' && bg.stops.join() === g.stops.join()}
+            aria-label={g.name}
+            style:background={gradient(g.stops, g.angle)}
+            onchange={() => setBg({ kind: 'gradient', stops: [...g.stops], angle: g.angle })}
+            {@attach tooltip(g.name)}
+          />
         {/each}
       </div>
       <ColorPicker label="From" value={stops[0]} onchange={(c, m) => setBg({ kind: 'gradient', stops: [c, ...stops.slice(1)], angle }, m)} />
@@ -160,9 +177,17 @@
 <style>
   .kind { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 6px; }
   .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; }
-  .tile { aspect-ratio: 1; padding: 0; border: 0; border-radius: 7px; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1); transition: transform 140ms var(--ease-out), box-shadow 140ms; }
+  /* Native radios: the group is one tab stop and arrow keys move the choice. Selection rings the tile;
+     keyboard focus rings its inside (light over dark, visible on any wallpaper), so the two never merge. */
+  .tile {
+    --selected: 0 0 transparent; --focused: 0 0 transparent;
+    appearance: none; aspect-ratio: 1; margin: 0; border-radius: 7px;
+    box-shadow: var(--focused), inset 0 0 0 1px rgb(255 255 255 / 0.1), var(--selected);
+    transition: transform 140ms var(--ease-out), box-shadow 140ms;
+  }
   .tile:hover { transform: scale(1.06); }
-  .tile.on { box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1), 0 0 0 2px var(--bg-panel), 0 0 0 4px var(--accent); }
+  .tile:checked { --selected: 0 0 0 2px var(--bg-panel), 0 0 0 4px var(--accent); }
+  .tile:focus-visible { outline: none; --focused: inset 0 0 0 2px var(--text), inset 0 0 0 3.5px rgb(0 0 0 / 0.5); }
   .wide { width: 100%; }
   .preview { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--border); background: var(--bg-raised); }
   .missing { display: grid; place-items: center; margin: 0; padding: 16px; font-size: 12px; line-height: 1.45; text-align: center; color: var(--text-dim); }

@@ -1,11 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseLaunch, parseStudioUrl } from './url.ts'
+import { inTurn, parseLaunch, parseStudioUrl } from './url.ts'
 import { plainError } from './errors.ts'
 import { areaOf, arrangement, fit, place, reachable } from './bounds.ts'
 import { hold, release } from './session.ts'
-import { readFileSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, matchesGlob } from 'node:path'
+import { promisify } from 'node:util'
 
 test('studio:// urls', () => {
   assert.deepEqual(parseStudioUrl('studio://record'), { kind: 'record' })
@@ -97,6 +100,18 @@ test('the packaged app ships every file the main process imports', () => {
   assert.deepEqual([...seen].filter((f) => !has(f, false) || has(f, true)), [])
 })
 
+test('the packaged app opens .studio bundles by their type, declared once', () => {
+  // electron-builder appends a document type per fileAssociation to mac.extendInfo's own list.
+  const build = JSON.parse(readFileSync(join(import.meta.dirname, '../../package.json'), 'utf8')).build
+  const uti = build.mac.extendInfo.UTExportedTypeDeclarations.find((t: any) => t.UTTypeTagSpecification['public.filename-extension'].includes('studio')).UTTypeIdentifier
+  const fromAssociations = build.fileAssociations.map((f: any) => ({ CFBundleTypeExtensions: [f.ext].flat() }))
+  const types = [...(build.mac.extendInfo.CFBundleDocumentTypes ?? []), ...fromAssociations]
+  const studio = types.filter((t) => t.LSItemContentTypes?.includes(uti) || t.CFBundleTypeExtensions?.includes('studio'))
+  assert.equal(studio.length, 1)
+  assert.deepEqual(studio[0].LSItemContentTypes, [uti])
+  assert.equal(studio[0].LSHandlerRank, 'Owner')
+})
+
 test('finish or delete while the engine starts runs once it records', () => {
   // Finish clicked twice while starting: one stop, sent when recording begins.
   let held = hold(hold(null, 'stop'), 'stop')
@@ -120,4 +135,22 @@ test('display arrangement: only real changes rebuild the picker', () => {
   assert.notEqual(arrangement([{ ...display, scaleFactor: 1 }]), now)
   assert.notEqual(arrangement([{ ...display, bounds: { x: 0, y: 0, width: 1728, height: 1117 } }]), now)
   assert.notEqual(arrangement([display, { ...display, id: 2 }]), now)
+})
+
+test('launches that start together take turns at the single-instance lock', async () => {
+  // Chromium's lock lets two simultaneous launches both win, or drops the arguments of one.
+  const root = mkdtempSync(join(tmpdir(), 'studio turns #1 ✨ '))
+  const file = join(root, 'userdata', 'launch.lock')
+  const launch = `import { inTurn } from ${JSON.stringify(join(import.meta.dirname, 'url.ts'))}
+    const [start, end] = inTurn(${JSON.stringify(file)}, () => {
+      const start = Date.now()
+      while (Date.now() - start < 150); // a slow singleton handoff
+      return [start, Date.now()]
+    })
+    console.log(start, end)`
+  const runs = await Promise.all([1, 2, 3, 4].map(() => promisify(execFile)(process.execPath, ['--input-type=module', '-e', launch])))
+  const turns = runs.map((r) => r.stdout.trim().split(' ').map(Number)).sort((a, b) => a[0] - b[0])
+  for (let i = 1; i < turns.length; i++) assert.ok(turns[i][0] >= turns[i - 1][1], `launch ${i} overlapped: ${JSON.stringify(turns)}`)
+  assert.equal(inTurn(join(root, 'userdata', 'launch.lock', 'not a dir'), () => 'ran'), 'ran', 'an unlockable file never blocks a launch')
+  rmSync(root, { recursive: true, force: true })
 })

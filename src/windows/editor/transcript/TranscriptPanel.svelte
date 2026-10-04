@@ -3,14 +3,14 @@
      word to fix its caption, one-click filler and pause cuts, SRT/VTT export, and transcription. -->
 <script module lang="ts">
   import type { Clip, Transcript } from '../../../shared/project.ts'
-  import { invoke, on } from '../../../lib/ipc.ts'
+  import { invoke, listen } from '../../../lib/ipc.ts'
   import { doc } from '../../../lib/doc.svelte.ts'
 
   type Phase = '' | 'queued' | 'download' | 'transcribe' | 'error'
 
   // A run outlives the panel (switching tabs, closing the sidebar): its state lives here.
   export const job = $state({ bundle: '', phase: '' as Phase, progress: 0, received: 0, total: 0, error: '' })
-  on('transcript:progress', (p: { bundle: string; phase: Phase; progress: number; received?: number; total?: number }) => {
+  listen('transcript:progress', (p: { bundle: string; phase: Phase; progress: number; received?: number; total?: number }) => {
     if (p.bundle === job.bundle && job.phase !== '' && job.phase !== 'error') Object.assign(job, p)
   })
 

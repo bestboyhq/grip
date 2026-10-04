@@ -54,10 +54,9 @@
     /></span>
   </div>
   {#if swatches.length}
-    <div class="swatches" role="group" aria-label="{label} presets">
+    <div class="swatches" role="radiogroup" aria-label="{label} presets">
       {#each swatches as c (c)}
-        {@const on = active && c.toLowerCase() === hex}
-        <button {disabled} class:on style:background={c} aria-label={c} aria-pressed={on} onclick={() => onchange(c.toLowerCase())}></button>
+        <input type="radio" name="{id}-swatch" {disabled} checked={active && c.toLowerCase() === hex} style:background={c} aria-label={c} onchange={() => onchange(c.toLowerCase())} />
       {/each}
     </div>
   {/if}
@@ -76,7 +75,15 @@
   .hex input { flex: 1; min-width: 0; height: 100%; padding: 0 8px 0 2px; border: 0; background: none; color: var(--text); font: inherit; text-transform: lowercase; }
   .hex input:focus-visible { outline: none; }
   .swatches { display: flex; flex-wrap: wrap; gap: 7px; padding: 2px 0 4px calc(var(--label-w, 92px) + 6px); }
-  .swatches button { width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14); transition: transform 120ms var(--ease-out); }
-  .swatches button:hover { transform: scale(1.12); }
-  .swatches button.on { box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14), 0 0 0 2px var(--bg-panel), 0 0 0 3.5px var(--text); }
+  /* Native radios: one tab stop, arrow keys move the choice. Keyboard focus rings the inside, selection
+     the outside, so the two never merge. */
+  .swatches input {
+    --selected: 0 0 transparent; --focused: 0 0 transparent;
+    appearance: none; width: 20px; height: 20px; margin: 0; border-radius: 50%;
+    box-shadow: var(--focused), inset 0 0 0 1px rgb(255 255 255 / 0.14), var(--selected);
+    transition: transform 120ms var(--ease-out), box-shadow 120ms;
+  }
+  .swatches input:hover { transform: scale(1.12); }
+  .swatches input:checked { --selected: 0 0 0 2px var(--bg-panel), 0 0 0 3.5px var(--text); }
+  .swatches input:focus-visible { outline: none; --focused: inset 0 0 0 2px var(--text), inset 0 0 0 3.5px rgb(0 0 0 / 0.5); }
 </style>

@@ -20,7 +20,7 @@
   import Timeline from './timeline/Timeline.svelte'
   import ExportDialog, { exportVideo } from './export/ExportDialog.svelte'
   import ShareButton from './share/ShareButton.svelte'
-  import { registerCommands, run } from './commands/registry.ts'
+  import { commandForMenu, registerCommands, run } from './commands/registry.ts'
   import { reason } from './helpers.ts'
   import { sendThumbnail } from './thumbnail.ts'
 
@@ -61,14 +61,23 @@
 
   onMount(() => {
     load(params.get('project') ?? '').catch((e) => (error = reason(e)))
+    // Closing: '' once the edits are on disk, or why not (the main process asks what to do then).
     return on('editor:close', async () => {
-      if (!gone) {
-        await save().catch((e) => console.warn('[editor] not saved on close:', reason(e)))
-        await thumbnail()
-      }
-      invoke('editor:closed')
+      const failed = gone ? '' : await save().then(() => '', (e) => reason(e) || 'The project couldn’t be saved.')
+      if (!failed && !gone) await thumbnail()
+      invoke('editor:closed', failed)
     })
   })
+
+  // Edit menu items (clicked, or their shortcut when the page left it alone): the editor's command,
+  // or native editing in a text field.
+  $effect(() =>
+    on('editor:edit', (item: string) => {
+      const c = commandForMenu(item, document.activeElement)
+      if (c) c.run()
+      else invoke('editor:nativeEdit', item)
+    }),
+  )
 
   const aiming = $derived(!!doc.project?.zooms.some((z) => selection.ids.includes(z.id)))
   const masking = $derived(!aiming && !!doc.project?.masks.some((m) => selection.ids.includes(m.id)))

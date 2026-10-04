@@ -14,11 +14,11 @@ import { registerTranscript } from './transcript.ts'
 import { registerCamera } from './camera.ts'
 import { registerEditor } from './editor.ts'
 import { registerSettings, settings } from './shell/settings.ts'
-import { command, openFilesOrAlert, openOnboarding, openProject, recordingStatus, registerRecorder, setQuitting, showPicker, stopAndWait, warmUp } from './shell/recorder.ts'
+import { command, editorsDone, isQuitting, openFilesOrAlert, openOnboarding, openProject, recordingStatus, registerRecorder, setQuitting, showPicker, stopAndWait, warmUp } from './shell/recorder.ts'
 import { setAppMenu } from './shell/menu.ts'
 import { createTray } from './shell/tray.ts'
 import { checkForUpdates } from './shell/update.ts'
-import { parseLaunch, parseStudioUrl } from './shell/url.ts'
+import { inTurn, parseLaunch, parseStudioUrl } from './shell/url.ts'
 import { plainError } from './shell/errors.ts'
 import { registerFakeRecording } from './shell/fake-recording.ts'
 
@@ -30,7 +30,10 @@ if (process.env.STUDIO_HIDDEN) app.commandLine.appendSwitch('mute-audio') // hid
 if (!app.isPackaged && process.env.STUDIO_FAKE_RECORDING) app.commandLine.appendSwitch('use-fake-device-for-media-stream')
 
 // One Studio per user: a second launch (Finder, `open`, URL, CLI) hands its arguments to this one.
-if (!app.requestSingleInstanceLock()) app.exit(0)
+// Chromium's handoff breaks when two launches reach it at the same moment (both get the lock, or one
+// exits without handing over its arguments), so launches take turns at it.
+const primary = inTurn(join(app.getPath('userData'), 'launch.lock'), () => app.requestSingleInstanceLock())
+if (!primary) app.exit(0)
 
 // Crash reports stay on this Mac (~/Library/Application Support/Studio/Crashpad) until a server exists.
 crashReporter.start({ uploadToServer: false, globalExtra: { macOS: release(), arch: process.arch } })
@@ -46,12 +49,6 @@ process.on('uncaughtException', (err) => {
 })
 process.on('unhandledRejection', logError)
 
-let quitting = false
-function quit(on: boolean) {
-  quitting = on
-  setQuitting(on)
-}
-
 // Files and URLs can arrive before ready (Finder double-click, dock drop, `open studio://...`).
 let ready = false
 const early: string[] = []
@@ -66,7 +63,7 @@ app.on('open-url', (e, url) => {
   else early.push(url)
 })
 app.on('second-instance', (_e, argv, cwd) => {
-  if (!quitting && !launch(argv, cwd)) showPicker()
+  if (!isQuitting() && !launch(argv, cwd)) showPicker()
 })
 
 function openUrl(url: string) {
@@ -124,30 +121,35 @@ app.on('activate', () => {
 // does not stack a second prompt.
 let asking = false
 app.on('before-quit', async (e) => {
-  if (quitting) return
-  const recording = recordingStatus() !== 'idle'
-  const exports = activeExports()
-  if (!recording && !exports) return quit(true)
-  e.preventDefault()
-  if (asking) return
-  asking = true
-  // Hidden runs (agents, tests) never block on a modal: they save and quit.
-  const { response } = hidden
-    ? { response: 1 }
-    : await dialog
-        .showMessageBox({
-          type: 'warning',
-          message: recording ? 'A recording is in progress.' : exports === 1 ? 'An export is in progress.' : `${exports} exports are in progress.`,
-          detail: recording ? 'Studio can save it and then quit.' : 'Quitting now stops it. Your project is safe.',
-          buttons: ['Cancel', recording ? 'Save Recording and Quit' : 'Stop and Quit'],
-          defaultId: 0,
-          cancelId: 0,
-        })
-        .finally(() => (asking = false))
-  if (response !== 1) return
-  quit(true)
-  await stopAndWait() // returns at once when the recording ended while the prompt was open
-  app.quit()
+  if (!isQuitting()) {
+    const recording = recordingStatus() !== 'idle'
+    const exports = activeExports()
+    if (recording || exports) {
+      e.preventDefault()
+      if (asking) return
+      asking = true
+      // Hidden runs (agents, tests) never block on a modal: they save and quit.
+      const { response } = await (hidden
+        ? Promise.resolve({ response: 1 })
+        : dialog.showMessageBox({
+            type: 'warning',
+            message: recording ? 'A recording is in progress.' : exports === 1 ? 'An export is in progress.' : `${exports} exports are in progress.`,
+            detail: recording ? 'Studio can save it and then quit.' : 'Quitting now stops it. Your project is safe.',
+            buttons: ['Cancel', recording ? 'Save Recording and Quit' : 'Stop and Quit'],
+            defaultId: 0,
+            cancelId: 0,
+          })
+      ).finally(() => (asking = false))
+      if (response !== 1) return
+      setQuitting(true)
+      await stopAndWait() // returns at once when the recording ended while the prompt was open
+      return app.quit()
+    }
+    setQuitting(true)
+  }
+  // Before any window closes, open editors save (or ask, and Cancel cancels the quit); the quit
+  // resumes once each one is done.
+  if (!editorsDone()) e.preventDefault()
 })
 app.on('web-contents-created', (_e, wc) => {
   // A file dropped where no page handles it, or a stray link, must never replace a window's page.

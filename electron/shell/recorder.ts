@@ -22,7 +22,8 @@
 //   shell:open-settings           the settings window (onboarding route, settings page)
 //   shell:relaunch                macOS applies a new Screen Recording grant only after a relaunch
 //   notes:prompter                main -> speaker notes window: start or stop the prompter (⌥⌘.)
-// Editor windows: "editor:close" asks one to save and refresh its thumbnail; it answers editor:closed.
+// Editor windows: "editor:close" asks one to save and refresh its thumbnail; it answers
+// editor:closed(error), '' once saved.
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, Notification, screen, type BrowserWindowConstructorOptions, type MenuItemConstructorOptions } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { basename, isAbsolute, resolve } from 'node:path'
@@ -31,6 +32,7 @@ import { recordingEvents } from '../recording.ts'
 import { activeDisplay, hidden, openWindow, reveal, sendAll, setRecordingDock, windowsOf } from '../windows.ts'
 import { arrangement, place } from './bounds.ts'
 import { plainError, type Permission } from './errors.ts'
+import { editorCloser, type Choice } from './closing.ts'
 import { hold, release, type Held } from './session.ts'
 import { setSettings, settings, settingsListeners } from './settings.ts'
 import type { Mode } from './url.ts'
@@ -57,6 +59,7 @@ let clock = { elapsed: 0, at: 0 }
 export const statusListeners: Array<(s: Status) => void> = []
 
 export const recordingStatus = () => status
+export const isQuitting = () => quitting
 export const setQuitting = (on: boolean) => (quitting = on)
 
 /** Recording UI floats over everything, on every Space and over fullscreen apps, and stays out
@@ -409,26 +412,44 @@ export async function importDialog() {
   openFilesOrAlert(r.filePaths)
 }
 
-// An editor saves and refreshes its thumbnail before it goes: "editor:close" to the renderer,
-// "editor:closed" back (or 5 s pass), then the real close, or the quit it interrupted.
-const closers = new Map<number, () => void>()
+// An editor saves and refreshes its thumbnail before it goes (closing.ts): "editor:close" to the
+// page, "editor:closed"(error) back.
+const editors = editorCloser<BrowserWindow>({
+  ask: (win) => win.webContents.send('editor:close'),
+  prompt: unsaved,
+  close: (win) => win.close(),
+  gone: (win) => win.isDestroyed() || win.webContents.isCrashed(),
+  quitting: () => quitting,
+  quit: () => app.quit(),
+  stay: () => (quitting = false),
+})
 function closeGracefully(win: BrowserWindow) {
-  let asked = false
   win.on('close', (e) => {
-    if (asked || win.webContents.isCrashed()) return
-    e.preventDefault()
-    asked = true
-    const id = win.webContents.id
-    const finish = () => {
-      clearTimeout(timer)
-      if (!closers.delete(id) || win.isDestroyed()) return
-      if (!quitting) win.close()
-      else if (!closers.size) app.quit() // the last editor done: resume the quit
-    }
-    const timer = setTimeout(finish, 5000)
-    closers.set(id, finish)
-    win.webContents.send('editor:close')
+    if (!win.webContents.isCrashed() && !editors.closing(win)) e.preventDefault()
   })
+  // A page that is gone has nothing left to save: a close or quit waiting for it goes ahead.
+  win.webContents.on('render-process-gone', () => editors.answered(win, ''))
+}
+/** Quitting: whether every open editor is saved (or discarded) and may close. The rest are asked to
+ *  save now; the quit resumes when they are done. */
+export const editorsDone = () => windowsOf('editor').filter((w) => !w.webContents.isCrashed() && !editors.closing(w)).length === 0
+
+/** An editor's save failed: Save Again, Discard Edits, or Cancel. Hidden runs (agents, tests) never
+ *  block on a modal: they keep the window, and its edits. */
+async function unsaved(win: BrowserWindow, error: string): Promise<Choice> {
+  if (hidden) {
+    console.error(`[editor] kept open, its edits are not saved: ${error}`)
+    return 'cancel'
+  }
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning',
+    message: `Your latest edits to “${win.getTitle()}” aren’t saved.`,
+    detail: error,
+    buttons: ['Save Again', 'Cancel', 'Discard Edits'],
+    defaultId: 0,
+    cancelId: 1,
+  })
+  return (['save', 'cancel', 'discard'] as const)[response]
 }
 
 export function openOnboarding(query = '') {
@@ -519,7 +540,10 @@ export function registerRecorder() {
   ipcMain.handle('shell:open-settings', () => openOnboarding('page=settings'))
   ipcMain.handle('shell:open-project', (_e, path?: string) => (typeof path === 'string' ? openProject(path) : openProjectDialog()))
   ipcMain.handle('shell:open-files', (_e, paths: unknown) => openFiles(Array.isArray(paths) ? paths.filter((p) => typeof p === 'string' && isAbsolute(p)) : []))
-  ipcMain.handle('editor:closed', (e) => closers.get(e.sender.id)?.())
+  ipcMain.handle('editor:closed', (e, error: unknown) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (win) editors.answered(win, typeof error === 'string' ? error : '')
+  })
 
   settingsListeners.push(updateHelpers)
   recordingEvents.on('state', setStatus)

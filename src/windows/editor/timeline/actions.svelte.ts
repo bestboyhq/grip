@@ -268,6 +268,7 @@ export function timelineCommands(view: { zoom: (f: number) => void; fit: () => v
     c('delete', 'Edit', 'Delete', remove, () => open() && (selection.ids.length > 0 || targetClips().size > 0), ['X', '⌫', '⌦'], {
       hint: 'ripple delete for clips',
     }),
+    c('cutItems', 'Edit', 'Cut', () => (copy(), remove()), () => open() && selection.ids.length > 0, ['⌘X'], { hint: 'copy, then delete' }),
     c('copy', 'Edit', 'Copy', copy, () => open() && selection.ids.length > 0, ['⌘C']),
     c('paste', 'Edit', 'Paste at playhead', paste, canPaste, ['⌘V']),
     c('duplicate', 'Edit', 'Duplicate', duplicate, () => open() && selection.ids.length > 0, ['⌘D']),

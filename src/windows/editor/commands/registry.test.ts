@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { commandFor, commands, consumesKey, keyOf, registerCommands, run, search, type Command } from './registry.ts'
+import { commandFor, commandForMenu, commands, consumesKey, keyOf, registerCommands, run, search, type Command } from './registry.ts'
 
 const ev = (key: string, code: string, mods: { ctrl?: boolean; alt?: boolean; shift?: boolean; meta?: boolean } = {}, repeat = false) =>
   ({ key, code, ctrlKey: !!mods.ctrl, altKey: !!mods.alt, shiftKey: !!mods.shift, metaKey: !!mods.meta, repeat, isComposing: false, target: null }) as unknown as KeyboardEvent
@@ -64,6 +64,25 @@ test('shortcuts stay off in text fields; other controls keep their keys only whe
   assert.ok(!consumesKey(el('INPUT', { type: 'checkbox', keyboard: true }), 'c'))
   assert.ok(!consumesKey(el('CANVAS', { keyboard: true }), ' '))
   assert.equal(commandFor({ ...ev('z', 'KeyZ', { meta: true }), target: text } as KeyboardEvent), undefined)
+})
+
+test('Edit menu items run what their shortcut runs, and leave text fields native', () => {
+  const off = registerCommands([
+    { id: 'undo', title: 'Undo', group: 'Edit', keys: ['⌘Z'], run: () => {} },
+    { id: 'redo', title: 'Redo', group: 'Edit', keys: ['⇧⌘Z'], run: () => {} },
+    { id: 'cut', title: 'Cut', group: 'Edit', keys: ['⌘X'], run: () => {} },
+    { id: 'all', title: 'Select all', group: 'Edit', keys: ['⌘A'], enabled: () => false, run: () => {} },
+  ])
+  const body = { tagName: 'BODY', isContentEditable: false, getAttribute: () => null, matches: () => false } as unknown as EventTarget
+  const text = { ...body, tagName: 'INPUT', type: 'text' } as unknown as EventTarget
+  assert.equal(commandForMenu('undo', body)?.id, 'undo')
+  assert.equal(commandForMenu('redo', body)?.id, 'redo')
+  assert.equal(commandForMenu('cut', null)?.id, 'cut')
+  assert.equal(commandForMenu('undo', text), undefined, 'a text field undoes its typing')
+  assert.equal(commandForMenu('selectAll', body), undefined, 'nothing to select: native')
+  assert.equal(commandForMenu('paste', body), undefined, 'no command: native')
+  assert.equal(commandForMenu('toString', body), undefined)
+  off()
 })
 
 test('search ranks title prefixes, then word starts, then anywhere', () => {
