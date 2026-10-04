@@ -27,6 +27,11 @@ export function fileUrl(absPath: string): string {
   return 'media://local/' + encodeURIComponent(absPath)
 }
 
+/** A mediabunny source for a media: URL, its read cache sized for reading in sequence (two readers,
+ *  each fetching up to 8 MiB ahead). With the default, 64 MiB per file, every open video and audio
+ *  file kept what it had read until the cache filled: a long export grew by every minute exported. */
+export const urlSource = (url: string) => new UrlSource(url, { maxCacheSize: 16 * 2 ** 20 })
+
 /** `what: <cause>`, or, when the media protocol answered 404, that the file is gone: its project was
  *  moved or deleted while open, and a raw URL would tell the user nothing. */
 export function readError(what: string, name: string, e: unknown): Error {
@@ -39,7 +44,7 @@ export const fileLabel = (url: string) => decodeURIComponent(url.replace(/^media
 
 export async function openVideo(url: string): Promise<FrameSource> {
   const name = fileLabel(url)
-  const input = new Input({ source: new UrlSource(url), formats: ALL_FORMATS })
+  const input = new Input({ source: urlSource(url), formats: ALL_FORMATS })
   try {
     const track = await input.getPrimaryVideoTrack()
     if (!track) throw new Error(`${name} has no video track`)

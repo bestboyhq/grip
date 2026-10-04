@@ -68,3 +68,24 @@ test('mapRange matches a linear scan on shuffled, duplicated, sped-up clips', ()
     assert.deepEqual(mapRange(m, a, b), linear(cs, a, b))
   }
 })
+
+test('toOutput matches a linear scan (first occurrence wins) on shuffled, duplicated, sped-up clips', () => {
+  const linear = (cs: Clip[], src: number) => {
+    const m = timeMap(cs)
+    const i = cs.findIndex((c, i) => src >= c.start - 1e-9 && (src < c.end - 1e-9 || (i === cs.length - 1 && src <= c.end + 1e-9)))
+    return i < 0 ? null : m.outStarts[i] + (Math.max(src, cs[i].start) - cs[i].start) / cs[i].speed
+  }
+  let seed = 11
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+  const cs: Clip[] = []
+  for (let i = 0; i < 300; i++) {
+    const s = rnd() * 1000
+    cs.push(clip(s, s + 0.1 + rnd() * 20, [0.5, 1, 2, 4][Math.floor(rnd() * 4)]))
+  }
+  cs.push(clip(cs[5].start, cs[5].end)) // a duplicate: the first one wins
+  const m = timeMap(cs)
+  for (let i = 0; i < 5000; i++) {
+    const src = i % 50 === 0 ? cs[i % cs.length].end : rnd() * 1100 - 50 // clip ends too: only the last clip owns its end
+    assert.equal(toOutput(m, src), linear(cs, src))
+  }
+})

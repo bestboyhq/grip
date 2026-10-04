@@ -3,9 +3,9 @@
 // Owner: compositor.
 
 import { sceneAt, type CursorLayer, type Prepared, type View } from './scene.ts'
-import { clipAt, type TimeMap } from '../shared/timemap.ts'
+import { clipAt, toSource, type TimeMap } from '../shared/timemap.ts'
 import { viewAt } from './zoom/index.ts'
-import { layoutAt } from './layout.ts'
+import { screenAt } from './layout.ts'
 import { cursorAt } from './motion/index.ts'
 import type { FrameSource } from './media/index.ts'
 import type { Motion, Renderer } from './gpu/renderer.ts'
@@ -41,6 +41,21 @@ export async function renderFrame(r: Renderer, p: Prepared, media: Media, t: num
   }
 }
 
+/** Output seconds before a cut at which the next clip starts decoding. */
+const PREFETCH = 0.5
+
+/** Rendering in sequence (playback, export): shortly before t reaches a cut, start decoding where the
+ *  next clip begins on each source's spare decoder (FrameSource.prefetch), so the frame after the cut
+ *  is ready instead of waiting for a seek and a decode from the keyframe. Calls for the same cut after
+ *  the first cost nothing. */
+export function prefetchCut(p: Prepared, media: Media, t: number): void {
+  const i = clipAt(p.map, t) + 1
+  const src = p.map.clips[i]?.start
+  if (src === undefined || p.map.outStarts[i] - t > PREFETCH) return
+  const now = toSource(p.map, t)
+  for (const m of [media.screen, media.camera, media.matte]) m?.prefetch(src, now)
+}
+
 /** Shutter sample times around output time t, clamped to the clip playing at t so motion blur
  *  never smears across a cut. */
 export function shutter(map: TimeMap, t: number): number[] {
@@ -60,10 +75,10 @@ export function motionAt(p: Prepared, t: number): Motion | undefined {
   const views = ts.map((x) => viewAt(p.zoom, x))
   // Cursor samples ride on the screen as it sits at t: a layout transition moves the screen without
   // blurring it, so it must not blur the cursor on it either.
-  const at = layoutAt(p.layout, t).screen?.rect
+  const at = screenAt(p.layout, t)?.screen
   const cursors = ts.map((x) => {
     const c = cursorAt(p.cursor, x)
-    const r = at && c && layoutAt(p.layout, x).screen?.rect
+    const r = at && c && screenAt(p.layout, x)?.screen
     if (!r || !at || !c) return c
     const k = at.w / r.w
     return { ...c, x: at.x + (c.x - r.x) * k, y: at.y + (c.y - r.y) * k, scale: c.scale * k }

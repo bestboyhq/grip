@@ -42,11 +42,25 @@ export function prepareLayout(input: SceneInput, map: TimeMap, unit: number) {
   const targets = Object.fromEntries(KINDS.map((k) => [k, target(input, unit, k)])) as Record<Kind, State>
   // No camera, or the camera turned off: no layout makes room for it.
   const changes = input.project.sources.camera && input.project.style.camera.visible !== false ? kindChanges(input, map) : [{ t: -Infinity, kind: 'pip' as Kind }]
-  const faces = (input.faces ?? []).filter((f) => f && [f.t, f.x, f.y, f.w, f.h].every(Number.isFinite)).sort((a, b) => a.t - b.t)
-  return { input, map, unit, targets, changes, faces, masks: maskIndex(input.project.masks, map) }
+  return { input, map, unit, targets, changes, faces: input.faces ? validFaces(input.faces) : [], masks: maskIndex(input.project.masks, map) }
+}
+
+/** The face track's valid samples in time order, once per track (2 hours of it is 72k samples). */
+const faceTracks = new WeakMap<FaceSample[], FaceSample[]>()
+function validFaces(faces: FaceSample[]): FaceSample[] {
+  let v = faceTracks.get(faces)
+  if (!v) faceTracks.set(faces, (v = faces.filter((f) => f && [f.t, f.x, f.y, f.w, f.h].every(Number.isFinite)).sort((a, b) => a.t - b.t)))
+  return v
 }
 
 export type PreparedLayout = ReturnType<typeof prepareLayout>
+
+/** Where the screen sits at t, the same as layoutAt(l, t).screen, without the camera and masks:
+ *  the zoom camera, the cursor, and click effects ask at every 120 Hz step of a 2-hour project. */
+export function screenAt(l: PreparedLayout, t: number): ScreenPlace | null {
+  return l.input.project.sources.screen ? stateAt(l, t, lastChange(l.changes, t)) : null
+}
+export type ScreenPlace = Pick<State, 'screen' | 'screenRadius' | 'viewport'>
 
 /** `zoom`: how far the view is zoomed in past its rest framing at t (zoomAmount), 0..1. */
 export function layoutAt(l: PreparedLayout, t: number, zoom = 0): { screen: ScreenLayer | null; camera: CameraLayer | null; masks: MaskLayer[] } {

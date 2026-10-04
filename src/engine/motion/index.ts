@@ -1,6 +1,6 @@
 // Owner: motion. The cursor in OUTPUT time.
 //
-// prepareCursor runs once per project revision and bakes the path into typed arrays:
+// prepareCursor bakes the path into typed arrays (cursorPath, reused while its inputs stay the same):
 //   1. Sample the recorded position (sample-and-hold of move/down/up/scroll) on a fixed 120 Hz grid
 //      over the OUTPUT timeline, clip by clip through the time map. Events in cut ranges never land.
 //   2. Smooth each run of contiguous clips with a zero-phase Gaussian (3 box passes) measured in
@@ -23,7 +23,7 @@
 import type { InputEvent } from '../../shared/events.ts'
 import type { TimeMap } from '../../shared/timemap.ts'
 import type { CursorLayer, SceneInput } from '../scene.ts'
-import { layoutAt, type prepareLayout } from '../layout.ts'
+import { screenAt, type prepareLayout } from '../layout.ts'
 import { springProgress } from './spring.ts'
 import { CURSORS, type BuiltinName } from '../../assets/cursors.ts'
 
@@ -54,14 +54,34 @@ interface Img {
   scale: number
 }
 
-export function prepareCursor(input: SceneInput, map: TimeMap, layout: ReturnType<typeof prepareLayout>) {
-  const { project } = input
-  const st = project.style.cursor
-  const screen = project.sources.screen
-  const pt = screen?.scale || 1 // screen.mp4 px per point
-  const clips = map.clips
+export function prepareCursor(input: SceneInput, map: TimeMap, layout: ReturnType<typeof prepareLayout>, path = cursorPath(input, map)) {
+  return { input, layout, ...path }
+}
 
-  const ev = input.events.filter(valid)
+let last: { events: InputEvent[]; key: string; path: CursorPath } | null = null
+
+/** The baked path: plain data, a function of the events, the clips' timing, and the cursor style
+ *  that shapes the path (not its size, visibility, idle hiding, or click effect: cursorAt applies
+ *  those). Edits that leave all of that alone reuse the last path. Events are replaced, never edited
+ *  in place, so the same array means the same events. */
+export function cursorPath(input: SceneInput, map: TimeMap) {
+  const { set, smooth, loop } = input.project.style.cursor
+  const key = JSON.stringify([input.project.sources.screen ?? null, set, smooth, loop, map.clips.map((c) => [c.start, c.end, c.speed])])
+  if (last?.events !== input.events || last.key !== key) last = { events: input.events, key, path: bakePath(input, map) }
+  return last.path
+}
+
+export type CursorPath = ReturnType<typeof bakePath>
+
+/** The events the path reads, valid and in time order, once per events array. */
+const sorted = new WeakMap<InputEvent[], ReturnType<typeof sortEvents>>()
+function eventsOf(events: InputEvent[]) {
+  let s = sorted.get(events)
+  if (!s) sorted.set(events, (s = sortEvents(events)))
+  return s
+}
+function sortEvents(events: InputEvent[]) {
+  const ev = events.filter(valid)
   for (let i = 1; i < ev.length; i++) {
     if (ev[i].t < ev[i - 1].t) {
       ev.sort((a, b) => a.t - b.t)
@@ -74,6 +94,17 @@ export function prepareCursor(input: SceneInput, map: TimeMap, layout: ReturnTyp
   const posT = Float64Array.from(pos, (e) => e.t)
   const btnT = Float64Array.from(btn, (e) => e.t)
   const curT = Float64Array.from(cur, (e) => e.t)
+  return { pos, btn, cur, posT, btnT, curT }
+}
+
+function bakePath(input: SceneInput, map: TimeMap) {
+  const { project } = input
+  const st = project.style.cursor
+  const screen = project.sources.screen
+  const pt = screen?.scale || 1 // screen.mp4 px per point
+  const clips = map.clips
+
+  const { pos, btn, cur, posT, btnT, curT } = eventsOf(input.events)
 
   const ok = !!screen && pos.length > 0 && map.duration > 0 && Number.isFinite(map.duration) && clips.every((c) => c.speed > 0 && c.end >= c.start)
   const n = ok ? Math.floor(map.duration * RATE) + 2 : 0
@@ -267,8 +298,6 @@ export function prepareCursor(input: SceneInput, map: TimeMap, layout: ReturnTyp
   })
 
   return {
-    input,
-    layout,
     duration: map.duration,
     n,
     x,
@@ -323,18 +352,17 @@ function locate(c: PreparedCursor, t: number): { x: number; y: number; k: number
   let x = lerp(c.x, t)
   let y = lerp(c.y, t)
   const k = bisect(c.pinT, t) - 1
-  for (const j of [k, k + 1]) {
-    if (j < 0 || j >= c.pinT.length) continue
+  for (let j = Math.max(k, 0); j <= k + 1 && j < c.pinT.length; j++) {
     const d = t - c.pinT[j]
     const r = d < 0 ? c.pinA[j] : c.pinB[j]
     const w = d === 0 ? 1 : Math.abs(d) < r ? 0.5 + 0.5 * Math.cos((Math.PI * d) / r) : 0
     x += c.pinX[j] * w
     y += c.pinY[j] * w
   }
-  const screen = layoutAt(c.layout, t).screen
-  if (!screen) return null
-  const scale = screen.rect.w / s.width
-  return { x: screen.rect.x + x * scale, y: screen.rect.y + y * scale, k: scale }
+  const r = screenAt(c.layout, t)?.screen
+  if (!r) return null
+  const scale = r.w / s.width
+  return { x: r.x + x * scale, y: r.y + y * scale, k: scale }
 }
 
 function opacityAt(c: PreparedCursor, t: number): number {

@@ -1,9 +1,8 @@
 // Audio worker: the mixer (preview and export) and source analysis (peaks, loudness), off the main
 // thread. ./index.ts runs two of these, so a long analysis never delays real-time mixing.
 
-import { UrlSource } from 'mediabunny'
 import rnnoiseUrl from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url'
-import { fileLabel as label, fileUrl } from '../media/index.ts'
+import { fileLabel as label, fileUrl, urlSource } from '../media/index.ts'
 import { SR, voiceGain } from './dsp.ts'
 import { Mixer, openFile, type Env, type Plan } from './mix.ts'
 import { PEAK_SPP, analyze, cachePath, decodeAnalysis, encodeAnalysis, queryPeaks, rawPeaks, type Analysis } from './source.ts'
@@ -15,7 +14,7 @@ export type Request =
 
 let rnnoise: Promise<WebAssembly.Module> | undefined
 const env: Env = {
-  open: (url) => new UrlSource(url),
+  open: urlSource,
   rnnoise: () => (rnnoise ??= fetch(rnnoiseUrl).then(async (r) => WebAssembly.compile(await r.arrayBuffer()))),
 }
 

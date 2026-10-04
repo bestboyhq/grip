@@ -2,8 +2,9 @@
 // ffmpeg, starts Vite, and launches itself as Electron's main script, which opens the
 // PlayerChecks lab (src/windows/dev/labs/PlayerChecks.svelte) hidden and reports its results.
 // Covers: frameAt on VFR H.264 with B-frames, HEVC, and the fixture; stepping backward; decoding
-// ahead across a cut; AAC priming alignment; a full-level head on every music loop; an imported .mp4
-// as its own audio; renderAudio length, 2x, chunk joins; peaks cache.
+// ahead across a cut; a bounded read cache; AAC priming alignment; a full-level head on every music
+// loop; an imported .mp4 as its own audio; renderAudio length, 2x, chunk joins; peaks cache; editing
+// a 2-hour project without stalling the editor.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile, execFileSync } from 'node:child_process'
@@ -19,6 +20,9 @@ if (process.versions.electron) {
   const { app } = await import('electron')
   const { registerMediaProtocol } = await import('../../../electron/media.ts')
   const { openWindow } = await import('../../../electron/windows.ts')
+  // The memory check measures the renderer heap: exact numbers, after a forced collection.
+  app.commandLine.appendSwitch('js-flags', '--expose-gc')
+  app.commandLine.appendSwitch('enable-precise-memory-info')
   // Not awaited: Electron emits 'ready' only after the main module finishes evaluating.
   app.whenReady().then(async () => {
     registerMediaProtocol()
@@ -49,6 +53,8 @@ if (process.versions.electron) {
     ff(dir, ['-display_rotation', '90', '-i', 'flat.mp4', '-c', 'copy', 'rotated.mov'])
     // 6 s at 30 fps with a keyframe every second, like a recording.
     ff(dir, ['-f', 'lavfi', '-i', 'testsrc2=s=128x128:r=30:d=6', '-c:v', 'libx265', '-tag:v', 'hvc1', '-x265-params', 'keyint=30:log-level=error', '-pix_fmt', 'yuv420p', 'gop.mp4'])
+    // 6 s of noise, 56 MB: a file bigger than a read cache should keep.
+    ff(dir, ['-f', 'lavfi', '-i', "nullsrc=s=640x360:r=30:d=6,format=yuv420p,geq=lum='random(1)*255':cb=128:cr=128", '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '6', '-g', '30', '-pix_fmt', 'yuv420p', 'big.mp4'])
     // AAC with 2 ms clicks at exactly 1.0 s and 2.5 s.
     const clicks = "aevalsrc='0.8*(between(t,1,1.002)+between(t,2.5,2.502))':s=48000:d=4"
     ff(dir, ['-f', 'lavfi', '-i', clicks, '-c:a', 'aac', '-b:a', '192k', 'click.m4a'])

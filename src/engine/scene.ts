@@ -12,8 +12,8 @@ import type { Background, Project, Rect, Style, Transcript } from '../shared/pro
 import type { InputEvent } from '../shared/events.ts'
 import { timeMap, toSource, type TimeMap } from '../shared/timemap.ts'
 import { prepareLayout, layoutAt } from './layout.ts'
-import { prepareCursor, cursorAt } from './motion/index.ts'
-import { prepareZoom, viewAt, loupeAt, zoomAmount } from './zoom/index.ts'
+import { prepareCursor, cursorAt, cursorPath, type CursorPath } from './motion/index.ts'
+import { prepareZoom, viewAt, loupeAt, zoomAmount, zoomPath, type ZoomPath } from './zoom/index.ts'
 import { prepareOverlays, clicksAt, keystrokesAt, captionAt } from './overlays/index.ts'
 
 export interface View {
@@ -135,7 +135,7 @@ export interface FaceSample {
   h: number
 }
 
-/** Heavy precomputation, done once per project revision and output size. */
+/** Precomputation, done once per project revision and output size. */
 export interface Prepared {
   input: SceneInput
   map: TimeMap
@@ -146,15 +146,33 @@ export interface Prepared {
   overlays: ReturnType<typeof prepareOverlays>
 }
 
-export function prepare(input: SceneInput): Prepared {
+/** The heavy part of a preparation as plain data: the cursor path and the zoom camera samples. Each
+ *  is reused while its own inputs stay the same. The preview computes them off the main thread
+ *  (./paths.worker.ts) and passes them to prepare(); export lets prepare() compute them. */
+export interface Paths {
+  cursor: CursorPath
+  zoom: ZoomPath
+}
+
+export function preparePaths(input: SceneInput): Paths {
   const map = timeMap(input.project.clips)
-  const unit = Math.min(input.width, input.height) / 1080
+  const layout = prepareLayout(input, map, unitOf(input))
+  const cursor = cursorPath(input, map)
+  return { cursor, zoom: zoomPath(input, map, layout, prepareCursor(input, map, layout, cursor)) }
+}
+
+/** `paths`: preparePaths(input), computed elsewhere (a worker); computed here when absent. */
+export function prepare(input: SceneInput, paths?: Paths): Prepared {
+  const map = timeMap(input.project.clips)
+  const unit = unitOf(input)
   const layout = prepareLayout(input, map, unit)
-  const cursor = prepareCursor(input, map, layout)
-  const zoom = prepareZoom(input, map, layout, cursor)
+  const cursor = prepareCursor(input, map, layout, paths?.cursor)
+  const zoom = prepareZoom(input, map, layout, cursor, paths?.zoom)
   const overlays = prepareOverlays(input, map, layout)
   return { input, map, unit, layout, cursor, zoom, overlays }
 }
+
+const unitOf = (input: SceneInput) => Math.min(input.width, input.height) / 1080
 
 export function sceneAt(p: Prepared, t: number): Scene {
   const { project, width, height } = p.input

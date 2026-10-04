@@ -1,6 +1,8 @@
 // Export engine: one job, from project to encoded bytes. Runs in the hidden export window
 // (src/windows/export/Export.svelte), never in the editor. Every output frame goes through
-// renderFrame (the same path as preview) and reaches the encoder, static or not.
+// renderFrame (the same path as preview) and reaches the encoder, static or not. Like playback, it
+// starts decoding the clip after each cut ahead of time (prefetchCut) instead of restarting the
+// decoder when it gets there.
 // MP4: OffscreenCanvas -> VideoFrame -> VideoEncoder (hardware H.264 or HEVC) -> mediabunny MP4
 //      with fast start reserved up front; bytes leave through io.write at their file positions,
 //      so memory stays flat and files of any size work. Audio: renderAudio -> AAC 48 kHz stereo,
@@ -11,7 +13,7 @@
 
 import { AudioBufferSource, CanvasSource, Mp4OutputFormat, Output, Quality, StreamTarget, canEncodeVideo, type StreamTargetChunk } from 'mediabunny'
 import { outputSize, prepare, type SceneInput } from '../scene.ts'
-import { renderFrame, type Media } from '../compose.ts'
+import { prefetchCut, renderFrame, type Media } from '../compose.ts'
 import { Renderer } from '../gpu/renderer.ts'
 import { fileUrl, openVideo } from '../media/index.ts'
 import { peaks, renderAudio } from '../audio/index.ts'
@@ -155,6 +157,7 @@ async function mp4Pass(job: JobSpec, input: Input, media: Media, io: ExportIO, {
       for (let i = 0; i < n; i++) {
         const t = i / o.fps
         await audioUntil(t + 0.5)
+        prefetchCut(p, media, t)
         await watch(renderFrame(r, p, media, t), 'renderer')
         // add() takes the VideoFrame from the canvas synchronously, before anything else draws.
         await watch(video.add(t, 1 / o.fps), 'video encoder')
@@ -249,6 +252,7 @@ async function gifPass(job: JobSpec, input: Input, media: Media, io: ExportIO, w
     await put(await send({ start: { width, height, fps: o.fps, loop: o.loop } }))
     const inflight: Promise<Uint8Array>[] = []
     for (let i = 0; i < n; i++) {
+      prefetchCut(p, media, i / o.fps)
       await watch(renderFrame(r, p, media, i / o.fps), 'renderer')
       readback.drawImage(r.canvas, 0, 0)
       const { data } = readback.getImageData(0, 0, width, height)
