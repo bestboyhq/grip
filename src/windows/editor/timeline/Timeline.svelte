@@ -7,7 +7,7 @@
   import type { AudioSource } from '../../../shared/project.ts'
   import { timeMap, toSource, type TimeMap } from '../../../shared/timemap.ts'
   import { doc, edit, selection } from '../../../lib/doc.svelte.ts'
-  import { player, seek, toggle } from '../../../lib/player.svelte.ts'
+  import { player, scrub, seek, toggle } from '../../../lib/player.svelte.ts'
   import { peaks as enginePeaks } from '../../../engine/audio/index.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
   import CommandMenu from '../commands/CommandMenu.svelte'
@@ -402,7 +402,7 @@
     const d = drag!
     const b = base!
     const t = outTime(p.x)
-    if (d.kind === 'scrub') return seek(t)
+    if (d.kind === 'scrub') return scrub(t) // with a grain of audio at each step
     if (d.kind === 'scroll') {
       const th = thumb(view)
       if (!th) return

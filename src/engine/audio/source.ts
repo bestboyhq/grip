@@ -1,9 +1,9 @@
 // Source audio, decoded in chunks with mediabunny (WebCodecs) and resampled onto the 48 kHz grid.
-// A Reader holds a few seconds at most, so multi-hour tracks never sit in memory. Also the one-pass
-// analysis of a source: waveform peaks and integrated loudness, computed once and cached.
+// A Reader holds a few seconds at most, so multi-hour tracks never sit in memory. Also the analysis
+// of a source: waveform peaks and integrated loudness, computed once and cached.
 
 import { ALL_FORMATS, AudioSampleSink, Input, type AudioSample, type Source } from 'mediabunny'
-import { LoudnessMeter, SR, interpolate, sincTable } from './dsp.ts'
+import { LoudnessMeter, SR, integratedLoudness, interpolate, sincTable } from './dsp.ts'
 
 export interface AudioFile {
   label: string // bundle-relative name for error messages
@@ -118,17 +118,15 @@ export class Reader {
     try {
       const at = Math.round(s.timestamp * this.f.rate) // samples are placed by timestamp, so gaps stay gaps
       const end = this.b0 + this.len
-      let skip = Math.max(0, end - at) // overlap with what we have (or priming before b0)
+      const skip = Math.max(0, end - at) // overlap with what we have (or priming before b0)
       if (skip >= s.numberOfFrames) return
       const gap = Math.max(0, at - end)
       const count = s.numberOfFrames - skip
       this.grow(this.len + gap + count)
+      const to = this.len + gap
       for (let c = 0; c < this.buf.length; c++) {
-        const ch = this.buf[c]
-        ch.fill(0, this.len, this.len + gap)
-        const tmp = new Float32Array(s.numberOfFrames)
-        s.copyTo(tmp, { planeIndex: Math.min(c, s.numberOfChannels - 1), format: 'f32-planar' })
-        ch.set(tmp.subarray(skip), this.len + gap)
+        this.buf[c].fill(0, this.len, to)
+        s.copyTo(this.buf[c].subarray(to, to + count), { planeIndex: Math.min(c, s.numberOfChannels - 1), format: 'f32-planar', frameOffset: skip, frameCount: count })
       }
       this.len += gap + count
     } finally {
@@ -168,27 +166,46 @@ export class Reader {
   }
 }
 
-// ---- One-pass analysis: peaks + loudness ----
+// ---- Analysis: waveform peaks + loudness, decoded in parallel segments ----
+// WebCodecs decodes on its own threads, so a few segments decoding at once scale almost linearly.
+// A segment's peaks are usable as soon as it is done: the waveform of a 2-hour file starts drawing
+// from its first minutes while the rest still decodes.
 
-export const PEAK_SPP = 256 // output-grid samples per base peak bucket (5.3 ms)
+export const PEAK_SPP = 256 // output-grid samples per peak bucket (5.3 ms)
+const SEG = 200 * 76800 // output samples per segment (320 s): whole peak buckets, whole 100 ms loudness blocks
+const LANES = 4 // segments decoding at once
 
 export interface Analysis {
-  lufs: number | null // integrated loudness as heard (mono counts on both channels)
-  levels: Int16Array[] // [min, max] pairs; levels[0] has one pair per PEAK_SPP samples, each next level halves
+  base: Int16Array // [min, max] pairs, one per PEAK_SPP samples, valid where ready() has resolved
+  ready(from: number, to: number): Promise<void> // seconds
+  lufs: Promise<number | null> // integrated loudness as heard (mono counts on both channels)
 }
 
-/** Decode the whole file once (chunked) for waveform peaks and loudness. */
-export async function analyze(f: AudioFile, onChunk?: () => Promise<void>): Promise<Analysis> {
-  const r = new Reader(f)
-  const meter = new LoudnessMeter()
+/** Analyze the whole file, LANES segments at a time, in time order. */
+export function analyze(f: AudioFile, seg = SEG): Analysis {
   const total = Math.ceil(f.duration * SR)
   const base = new Int16Array(2 * Math.ceil(total / PEAK_SPP))
+  const segs: Promise<number[]>[] = []
+  for (let a = 0; a < total; a += seg) {
+    const b = Math.min(total, a + seg)
+    segs.push((segs[segs.length - LANES] ?? Promise.resolve()).then(() => segment(f, a, b, base)))
+  }
+  const lufs = Promise.all(segs).then((blocks) => integratedLoudness(blocks.flat()))
+  lufs.catch(() => {}) // callers see the error through ready() or lufs
+  const ready = async (from: number, to: number) => void (await Promise.all(segs.slice(Math.max(0, Math.floor((from * SR) / seg)), Math.ceil((to * SR) / seg))))
+  return { base, ready, lufs }
+}
+
+/** Peaks of output samples [a, b) into `base`; returns their 100 ms loudness blocks. */
+async function segment(f: AudioFile, a: number, b: number, base: Int16Array): Promise<number[]> {
+  const r = new Reader(f)
+  const meter = new LoudnessMeter()
   const STEP = PEAK_SPP * 750 // 4 s
   try {
-    for (let pos = 0; pos < total; pos += STEP) {
-      const n = Math.min(STEP, total - pos)
+    for (let pos = a; pos < b; pos += STEP) {
+      const n = Math.min(STEP, b - pos)
       const chs = await r.read(pos, n)
-      meter.push(chs.length === 1 ? [chs[0], chs[0]] : chs.slice(0, 2), n)
+      meter.push(chs.slice(0, 2), n, chs.length === 1 ? 2 : 1)
       for (let i = 0; i < n; i += PEAK_SPP) {
         let lo = 0
         let hi = 0
@@ -203,51 +220,29 @@ export async function analyze(f: AudioFile, onChunk?: () => Promise<void>): Prom
         base[k] = q16(lo)
         base[k + 1] = q16(hi)
       }
-      await onChunk?.()
     }
   } finally {
     r.close()
   }
-  return { lufs: meter.integrated(), levels: pyramid(base) }
+  return meter.blocks
 }
 
 const q16 = (v: number) => Math.max(-32767, Math.min(32767, Math.round(v * 32767)))
 
-export function pyramid(base: Int16Array): Int16Array[] {
-  const levels = [base]
-  for (let l = levels[0]; l.length > 2; ) {
-    const n = Math.ceil(l.length / 4)
-    const next = new Int16Array(2 * n)
-    for (let i = 0; i < n; i++) {
-      const a = 4 * i
-      const b = Math.min(a + 2, l.length - 2)
-      next[2 * i] = Math.min(l[a], l[b])
-      next[2 * i + 1] = Math.max(l[a + 1], l[b + 1])
-    }
-    levels.push(next)
-    l = next
-  }
-  return levels
-}
-
-/** Min/max pairs for `buckets` equal slices of [from, to) seconds, from the pyramid. Exact to the
- *  base bucket (5.3 ms); each slice is covered by O(log n) aligned nodes. */
-export function queryPeaks(levels: Int16Array[], from: number, to: number, buckets: number): Float32Array {
+/** Min/max pairs for `buckets` equal slices of [from, to) seconds, exact to the 5.3 ms bucket. A
+ *  linear scan: all of a 2-hour track is 1.35M pairs, about a millisecond. */
+export function queryPeaks(base: Int16Array, from: number, to: number, buckets: number): Float32Array {
   const out = new Float32Array(2 * buckets)
-  const count = levels[0].length / 2
+  const count = base.length / 2
   const span = ((to - from) * SR) / PEAK_SPP / buckets
   for (let k = 0; k < buckets; k++) {
     let i = Math.max(0, Math.floor((from * SR) / PEAK_SPP + k * span))
     const e = Math.min(count, Math.max(i + 1, Math.ceil((from * SR) / PEAK_SPP + (k + 1) * span)))
     let lo = 0
     let hi = 0
-    while (i < e) {
-      let l = 0
-      while (l + 1 < levels.length && i % (1 << (l + 1)) === 0 && i + (1 << (l + 1)) <= e) l++
-      const j = 2 * (i >> l)
-      lo = Math.min(lo, levels[l][j])
-      hi = Math.max(hi, levels[l][j + 1])
-      i += 1 << l
+    for (; i < e; i++) {
+      if (base[2 * i] < lo) lo = base[2 * i]
+      if (base[2 * i + 1] > hi) hi = base[2 * i + 1]
     }
     out[2 * k] = lo / 32767
     out[2 * k + 1] = hi / 32767
@@ -284,14 +279,13 @@ export async function rawPeaks(f: AudioFile, from: number, to: number, buckets: 
 }
 
 // ---- Cache file: <bundle>/cache/<source path with / as _>.<bytes>.analysis ----
-// 'SPK1', f64 lufs (NaN = silent), u32 base count, then int16 [min, max] pairs.
+// 'SPK1', f64 lufs (NaN = silent), u32 bucket count, then int16 [min, max] pairs.
 
-export function encodeAnalysis(a: Analysis): ArrayBuffer {
-  const base = a.levels[0]
+export function encodeAnalysis(base: Int16Array, lufs: number | null): ArrayBuffer {
   const buf = new ArrayBuffer(16 + base.byteLength)
   const v = new DataView(buf)
   v.setUint32(0, 0x53504b31)
-  v.setFloat64(4, a.lufs ?? NaN, true)
+  v.setFloat64(4, lufs ?? NaN, true)
   v.setUint32(12, base.length / 2, true)
   new Int16Array(buf, 16).set(base)
   return buf
@@ -303,7 +297,7 @@ export function decodeAnalysis(buf: ArrayBuffer): Analysis | null {
   const n = v.getUint32(12, true)
   if (v.getUint32(0) !== 0x53504b31 || buf.byteLength !== 16 + 4 * n) return null
   const lufs = v.getFloat64(4, true)
-  return { lufs: Number.isNaN(lufs) ? null : lufs, levels: pyramid(new Int16Array(buf.slice(16))) }
+  return { base: new Int16Array(buf.slice(16)), ready: async () => {}, lufs: Promise.resolve(Number.isNaN(lufs) ? null : lufs) }
 }
 
 /** Where the analysis of `path` (absolute) is cached, or null when it is not inside a .studio bundle. */

@@ -6,11 +6,15 @@
 // heard right now. A requestAnimationFrame loop renders the latest time and skips a tick while the
 // previous frame is still rendering, so video drops frames instead of drifting. Audio is mixed
 // ahead in the audio worker (the same graph export uses) and played by a worklet at exact frames.
+//
+// The playhead is saved in the project (source time, so it survives cuts) on pause and seek, as view
+// state outside edit(): no undo step. Attaching seeks back to it.
 
-import { doc } from './doc.svelte.ts'
+import { doc, save } from './doc.svelte.ts'
 import type { InputEvent } from '../shared/events.ts'
 import type { Project, Transcript } from '../shared/project.ts'
-import { outputSize, prepare, type Prepared } from '../engine/scene.ts'
+import { mapRange, timeMap, toOutput, toSource } from '../shared/timemap.ts'
+import { outputSize, prepare, type FaceSample, type Prepared } from '../engine/scene.ts'
 import { renderFrame, type Media } from '../engine/compose.ts'
 import { Renderer } from '../engine/gpu/renderer.ts'
 import { fileUrl, openVideo } from '../engine/media/index.ts'
@@ -20,10 +24,11 @@ import workletUrl from '../engine/audio/playback.worklet.ts?worker&url'
 
 export const player = $state({ time: 0, duration: 0, playing: false, error: null as string | null })
 
-/** Timing for labs and logs; plain (not reactive) so the hot loop stays cheap. */
-export const stats = { frames: 0, dropped: 0, renderMs: 0, maxRenderMs: 0, prepares: 0, prepareMs: 0, starved: 0 }
+/** Timing for labs and logs; plain (not reactive) so the hot loop stays cheap. Set `sync` to an
+ *  array to log [audio clock, frame time] (output seconds) for each frame drawn while playing. */
+export const stats = { frames: 0, dropped: 0, renderMs: 0, maxRenderMs: 0, prepares: 0, prepareMs: 0, starved: 0, grains: 0, sync: null as Array<[number, number]> | null }
 
-const LEAD = 0.1 // s between asking for audio and hearing it (first chunk renders meanwhile)
+const LEAD = 0.05 // s from play or seek to the first scheduled frame; the first chunk mixes meanwhile (about 10 ms)
 const AHEAD = 0.6 // s of audio kept scheduled
 const CHUNK = 9600 // frames per mix request (200 ms)
 const GRAIN = 3840 // frames of audio per scrub step (80 ms)
@@ -42,6 +47,9 @@ let preparedAt = 0
 let size = ''
 let events: { from: unknown; value: InputEvent[] } = { from: null, value: [] }
 let transcript: { from: unknown; value: Transcript | null } = { from: null, value: null }
+let faces: { url: string | undefined; value: FaceSample[] | undefined } = { url: undefined, value: undefined }
+let restore = false // seek to the saved playhead on the next prepare
+let saveTimer: ReturnType<typeof setTimeout> | undefined
 let detachCurrent: (() => void) | null = null
 
 // Audio
@@ -74,12 +82,14 @@ export function attach(c: HTMLCanvasElement): () => void {
   detachCurrent?.()
   canvas = c
   player.error = null
+  restore = true
   c.style.objectFit = 'contain'
   const stopEffects = $effect.root(() => {
     $effect(() => {
       void doc.rev
-      void doc.project
       void doc.path
+      // The duration follows edits at once (seeks right after an edit clamp to it); frames re-prepare debounced.
+      if (doc.project) player.duration = timeMap(doc.project.clips).duration
       stale = true
       staleAt = performance.now()
     })
@@ -92,6 +102,7 @@ export function attach(c: HTMLCanvasElement): () => void {
     .catch(fail)
   raf = requestAnimationFrame(frame)
   pump = setInterval(feed, 50) // audio keeps flowing even when rAF is throttled
+  void ensureAudio() // ready before the first play, so it starts as fast as every later one
   const detach = () => {
     if (detachCurrent !== detach) return
     detachCurrent = null
@@ -117,7 +128,8 @@ export function play() {
   if (player.time >= player.duration - 1e-3) player.time = 0
   player.playing = true
   startRun(false)
-  void ensureAudio().then((ok) => ok && player.playing && startRun(false))
+  // Audio not running yet (still starting, or suspended by the system): switch to its clock once it is.
+  if (!runAudio) void ensureAudio().then((ok) => ok && player.playing && !runAudio && startRun(false))
 }
 
 export function pause() {
@@ -126,6 +138,7 @@ export function pause() {
   player.playing = false
   run++
   if (ctx) post({ type: 'stop', at: Math.round(ctx.currentTime * SR) })
+  keepPlayhead()
 }
 
 export const toggle = () => (player.playing ? pause() : play())
@@ -133,6 +146,19 @@ export const toggle = () => (player.playing ? pause() : play())
 export function seek(t: number) {
   player.time = Math.min(Math.max(t, 0), player.duration)
   if (player.playing) startRun(false)
+  else keepPlayhead()
+}
+
+/** Store the playhead in the project as source time; saved to disk once it settles for a second. */
+function keepPlayhead() {
+  const p = doc.project
+  if (!p?.clips.length) return
+  const src = toSource(timeMap(p.clips), player.time)
+  if (Math.abs(p.playhead - src) < 1e-3) return
+  p.playhead = src
+  doc.dirty = true
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => void save().catch(fail), 1000)
 }
 
 /** Seek while dragging the playhead: when paused, also plays a short grain of audio at t. */
@@ -190,6 +216,7 @@ function frame(ts: number) {
       stats.frames++
       stats.renderMs += (ms - stats.renderMs) * 0.1
       stats.maxRenderMs = Math.max(stats.maxRenderMs, ms)
+      if (stats.sync && player.playing) stats.sync.push([clock(), t])
     })
     .catch(fail)
     .finally(() => (inFlight = false))
@@ -204,10 +231,16 @@ function rebuild(project: Project, width: number, height: number) {
     if (events.from !== doc.events) events = { from: doc.events, value: $state.snapshot(doc.events) as InputEvent[] }
     if (transcript.from !== doc.transcript) transcript = { from: doc.transcript, value: $state.snapshot(doc.transcript) as Transcript | null }
     const p = $state.snapshot(project) as Project
-    prepared = prepare({ project: p, events: events.value, transcript: transcript.value, width, height })
+    syncFaces(p)
+    prepared = prepare({ project: p, events: events.value, transcript: transcript.value, width, height, faces: faces.value })
     stats.prepares++
     stats.prepareMs = performance.now() - preparedAt
     player.duration = prepared.map.duration
+    if (restore) {
+      // Reopen where the user left off; a moment cut out since then resumes at the next one kept.
+      restore = false
+      seek(toOutput(prepared.map, p.playhead) ?? mapRange(prepared.map, p.playhead, Infinity)[0]?.[0] ?? 0)
+    }
     if (player.time > player.duration) player.time = player.duration
     syncMedia(p)
     syncAudio(p)
@@ -232,6 +265,23 @@ function syncMedia(p: Project) {
       })
       .catch(fail)
   }
+}
+
+/** Load the camera face track (for face follow) once per file; re-prepares when it arrives. */
+function syncFaces(p: Project) {
+  const f = p.sources.camera?.faces
+  const url = f && fileUrl(f.startsWith('/') ? f : `${doc.path}/${f}`)
+  if (url === faces.url) return
+  faces = { url, value: undefined }
+  if (!url) return
+  fetch(url)
+    .then((r) => (r.ok ? r.json() : Promise.reject()))
+    .then((v: unknown) => {
+      if (faces.url !== url) return
+      faces.value = Array.isArray(v) ? v : []
+      stale = true
+    })
+    .catch(() => fail(new Error(`Face follow is unavailable: ${f} could not be read.`)))
 }
 
 function closeMedia(k: keyof Media) {
@@ -263,15 +313,16 @@ function syncAudio(p: Project) {
   if (player.playing) startRun(true) // an edit while playing: splice in the new mix, clock continues
 }
 
-function ensureAudio(): Promise<boolean> {
-  return (audioReady ??= (async () => {
+/** The output context, created once per attach and resumed if the system suspended it. */
+async function ensureAudio(): Promise<boolean> {
+  const ok = await (audioReady ??= (async () => {
     try {
-      const c = new AudioContext({ sampleRate: SR, latencyHint: 'playback' })
+      const c = new AudioContext({ sampleRate: SR, latencyHint: 'interactive' })
       await c.audioWorklet.addModule(workletUrl)
       const n = new AudioWorkletNode(c, 'studio-playback', { numberOfInputs: 0, outputChannelCount: [2] })
       n.port.onmessage = ({ data }) => (stats.starved = data.starved)
       n.connect(c.destination)
-      await c.resume()
+      if (!canvas) return (void c.close(), false) // detached meanwhile
       ctx = c
       node = n
       return true
@@ -280,6 +331,8 @@ function ensureAudio(): Promise<boolean> {
       return false
     }
   })())
+  if (ok && ctx && ctx.state !== 'running') await ctx.resume().catch(() => {})
+  return ok && audible()
 }
 
 const audible = () => !!ctx && ctx.state === 'running'
@@ -320,7 +373,8 @@ async function feed() {
   if (runCtx + runFrames / SR - ctx!.currentTime > AHEAD) return
   const id = run
   const start = Math.round(runOut * SR) + runFrames
-  const frames = Math.min(CHUNK, Math.round(plan.duration * SR) - start)
+  const total = Math.round(plan.duration * SR)
+  const frames = Math.min(CHUNK, total - start)
   if (frames <= 0) return
   requesting = true
   try {
@@ -328,6 +382,7 @@ async function feed() {
     if (id !== run || !player.playing) return
     post({ type: 'chunk', run: id, at: Math.round(runCtx * SR) + runFrames, L, R }, [L.buffer as ArrayBuffer, R.buffer as ArrayBuffer])
     runFrames += frames
+    if (start + frames >= total) post({ type: 'stop', at: Math.round(runCtx * SR) + runFrames }) // the end: nothing more follows
   } catch (e) {
     fail(e)
   } finally {
@@ -338,27 +393,26 @@ async function feed() {
 
 let grainAt: number | null = null
 let grainBusy = false
-/** Scrub audio: the latest requested position only, 80 ms with fades, from the same mix. */
+/** Scrub audio: back-to-back 80 ms grains of the same mix (stretched on sped-up clips), each from
+ *  the latest scrub position, crossfaded by the worklet's 5 ms run fades. */
 async function grains() {
   grainBusy = true
   try {
+    let next = 0 // context frame where the next grain joins the current one
     while (grainAt !== null && !player.playing && plan && (await ensureAudio())) {
       const t = grainAt
       grainAt = null
       const [L, R] = await mix(`${session}-scrub`, plan, Math.round(t * SR), GRAIN)
-      if (player.playing || grainAt !== null) continue
-      for (let i = 0; i < 240; i++) {
-        const g = i / 240
-        L[i] *= g
-        R[i] *= g
-        L[GRAIN - 1 - i] *= g
-        R[GRAIN - 1 - i] *= g
-      }
-      const at = Math.round((ctx!.currentTime + 0.02) * SR)
+      if (player.playing) break
+      const at = Math.max(next, Math.round((ctx!.currentTime + 0.02) * SR))
+      next = at + GRAIN - 240 // the worklet fades a run out over the 240 frames after its end
       run++
       post({ type: 'run', id: run, at })
-      post({ type: 'chunk', run: run, at, L, R }, [L.buffer as ArrayBuffer, R.buffer as ArrayBuffer])
-      post({ type: 'stop', at: at + GRAIN })
+      post({ type: 'chunk', run, at, L, R }, [L.buffer as ArrayBuffer, R.buffer as ArrayBuffer])
+      post({ type: 'stop', at: next })
+      stats.grains++
+      // Mix the next grain shortly before this one ends, from wherever the scrub is by then.
+      await new Promise((r) => setTimeout(r, (next / SR - ctx!.currentTime) * 1000 - 30))
     }
   } catch (e) {
     fail(e)

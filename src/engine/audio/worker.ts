@@ -52,9 +52,12 @@ function analysis(url: string): Promise<Analysis> {
         const hit = r?.ok ? decodeAnalysis(await r.arrayBuffer()) : null
         if (hit) return hit
       }
-      const result = await analyze(f)
-      if (cache) await fetch(fileUrl(cache), { method: 'PUT', body: encodeAnalysis(result) }).catch((e) => console.warn(`Could not cache the waveform of ${f.label}: ${e}`))
-      return result
+      const job = analyze(f)
+      job.lufs.then(
+        (lufs) => void (cache && fetch(fileUrl(cache), { method: 'PUT', body: encodeAnalysis(job.base, lufs) }).catch((e) => console.warn(`Could not cache the waveform of ${f.label}: ${e}`))),
+        () => void analyses.delete(url), // a later request retries
+      )
+      return job
     })()
     a.catch(() => analyses.delete(url))
     analyses.set(url, a)
@@ -63,9 +66,11 @@ function analysis(url: string): Promise<Analysis> {
 }
 
 async function peaks({ url, from, to, buckets }: Extract<Request, { op: 'peaks' }>) {
-  // Finer than the cached base level, and short enough to decode on the spot: exact samples.
+  // Finer than the analysis buckets, and short enough to decode on the spot: exact samples.
   if (((to - from) * SR) / buckets < PEAK_SPP && to - from <= 60) return rawPeaks(await openFile(env, url, label(url)), from, to, buckets)
-  return queryPeaks((await analysis(url)).levels, from, to, buckets)
+  const a = await analysis(url)
+  await a.ready(from, to)
+  return queryPeaks(a.base, from, to, buckets)
 }
 
 self.onmessage = async ({ data }: MessageEvent<Request & { id: number }>) => {
@@ -77,7 +82,7 @@ self.onmessage = async ({ data }: MessageEvent<Request & { id: number }>) => {
       const v = await peaks(data)
       postMessage({ id: data.id, value: v }, { transfer: [v.buffer] })
     } else if (data.op === 'gain') {
-      postMessage({ id: data.id, value: voiceGain((await analysis(data.url)).lufs) })
+      postMessage({ id: data.id, value: voiceGain(await (await analysis(data.url)).lufs) })
     }
   } catch (e) {
     postMessage({ id: data.id, error: e instanceof Error ? e.message : String(e) })
