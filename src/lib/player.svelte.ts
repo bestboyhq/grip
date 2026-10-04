@@ -18,7 +18,7 @@ import { outputSize, prepare, sceneAt, type FaceSample, type Prepared, type Scen
 import { renderFrame, type Media } from '../engine/compose.ts'
 import { Renderer } from '../engine/gpu/renderer.ts'
 import { fileUrl, openVideo } from '../engine/media/index.ts'
-import { SR, mix, peaks, planOf, scrubGrain, voiceGain, type Plan } from '../engine/audio/index.ts'
+import { SR, mix, peaks, planOf, scrubGrain, type Plan } from '../engine/audio/index.ts'
 import { voiceRanges } from '../engine/layout.ts'
 import type { PlaybackMessage } from '../engine/audio/playback.worklet.ts'
 import workletUrl from '../engine/audio/playback.worklet.ts?worker&url'
@@ -62,7 +62,6 @@ let node: AudioWorkletNode | null = null
 let audioReady: Promise<boolean> | null = null
 let plan: Plan | null = null
 let planKey = ''
-const gains = new Map<string, number>()
 let run = 0 // id of the current run
 let runAudio = false // the run is clocked by the audio context (else by the wall clock)
 let runOut = 0 // output time heard at clock time runCtx
@@ -344,21 +343,10 @@ function closeMedia(k: keyof Media) {
 // ---- Audio ----
 
 function syncAudio(p: Project, splice: boolean) {
-  const next = planOf(p, events.value, doc.path, gains)
-  for (const t of next.tracks) {
-    if (t.voice && !gains.has(t.url)) {
-      gains.set(t.url, 1) // until measured
-      voiceGain(t.url)
-        .then((g) => {
-          gains.set(t.url, g)
-          stale = true
-        })
-        .catch(fail)
-    }
-  }
+  const next = planOf(p, events.value, doc.path)
   const key = JSON.stringify(next)
   if (key === planKey) return
-  if (!plan) void mix(session, next, Math.round(player.time * SR), 480).catch(() => {}) // warm the worker before play
+  if (!plan) void mix(session, next, Math.round(player.time * SR), 480).catch(() => {}) // warm the worker (and measure the voice loudness) before play
   plan = next
   planKey = key
   if (player.playing && splice) startRun(true) // an edit while playing: splice in the new mix, clock continues

@@ -1,6 +1,6 @@
 // Source audio, decoded in chunks with mediabunny (WebCodecs) and resampled onto the 48 kHz grid.
 // A Reader holds a few seconds at most, so multi-hour tracks never sit in memory. Also the analysis
-// of a source: waveform peaks and integrated loudness, computed once and cached.
+// of a source: waveform peaks (computed once and cached) and the voice loudness.
 
 import { ALL_FORMATS, AudioSampleSink, Input, type AudioSample, type Source } from 'mediabunny'
 import { LoudnessMeter, SR, integratedLoudness, interpolate, sincTable } from './dsp.ts'
@@ -169,46 +169,42 @@ export class Reader {
   }
 }
 
-// ---- Analysis: waveform peaks + loudness, decoded in parallel segments ----
+// ---- Analysis: waveform peaks, decoded in parallel segments ----
 // WebCodecs decodes on its own threads, so a few segments decoding at once scale almost linearly.
 // A segment's peaks are usable as soon as it is done: the waveform of a 2-hour file starts drawing
 // from its first minutes while the rest still decodes.
 
 export const PEAK_SPP = 256 // output-grid samples per peak bucket (5.3 ms)
-const SEG = 20 * 76800 // output samples per segment (32 s, so the waveform fills in from the first seconds): whole peak buckets, whole 100 ms loudness blocks
+const SEG = 20 * 76800 // output samples per segment (32 s, so the waveform fills in from the first seconds): whole peak buckets
 const LANES = 4 // segments decoding at once
 
 export interface Analysis {
   base: Int16Array // [min, max] pairs, one per PEAK_SPP samples, valid where ready() has resolved
-  ready(from: number, to: number): Promise<void> // seconds
-  lufs: Promise<number | null> // integrated loudness as heard (mono counts on both channels)
+  ready(from: number, to: number): Promise<void> // seconds; ready(0, Infinity): all of it
 }
 
 /** Analyze the whole file, LANES segments at a time, in time order. */
 export function analyze(f: AudioFile, seg = SEG): Analysis {
   const total = Math.ceil(f.duration * SR)
   const base = new Int16Array(2 * Math.ceil(total / PEAK_SPP))
-  const segs: Promise<number[]>[] = []
+  const segs: Promise<void>[] = []
   for (let a = 0; a < total; a += seg) {
     const b = Math.min(total, a + seg)
     segs.push((segs[segs.length - LANES] ?? Promise.resolve()).then(() => segment(f, a, b, base)))
   }
-  const lufs = Promise.all(segs).then((blocks) => integratedLoudness(blocks.flat()))
-  lufs.catch(() => {}) // callers see the error through ready() or lufs
+  Promise.all(segs).catch(() => {}) // callers see the error through ready()
   const ready = async (from: number, to: number) => void (await Promise.all(segs.slice(Math.max(0, Math.floor((from * SR) / seg)), Math.ceil((to * SR) / seg))))
-  return { base, ready, lufs }
+  return { base, ready }
 }
 
-/** Peaks of output samples [a, b) into `base`; returns their 100 ms loudness blocks. */
-async function segment(f: AudioFile, a: number, b: number, base: Int16Array): Promise<number[]> {
+/** Peaks of output samples [a, b) into `base`. */
+async function segment(f: AudioFile, a: number, b: number, base: Int16Array) {
   const r = new Reader(f)
-  const meter = new LoudnessMeter()
   const STEP = PEAK_SPP * 750 // 4 s
   try {
     for (let pos = a; pos < b; pos += STEP) {
       const n = Math.min(STEP, b - pos)
       const chs = await r.read(pos, n)
-      meter.push(chs.slice(0, 2), n, chs.length === 1 ? 2 : 1)
       for (let i = 0; i < n; i += PEAK_SPP) {
         let lo = 0
         let hi = 0
@@ -227,10 +223,47 @@ async function segment(f: AudioFile, a: number, b: number, base: Int16Array): Pr
   } finally {
     r.close()
   }
-  return meter.blocks
 }
 
 const q16 = (v: number) => Math.max(-32767, Math.min(32767, Math.round(v * 32767)))
+
+// ---- Voice loudness: BS.1770 integrated loudness of up to WINDOWS 3 s windows spread evenly ----
+// Bounded work at any length (2 hours: 64 windows, about 0.2 s), so the mixer knows the voice gain
+// before it mixes the first sample and never changes it: preview and export always match. A file up
+// to 3.2 min is measured whole. ponytail: longer files are sampled (3% of 2 hours), so sparse speech
+// gives a rougher estimate; add windows until enough blocks pass the gates if that ever shows.
+
+const WINDOW = 3 * SR // output samples: 30 loudness blocks
+const WINDOWS = 64
+
+/** Integrated loudness (LUFS) as heard (mono counts on both channels), or null for silence. */
+export async function loudness(f: AudioFile, windows = WINDOWS): Promise<number | null> {
+  const total = Math.ceil(f.duration * SR)
+  const n = Math.min(windows, Math.ceil(total / WINDOW))
+  // Window starts on the 100 ms block grid; a short file is tiled, so its blocks join seamlessly.
+  const step = n > 1 ? Math.max(WINDOW, Math.floor((total - WINDOW) / (n - 1) / (SR / 10)) * (SR / 10)) : 0
+  const blocks: number[][] = []
+  let next = 0
+  const lane = async () => {
+    for (let i = next++; i < n; i = next++) blocks[i] = await windowBlocks(f, i * step, Math.min(WINDOW, total - i * step))
+  }
+  await Promise.all(Array.from({ length: LANES }, lane))
+  return integratedLoudness(blocks.flat())
+}
+
+/** The 100 ms loudness blocks of output samples [a, a+n), after a 200 ms filter warm-up. */
+async function windowBlocks(f: AudioFile, a: number, n: number): Promise<number[]> {
+  const pre = SR / 5
+  const r = new Reader(f)
+  try {
+    const chs = await r.read(a - pre, pre + n)
+    const meter = new LoudnessMeter()
+    meter.push(chs.slice(0, 2), pre + n, chs.length === 1 ? 2 : 1)
+    return meter.blocks.slice(2)
+  } finally {
+    r.close()
+  }
+}
 
 /** Min/max pairs for `buckets` equal slices of [from, to) seconds, exact to the 5.3 ms bucket. A
  *  linear scan: all of a 2-hour track is 1.35M pairs, about a millisecond. */
@@ -282,25 +315,22 @@ export async function rawPeaks(f: AudioFile, from: number, to: number, buckets: 
 }
 
 // ---- Cache file: <bundle>/cache/<source path with / as _>.<bytes>.analysis ----
-// 'SPK1', f64 lufs (NaN = silent), u32 bucket count, then int16 [min, max] pairs.
+// 'SPK2', u32 bucket count, then int16 [min, max] pairs. (SPK1 also held the loudness: re-analyzed.)
 
-export function encodeAnalysis(base: Int16Array, lufs: number | null): ArrayBuffer {
-  const buf = new ArrayBuffer(16 + base.byteLength)
+export function encodeAnalysis(base: Int16Array): ArrayBuffer {
+  const buf = new ArrayBuffer(8 + base.byteLength)
   const v = new DataView(buf)
-  v.setUint32(0, 0x53504b31)
-  v.setFloat64(4, lufs ?? NaN, true)
-  v.setUint32(12, base.length / 2, true)
-  new Int16Array(buf, 16).set(base)
+  v.setUint32(0, 0x53504b32)
+  v.setUint32(4, base.length / 2, true)
+  new Int16Array(buf, 8).set(base)
   return buf
 }
 
 export function decodeAnalysis(buf: ArrayBuffer): Analysis | null {
-  if (buf.byteLength < 16) return null
+  if (buf.byteLength < 8) return null
   const v = new DataView(buf)
-  const n = v.getUint32(12, true)
-  if (v.getUint32(0) !== 0x53504b31 || buf.byteLength !== 16 + 4 * n) return null
-  const lufs = v.getFloat64(4, true)
-  return { base: new Int16Array(buf.slice(16)), ready: async () => {}, lufs: Promise.resolve(Number.isNaN(lufs) ? null : lufs) }
+  if (v.getUint32(0) !== 0x53504b32 || buf.byteLength !== 8 + 4 * v.getUint32(4, true)) return null
+  return { base: new Int16Array(buf.slice(8)), ready: async () => {} }
 }
 
 /** Where the analysis of `path` (absolute) is cached, or null when it is not inside a .studio bundle. */
