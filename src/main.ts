@@ -10,6 +10,7 @@ const routes: Record<string, () => Promise<{ default: Component<{ params: URLSea
   camera: () => import('./windows/camera/Camera.svelte'),
   onboarding: () => import('./windows/onboarding/Onboarding.svelte'),
   export: () => import('./windows/export/Export.svelte'),
+  dev: () => import('./windows/dev/Dev.svelte'),
 }
 
 const [name, query = ''] = location.hash.replace(/^#\/?/, '').split('?')

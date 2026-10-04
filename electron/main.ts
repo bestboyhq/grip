@@ -26,7 +26,8 @@ app.whenReady().then(() => {
   // `electron . --open <bundle.studio>` opens a project straight into the editor (dev and tests).
   const i = process.argv.indexOf('--open')
   if (i > 0 && process.argv[i + 1]) openWindow(`editor?project=${encodeURIComponent(resolve(process.argv[i + 1]))}`)
-  else openWindow('recorder')
+  else if (process.argv.includes("--lab")) openWindow(`dev?lab=${process.argv[process.argv.indexOf("--lab") + 1] ?? ""}`)
+  else openWindow("recorder")
 })
 
 app.on('window-all-closed', () => {})
