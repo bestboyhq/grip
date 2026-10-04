@@ -47,7 +47,7 @@
     const r = el.getBoundingClientRect()
     const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
     const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
-    each((s) => (s.target = { kind: 'point', x, y }), `target:${gesture}`)
+    each((s) => { s.target = { kind: 'point', x, y } }, `target:${gesture}`)
   }
   function nudge(e: KeyboardEvent) {
     if (z?.target.kind !== 'point') return
@@ -58,7 +58,7 @@
     e.preventDefault()
     const { x, y } = z.target
     const c = (v: number) => Math.min(1, Math.max(0, v))
-    each((s) => (s.target = { kind: 'point', x: c(x + dx), y: c(y + dy) }))
+    each((s) => { s.target = { kind: 'point', x: c(x + dx), y: c(y + dy) } })
   }
   const pct = (v: number) => `${Math.round(v * 100)}%`
 </script>
@@ -82,7 +82,7 @@
   <Section title="Target">
     <Segmented
       value={z.target.kind}
-      onchange={(v) => each((s) => (s.target = v === 'cursor' ? { kind: 'cursor' } : { kind: 'point', x: 0.5, y: 0.5 }))}
+      onchange={(v) => each((s) => { s.target = v === 'cursor' ? { kind: 'cursor' } : { kind: 'point', x: 0.5, y: 0.5 } })}
       options={[
         { value: 'cursor', label: 'Follow cursor', icon: 'cursor' },
         { value: 'point', label: 'Fixed point', icon: 'target' },

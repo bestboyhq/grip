@@ -5,14 +5,17 @@ import type { Project, Transcript } from '../shared/project.ts'
 import type { InputEvent } from '../shared/events.ts'
 import { invoke } from './ipc.ts'
 
-export const doc = $state({
-  project: null as Project | null,
-  path: '', // absolute path of the .studio bundle
-  events: [] as InputEvent[],
-  transcript: null as Transcript | null,
-  rev: 0, // bumps on every change; derived data keys off it
-  dirty: false,
-})
+class Doc {
+  project = $state<Project | null>(null)
+  path = $state('') // absolute path of the .studio bundle
+  // Raw: a 2-hour recording has ~1M events and ~20k words. They are never edited in place, only
+  // replaced, so they stay plain arrays the engine reads at full speed (no deep proxies, no snapshots).
+  events = $state.raw<InputEvent[]>([])
+  transcript = $state.raw<Transcript | null>(null)
+  rev = $state(0) // bumps on every change; derived data keys off it
+  dirty = $state(false)
+}
+export const doc = new Doc()
 
 export const selection = $state({ ids: [] as string[] })
 
@@ -61,7 +64,11 @@ function swap(from: Snapshot[], to: Snapshot[]) {
   if (!s || !doc.project) return
   mergeKey = ''
   to.push({ json: JSON.stringify(doc.project) })
-  doc.project = JSON.parse(s.json)
+  const p: Project = JSON.parse(s.json)
+  doc.project = p
+  // Items the step removed leave the selection, so Delete or Copy never act on nothing.
+  const live = new Set([...p.clips, ...p.zooms, ...p.layouts, ...p.masks].map((x) => x.id))
+  if (selection.ids.some((id) => !live.has(id))) selection.ids = selection.ids.filter((id) => live.has(id))
   changed()
 }
 export const undo = () => swap(undoStack, redoStack)

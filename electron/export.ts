@@ -21,7 +21,7 @@ import { basename, dirname, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { openWindow } from './windows.ts'
 import { projectsDir, readProject } from './projects.ts'
-import { invokeHandler } from './shell/recorder.ts'
+import { shareFile } from './share.ts'
 import type { Project } from '../src/shared/project.ts'
 import { DESTINATIONS, cleanOptions, safeFileName, uniqueName, type ExportOptions, type ExportRequest, type JobInfo, type JobSpec, type JobState } from '../src/engine/export/options.ts'
 
@@ -39,6 +39,8 @@ let batch = { done: 0, failed: 0, last: undefined as Job | undefined }
 let lastDir = ''
 const tmpRoot = () => join(app.getPath('temp'), 'Studio Exports')
 const active = (j: Job) => j.state === 'queued' || j.state === 'running' || j.state === 'uploading'
+/** Exports still running or queued (the quit prompt asks before dropping them). */
+export const activeExports = () => [...jobs.values()].filter(active).length
 
 function info(j: Job): JobInfo {
   const { id, name, bundle, options, dest, path, state, progress, phase, error, url, bytes, startedAt, finishedAt } = j
@@ -298,12 +300,12 @@ export function registerExport() {
     Object.assign(j, { state: 'uploading', phase: 'Uploading', progress: 1 })
     release(j)
     broadcast(j)
-    invokeHandler('share:upload', j.path, { title: j.name, project: j.bundle }).then(
+    shareFile(j.path, { title: j.name, project: j.bundle }).then(
       (url: unknown) => {
         if (typeof url === 'string' && /^https?:\/\//.test(url)) return finish(Object.assign(j, { url }), 'done')
         return url === null ? finish(j, 'canceled') : finish(j, 'failed', 'The upload finished without a link.')
       },
-      (err: unknown) => finish(j, 'failed', `The video was saved, but the upload failed: ${String((err as Error)?.message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`),
+      (err: unknown) => finish(j, 'failed', `The video was saved, but the upload failed: ${String((err as Error)?.message ?? err)}`),
     )
   })
 

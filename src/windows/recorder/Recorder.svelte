@@ -4,7 +4,7 @@
      against the capture engine and reports the engine's errors and warnings to the shell. -->
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { invoke, on } from '../../lib/ipc.ts'
+  import { dropFiles, invoke, on } from '../../lib/ipc.ts'
   import Icon from './Icon.svelte'
   import { ensurePermission, inputs, meterLevel, popup, setSettings, shell, startRequest, type Device, type MenuItem, type Mode, type Settings, type StartRequest } from './shell.svelte.ts'
 
@@ -131,7 +131,11 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && invoke(shell.mode ? 'shell:pick' : 'shell:close-picker', null)} />
+<svelte:window
+  onkeydown={(e) => e.key === 'Escape' && invoke(shell.mode ? 'shell:pick' : 'shell:close-picker', null)}
+  ondragover={(e) => e.preventDefault()}
+  ondrop={(e) => dropFiles(e).catch((err: Error) => invoke('shell:warn', err.message))}
+/>
 
 <main class="bar">
   {#if countdown}
@@ -157,7 +161,7 @@
     <button class="pick mic" class:off={!mic} onclick={(e) => pickInput('mic', e.currentTarget)}>
       <Icon name={mic ? 'mic' : 'mic-off'} size={24} stroke={1.85} />
       <span class="label">{mic ? short(mic.name) : 'No microphone'}</span>
-      <span class="meter" aria-hidden="true"><span style:width="{Math.max(3, level * 134)}px" class:hidden={!mic}></span></span>
+      {#if mic}<span class="meter" aria-hidden="true"><span style:width="{Math.max(3, level * 134)}px"></span></span>{/if}
     </button>
     <button class="pick system" class:off={!s?.systemAudio} aria-pressed={!!s?.systemAudio} onclick={() => setSettings({ systemAudio: !s?.systemAudio })}>
       <Icon name={s?.systemAudio ? 'speaker' : 'speaker-off'} size={21} stroke={1.75} />
@@ -304,9 +308,6 @@
     border-radius: 1.5px;
     background: rgb(255 255 255 / 0.72);
     transition: width 60ms linear;
-  }
-  .meter .hidden {
-    visibility: hidden;
   }
   .gear {
     margin-left: 10px;

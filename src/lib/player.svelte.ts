@@ -226,10 +226,10 @@ function rebuild(project: Project, width: number, height: number) {
   stale = false
   preparedAt = performance.now()
   try {
-    // Plain copies: the render path must not touch reactive proxies. Events and transcript are big
-    // and rarely change, so they are copied only when replaced.
-    if (events.from !== doc.events) events = { from: doc.events, value: $state.snapshot(doc.events) as InputEvent[] }
-    if (transcript.from !== doc.transcript) transcript = { from: doc.transcript, value: $state.snapshot(doc.transcript) as Transcript | null }
+    // The render path must not touch reactive proxies: the project is copied; events and transcript
+    // are raw state (plain already, and replaced rather than edited).
+    if (events.from !== doc.events) events = { from: doc.events, value: doc.events }
+    if (transcript.from !== doc.transcript) transcript = { from: doc.transcript, value: doc.transcript }
     const p = $state.snapshot(project) as Project
     syncFaces(p)
     prepared = prepare({ project: p, events: events.value, transcript: transcript.value, width, height, faces: faces.value })

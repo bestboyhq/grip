@@ -18,11 +18,14 @@
 //   shell:display(id)             display geometry for an overlay
 //   shell:popup(items, x, y)      native menu at (x, y) in the sender window -> picked id | null
 //   shell:open-project(path?)     open a bundle in the editor (no path: Open dialog)
+//   shell:open-files(paths)       dropped files: bundles open, videos import first; rejects with a reason
 //   shell:open-settings           the settings window (onboarding route, settings page)
 //   shell:relaunch                macOS applies a new Screen Recording grant only after a relaunch
+// Editor windows: "editor:close" asks one to save and refresh its thumbnail; it answers editor:closed.
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, Notification, screen, type BrowserWindowConstructorOptions, type MenuItemConstructorOptions } from 'electron'
 import { existsSync, statSync } from 'node:fs'
-import { basename, resolve } from 'node:path'
+import { basename, isAbsolute, resolve } from 'node:path'
+import { importVideo, recoveredAtLaunch } from '../projects.ts'
 import { recordingEvents } from '../recording.ts'
 import { activeDisplay, hidden, openWindow, reveal, sendAll, setRecordingDock, windowsOf } from '../windows.ts'
 import { place } from './bounds.ts'
@@ -145,14 +148,6 @@ export async function command(cmd: Command, opts?: unknown) {
   const win = controller()
   await loaded
   win.webContents.send('shell:do', cmd, opts)
-}
-
-/** Call an IPC handler from the main process. Electron has no main-side invoke, so the call
- *  goes through the controller renderer, the same path every window uses. */
-export async function invokeHandler(channel: string, ...args: unknown[]): Promise<any> {
-  const win = controller()
-  await loaded
-  return win.webContents.executeJavaScript(`window.studio.invoke(${JSON.stringify(channel)}, ...${JSON.stringify(args)})`)
 }
 
 /** Load the controller ahead of first use (tray menu, shortcuts). */
@@ -294,17 +289,47 @@ function notify(body: string, then?: () => void) {
 
 // ---- Projects ----
 
-export function openProject(path: string) {
-  path = resolve(path)
+/** Editor routes as opened, for windows whose page has not loaded yet (their URL is still empty). */
+const routes = new WeakMap<BrowserWindow, string>()
+/** The editor window showing `path`, if one is open (its URL follows in-app renames). */
+function editorFor(path: string): BrowserWindow | undefined {
+  const param = `project=${encodeURIComponent(path)}`
+  return windowsOf('editor').find((w) => !w.webContents.isDestroyed() && (w.webContents.getURL() || routes.get(w) || '').split('#')[1]?.split(/[?&]/).includes(param))
+}
+
+/** Open a bundle in the editor, or bring its editor forward. `recovered`: the editor says so. */
+export function openProject(path: string, recovered = false) {
+  path = resolve(path).replace(/\/+$/, '')
   if (!path.endsWith('.studio') || !existsSync(path) || !statSync(path).isDirectory()) {
     alert(`“${basename(path)}” can’t be opened.`, 'It is not a Studio project, or it was moved or deleted.')
     return
   }
-  const route = `editor?project=${encodeURIComponent(path)}`
-  const open = windowsOf('editor').find((w) => w.webContents.getURL().endsWith(route))
+  const open = editorFor(path)
   if (open) return reveal(open)
   app.addRecentDocument(path)
-  openWindow(route)
+  const route = `editor?project=${encodeURIComponent(path)}${recovered ? '&recovered' : ''}`
+  const win = openWindow(route)
+  routes.set(win, `#/${route}`)
+  closeGracefully(win)
+}
+
+/** Open what the user hands us (Finder, dock, menu bar icon, window drops, File menu): bundles open
+ *  in the editor, .mp4/.mov videos import as new projects first. Throws the first failure. */
+export async function openFiles(paths: string[]): Promise<void> {
+  let failure: unknown
+  for (const p of paths) {
+    try {
+      openProject(/\.studio\/?$/i.test(p) ? p : await importVideo(p))
+    } catch (e) {
+      failure ??= e
+    }
+  }
+  if (failure) throw new Error(plainError(failure).message)
+}
+
+/** openFiles for callers with no window to report to: failures become an alert. */
+export function openFilesOrAlert(paths: string[]) {
+  openFiles(paths).catch((e: Error) => void alert('Studio couldn’t open that.', e.message))
 }
 
 export async function openProjectDialog() {
@@ -315,6 +340,38 @@ export async function openProjectDialog() {
     filters: [{ name: 'Studio Project', extensions: ['studio'] }],
   })
   for (const p of r.filePaths) openProject(p)
+}
+
+export async function importDialog() {
+  const r = await dialog.showOpenDialog({
+    title: 'Import Video',
+    message: 'Each video becomes a new project.',
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Videos', extensions: ['mp4', 'mov'] }],
+  })
+  openFilesOrAlert(r.filePaths)
+}
+
+// An editor saves and refreshes its thumbnail before it goes: "editor:close" to the renderer,
+// "editor:closed" back (or 5 s pass), then the real close, or the quit it interrupted.
+const closers = new Map<number, () => void>()
+function closeGracefully(win: BrowserWindow) {
+  let asked = false
+  win.on('close', (e) => {
+    if (asked || win.webContents.isCrashed()) return
+    e.preventDefault()
+    asked = true
+    const id = win.webContents.id
+    const finish = () => {
+      clearTimeout(timer)
+      if (!closers.delete(id) || win.isDestroyed()) return
+      if (!quitting) win.close()
+      else if (!closers.size) app.quit() // the last editor done: resume the quit
+    }
+    const timer = setTimeout(finish, 5000)
+    closers.set(id, finish)
+    win.webContents.send('editor:close')
+  })
 }
 
 export function openOnboarding(query = '') {
@@ -402,6 +459,8 @@ export function registerRecorder() {
   })
   ipcMain.handle('shell:open-settings', () => openOnboarding('page=settings'))
   ipcMain.handle('shell:open-project', (_e, path?: string) => (typeof path === 'string' ? openProject(path) : openProjectDialog()))
+  ipcMain.handle('shell:open-files', (_e, paths: unknown) => openFiles(Array.isArray(paths) ? paths.filter((p) => typeof p === 'string' && isAbsolute(p)) : []))
+  ipcMain.handle('editor:closed', (e) => closers.get(e.sender.id)?.())
 
   settingsListeners.push(updateBubble)
   recordingEvents.on('state', setStatus)
@@ -409,7 +468,10 @@ export function registerRecorder() {
     for (const done of waiters.splice(0)) done(bundle)
     if (!quitting) openProject(bundle)
   })
-  recordingEvents.on('recovered', (bundle: string) => notify(`A recording cut off by a crash was saved: “${basename(bundle, '.studio')}”. Click to open it.`, () => openProject(bundle)))
+  // Recordings cut off by a crash or power loss, made whole at launch (capture repairs its own
+  // files, projects rebuilds the rest): each opens in the editor, which says it was recovered.
+  recordingEvents.on('recovered', (bundle: string) => openProject(bundle, true))
+  recoveredAtLaunch.then((list) => list.forEach((r) => openProject(r.path, true)))
   shortcut(SHORTCUTS.record, () => (status === 'idle' ? showPicker() : command('stop')))
   for (const e of ['display-added', 'display-removed', 'display-metrics-changed'] as const) {
     screen.on(e as 'display-added', () => {

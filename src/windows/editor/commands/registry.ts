@@ -60,17 +60,28 @@ export function keyOf(e: Pick<KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'altKe
   return (e.ctrlKey ? '⌃' : '') + (e.altKey ? '⌥' : '') + (e.shiftKey ? '⇧' : '') + (e.metaKey ? '⌘' : '') + k
 }
 
-/** Whether the focused element needs this key itself: text fields need every key, buttons Space and
- *  Return, sliders the arrows. */
-export function consumesKey(el: EventTarget | null, key: string): boolean {
-  if (!el || !(el instanceof HTMLElement)) return false
-  if (el.isContentEditable || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return true
-  const activates = key === ' ' || key === 'Enter'
-  if (el instanceof HTMLInputElement) {
-    if (el.type === 'range') return /^(Arrow|Home|End|Page)/.test(key)
-    return ['checkbox', 'radio', 'button', 'submit', 'reset', 'color', 'file'].includes(el.type) ? activates : true
-  }
-  return activates && (el instanceof HTMLButtonElement || el instanceof HTMLAnchorElement || /^(button|menuitem\w*|option|tab)$/.test(el.getAttribute('role') ?? ''))
+/** The parts of an element consumesKey reads (duck-typed, so it runs in tests without a DOM). */
+type Focused = Pick<HTMLElement, 'tagName' | 'isContentEditable' | 'getAttribute' | 'matches'> & { type?: string }
+
+const ACTIVATES = /^( |Enter)$/
+const MOVES = /^(Arrow|Home$|End$|Page)/
+const BUTTON_INPUTS = ['checkbox', 'button', 'submit', 'reset', 'color', 'file']
+
+/** Whether the focused element needs this key itself. Text fields take every key, and read-only
+ *  text (the transcript) its deletion and caret keys. Other controls take their keys (Space and
+ *  Return, arrows for sliders, radios, and lists) only while focused from the keyboard: after a
+ *  click, Space still plays and arrows still step. */
+export function consumesKey(target: EventTarget | null, key: string): boolean {
+  const el = target as Focused | null
+  if (!el?.tagName) return false
+  const tag = el.tagName
+  const role = el.getAttribute('role') ?? ''
+  const type = (el.type ?? '').toLowerCase()
+  if (el.isContentEditable || tag === 'TEXTAREA' || (tag === 'INPUT' && type !== 'range' && type !== 'radio' && !BUTTON_INPUTS.includes(type))) return true
+  if (role === 'textbox') return MOVES.test(key) || key === 'Backspace' || key === 'Delete'
+  if (!el.matches(':focus-visible')) return false
+  if (tag === 'SELECT' || type === 'range' || type === 'radio' || /^(tab|option|radio|slider|menuitem\w*)$/.test(role)) return MOVES.test(key) || ACTIVATES.test(key)
+  return ACTIVATES.test(key) && (tag === 'BUTTON' || tag === 'A' || tag === 'INPUT' || /^(button|switch|checkbox)$/.test(role))
 }
 
 /** The command a key event triggers, if any. */

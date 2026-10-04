@@ -11,7 +11,7 @@
   const c = $derived(doc.project!.style.cursor)
   const hasEvents = $derived(!!doc.project!.sources.events)
   const init = defaultStyle().cursor
-  const set = <K extends keyof C>(k: K) => (v: C[K], merge?: string) => edit((p) => (p.style.cursor[k] = v), merge)
+  const set = <K extends keyof C>(k: K) => (v: C[K], merge?: string) => edit((p) => { p.style.cursor[k] = v }, merge)
   const off = $derived(!c.visible || !hasEvents)
 </script>
 

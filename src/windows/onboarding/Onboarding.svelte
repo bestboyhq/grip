@@ -13,7 +13,7 @@
 
   const ROWS: Array<{ id: Permission; title: string; reason: string; icon: IconName; required?: boolean }> = [
     { id: 'screen', title: 'Screen Recording', reason: 'Records your screen and the sound your Mac plays.', icon: 'screen', required: true },
-    { id: 'accessibility', title: 'Accessibility', reason: 'Shows your keystrokes, and fits the window you record to size.', icon: 'keyboard' },
+    { id: 'accessibility', title: 'Accessibility', reason: 'Shows your keystrokes, and fits the window you record to size.', icon: 'accessibility' },
     { id: 'inputMonitoring', title: 'Input Monitoring', reason: 'Lets Studio read the keys you press while you record.', icon: 'keyboard' },
     { id: 'microphone', title: 'Microphone', reason: 'Records your voice.', icon: 'mic' },
     { id: 'camera', title: 'Camera', reason: 'Records you in a bubble next to your screen.', icon: 'camera' },

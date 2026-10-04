@@ -75,7 +75,8 @@ function find(id: string): Job {
   return job
 }
 
-async function start(path: string, o: { title?: string; private?: boolean; project?: string } = {}): Promise<string | null> {
+/** Upload a video or .studio bundle in the background; resolves to the link (also used by export). */
+export async function shareFile(path: string, o: { title?: string; private?: boolean; project?: string } = {}): Promise<string | null> {
   const s = await stat(path).catch(() => null)
   if (!s) throw new Error('The file to share is gone.')
   const kind = s.isDirectory() ? 'project' : 'video'
@@ -269,7 +270,7 @@ export function registerShare() {
   }
   for (const job of state.jobs) if (!['done', 'failed', 'canceled'].includes(job.state)) drive(job)
 
-  ipcMain.handle('share:upload', (_e, path: string, o?: { title?: string; private?: boolean; project?: string }) => start(path, o))
+  ipcMain.handle('share:upload', (_e, path: string, o?: { title?: string; private?: boolean; project?: string }) => shareFile(path, o))
   ipcMain.handle('share:jobs', () => state.jobs)
   ipcMain.handle('share:status', async (_e, id: string) => {
     const job = find(id)

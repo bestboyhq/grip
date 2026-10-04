@@ -1,5 +1,6 @@
 // Owner: editor. "editor:*" IPC channels:
 //   editor:importAsset(bundle, file, kind) -> "assets/<name>"
+//   editor:closed()  the window finished saving after "editor:close" (electron/shell/recorder.ts)
 // Copies a user-picked file (background image, LUT, music) into the bundle, so projects stay portable
 // and sources stay immutable. The renderer is untrusted: both paths and the kind are validated here.
 import { ipcMain } from 'electron'

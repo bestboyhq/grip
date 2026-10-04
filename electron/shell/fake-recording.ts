@@ -1,7 +1,8 @@
 // Dev only: `STUDIO_FAKE_RECORDING=<bundle.studio>` swaps in a stand-in for the capture engine
 // (electron/recording.ts) and the camera list (electron/camera.ts), so the whole recording flow
 // (picker, countdown, widget, editor) runs without screen, camera, or mic access, and never
-// shows a system prompt. `STUDIO_FAKE_FAIL=<error text>` makes start fail with that error.
+// shows a system prompt. Each take becomes a new project with the stand-in bundle's sources.
+// `STUDIO_FAKE_FAIL=<error text>` makes start fail with that error.
 // It follows their IPC contracts; the shell uses nothing else:
 //   recording:permissions | requestPermission(kind) | openPermissionSettings(kind)
 //   recording:windows -> [{ id, title, app, bundleId, frame: { x, y, w, h } }]   global points
@@ -12,8 +13,13 @@
 //   broadcasts recording:state(state), recording:finished(bundle, { reason }); recordingEvents too
 //   camera:list -> [{ id, name, kind: 'built-in' | 'external' | 'continuity' | 'ios', formats }]
 import { ipcMain, screen, systemPreferences } from 'electron'
+import { constants, existsSync } from 'node:fs'
+import { cp, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import type { Project } from '../../src/shared/project.ts'
 import { sendAll } from '../windows.ts'
-import { recordingEvents } from '../recording.ts'
+import { recordingEvents, recordingName } from '../recording.ts'
+import { createBundle, projectsDir, writeNewRecording } from '../projects.ts'
 
 export function registerFakeRecording(bundle: string) {
   let state = 'idle'
@@ -83,10 +89,15 @@ export function registerFakeRecording(bundle: string) {
   handle('recording:stop', async () => {
     if (state !== 'recording' && state !== 'paused') return null
     set('stopping')
-    await wait(400)
+    // A new project per take, like a real recording: the stand-in's sources, cloned (instant on
+    // APFS), with fresh edits. The stand-in itself is never written to.
+    const { sources } = JSON.parse(await readFile(join(bundle, 'project.json'), 'utf8')) as Project
+    const dir = await createBundle(recordingName(new Date(), (n) => existsSync(join(projectsDir(), `${n}.studio`))))
+    await cp(join(bundle, 'sources'), join(dir, 'sources'), { recursive: true, mode: constants.COPYFILE_FICLONE })
+    await writeNewRecording(dir, sources)
     set('idle')
-    sendAll('recording:finished', bundle, { reason: 'user' })
-    recordingEvents.emit('finished', bundle)
-    return { duration: 24 }
+    sendAll('recording:finished', dir, { reason: 'user' })
+    recordingEvents.emit('finished', dir)
+    return sources
   })
 }

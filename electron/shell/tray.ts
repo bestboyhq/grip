@@ -1,9 +1,9 @@
-// Menu bar icon: new recording, recent projects, open, settings, quit. While recording: finish,
-// pause, delete. Dropping .studio bundles on it opens them.
+// Menu bar icon: new recording, recent projects, open, import, settings, quit. While recording:
+// finish, pause, delete. Dropped .studio bundles open; dropped videos import as new projects.
 import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions } from 'electron'
-import { existsSync } from 'node:fs'
-import { basename, join } from 'node:path'
-import { cancelRecording, command, invokeHandler, openOnboarding, openProject, openProjectDialog, recordingStatus, SHORTCUTS, showPicker, statusListeners } from './recorder.ts'
+import { join } from 'node:path'
+import { recentProjects } from '../projects.ts'
+import { cancelRecording, command, importDialog, openFilesOrAlert, openOnboarding, openProject, openProjectDialog, recordingStatus, SHORTCUTS, showPicker, statusListeners } from './recorder.ts'
 
 let tray: Tray | null = null // module scope: a collected Tray disappears from the menu bar
 
@@ -13,27 +13,17 @@ function icon(name: string) {
   return img
 }
 
-/** `projects:recent` (projects domain) as absolute paths that still exist. */
-async function recentProjects(): Promise<string[]> {
-  try {
-    const list: unknown[] = (await invokeHandler('projects:recent')) ?? []
-    const paths = list.map((p) => (typeof p === 'string' ? p : (p as { path?: string })?.path)).filter((p): p is string => !!p && existsSync(p))
-    return paths.slice(0, 10)
-  } catch {
-    return [] // no handler yet, or the controller is reloading: an empty list beats a dead menu
-  }
-}
-
 async function template(): Promise<MenuItemConstructorOptions[]> {
   const s = recordingStatus()
-  const recent = await recentProjects()
+  const recent = (await recentProjects().catch(() => [])).slice(0, 10) // only bundles that still exist
   const common: MenuItemConstructorOptions[] = [
     {
       label: 'Recent Projects',
       enabled: recent.length > 0,
-      submenu: recent.map((p) => ({ label: basename(p, '.studio'), click: () => openProject(p) })),
+      submenu: recent.map((p) => ({ label: p.name, click: () => openProject(p.path) })),
     },
     { label: 'Open Project…', click: openProjectDialog },
+    { label: 'Import Video…', click: importDialog },
     { type: 'separator' },
     { label: 'Settings…', click: () => openOnboarding('page=settings') },
     { type: 'separator' },
@@ -56,8 +46,6 @@ export function createTray() {
   const pop = async () => tray?.popUpContextMenu(Menu.buildFromTemplate(await template()))
   tray.on('click', pop)
   tray.on('right-click', pop)
-  tray.on('drop-files', (_e, files) => {
-    for (const f of files) if (/\.studio\/?$/.test(f)) openProject(f)
-  })
+  tray.on('drop-files', (_e, files) => openFilesOrAlert(files))
   statusListeners.push((s) => tray?.setImage(icon(s === 'idle' ? 'trayTemplate.png' : 'trayRecordingTemplate.png')))
 }

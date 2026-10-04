@@ -15,7 +15,7 @@
   const source = $derived(doc.project!.sources.camera)
   const c = $derived(doc.project!.style.camera)
   const init = defaultStyle().camera
-  const set = <K extends keyof C>(k: K) => (v: C[K], merge?: string) => edit((p) => (p.style.camera[k] = v), merge)
+  const set = <K extends keyof C>(k: K) => (v: C[K], merge?: string) => edit((p) => { p.style.camera[k] = v }, merge)
   const off = $derived(c.visible === false)
   const corners: Array<[CameraPosition, string]> = [
     ['top-left', 'Top left'],

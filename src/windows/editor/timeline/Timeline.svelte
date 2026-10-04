@@ -101,7 +101,7 @@
   $effect(() => {
     const events = doc.events
     untrack(() => {
-      keys = M.keyChips($state.snapshot(events))
+      keys = M.keyChips(events) // raw state: plain already
       rebuild()
     })
   })
@@ -110,7 +110,7 @@
     const t = doc.transcript
     const edits: Record<number, string> = doc.project ? JSON.parse(JSON.stringify(doc.project.captionEdits)) : {}
     untrack(() => {
-      words = M.wordChips(t ? $state.snapshot(t) : null, edits)
+      words = M.wordChips(t, edits)
       rebuild()
     })
   })
