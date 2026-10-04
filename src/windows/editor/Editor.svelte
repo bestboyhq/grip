@@ -220,7 +220,7 @@
       <section class="stage">
         <div class="toolbar">
           <AspectPicker />
-          {#if aiming}<span class="aim-hint"><Icon name="target" size={15} />Click the preview to aim the selected zoom</span>{/if}
+          {#if aiming}<span class="aim-hint"><Icon name="target" size={15} /><span>Click the preview to aim the selected zoom</span></span>{/if}
         </div>
         <Preview />
       </section>
@@ -262,7 +262,8 @@
   .body { flex: 1; min-height: 0; display: flex; }
   .stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .toolbar { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; }
-  .aim-hint { display: flex; align-items: center; gap: 6px; margin-left: auto; color: var(--text-faint); font-size: 12px; }
+  .aim-hint { display: flex; align-items: center; gap: 6px; min-width: 0; margin-left: auto; color: var(--text-faint); font-size: 12px; white-space: nowrap; }
+  .aim-hint span { overflow: hidden; text-overflow: ellipsis; }
 
   /* As tall as its lanes, so every lane shows; the preview takes the rest. In a short window it
      leaves the preview and every inspector tab at least 400 px. */
