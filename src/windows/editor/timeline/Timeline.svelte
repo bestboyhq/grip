@@ -281,7 +281,7 @@
   // ---- Input ----
 
   function onwheel(e: WheelEvent) {
-    if (!model) return
+    if (!model || lanesScroll(e)) return
     e.preventDefault()
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? view.W : 1
     if (e.ctrlKey || e.metaKey) {
@@ -297,6 +297,15 @@
       if (pointer) hovered()
       requestDraw()
     }
+  }
+
+  /** In a window too short for every lane, the editor scrolls the timeline: a vertical scroll then
+   *  moves the lanes, and panning is a horizontal swipe or ⇧-scroll. */
+  function lanesScroll(e: WheelEvent) {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return false
+    for (let box = canvas?.parentElement; box; box = box.parentElement)
+      if (box.scrollHeight > box.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(box).overflowY)) return true
+    return false
   }
 
   const local = (e: MouseEvent) => {
@@ -574,6 +583,7 @@
         aria-label="Split tool"
         aria-pressed={splitTool}
         onclick={() => (splitTool = !splitTool)}
+        {@attach tooltip('Split tool, or hold ⌥', 'S')}
       >
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.5l8.5 10M14 3.5l-8.5 10" /><circle cx="5.2" cy="15.3" r="2.3" /><circle cx="14.8" cy="15.3" r="2.3" /></svg>
       </button>
@@ -618,6 +628,10 @@
     border-top: 1px solid rgb(255 255 255 / 0.06);
   }
   .bar {
+    position: sticky; /* the transport stays put while lanes scroll in a short window */
+    top: 0;
+    z-index: 1;
+    background: inherit;
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;

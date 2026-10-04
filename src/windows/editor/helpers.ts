@@ -1,5 +1,5 @@
 // Pure helpers for the editor window: playhead restore, preview hit-testing, time display.
-import type { CameraPosition, Clip } from '../../shared/project.ts'
+import type { CameraPosition, Clip, Project } from '../../shared/project.ts'
 import type { Scene } from '../../engine/scene.ts'
 import { timeMap, toOutput } from '../../shared/timemap.ts'
 
@@ -38,6 +38,13 @@ export function outputPoint(scene: Scene, nx: number, ny: number): { x: number; 
   if (!r) return null
   const { center, scale } = scene.view
   return { x: (r.x + nx * r.w - center.x) * scale + scene.width / 2, y: (r.y + ny * r.h - center.y) * scale + scene.height / 2 }
+}
+
+/** Background removal or face follow is on, but the camera analysis they need (matte and face track)
+ *  is missing: it was interrupted by quitting, it failed, or the project predates it. */
+export function owesCameraAnalysis(p: Project | null): boolean {
+  const cam = p?.sources.camera
+  return !!cam && !(cam.matte && cam.faces) && (p!.style.camera.removeBackground || p!.style.camera.followFace)
 }
 
 /** The corner of a w x h frame whose quadrant holds (x, y). */

@@ -214,6 +214,15 @@ test('split layouts zoom inside the screen panel and leave the stack in place', 
   assert.ok(c.x > r.x + r.w / 2 && c.y < r.y + r.h / 2, 'aimed at the target')
 })
 
+test('an output as wide as the screen never zooms at rest, however round and padded the screen', () => {
+  const project = createProject('t', { duration: 10, screen: SCREEN, events: 'sources/events.jsonl' })
+  for (const [padding, radius, inset] of [[80, 80, 0], [300, 80, 0], [300, 80, 120], [0, 80, 0]]) {
+    Object.assign(project.style, { padding, radius, inset })
+    const { view } = setup([], moves([[0, 100, 100], [10, 2700, 1700]]), { project, duration: 10 })
+    for (const t of [0, 5, 10]) near(view(t).scale, 1, 1e-6, `padding ${padding} radius ${radius} inset ${inset}`)
+  }
+})
+
 test('loupe fades in and out, magnifies, and follows its target', () => {
   const events = moves([[0, 1000, 800], [10, 1800, 800]])
   const { p, view } = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 2.5 })], events, { duration: 10 })

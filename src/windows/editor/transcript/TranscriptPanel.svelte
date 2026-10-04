@@ -343,6 +343,7 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
+    color: var(--text);
   }
   .export {
     display: flex;

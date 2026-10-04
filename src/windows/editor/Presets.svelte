@@ -17,6 +17,7 @@
   let status = $state('')
   let name = $state('')
   let busy = $state(false)
+  let doomed = $state('') // id of the preset whose delete awaits confirmation
 
   async function refresh() {
     try {
@@ -33,6 +34,7 @@
   $effect(() => {
     if (open) {
       status = ''
+      doomed = ''
       refresh()
     }
   })
@@ -86,8 +88,9 @@
 
   const remove = (p: Preset) =>
     run(async () => {
-      if (!confirm(`Delete the preset “${p.name}”? This can’t be undone.`)) return
       await invoke('projects:presets:delete', p.id)
+      doomed = ''
+      status = `Deleted “${p.name}”.`
       await refresh()
     })
 </script>
@@ -105,9 +108,16 @@
           <ul aria-label="Saved presets">
             {#each presets as p (p.id)}
               <li>
-                <button class="item" disabled={busy} onclick={() => apply(p, close)}>{p.name}</button>
-                <button class="icon-btn small" disabled={busy} onclick={() => exportOne(p)} {@attach tooltip(`Export “${p.name}”…`)}><Icon name="download" size={14} /></button>
-                <button class="icon-btn small" disabled={busy} onclick={() => remove(p)} {@attach tooltip(`Delete “${p.name}”`)}><Icon name="trash" size={14} /></button>
+                {#if doomed === p.id}
+                  <!-- Deleting can't be undone, so it asks first, in place. -->
+                  <span class="ask">Delete “{p.name}”?</span>
+                  <button class="btn ghost confirm" onclick={() => (doomed = '')}>Cancel</button>
+                  <button class="btn danger confirm" disabled={busy} onclick={() => remove(p)}>Delete</button>
+                {:else}
+                  <button class="item" disabled={busy} onclick={() => apply(p, close)}>{p.name}</button>
+                  <button class="icon-btn small" disabled={busy} onclick={() => exportOne(p)} {@attach tooltip(`Export “${p.name}”…`)}><Icon name="download" size={14} /></button>
+                  <button class="icon-btn small" disabled={busy} onclick={() => (doomed = p.id)} {@attach tooltip(`Delete “${p.name}”`)}><Icon name="trash" size={14} /></button>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -136,6 +146,10 @@
   .item:hover { background: var(--accent-strong); color: #fff; }
   .item:disabled { opacity: 0.5; }
   .small { width: 26px; height: 26px; }
+  .ask { flex: 1; min-width: 0; padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+  .confirm { height: 24px; padding: 0 8px; font-size: 12px; }
+  .danger { background: var(--danger); color: #fff; }
+  .danger:hover { background: #ff7a73; }
   .import { color: var(--text-dim); border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; margin-top: 2px; height: 32px; }
   .save { display: flex; gap: 6px; padding: 6px 2px 2px; border-top: 1px solid var(--border); margin-top: 2px; }
   .save input { flex: 1; min-width: 0; height: var(--control-h); padding: 0 8px; border: 0; border-radius: 6px; background: var(--bg-raised); font-size: 12.5px; }

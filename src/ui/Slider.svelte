@@ -31,12 +31,16 @@
   let gesture = 0
   const pct = $derived(Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100)))
   const modified = $derived(initial !== undefined && Math.abs(value - initial) > step / 2)
+  let input = $state<HTMLInputElement>()
   const reset = () => initial !== undefined && onchange(initial)
+  // The reset button hides once the value is back to its default: focus returns to the slider.
+  const resetFromButton = () => (reset(), input?.focus())
 </script>
 
 <div class="row" class:disabled>
   <label for={id}>{label}</label>
   <input
+    bind:this={input}
     {id}
     type="range"
     {min}
@@ -51,7 +55,7 @@
     oninput={(e) => onchange(Number(e.currentTarget.value), `${id}:${gesture}`)}
     ondblclick={reset}
   />
-  <button class="reset" class:shown={modified} tabindex={modified ? 0 : -1} aria-hidden={!modified} {disabled} onclick={reset} {@attach tooltip(`Reset ${label.toLowerCase()}`)}>
+  <button class="reset" class:shown={modified} tabindex={modified ? 0 : -1} aria-hidden={!modified} {disabled} onclick={resetFromButton} {@attach tooltip(`Reset ${label.toLowerCase()}`)}>
     <Icon name="reset" size={13} />
   </button>
   <output for={id}>{format(value)}</output>

@@ -228,8 +228,8 @@
       <section class="stage">
         <div class="toolbar">
           <AspectPicker />
-          {#if aiming}<span class="aim-hint"><Icon name="target" size={15} />Click the preview to aim the selected zoom</span>
-          {:else if masking}<span class="aim-hint"><Icon name="target" size={15} />Drag on the preview to place the mask</span>{/if}
+          {#if aiming}<span class="aim-hint"><Icon name="target" size={15} /><span>Click the preview to aim the selected zoom</span></span>
+          {:else if masking}<span class="aim-hint"><Icon name="target" size={15} /><span>Drag on the preview to place the mask</span></span>{/if}
         </div>
         <Preview />
       </section>
@@ -244,19 +244,21 @@
   :global(html[data-window='editor']), :global(html[data-window='editor'] body) { background: var(--bg); }
   .editor { display: flex; flex-direction: column; height: 100vh; background: var(--bg); }
 
+  /* Three columns: the name stays centered in the window while both sides fit, and in a narrow window
+     it shrinks between them instead of covering their buttons. */
   .titlebar {
-    position: relative; flex: none; display: flex; align-items: center; justify-content: space-between;
-    height: 52px; padding: 0 12px 0 84px; border-bottom: 1px solid var(--border); -webkit-app-region: drag;
+    flex: none; display: grid; grid-template-columns: 1fr minmax(0, 420px) 1fr; align-items: center; gap: 12px;
+    height: 52px; padding: 0 12px; border-bottom: 1px solid var(--border); -webkit-app-region: drag;
   }
   .titlebar :global(button), .titlebar :global(input), .titlebar :global(a), .titlebar :global([popover]) { -webkit-app-region: no-drag; }
-  .file { display: flex; gap: 2px; }
+  .file { display: flex; gap: 2px; margin-left: 72px; /* clear of the traffic lights */ }
   .name {
-    position: absolute; left: 50%; transform: translateX(-50%); width: min(420px, 36vw); height: 28px; padding: 0 10px;
+    width: 100%; height: 28px; padding: 0 10px;
     border: 0; border-radius: 6px; background: transparent; text-align: center; font-size: 13px; font-weight: 600; text-overflow: ellipsis;
   }
   .name:hover { background: rgb(255 255 255 / 0.05); }
   .name:focus { background: var(--bg-raised); }
-  .actions { display: flex; align-items: center; gap: 4px; }
+  .actions { justify-self: end; display: flex; align-items: center; gap: 4px; }
   .sep { width: 1px; height: 18px; margin: 0 6px; background: var(--border-strong); }
   .export { margin-left: 4px; padding: 0 12px 0 10px; height: 28px; }
   .confirm { width: 280px; padding: 6px 6px 2px; }
@@ -269,7 +271,8 @@
   .body { flex: 1; min-height: 0; display: flex; }
   .stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .toolbar { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; }
-  .aim-hint { display: flex; align-items: center; gap: 6px; margin-left: auto; color: var(--text-faint); font-size: 12px; }
+  .aim-hint { display: flex; align-items: center; gap: 6px; min-width: 0; margin-left: auto; color: var(--text-faint); font-size: 12px; white-space: nowrap; }
+  .aim-hint span { overflow: hidden; text-overflow: ellipsis; }
 
   /* As tall as its lanes, so every lane shows; the preview takes the rest. 60vh fits all six lanes (312 px)
      at the 600 px minimum window height, so lanes never scroll out of reach (the canvas takes the wheel). */

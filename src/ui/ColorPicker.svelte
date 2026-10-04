@@ -16,8 +16,17 @@
     value,
     swatches = [],
     disabled = false,
+    active = true,
     onchange,
-  }: { label: string; value: string; swatches?: string[]; disabled?: boolean; onchange: (v: string, merge?: string) => void } = $props()
+  }: {
+    label: string
+    value: string
+    swatches?: string[]
+    disabled?: boolean
+    /** false: `value` is only a starting point (the color is not in use yet), so no swatch is marked. */
+    active?: boolean
+    onchange: (v: string, merge?: string) => void
+  } = $props()
   const id = $props.id()
   let session = 0
   const hex = $derived(normalizeHex(value) ?? '#000000')
@@ -47,7 +56,8 @@
   {#if swatches.length}
     <div class="swatches" role="group" aria-label="{label} presets">
       {#each swatches as c (c)}
-        <button {disabled} class:on={c.toLowerCase() === hex} style:background={c} aria-label={c} aria-pressed={c.toLowerCase() === hex} onclick={() => onchange(c.toLowerCase())}></button>
+        {@const on = active && c.toLowerCase() === hex}
+        <button {disabled} class:on style:background={c} aria-label={c} aria-pressed={on} onclick={() => onchange(c.toLowerCase())}></button>
       {/each}
     </div>
   {/if}
