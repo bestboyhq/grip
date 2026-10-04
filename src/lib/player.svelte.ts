@@ -13,12 +13,12 @@
 import { doc, save } from './doc.svelte.ts'
 import type { InputEvent } from '../shared/events.ts'
 import type { Project, Transcript } from '../shared/project.ts'
-import { mapRange, timeMap, toOutput, toSource } from '../shared/timemap.ts'
+import { clipAt, mapRange, timeMap, toOutput, toSource } from '../shared/timemap.ts'
 import { outputSize, prepare, type FaceSample, type Prepared } from '../engine/scene.ts'
 import { renderFrame, type Media } from '../engine/compose.ts'
 import { Renderer } from '../engine/gpu/renderer.ts'
 import { fileUrl, openVideo } from '../engine/media/index.ts'
-import { SR, mix, planOf, voiceGain, type Plan } from '../engine/audio/index.ts'
+import { SR, mix, planOf, scrubGrain, voiceGain, type Plan } from '../engine/audio/index.ts'
 import type { PlaybackMessage } from '../engine/audio/playback.worklet.ts'
 import workletUrl from '../engine/audio/playback.worklet.ts?worker&url'
 
@@ -125,6 +125,7 @@ export function attach(c: HTMLCanvasElement): () => void {
 
 export function play() {
   if (player.playing || !prepared) return
+  catchUp()
   if (player.time >= player.duration - 1e-3) player.time = 0
   player.playing = true
   startRun(false)
@@ -144,9 +145,17 @@ export function pause() {
 export const toggle = () => (player.playing ? pause() : play())
 
 export function seek(t: number) {
+  catchUp()
   player.time = Math.min(Math.max(t, 0), player.duration)
   if (player.playing) startRun(false)
   else keepPlayhead()
+}
+
+/** Apply a pending edit now rather than at the next debounced frame: a play or seek right after an
+ *  edit (keepingPlayhead seeks after every edit that moves content) must start in the new timeline,
+ *  not play a moment of the old one. */
+function catchUp() {
+  if (stale && canvas && doc.project && size) rebuild(doc.project, canvas.width, canvas.height, false) // the caller starts the run
 }
 
 /** Store the playhead in the project as source time; saved to disk once it settles for a second. */
@@ -161,7 +170,7 @@ function keepPlayhead() {
   saveTimer = setTimeout(() => void save().catch(() => {}), 1000) // a failure shows as doc.saveError
 }
 
-/** Seek while dragging the playhead: when paused, also plays a short grain of audio at t. */
+/** Seek while dragging the playhead: when paused, also plays the audio it crosses (see grains). */
 export function scrub(t: number) {
   seek(t)
   if (!player.playing) {
@@ -201,6 +210,7 @@ function frame(ts: number) {
     } else player.time = t
   }
   if (!prepared || !renderer) return
+  if (player.playing) prefetchCut(prepared, player.time)
   if (inFlight) {
     if (player.playing) stats.dropped++
     return
@@ -222,7 +232,18 @@ function frame(ts: number) {
     .finally(() => (inFlight = false))
 }
 
-function rebuild(project: Project, width: number, height: number) {
+/** Half a second before playback reaches a cut, start decoding where the next clip begins, so the
+ *  frame after the cut is ready instead of waiting for a keyframe decode. */
+let warmed = NaN
+function prefetchCut(p: Prepared, t: number) {
+  const i = clipAt(p.map, t) + 1
+  const src = p.map.clips[i]?.start
+  if (src === undefined || src === warmed || p.map.outStarts[i] - t > 0.5) return
+  warmed = src
+  for (const k of Object.keys(media) as Array<keyof Media>) media[k]?.prefetch(src, toSource(p.map, t))
+}
+
+function rebuild(project: Project, width: number, height: number, splice = true) {
   stale = false
   preparedAt = performance.now()
   try {
@@ -243,7 +264,7 @@ function rebuild(project: Project, width: number, height: number) {
     }
     if (player.time > player.duration) player.time = player.duration
     syncMedia(p)
-    syncAudio(p)
+    syncAudio(p, splice)
   } catch (e) {
     fail(e)
   }
@@ -292,7 +313,7 @@ function closeMedia(k: keyof Media) {
 
 // ---- Audio ----
 
-function syncAudio(p: Project) {
+function syncAudio(p: Project, splice: boolean) {
   const next = planOf(p, events.value, doc.path, gains)
   for (const t of next.tracks) {
     if (t.voice && !gains.has(t.url)) {
@@ -310,7 +331,7 @@ function syncAudio(p: Project) {
   if (!plan) void mix(session, next, Math.round(player.time * SR), 480).catch(() => {}) // warm the worker before play
   plan = next
   planKey = key
-  if (player.playing) startRun(true) // an edit while playing: splice in the new mix, clock continues
+  if (player.playing && splice) startRun(true) // an edit while playing: splice in the new mix, clock continues
 }
 
 /** The output context, created once per attach and resumed if the system suspended it. */
@@ -393,8 +414,12 @@ async function feed() {
 
 let grainAt: number | null = null
 let grainBusy = false
-/** Scrub audio: back-to-back 80 ms grains of the same mix (stretched on sped-up clips), each from
- *  the latest scrub position, crossfaded by the worklet's 5 ms run fades. */
+let grainFrom = { t: 0, until: 0 } // where the last grain left the playhead, and until when (ms) a drag goes on from there
+/** Scrub audio, like a record under the finger: back-to-back 80 ms grains, each playing the output
+ *  time the playhead crossed since the last one, forward or backward, pitch following the drag speed
+ *  (up to 4x). The first grain, a jump, or a faster drag plays 80 ms at normal speed from the
+ *  playhead. Grains are the same mix (stretched on sped-up clips), crossfaded by the worklet's 5 ms
+ *  run fades. */
 async function grains() {
   grainBusy = true
   try {
@@ -402,7 +427,13 @@ async function grains() {
     while (grainAt !== null && !player.playing && plan && (await ensureAudio())) {
       const t = grainAt
       grainAt = null
-      const [L, R] = await mix(`${session}-scrub`, plan, Math.round(t * SR), GRAIN)
+      const d = performance.now() < grainFrom.until ? t - grainFrom.t : Infinity
+      const span = Math.round(Math.abs(d) * SR)
+      if (span < 48) continue // the playhead did not move
+      const crossed = span <= 4 * GRAIN
+      let [L, R] = await mix(`${session}-scrub`, plan, Math.round((crossed ? Math.min(t, grainFrom.t) : t) * SR), crossed ? span : GRAIN)
+      if (crossed) [L, R] = [scrubGrain(L, GRAIN, d < 0), scrubGrain(R, GRAIN, d < 0)]
+      grainFrom = { t, until: performance.now() + 250 }
       if (player.playing) break
       const at = Math.max(next, Math.round((ctx!.currentTime + 0.02) * SR))
       next = at + GRAIN - 240 // the worklet fades a run out over the 240 frames after its end

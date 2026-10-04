@@ -8,9 +8,10 @@ import { BlobSource } from 'mediabunny'
 import type { Clip } from '../../shared/project.ts'
 import { createProject } from '../../shared/project.ts'
 import { timeMap, toOutput } from '../../shared/timemap.ts'
-import { CEILING, Limiter, LoudnessMeter, SR, sincTable, interpolate } from './dsp.ts'
+import { CEILING, Limiter, LoudnessMeter, SR, scrubGrain, sincTable, interpolate } from './dsp.ts'
 import { Mixer, planOf, type Env, type Plan } from './mix.ts'
 import { analyze, openAudio, queryPeaks, Reader } from './source.ts'
+import type { PlaybackMessage } from './playback.worklet.ts'
 
 const files = new Map<string, Blob>()
 const env: Env = {
@@ -249,6 +250,18 @@ test('planOf maps clicks through cuts and leaves muted tracks out', () => {
   assert.deepEqual(plan.tracks[0].voice, { gain: 1 })
 })
 
+test('a scrub grain plays the crossed audio in one grain, backward when dragging back', () => {
+  const ramp = Float32Array.from({ length: 7681 }, (_, i) => i) // 160 ms crossed by a fast drag
+  const fwd = scrubGrain(ramp, 3841, false)
+  assert.equal(fwd.length, 3841)
+  assert.deepEqual([fwd[0], fwd[1], fwd[3840]], [0, 2, 7680]) // twice as fast, ends on the playhead
+  const back = scrubGrain(ramp, 3841, true)
+  assert.deepEqual([back[0], back[3840]], [7680, 0]) // starts where the drag started, ends on the playhead
+  const slow = scrubGrain(ramp.subarray(0, 961), 3841, false) // a slow drag: stretched, pitch drops
+  near(slow[1], 0.25, 1e-6, 'quarter speed')
+  assert.equal(slow[3840], 960)
+})
+
 test('reader resamples 44.1 kHz onto the 48 kHz grid', async () => {
   const f = await openAudio(new BlobSource(wav([tone(2, 1000, 0.5, 44100)], 44100)), 'tone44.wav')
   const r = new Reader(f)
@@ -282,4 +295,26 @@ test('peaks: shape, exactness against brute force, any zoom, across parallel seg
   const whole = new LoudnessMeter()
   whole.push([x, x])
   near((await a.lufs)!, whole.integrated()!, 0.01, 'segment loudness blocks join into the whole-file loudness (mono heard on both channels)')
+})
+
+test('preview worklet: a first chunk that arrives late fades in instead of starting mid-wave', async () => {
+  const g = globalThis as any
+  let Processor: any
+  g.AudioWorkletProcessor = class { port = { postMessage() {}, onmessage: null as any } }
+  g.registerProcessor = (_name: string, c: unknown) => (Processor = c)
+  await import('./playback.worklet.ts')
+  const p = new Processor()
+  const send = (data: PlaybackMessage) => p.port.onmessage({ data })
+  const quantum = (f: number) => {
+    g.currentFrame = f
+    const out = [new Float32Array(128), new Float32Array(128)]
+    p.process([], [out])
+    return out[0]
+  }
+  send({ type: 'run', id: 1, at: 0 })
+  for (let f = 0; f < 1280; f += 128) quantum(f) // the first mix is late: 10 quanta with nothing to play
+  const dc = new Float32Array(48000).fill(0.5)
+  send({ type: 'chunk', run: 1, at: 0, L: dc, R: dc })
+  assert.ok(quantum(1280)[0] < 0.01, 'starts from silence')
+  assert.equal(quantum(1280 + 256)[0], 0.5, 'then plays at full level, in place')
 })

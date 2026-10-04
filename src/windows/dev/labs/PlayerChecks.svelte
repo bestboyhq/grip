@@ -106,6 +106,44 @@
       assert(top < 60 && bottom > 200, `gray ${top} at the top, ${bottom} at the bottom: the frame is not upright`)
       return `${w}x${h}, upright`
     })
+    await check('scrubbing backward frame by frame does not decode from the keyframe at every step', async () => {
+      const src = await openVideo(fileUrl(`${dir}/hevc.mp4`))
+      const walk = async (ts: number[]) => {
+        const t0 = performance.now()
+        for (const t of ts) (await src.frameAt(t))?.close()
+        return performance.now() - t0
+      }
+      const steps = cfr.map((t) => t + 0.01)
+      const fwd = await walk(steps)
+      const back = await walk([...steps].reverse())
+      src.close()
+      // Kept frames: a restart per keyframe interval (4 here). Without them: one per step, about 25x forward.
+      assert(back < 10 * fwd, `backward ${back.toFixed(0)} ms vs forward ${fwd.toFixed(0)} ms for ${steps.length} frames`)
+      return `backward ${back.toFixed(0)} ms, forward ${fwd.toFixed(0)} ms`
+    })
+    await check('across a cut, the next clip decoded ahead (prefetch) shows without waiting, exact', async () => {
+      // Play 0.2 s, then jump 4 s ahead to 14 frames past a keyframe (1 s keyframe interval, like recordings).
+      const jump = async (ahead: boolean) => {
+        const src = await openVideo(fileUrl(`${dir}/gop.mp4`))
+        for (let t = 0; t < 0.2; t += 1 / 30) (await src.frameAt(t))?.close()
+        if (ahead) {
+          src.prefetch(4.47, 0.2)
+          await new Promise((r) => setTimeout(r, 300))
+        }
+        const t0 = performance.now()
+        const f = await src.frameAt(4.47)
+        const ms = performance.now() - t0
+        const at = f!.timestamp / 1e6
+        f!.close()
+        src.close()
+        assert(Math.abs(at - 134 / 30) < 1e-3, `frame at ${at} for 4.47`)
+        return ms
+      }
+      const cold = await jump(false)
+      const warm = await jump(true)
+      assert(warm < cold / 2, `prefetched jump ${warm.toFixed(1)} ms vs cold ${cold.toFixed(1)} ms`)
+      return `prefetched jump ${warm.toFixed(1)} ms, cold ${cold.toFixed(1)} ms`
+    })
 
     await check('AAC audio stays aligned through encoder priming', async () => {
       const buf = await renderAudio(prepared(audioOnly(`${dir}/click.m4a`, 4)), '/', 0, 4)
@@ -121,6 +159,18 @@
       const pk = await peaks(fileUrl(`${dir}/av.mp4`), 0, 3, 300)
       assert(pk.length === 600 && Math.max(...pk) > 0.3, 'peaks of the mp4 audio')
       return `click at ${a.toFixed(4)} s`
+    })
+    await check('AAC music starts at full level, every loop (no silent head)', async () => {
+      const p = createProject('t', { duration: 6 })
+      p.audio.music = { file: `${dir}/tone44.m4a`, volume: 1 } // 2 s of 44.1 kHz sine: loops at 2 s and 4 s
+      const x = (await renderAudio(prepared(p), '/', 0, 6)).getChannelData(0)
+      const rms = (a: number, b: number) => Math.sqrt(x.subarray(a, b).reduce((s, v) => s + v * v, 0) / (b - a))
+      const steady = rms(24000, 48000)
+      // After the 5 ms edge fade (start) and past the 10 ms loop crossfade (seam).
+      const head = rms(240, 480) / steady
+      const seam = rms(96240, 96480) / steady
+      assert(head > 0.9 && seam > 0.9, `head ${head.toFixed(2)}, loop seam ${seam.toFixed(2)} of the steady level`)
+      return `head ${head.toFixed(2)}, seam ${seam.toFixed(2)}`
     })
     await check('renderAudio length is exact; a 2x clip renders half the duration; chunks join exactly', async () => {
       const p = audioOnly(`${dir}/click.m4a`, 4)

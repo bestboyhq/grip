@@ -150,7 +150,9 @@ export class Reader {
     this.b0 = Math.max(0, at - Math.round(PREROLL * this.f.rate))
     this.len = 0
     this.done = false
-    this.it = this.f.sink.samples(this.b0 / this.f.rate)
+    // Decode from PREROLL before `at` even when that is before 0: AAC needs the packet before the
+    // first one it should output (the priming packet at the start), else the head comes out silent.
+    this.it = this.f.sink.samples(at / this.f.rate - PREROLL)
     // The first decoded sample may start before b0; append() trims it, but we want b0 covered.
     const first = await this.it.next()
     if (first.done) {
@@ -173,7 +175,7 @@ export class Reader {
 // from its first minutes while the rest still decodes.
 
 export const PEAK_SPP = 256 // output-grid samples per peak bucket (5.3 ms)
-const SEG = 200 * 76800 // output samples per segment (320 s): whole peak buckets, whole 100 ms loudness blocks
+const SEG = 20 * 76800 // output samples per segment (32 s, so the waveform fills in from the first seconds): whole peak buckets, whole 100 ms loudness blocks
 const LANES = 4 // segments decoding at once
 
 export interface Analysis {

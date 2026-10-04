@@ -9,7 +9,7 @@ import { SR } from './dsp.ts'
 import { planOf, type Plan } from './mix.ts'
 import type { Request } from './worker.ts'
 
-export { SR } from './dsp.ts'
+export { SR, scrubGrain } from './dsp.ts'
 export { planOf, type Plan } from './mix.ts'
 
 /** Promise RPC over one lazily started worker. */
