@@ -13,7 +13,8 @@ export type InputEvent =
   | { t: number; type: 'key'; down: boolean; key: string; code: number; mods: Modifier[] }
   // Cursor image changed (also while the mouse is still). PNG at sources/cursors/<id>.png,
   // hotspot and size in image pixels; scale = image pixels per screen.mp4 pixel.
-  | { t: number; type: 'cursor'; id: string; hotX: number; hotY: number; w: number; h: number; scale: number }
+  // kind: the standard system cursor this image is, when known (lets the built-in cursor set replace it).
+  | { t: number; type: 'cursor'; id: string; hotX: number; hotY: number; w: number; h: number; scale: number; kind?: 'arrow' | 'pointer' | 'ibeam' }
   // Secure input (password field) started/ended: no key events in between.
   | { t: number; type: 'secure'; on: boolean }
 

@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
+  <filter id="s" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dy="1" stdDeviation="1.5" flood-opacity="0.3"/></filter>
+  <circle cx="18" cy="18" r="14" fill="#fff" fill-opacity="0.55" stroke="#000" stroke-opacity="0.22" stroke-width="1.2" filter="url(#s)"/>
+</svg>
