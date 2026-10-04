@@ -60,12 +60,7 @@ export function layoutAt(l: PreparedLayout, t: number, zoom = 0): { screen: Scre
   let camera: CameraLayer | null = null
   if (cs && st.camera.visible !== false && s.cameraOpacity > 1e-3) {
     const src = toSource(l.map, t)
-    // A corner camera shrinks toward its corner while zoomed in.
-    const k = 1 - (1 - ZOOMED_CAMERA) * Math.min(Math.max(zoom, 0), 1) * s.pip
-    const r = s.camera
-    const ax = st.camera.position.endsWith('left') ? r.x : r.x + r.w
-    const ay = st.camera.position.startsWith('top') ? r.y : r.y + r.h
-    const rect = k < 1 ? { x: ax + (r.x - ax) * k, y: ay + (r.y - ay) * k, w: r.w * k, h: r.h * k } : r
+    const { rect, k } = steppedBack(st, s, zoom)
     camera = {
       rect,
       radius: s.cameraRadius * k,
@@ -79,6 +74,25 @@ export function layoutAt(l: PreparedLayout, t: number, zoom = 0): { screen: Scre
     }
   }
   return { screen, camera, masks: screen ? masksAt(l, t, screen.rect) : [] }
+}
+
+/** The camera's rect at t while it shows as picture-in-picture (settled in its corner and mostly
+ *  opaque), else null: hidden, fading, fullscreen, split, or mid-transition between them. The zoom
+ *  keeps the cursor and clicked elements out from under it. Cheaper than layoutAt (no crop, no masks). */
+export function pipCameraAt(l: PreparedLayout, t: number, zoom = 0): Rect | null {
+  const { project } = l.input
+  if (!project.sources.camera || project.style.camera.visible === false) return null
+  const s = stateAt(l, t, lastChange(l.changes, t))
+  return s.pip > 0.99 && s.cameraOpacity > 0.5 ? steppedBack(project.style, s, zoom).rect : null
+}
+
+/** A corner camera shrinks toward its corner (by k) while zoomed in. */
+function steppedBack(st: Style, s: State, zoom: number): { rect: Rect; k: number } {
+  const k = 1 - (1 - ZOOMED_CAMERA) * Math.min(Math.max(zoom, 0), 1) * s.pip
+  const r = s.camera
+  const ax = st.camera.position.endsWith('left') ? r.x : r.x + r.w
+  const ay = st.camera.position.startsWith('top') ? r.y : r.y + r.h
+  return { rect: k < 1 ? { x: ax + (r.x - ax) * k, y: ay + (r.y - ay) * k, w: r.w * k, h: r.h * k } : r, k }
 }
 
 // ---- Layout targets: the settled state of each camera layout kind. ----

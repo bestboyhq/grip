@@ -2,14 +2,15 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createProject, type Clip, type Project, type Zoom } from '../../shared/project.ts'
+import { createProject, type CameraPosition, type Clip, type Project, type Zoom } from '../../shared/project.ts'
 import { parseEvents, type InputEvent } from '../../shared/events.ts'
-import { prepare, type View } from '../scene.ts'
+import { prepare, sceneAt, type View } from '../scene.ts'
 import { layoutAt } from '../layout.ts'
 import { cursorPoint as cursorAt } from '../motion/index.ts'
 import { autoZoomOnce, generateAutoZooms, loupeAt, viewAt } from './index.ts'
 
 const SCREEN = { file: 'sources/screen.mp4', width: 2880, height: 1800, fps: 30, scale: 2 }
+const CAMERA = { file: 'sources/camera.mp4', width: 1280, height: 720, fps: 30, scale: 1 }
 const zoom = (z: Partial<Zoom>): Zoom => ({ id: Math.random().toString(36).slice(2), start: 0, end: 1, level: 2, target: { kind: 'cursor' }, enabled: true, ...z })
 const point = (x: number, y: number) => ({ kind: 'point' as const, x, y })
 
@@ -299,4 +300,80 @@ test('fixture: auto zooms cover every click, keep the cursor in frame and clicke
     // Within the focus zone (plus spring slack), so the element around the click is in frame.
     assert.ok(Math.abs(x - view(c.t).center.x) <= 0.45 * v.hw && Math.abs(y - view(c.t).center.y) <= 0.45 * v.hh, `click at ${c.t} is off center`)
   }
+})
+
+/** Click a field, type for 8 s, and meanwhile park the cursor toward the camera's corner, jittering
+ *  there: framing the field alone leaves the cursor under the camera. */
+function typingBesideCamera(pos: CameraPosition, edit: (p: Project) => void = () => {}) {
+  const flip = (x: number, y: number): [number, number] => [pos.endsWith('left') ? 2880 - x : x, pos.startsWith('top') ? 1800 - y : y]
+  const field = flip(1500, 950)
+  const park = flip(2460, 1460)
+  const rest = Array.from({ length: 56 }, (_, i): [number, number, number] => [5 + (i + 1) / 8, park[0] + (i % 2 ? 15 : -15), park[1] + (i % 2 ? -10 : 10)])
+  const keys: InputEvent[] = Array.from({ length: 32 }, (_, i) => ({ t: 2 + i * 0.25, type: 'key', down: true, key: 'a', code: 0, mods: [] }))
+  const click: InputEvent = { t: 1.5, type: 'down', x: field[0], y: field[1], button: 'left' }
+  const events = [...moves([[0, ...field], [3, ...field], [5, ...park], ...rest]), click, ...keys].sort((a, b) => a.t - b.t)
+  const project = createProject('t', { duration: 12, screen: SCREEN, camera: CAMERA, events: 'sources/events.jsonl' })
+  project.style.camera.position = pos
+  edit(project)
+  return { field, ...setup([zoom({ start: 1, end: 12 })], events, { project, duration: 12 }) }
+}
+const CORNERS: CameraPosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
+
+test('a picture-in-picture camera never covers the cursor or the field being typed in, in any corner', () => {
+  for (const pos of CORNERS) {
+    const { p, view, field } = typingBesideCamera(pos)
+    const r = layoutAt(p.layout, 0).screen!.rect
+    const field0 = { x: r.x + (field[0] * r.w) / 2880, y: r.y + (field[1] * r.h) / 1800 }
+    for (const t of frames(1.5, 12)) {
+      const v = view(t)
+      const scene = sceneAt(p, t)
+      const cam = scene.camera!.rect // as drawn at t: stepped back by the zoom
+      const out = (q: { x: number; y: number }) => ({ x: (q.x - v.center.x) * v.scale + 960, y: (q.y - v.center.y) * v.scale + 600 })
+      const under = (q: { x: number; y: number }, w = 0, h = 0) => q.x + w > cam.x && q.x < cam.x + cam.w && q.y + h > cam.y && q.y < cam.y + cam.h
+      const c = out(cursorAt(p.cursor, t)!)
+      const f = out(field0)
+      // The whole arrow: 14 x 20 points right of and below its tip, magnified by the zoom.
+      const k = scene.cursor!.scale * v.scale
+      assert.equal(scene.cursor!.image, 'arrow')
+      assert.ok(!under(c, 14 * k, 20 * k), `${pos}: cursor at ${c.x.toFixed(0)},${c.y.toFixed(0)} under the camera at t=${t.toFixed(2)}`)
+      assert.ok(c.x >= 0 && c.x <= 1920 && c.y >= 0 && c.y <= 1200, `${pos}: cursor out of frame at t=${t.toFixed(2)}`)
+      assert.ok(!under(f) && f.x >= 0 && f.x <= 1920 && f.y >= 0 && f.y <= 1200, `${pos}: field hidden at t=${t.toFixed(2)}`)
+    }
+    // Clearing the camera is part of the framing, not a fight with it: a cursor jittering in place
+    // at the camera's edge does not shake the view.
+    const c0 = view(7).center
+    for (const t of frames(7, 9.5)) assert.ok(Math.hypot(view(t).center.x - c0.x, view(t).center.y - c0.y) < 0.5, `${pos}: the view drifts at t=${t.toFixed(2)}`)
+  }
+})
+
+test('vertical output: following the cursor near the camera pans it out from under the camera, in any corner', () => {
+  for (const pos of CORNERS) {
+    const to: [number, number] = [pos.endsWith('left') ? 900 : 1980, pos.startsWith('top') ? 250 : 1550]
+    const project = createProject('t', { duration: 6, screen: SCREEN, camera: CAMERA, events: 'sources/events.jsonl' })
+    project.style.camera.position = pos
+    const { p, view } = setup([], moves([[0, 1440, 900], [2, ...to], [6, ...to]]), { project, width: 1080, height: 1920, duration: 6 })
+    for (const t of frames(0, 3.5)) { // until the resting cursor hides
+      const v = view(t)
+      const { camera, cursor } = sceneAt(p, t)
+      const cam = camera!.rect
+      const x = (cursor!.x - v.center.x) * v.scale + 540
+      const y = (cursor!.y - v.center.y) * v.scale + 960
+      const k = cursor!.scale * v.scale
+      assert.ok(!(x + 14 * k > cam.x && x < cam.x + cam.w && y + 20 * k > cam.y && y < cam.y + cam.h), `${pos}: cursor at ${x.toFixed(0)},${y.toFixed(0)} under the camera at t=${t.toFixed(2)}`)
+    }
+  }
+})
+
+test('only a picture-in-picture camera moves the view: hidden, fullscreen, or turned off do not', () => {
+  const alone = typingBesideCamera('bottom-right', (p) => delete p.sources.camera)
+  const edits: Array<(p: Project) => void> = [
+    (p) => (p.style.camera.visible = false),
+    ...(['hidden', 'fullscreen'] as const).map((kind) => (p: Project) => (p.layouts = [{ id: 'l', start: 0, end: 12, kind }])),
+  ]
+  for (const edit of edits) {
+    const { view } = typingBesideCamera('bottom-right', edit)
+    for (const t of frames(1, 12)) assert.deepEqual(view(t), alone.view(t), `t=${t}`)
+  }
+  const pip = typingBesideCamera('bottom-right')
+  assert.ok(frames(1, 12).some((t) => Math.abs(pip.view(t).center.x - alone.view(t).center.x) > 20), 'a corner camera does')
 })
