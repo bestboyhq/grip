@@ -1,22 +1,54 @@
 <!-- Owner: export. Export dialog (format, resolution, frame rate, quality, size estimate,
-     destination: file, clipboard, share link) and the export queue with progress, cancel, and
-     reveal. Mounted by Editor.svelte as <ExportDialog bind:open />. Exports run in the background
-     (electron/export.ts): closing the dialog never stops them. -->
+     destination: file, clipboard, share link, batch) and the export queue with progress, cancel,
+     and reveal. Mounted by Editor.svelte as <ExportDialog bind:open />. Exports run in the
+     background (electron/export.ts): closing the dialog never stops them. -->
+<script module lang="ts">
+  import { doc } from '../../../lib/doc.svelte.ts'
+  import { invoke, on } from '../../../lib/ipc.ts'
+  import { cleanOptions, type JobInfo } from '../../../engine/export/options.ts'
+
+  const KEY = 'studio.export.options'
+  const saved = () => cleanOptions(JSON.parse(localStorage.getItem(KEY) ?? 'null'))
+  const active = (j: JobInfo) => j.state === 'queued' || j.state === 'running' || j.state === 'uploading'
+  const clean = (e: unknown) => String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+
+  /** For the Share button: export the open project as MP4 with the user's export settings into
+   *  Studio's temp folder, and resolve to the file once it is complete. The file stays on disk while
+   *  a share upload reads it, across restarts. */
+  export async function exportVideo(): Promise<string> {
+    const project = doc.project
+    if (!project) throw new Error('No project is open.')
+    const seen = new Map<string, JobInfo>() // updates can arrive before enqueue answers
+    let settle = (_: JobInfo) => {}
+    const off = on('export:update', (j: JobInfo) => (seen.set(j.id, j), settle(j)))
+    try {
+      const [job]: JobInfo[] = await invoke('export:enqueue', [{ bundle: doc.path, project: $state.snapshot(project), options: { ...saved(), format: 'mp4' }, dest: 'temp' }])
+      const end = await new Promise<JobInfo>((resolve) => {
+        settle = (j) => void (j.id === job.id && !active(j) && resolve(j))
+        settle(seen.get(job.id) ?? job)
+      })
+      if (end.state === 'done') return end.path
+      throw new Error(end.state === 'canceled' ? 'The export was canceled.' : (end.error ?? 'The export failed.'))
+    } catch (e) {
+      throw new Error(clean(e))
+    } finally {
+      off()
+    }
+  }
+</script>
+
 <script lang="ts">
   import { onMount } from 'svelte'
   import { canEncodeVideo } from 'mediabunny'
-  import { doc } from '../../../lib/doc.svelte.ts'
-  import { invoke, on } from '../../../lib/ipc.ts'
   import { timeMap } from '../../../shared/timemap.ts'
   import { outputSize } from '../../../engine/scene.ts'
   import { fitEncoder } from '../../../engine/export/index.ts'
-  import { cleanOptions, estimateBytes, formatBytes, LIMITS, LOOPS, QUALITIES, RATES, SIZES, type Destination, type ExportOptions, type Format, type JobInfo } from '../../../engine/export/options.ts'
-  import Segmented from './Segmented.svelte'
+  import { estimateBytes, formatBytes, LIMITS, LOOPS, QUALITIES, RATES, SIZES, type Destination, type ExportOptions, type Format } from '../../../engine/export/options.ts'
+  import Segmented from '../../../ui/Segmented.svelte'
 
   let { open = $bindable(false) }: { open?: boolean } = $props()
 
-  const KEY = 'studio.export.options'
-  let o = $state<ExportOptions>(cleanOptions(JSON.parse(localStorage.getItem(KEY) ?? 'null')))
+  let o = $state<ExportOptions>(saved())
   let jobs = $state<JobInfo[]>([])
   let error = $state('')
   let copied = $state('')
@@ -29,7 +61,6 @@
   const size = $derived(o.format === 'gif' ? base : fit)
   const shrunk = $derived(o.format === 'mp4' && base && fit && fit.width < base.width)
   const estimate = $derived(size && duration ? estimateBytes(duration, size.width, size.height, o) : 0)
-  const active = (j: JobInfo) => j.state === 'queued' || j.state === 'running' || j.state === 'uploading'
 
   const p = (n: number) => (n === 2160 ? '4K' : `${n}p`)
   const label: Record<string, string> = { studio: 'Studio', social: 'Social', web: 'Web', small: 'Small' }
@@ -71,13 +102,12 @@
     o = cleanOptions({ ...o, format })
   }
 
-  const clean = (e: unknown) => String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
-
-  async function start(dest: Destination) {
+  async function start(dest: Destination | 'batch') {
     if (!doc.project) return
     error = ''
     try {
-      await invoke('export:enqueue', [{ bundle: doc.path, project: $state.snapshot(doc.project), options: $state.snapshot(o), dest }])
+      if (dest === 'batch') await invoke('export:batch', $state.snapshot(o))
+      else await invoke('export:enqueue', [{ bundle: doc.path, project: $state.snapshot(doc.project), options: $state.snapshot(o), dest }])
     } catch (e) {
       error = clean(e)
     }
@@ -97,7 +127,7 @@
     if (j.state === 'uploading') return 'Uploading…'
     if (j.state === 'canceled') return 'Canceled'
     if (j.state === 'failed') return j.error ?? 'Failed'
-    if (j.state === 'done') return `${j.dest === 'clipboard' ? 'Copied to clipboard' : j.dest === 'share' ? 'Link ready' : 'Saved'} · ${formatBytes(j.bytes ?? 0)}`
+    if (j.state === 'done') return `${{ clipboard: 'Copied to clipboard', share: 'Link ready', temp: 'Ready to share', file: 'Saved' }[j.dest]} · ${formatBytes(j.bytes ?? 0)}`
     const pct = `${Math.floor(j.progress * 100)}%`
     const elapsed = (Date.now() - (j.startedAt ?? Date.now())) / 1000
     const left = j.progress > 0.02 && elapsed > 1 ? ` · ${clock((elapsed * (1 - j.progress)) / j.progress)} left` : ''
@@ -109,35 +139,32 @@
   <div class="sheet">
     <header>
       <h2 id="export-title">Export</h2>
+      <button class="link batch" disabled={!doc.project} title="Export several projects with these settings, unattended" onclick={() => start('batch')}>Batch Export…</button>
       <button class="icon" aria-label="Close" onclick={() => dialog.close()}>
         <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
       </button>
     </header>
 
-    <Segmented label="Format" wide bind:value={() => o.format, setFormat} options={[{ value: 'mp4', text: 'MP4' }, { value: 'gif', text: 'GIF' }]} />
-
     <div class="rows">
-      <span class="name">Resolution</span>
-      <Segmented label="Resolution" bind:value={o.size} options={SIZES[o.format].map((v) => ({ value: v, text: p(v) }))} />
-      <span class="name">Frame rate</span>
-      <Segmented label="Frame rate" bind:value={o.fps} options={RATES[o.format].map((v) => ({ value: v, text: `${v} fps` }))} />
+      <Segmented label="Format" value={o.format} onchange={setFormat} options={[{ value: 'mp4', label: 'MP4' }, { value: 'gif', label: 'GIF' }]} />
+      <Segmented label="Resolution" value={o.size} onchange={(v) => (o.size = v)} options={SIZES[o.format].map((v) => ({ value: v, label: p(v) }))} />
+      <Segmented label="Frame rate" value={o.fps} onchange={(v) => (o.fps = v)} options={RATES[o.format].map((v) => ({ value: v, label: `${v} fps` }))} />
       {#if o.format === 'mp4'}
-        <span class="name">Quality</span>
-        <Segmented label="Quality" bind:value={o.quality} options={QUALITIES.map((v) => ({ value: v, text: label[v], title: quality[v] }))} />
-        <span class="name">Codec</span>
+        <Segmented label="Quality" value={o.quality} onchange={(v) => (o.quality = v)} options={QUALITIES.map((v) => ({ value: v, label: label[v], title: quality[v] }))} />
+        <p class="hint">{quality[o.quality]}</p>
         <Segmented
           label="Codec"
-          bind:value={o.codec}
+          value={o.codec}
+          onchange={(v) => (o.codec = v)}
           options={[
-            { value: 'h264', text: 'H.264', title: 'Plays everywhere' },
-            { value: 'hevc', text: 'HEVC', disabled: !hevc, title: hevc ? 'About a third smaller; some older players need H.264' : 'This Mac cannot encode HEVC' },
+            { value: 'h264', label: 'H.264', title: 'Plays everywhere' },
+            { value: 'hevc', label: 'HEVC', disabled: !hevc, title: hevc ? 'About a third smaller; some older players need H.264' : 'This Mac cannot encode HEVC' },
           ]}
         />
       {:else}
-        <span class="name">Loop</span>
-        <Segmented label="Loop" bind:value={o.loop} options={LOOPS.map((v) => ({ value: v, text: v === 0 ? 'Forever' : v === 1 ? 'Once' : `${v}×` }))} />
-        <span class="name">Size limit</span>
-        <Segmented label="Size limit" bind:value={o.maxMB} options={LIMITS.map((v) => ({ value: v, text: v ? `${v} MB` : 'None' }))} />
+        <Segmented label="Loop" value={o.loop} onchange={(v) => (o.loop = v)} options={LOOPS.map((v) => ({ value: v, label: v === 0 ? 'Forever' : v === 1 ? 'Once' : `${v}×` }))} />
+        <Segmented label="Size limit" value={o.maxMB} onchange={(v) => (o.maxMB = v)} options={LIMITS.map((v) => ({ value: v, label: v ? `${v} MB` : 'None' }))} />
+        <p class="hint">{o.maxMB ? `Scaled down if needed to stay under ${o.maxMB} MB` : 'Size follows length and motion'}</p>
       {/if}
     </div>
 
@@ -173,7 +200,7 @@
             <li class={j.state}>
               <div class="line">
                 <span class="file" title={j.path}>{file(j)}</span>
-                {#if active(j)}
+                {#if j.state === 'queued' || j.state === 'running'}
                   <button class="small" onclick={() => invoke('export:cancel', j.id)}>Cancel</button>
                 {:else if j.state === 'done' && j.url}
                   <button class="small" onclick={() => copyLink(j)}>{copied === j.id ? 'Copied' : 'Copy Link'}</button>
@@ -225,8 +252,8 @@
     max-height: calc(100vh - 48px);
     overflow-y: auto;
     padding: 16px 20px 20px;
-    border-radius: 12px;
-    background: #252528;
+    border-radius: var(--radius-lg);
+    background: var(--bg-panel);
     box-shadow:
       0 0 0 0.5px rgb(255 255 255 / 0.14),
       0 24px 64px rgb(0 0 0 / 0.55);
@@ -234,8 +261,17 @@
   header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 14px;
     margin-bottom: 14px;
+  }
+  header h2 {
+    margin-right: auto;
+  }
+  .batch {
+    font-size: 12px;
+  }
+  .batch:disabled {
+    opacity: 0.4;
   }
   h2 {
     margin: 0;
@@ -258,14 +294,15 @@
     background: var(--bg-hover);
   }
   .rows {
+    --label-w: 112px; /* fixed, so switching MP4/GIF never shifts the controls */
     display: grid;
-    grid-template-columns: 1fr 300px; /* fixed, so switching MP4/GIF never shifts the controls */
-    align-items: center;
-    row-gap: 10px;
-    margin: 16px 0 14px;
+    gap: 6px;
+    margin: 4px 0 14px;
   }
-  .name {
-    color: var(--text-dim);
+  .hint {
+    margin: -2px 0 2px calc(var(--label-w) + 8px);
+    font-size: 12px;
+    color: var(--text-faint);
   }
   .summary {
     display: flex;
@@ -313,7 +350,7 @@
   }
   .primary {
     margin-left: auto;
-    background: var(--accent);
+    background: var(--accent-strong);
     color: #fff;
   }
   .primary:hover:not(:disabled) {
@@ -351,7 +388,7 @@
     text-transform: none;
     color: var(--text-dim);
   }
-  .link:hover {
+  .link:hover:not(:disabled) {
     color: var(--text);
   }
   ul {

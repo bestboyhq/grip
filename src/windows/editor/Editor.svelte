@@ -16,7 +16,7 @@
   import Presets from './Presets.svelte'
   import AspectPicker from './AspectPicker.svelte'
   import Timeline from './timeline/Timeline.svelte'
-  import ExportDialog from './export/ExportDialog.svelte'
+  import ExportDialog, { exportVideo } from './export/ExportDialog.svelte'
   import ShareButton from './share/ShareButton.svelte'
   import { formatTime, reason, resumeAt } from './helpers.ts'
   import { sendThumbnail } from './thumbnail.ts'
@@ -177,7 +177,7 @@
         <button class="icon-btn" disabled={!history.redo} onclick={redo} {@attach tooltip('Redo', '⇧⌘Z')}><Icon name="redo" /></button>
         <span class="sep"></span>
         <Presets />
-        <ShareButton />
+        <ShareButton {exportVideo} />
         <button class="btn primary export" onclick={() => (exportOpen = true)}><Icon name="export" size={16} />Export</button>
       </div>
     {/if}

@@ -15,7 +15,7 @@
     onchange,
   }: {
     label?: string
-    options: Array<{ value: T; label: string; icon?: IconName }>
+    options: Array<{ value: T; label: string; icon?: IconName; disabled?: boolean; title?: string }>
     value: T
     stacked?: boolean
     iconOnly?: boolean
@@ -29,8 +29,8 @@
   {#if label}<span class="label" id="{name}-label">{label}</span>{/if}
   <div class="seg" role="radiogroup" aria-labelledby={label ? `${name}-label` : undefined}>
     {#each options as o (o.value)}
-      <label class:on={o.value === value} {@attach iconOnly && tooltip(o.label)}>
-        <input type="radio" {name} {disabled} checked={o.value === value} aria-label={iconOnly ? o.label : undefined} onchange={() => onchange(o.value)} />
+      <label class:on={o.value === value} class:off={o.disabled} title={o.title} {@attach iconOnly && tooltip(o.label)}>
+        <input type="radio" {name} disabled={disabled || o.disabled} checked={o.value === value} aria-label={iconOnly ? o.label : undefined} onchange={() => onchange(o.value)} />
         {#if o.icon}<Icon name={o.icon} size={stacked ? 18 : 15} />{/if}
         {#if !iconOnly}<span>{o.label}</span>{/if}
       </label>
@@ -51,7 +51,8 @@
   }
   label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .stacked label:has(:global(.icon)) { flex-direction: column; gap: 3px; height: 48px; }
-  label:hover { color: var(--text); }
+  label:hover:not(.off) { color: var(--text); }
+  label.off { opacity: 0.35; }
   label.on { background: var(--bg-active); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), inset 0 0.5px 0 rgb(255 255 255 / 0.08); }
   label:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: -1px; }
   input { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; pointer-events: none; }
