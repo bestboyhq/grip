@@ -37,3 +37,27 @@ test('edits', () => {
   near(timeMap(c).duration, 11.5)
   near(toOutput(timeMap(c), 20), 2.5)
 })
+
+test('mapRange matches a linear scan on shuffled, duplicated, sped-up clips', () => {
+  const linear = (cs: Clip[], a: number, b: number) => {
+    const m = timeMap(cs)
+    return cs.flatMap((c, i) => {
+      const s = Math.max(a, c.start)
+      const e = Math.min(b, c.end)
+      return e - s > 1e-9 ? [[m.outStarts[i] + (s - c.start) / c.speed, m.outStarts[i] + (e - c.start) / c.speed]] : []
+    })
+  }
+  let seed = 7
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+  const cs: Clip[] = []
+  for (let i = 0; i < 300; i++) {
+    const s = rnd() * 1000
+    cs.push(clip(s, s + 0.1 + rnd() * 20, [0.5, 1, 2, 4][Math.floor(rnd() * 4)]))
+  }
+  const m = timeMap(cs)
+  for (let i = 0; i < 2000; i++) {
+    const a = rnd() * 1100 - 50
+    const b = a + rnd() * 60
+    assert.deepEqual(mapRange(m, a, b), linear(cs, a, b))
+  }
+})

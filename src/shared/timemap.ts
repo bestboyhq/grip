@@ -56,14 +56,39 @@ export function toOutput(m: TimeMap, src: number): number | null {
   return null
 }
 
+/** Clip indices sorted by source start, with a running max of source ends: lets mapRange visit
+ *  only the clips that can overlap a range, O(log n + hits) instead of O(n). Built once per map. */
+const sourceIndex = new WeakMap<TimeMap, { order: number[]; maxEnd: number[] }>()
+function indexOf(m: TimeMap) {
+  let ix = sourceIndex.get(m)
+  if (!ix) {
+    const order = m.clips.map((_, i) => i).sort((a, b) => m.clips[a].start - m.clips[b].start)
+    const maxEnd: number[] = []
+    order.forEach((i, k) => maxEnd.push(Math.max(k ? maxEnd[k - 1] : -Infinity, m.clips[i].end)))
+    sourceIndex.set(m, (ix = { order, maxEnd }))
+  }
+  return ix
+}
+
 /** A source range -> the output ranges that survive cuts, in output order. */
 export function mapRange(m: TimeMap, start: number, end: number): Array<[number, number]> {
+  const { order, maxEnd } = indexOf(m)
+  let lo = 0
+  let hi = order.length // first k with clips[order[k]].start >= end
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (m.clips[order[mid]].start < end) lo = mid + 1
+    else hi = mid
+  }
+  const hits: number[] = []
+  for (let k = lo - 1; k >= 0 && maxEnd[k] > start; k--) if (m.clips[order[k]].end > start) hits.push(order[k])
   const out: Array<[number, number]> = []
-  m.clips.forEach((c, i) => {
+  for (const i of hits.sort((a, b) => a - b)) {
+    const c = m.clips[i]
     const s = Math.max(start, c.start)
     const e = Math.min(end, c.end)
     if (e - s > EPS) out.push([m.outStarts[i] + (s - c.start) / c.speed, m.outStarts[i] + (e - c.start) / c.speed])
-  })
+  }
   return out
 }
 
