@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { parseStudioUrl } from './url.ts'
 import { plainError } from './errors.ts'
 import { areaOf, fit, place, reachable } from './bounds.ts'
+import { readFileSync } from 'node:fs'
+import { dirname, join, matchesGlob } from 'node:path'
 
 test('studio:// urls', () => {
   assert.deepEqual(parseStudioUrl('studio://record'), { kind: 'record' })
@@ -55,4 +57,22 @@ test('window placement', () => {
   assert.deepEqual(place({ width: 880, height: 64 }, main, 20), { x: 316, y: 860, width: 880, height: 64 })
   assert.equal(areaOf({ x: 1400, y: 0, width: 400, height: 300 }, [main, ext]), 1)
   assert.equal(areaOf({ x: 9000, y: 0, width: 10, height: 10 }, [main, ext]), -1)
+})
+
+test('the packaged app ships every file the main process imports', () => {
+  // An import outside package.json build.files loads in dev and kills the built app at launch.
+  const root = join(import.meta.dirname, '../..')
+  const globs: string[] = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).build.files
+  const has = (f: string, neg: boolean) => globs.some((g) => g.startsWith('!') === neg && matchesGlob(f, neg ? g.slice(1) : g))
+  const seen = new Set<string>()
+  const walk = (file: string) => {
+    if (seen.has(file)) return
+    seen.add(file)
+    // Runtime imports only: type-only imports and `typeof import()` are erased.
+    const src = readFileSync(join(root, file), 'utf8').replace(/(?:import|export)\s+type\b[^;]*?from\s*['"][^'"]*['"]|typeof\s+import\([^)]*\)/g, '')
+    for (const m of src.matchAll(/(?:\bfrom|^\s*import|\bimport\()\s*['"](\.{1,2}\/[^'"]+)['"]/gm)) walk(join(dirname(file), m[1]))
+  }
+  walk('electron/main.ts')
+  assert.ok(seen.size > 20, `found only ${seen.size} files`)
+  assert.deepEqual([...seen].filter((f) => !has(f, false) || has(f, true)), [])
 })

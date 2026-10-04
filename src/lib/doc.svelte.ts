@@ -14,6 +14,7 @@ class Doc {
   transcript = $state.raw<Transcript | null>(null)
   rev = $state(0) // bumps on every change; derived data keys off it
   dirty = $state(false)
+  saveError = $state('') // why the last save failed; cleared by the next one that lands
 }
 export const doc = new Doc()
 
@@ -32,15 +33,24 @@ function changed() {
   doc.rev++
   doc.dirty = true
   clearTimeout(saveTimer)
-  saveTimer = setTimeout(save, 800)
+  saveTimer = setTimeout(() => save().catch(() => {}), 800) // a failure shows as doc.saveError
 }
 
+/** Write the project to disk. A failed save keeps the edits dirty (the next autosave or close retries)
+ *  and sets doc.saveError; it still rejects, for callers that must know (close, Move to Trash). */
 export async function save() {
   if (!doc.project || !doc.dirty) return
   clearTimeout(saveTimer)
   const snap = $state.snapshot(doc.project)
   doc.dirty = false
-  await invoke('projects:save', doc.path, snap)
+  try {
+    await invoke('projects:save', doc.path, snap)
+    doc.saveError = ''
+  } catch (e) {
+    doc.dirty = true
+    doc.saveError = (e as Error).message
+    throw e
+  }
 }
 
 let mergeKey = ''

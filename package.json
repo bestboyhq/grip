@@ -29,6 +29,7 @@
       "!electron/**/*.test.ts",
       "src/shared/**/*.ts",
       "src/engine/**/*.ts",
+      "src/assets/**/*.ts",
       "!src/**/*.test.ts",
       "server/client.ts",
       "dist/**/*",

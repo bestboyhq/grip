@@ -43,6 +43,9 @@ if (process.versions.electron) {
     // HEVC, 30 fps, gray level 16 + 3 i.
     ff(dir, ['-f', 'lavfi', '-i', "nullsrc=s=128x128:r=30:d=2,format=yuv420p,geq=lum='16+3*N':cb=128:cr=128",
       '-c:v', 'libx265', '-tag:v', 'hvc1', '-crf', '4', '-x265-params', 'bframes=3:keyint=15:log-level=error', '-pix_fmt', 'yuv420p', 'hevc.mp4'])
+    // A portrait phone clip: 128x64 frames, left half white, plus a 90 degree display rotation.
+    ff(dir, ['-f', 'lavfi', '-i', "nullsrc=s=128x64:r=30:d=1,format=yuv420p,geq=lum='if(lt(X,64),235,16)':cb=128:cr=128", '-c:v', 'libx264', '-pix_fmt', 'yuv420p', 'flat.mp4'])
+    ff(dir, ['-display_rotation', '90', '-i', 'flat.mp4', '-c', 'copy', 'rotated.mov'])
     // AAC with 2 ms clicks at exactly 1.0 s and 2.5 s.
     const clicks = "aevalsrc='0.8*(between(t,1,1.002)+between(t,2.5,2.502))':s=48000:d=4"
     ff(dir, ['-f', 'lavfi', '-i', clicks, '-c:a', 'aac', '-b:a', '192k', 'click.m4a'])

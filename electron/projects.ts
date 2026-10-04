@@ -2,8 +2,9 @@
 // `<name>.studio/` holding sources/ (immutable raw recordings), project.json (the edit document),
 // project.json.bak (the previous save), thumbnail.png, and assets/ (preset images, LUTs).
 //
-//   projects:open(path) -> { project, path }  migrated + validated; path follows in-app renames;
-//                                             an interrupted recording is rebuilt first
+//   projects:open(path) -> { project, path, notice? }  migrated + validated; path follows in-app
+//                                             renames; an interrupted recording or a damaged
+//                                             project.json is rebuilt first (notice says so)
 //   projects:save(path, project)              validated, atomic, keeps project.json.bak; `sources`
 //                                             already on disk win (main-side domains own them)
 //   projects:recovered() -> Recovered[]       interrupted recordings rebuilt at launch
@@ -19,7 +20,7 @@
 //
 // Other main-process domains import the helpers below; keep their signatures.
 import electron from 'electron'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { constants, existsSync } from 'node:fs'
 import { access, copyFile, mkdir, open, readFile, readdir, rename, rm, rmdir, stat } from 'node:fs/promises'
@@ -29,6 +30,7 @@ import { migrate, newerError, validateProject } from '../src/shared/migrate.ts'
 import { parseEvents } from '../src/shared/events.ts'
 import { generateAutoZooms } from '../src/engine/zoom/index.ts'
 import { registerPresets } from './presets.ts'
+import { plainError } from './shell/errors.ts'
 
 export interface Recovered {
   path: string
@@ -180,7 +182,8 @@ export function renameBundle(bundle: string, name: string): Promise<string> {
 }
 
 /** Rebuild project.json for every bundle in `dir` that has sources but no project (a recording
- *  that was interrupted by a crash or power loss). */
+ *  that was interrupted by a crash or power loss). Bundles cut off before any media landed are
+ *  removed, so they never sit in the folder as projects that can't open. */
 export async function recoverBundles(dir = projectsDir()): Promise<Recovered[]> {
   const out: Recovered[] = []
   for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
@@ -190,6 +193,7 @@ export async function recoverBundles(dir = projectsDir()): Promise<Recovered[]> 
     try {
       const p = await rebuildProject(bundle)
       if (p) out.push({ path: bundle, name: p.name, duration: p.sources.duration })
+      else if (await holdsNothing(bundle)) await rm(bundle, { recursive: true, force: true })
     } catch (err) {
       console.error(`[projects] could not recover ${bundle}:`, err)
     }
@@ -197,10 +201,34 @@ export async function recoverBundles(dir = projectsDir()): Promise<Recovered[]> 
   return out
 }
 
-/** project.json from what is on disk: the backup if there is one, else probed sources. Null when
- *  there is nothing playable. */
+/** The project the editor opens. Without project.json (a recording cut off by a crash) or with one
+ *  damaged beyond its backup (set aside as project.json.damaged, never deleted), it is rebuilt from
+ *  the recording, and `notice` says so. A newer version or a disk error is never rebuilt over. */
+export async function openBundle(bundle: string): Promise<{ project: Project | null; notice?: string }> {
+  const file = join(bundle, 'project.json')
+  if (await exists(file)) {
+    try {
+      return { project: await readProject(bundle) }
+    } catch (e) {
+      if ((e as { code?: string }).code) throw e
+      console.warn(`[projects] ${file} is damaged (${(e as Error).message}), rebuilding from the recording`)
+      await rename(file, file + '.damaged')
+      const project = await rebuildProject(bundle)
+      return { project, notice: 'This project’s edits were damaged, so Studio rebuilt it from the recording.' }
+    }
+  }
+  return { project: await rebuildProject(bundle), notice: 'This recording was recovered after Studio quit unexpectedly.' }
+}
+
+/** project.json from what is on disk: the backup if it is readable, else probed sources. Null when
+ *  there is nothing playable. A backup from a newer Studio is refused, never rebuilt over. */
 export async function rebuildProject(bundle: string): Promise<Project | null> {
-  const bak = await readFile(join(bundle, 'project.json.bak'), 'utf8').then((j) => migrate(JSON.parse(j)), () => null)
+  const bak = await readFile(join(bundle, 'project.json.bak'), 'utf8')
+    .then((j) => migrate(JSON.parse(j)))
+    .catch((e) => {
+      if (e.code === 'ENEWER') throw newerError(basename(bundle, '.studio'))
+      return null
+    })
   if (bak) {
     await writeProject(bundle, bak)
     return bak
@@ -232,29 +260,33 @@ export async function rebuildProject(bundle: string): Promise<Project | null> {
 }
 
 /** Import an .mp4 or .mov as a new project: the file is cloned in (instant on APFS), its video is
- *  the screen source and its audio track the mic. Returns the bundle path. */
+ *  the screen source and its audio track the mic. What the editor can't decode (ProRes, Motion JPEG,
+ *  MPEG-4 Part 2, ALAC audio) is converted to HEVC + AAC by macOS instead. Returns the bundle path. */
 export async function importVideo(file: string, dir = projectsDir()): Promise<string> {
   const ext = extname(file).toLowerCase()
   const label = `“${basename(file)}”`
   if (ext !== '.mp4' && ext !== '.mov') throw new Error(`Studio imports .mp4 and .mov videos, not ${label}.`)
   const info = await probe(file).catch((e) => {
-    throw new Error(e.code === 'ENOENT' ? `${label} was not found.` : `Studio can't read ${label}. It may be damaged or in an unsupported format.`)
+    if (e.code === 'ENOENT') throw new Error(`${label} was not found.`)
+    return null // mediabunny can't read it; macOS may (convert below)
   })
-  if (!info?.video) throw new Error(`${label} has no video track.`)
-  if (!['avc', 'hevc', 'vp8', 'vp9', 'av1'].includes(info.video.codec ?? '')) {
-    throw new Error(`${label} uses a video codec Studio can't play (${info.video.codec ?? 'unknown'}). Convert it to H.264 or HEVC first.`)
-  }
+  if (info && !info.video) throw new Error(`${label} has no video track.`)
+  const playable = !!info?.video && PLAYABLE_VIDEO.includes(info.video.codec ?? '') && (!info.audio || PLAYABLE_AUDIO.test(info.audio.codec ?? ''))
   const bundle = await createBundle(basename(file, extname(file)), dir)
   try {
-    const rel = `sources/screen${ext}`
-    // Via a .part name, so a crash mid-copy never looks like a recording to recover.
-    await copyFile(file, join(bundle, rel + '.part'), constants.COPYFILE_FICLONE)
-    await rename(join(bundle, rel + '.part'), join(bundle, rel))
-    const { width, height, fps } = info.video
+    const rel = `sources/screen${playable ? ext : '.mov'}`
+    // Via a temporary name, so a crash mid-copy never looks like a recording to recover.
+    const part = join(bundle, 'sources/screen.part.mov')
+    if (playable) await copyFile(file, part, constants.COPYFILE_FICLONE)
+    else await convert(file, part).catch(() => { throw new Error(`Studio can't read ${label}. It may be damaged or in an unsupported format.`) })
+    await rename(part, join(bundle, rel))
+    const media = playable ? info : await probe(join(bundle, rel))
+    if (!media?.video) throw new Error(`${label} has no video track.`)
+    const { width, height, fps } = media.video
     const p = createProject(basename(bundle, '.studio'), {
-      duration: info.duration,
+      duration: media.duration,
       screen: { file: rel, width, height, fps, scale: 1 },
-      ...(info.audio && { mic: { file: rel, ...info.audio } }),
+      ...(media.audio && { mic: { file: rel, channels: media.audio.channels, sampleRate: media.audio.sampleRate } }),
       imported: true,
     })
     p.audio.mic.enhance = false // already-mixed audio: do not run the voice chain on it
@@ -264,6 +296,33 @@ export async function importVideo(file: string, dir = projectsDir()): Promise<st
     throw (e as { code?: string }).code === 'ENOSPC' ? new Error(`Not enough free disk space to import ${label}.`) : e
   }
   return bundle
+}
+
+/** Codecs the editor decodes (WebCodecs, or mediabunny itself for PCM). */
+const PLAYABLE_VIDEO = ['avc', 'hevc', 'vp8', 'vp9', 'av1']
+const PLAYABLE_AUDIO = /^(aac|mp3|opus|vorbis|flac|ulaw|alaw|pcm-.+)$/
+
+/** Re-encode `file` as HEVC + AAC, rotation applied, with macOS's own converter. Progress shows on the
+ *  Dock icon. ponytail: Dock progress only; an in-app import sheet if long conversions get common. */
+function convert(file: string, out: string): Promise<void> {
+  const bar = (p: number) => electron.BrowserWindow?.getAllWindows()[0]?.setProgressBar(p)
+  return new Promise((done, fail) => {
+    const child = spawn('/usr/bin/avconvert', ['--source', file, '--output', out, '--preset', 'PresetHEVCHighestQuality', '--replace', '--progress'])
+    let log = ''
+    const read = (d: Buffer) => {
+      log = (log + d).slice(-400)
+      const m = /([\d.]+)% complete\W*$/.exec(log)
+      if (m) bar(Number(m[1]) / 100)
+    }
+    child.stdout.on('data', read)
+    child.stderr.on('data', read)
+    child.on('error', fail)
+    child.on('close', (code) => {
+      bar(-1)
+      if (code === 0) done()
+      else fail(new Error(`avconvert exited with ${code}: ${log.trim()}`))
+    })
+  })
 }
 
 /** Save the editor's PNG as thumbnail.png and show it as the bundle's Finder icon. */
@@ -345,8 +404,9 @@ async function write(bundle: string, project: Project) {
     if (old && parses(old)) await writeFileAtomic(file + '.bak', old)
     await writeFileAtomic(file, JSON.stringify(project, null, 2))
   } catch (e) {
-    if ((e as { code?: string }).code !== 'ENOENT') throw e
-    throw new Error(`“${basename(bundle, '.studio')}” was moved or deleted, so its edits can't be saved.`)
+    const name = `“${basename(bundle, '.studio')}”`
+    if ((e as { code?: string }).code === 'ENOENT') throw new Error(`${name} was moved or deleted, so its edits can't be saved.`)
+    throw Object.assign(new Error(`${name} couldn't be saved. ${plainError(e).message}`), { code: (e as { code?: string }).code })
   }
 }
 
@@ -364,6 +424,13 @@ const moved = new Map<string, string>()
 function follow(path: string): string {
   while (moved.has(path) && !existsSync(path)) path = moved.get(path)!
   return path
+}
+
+/** A file inside a bundle renamed in this session, at the bundle's new place. Readers that hold
+ *  the old path (an export started before the rename, a waveform cache write) keep working. */
+export function followFile(path: string): string {
+  const i = path.lastIndexOf('.studio/') + '.studio'.length
+  return i < 7 || !moved.size ? path : follow(path.slice(0, i)) + path.slice(i)
 }
 
 /** mkdir `<dir>/<base>.studio`, or `<base> 2.studio`, `<base> 3.studio`... when taken. mkdir is
@@ -386,7 +453,7 @@ async function claim(dir: string, base: string, self?: string): Promise<[path: s
 type Probe = {
   duration: number
   video: { codec: string | null; width: number; height: number; fps: number } | null
-  audio: { channels: number; sampleRate: number } | null
+  audio: { codec: string | null; channels: number; sampleRate: number } | null
 }
 /** Duration and track info of a media file, read with mediabunny. Null when it has no tracks (for
  *  example an MP4 cut off before its index was written). */
@@ -401,7 +468,7 @@ async function probe(file: string): Promise<Probe | null> {
     return {
       duration: await input.computeDuration(),
       video: v && { codec: v.codec, width: v.displayWidth, height: v.displayHeight, fps: fps > 0 ? Math.round(fps * 1000) / 1000 : 30 },
-      audio: a && { channels: a.numberOfChannels, sampleRate: a.sampleRate },
+      audio: a && { codec: a.codec, channels: a.numberOfChannels, sampleRate: a.sampleRate },
     }
   } finally {
     input.dispose()
@@ -409,6 +476,10 @@ async function probe(file: string): Promise<Probe | null> {
 }
 
 const exists = (path: string) => access(path).then(() => true, () => false)
+/** Only folders and our own temporary files: what a take or an import leaves when cut off before
+ *  its first media file landed. Nothing in it is worth a project; anything else is kept. */
+const holdsNothing = async (bundle: string) =>
+  (await readdir(bundle, { recursive: true, withFileTypes: true })).every((e) => e.isDirectory() || /\.part\b|^\.DS_Store$/.test(e.name))
 const parses = (json: string) => {
   try {
     JSON.parse(json)
@@ -442,10 +513,10 @@ export function registerProjects() {
     const bundle = bundleArg(path)
     const name = `“${basename(bundle, '.studio')}”`
     if (!(await exists(bundle))) throw new Error(`${name} was not found. It may have been moved or deleted.`)
-    const project = (await exists(join(bundle, 'project.json'))) ? await readProject(bundle) : await rebuildProject(bundle)
+    const { project, notice } = await openBundle(bundle)
     if (!project) throw new Error(`${name} has no project file and no recording to recover.`)
     await opened(bundle)
-    return { project, path: bundle }
+    return { project, path: bundle, notice }
   })
   ipcMain.handle('projects:save', (_e, path: unknown, project: unknown) => saveProject(bundleArg(path), project as Project))
   ipcMain.handle('projects:recovered', () => recovered)

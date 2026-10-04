@@ -9,7 +9,7 @@ import { mkdtemp, mkdir, readFile, readdir, writeFile, rm, truncate, stat } from
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { createProject, PROJECT_VERSION } from '../src/shared/project.ts'
-import { createBundle, importVideo, readProject, recentProjects, recoverBundles, renameBundle, sanitizeName, saveProject, saveThumbnail, updateProject, updateRecent, writeNewRecording, writeProject } from './projects.ts'
+import { createBundle, followFile, importVideo, openBundle, readProject, recentProjects, recoverBundles, renameBundle, sanitizeName, saveProject, saveThumbnail, updateProject, updateRecent, writeNewRecording, writeProject } from './projects.ts'
 import { applyPreset, deletePreset, exportPreset, importPreset, listPresets, savePreset } from './presets.ts'
 
 const root = await mkdtemp(join(tmpdir(), 'studio #1 ✨ café '))
@@ -110,6 +110,9 @@ test('rename handles collisions, case-only changes, and later saves to the old p
   assert.equal((await readProject(b)).name, 'Beta ✨ 2')
   await writeProject(a, { ...createProject('x', sources), playhead: 1 }) // stale path follows the move
   assert.equal((await readProject(b)).playhead, 1)
+  // Media read by a stale path (an export started before the rename) follows it too.
+  assert.equal(followFile(join(a, 'sources/screen.mp4')), join(b, 'sources/screen.mp4'))
+  assert.equal(followFile('/elsewhere/x.studio/sources/screen.mp4'), '/elsewhere/x.studio/sources/screen.mp4')
   const c = await renameBundle(b, 'beta ✨ 2')
   assert.equal(basename(c), 'beta ✨ 2.studio')
   assert.ok((await readdir(dir)).includes('beta ✨ 2.studio'))
@@ -129,6 +132,10 @@ test('an interrupted recording is rebuilt from the files on disk', async () => {
   await truncate(join(src, 'screen.mp4'), Math.floor((await stat(join(src, 'screen.mp4'))).size * 0.6)) // torn mid-fragment
   await writeFile(join(src, 'events.jsonl'), '{"t":0.1,"type":"move","x":1,"y":2}\n{"t":0.2,"ty')
   const empty = await createBundle('Empty', dir) // crashed before any data: nothing to recover
+  const cutImport = await createBundle('Cut import', dir) // crashed mid-copy or mid-conversion
+  await writeFile(join(cutImport, 'sources', 'screen.part.mov'), 'half a video')
+  const odd = await createBundle('Odd', dir) // something we did not write: never deleted
+  await writeFile(join(odd, 'notes.txt'), 'mine')
   const fine = await createBundle('Fine', dir)
   await writeProject(fine, createProject('Fine', sources))
   const fromBak = await createBundle('Backup', dir)
@@ -145,8 +152,32 @@ test('an interrupted recording is rebuilt from the files on disk', async () => {
   assert.equal(p.sources.camera, undefined)
   assert.deepEqual(p.clips.map((c) => [c.start, c.end]), [[0, p.sources.duration]])
   assert.equal((await readProject(fromBak)).playhead, 3)
-  assert.equal(await stat(join(empty, 'project.json')).catch(() => null), null)
+  assert.equal(await stat(empty).catch(() => null), null, 'a take with no media is removed')
+  assert.equal(await stat(cutImport).catch(() => null), null, 'an import cut off mid-copy is removed')
+  assert.ok((await stat(join(odd, 'notes.txt'))).isFile())
   assert.deepEqual(await recoverBundles(dir), [])
+})
+
+test('open rebuilds a damaged project from its recording, keeping the damaged file', async () => {
+  const dir = join(root, 'damaged')
+  const bundle = await createBundle('Damaged #1 ✨', dir)
+  execFileSync('cp', [join(media, 'screen.mp4'), join(bundle, 'sources')])
+  await writeFile(join(bundle, 'project.json'), '{"version": 1, "na') // torn by a disk error or a sync tool; no backup
+  const { project, notice } = await openBundle(bundle)
+  assert.equal(project?.sources.screen?.file, 'sources/screen.mp4')
+  assert.match(notice ?? '', /rebuilt it from the recording/)
+  assert.equal(await readFile(join(bundle, 'project.json.damaged'), 'utf8'), '{"version": 1, "na')
+  assert.equal((await openBundle(bundle)).notice, undefined) // opens normally from now on
+
+  await writeFile(join(bundle, 'project.json'), JSON.stringify({ ...createProject('x', sources), clips: [{ id: 'a', start: 3, end: 1, speed: 1, volume: 1 }] }))
+  await writeFile(join(bundle, 'project.json.bak'), 'garbage')
+  assert.ok((await openBundle(bundle)).project, 'invalid edits and a damaged backup: rebuilt too')
+
+  await writeFile(join(bundle, 'project.json'), JSON.stringify({ ...createProject('x', sources), version: PROJECT_VERSION + 1 }))
+  await assert.rejects(openBundle(bundle), /newer version of Studio/) // never rebuilt over
+  await rm(join(bundle, 'project.json'))
+  await writeFile(join(bundle, 'project.json.bak'), JSON.stringify({ ...createProject('x', sources), version: PROJECT_VERSION + 1 }))
+  await assert.rejects(openBundle(bundle), /newer version of Studio/)
 })
 
 test('a finished recording opens already directed: auto zooms from its clicks', async () => {
@@ -176,10 +207,32 @@ test('import clones an .mp4/.mov into a new bundle', async () => {
   assert.equal(basename(await importVideo(file, dir)), 'Clip #2 ✨ é 2.studio')
   await assert.rejects(importVideo(join(media, 'mic.m4a'), dir), /imports \.mp4 and \.mov/)
   await assert.rejects(importVideo(join(media, 'missing.mp4'), dir), /was not found/)
-  await assert.rejects(importVideo(join(media, 'prores.mov'), dir), /codec Studio can't play \(prores\)/)
   await writeFile(join(media, 'junk.mp4'), 'not a video')
   await assert.rejects(importVideo(join(media, 'junk.mp4'), dir), /can't read “junk\.mp4”/)
+  await writeFile(join(media, 'cut.mp4'), (await readFile(join(media, 'screen.mp4'))).subarray(0, 300)) // header only
+  await assert.rejects(importVideo(join(media, 'cut.mp4'), dir), /can't read “cut\.mp4”. It may be damaged/)
   assert.deepEqual((await readdir(dir)).sort(), ['Clip #2 ✨ é 2.studio', 'Clip #2 ✨ é.studio']) // failures leave nothing behind
+})
+
+test('import converts what the editor cannot decode; a rotated video keeps its upright size', async () => {
+  const dir = join(root, 'convert')
+  const codecs = (file: string) => execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', file], { encoding: 'utf8' }).split('\n').filter(Boolean).sort()
+  ff('-f', 'lavfi', '-i', 'testsrc2=s=320x200:r=30:d=1', '-f', 'lavfi', '-i', 'sine=d=1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'alac', join(media, 'alac.mov'))
+  ff('-display_rotation', '90', '-i', join(media, 'Clip #2 ✨ é.mov'), '-c', 'copy', join(media, 'portrait.mov'))
+
+  const prores = await readProject(await importVideo(join(media, 'prores.mov'), dir))
+  assert.deepEqual(prores.sources.screen, { file: 'sources/screen.mov', width: 320, height: 200, fps: 30, scale: 1 })
+  assert.deepEqual(codecs(join(dir, 'prores.studio', 'sources/screen.mov')), ['hevc'])
+
+  const alac = await readProject(await importVideo(join(media, 'alac.mov'), dir))
+  assert.equal(alac.sources.mic?.file, 'sources/screen.mov')
+  assert.deepEqual(codecs(join(dir, 'alac.studio', 'sources/screen.mov')), ['aac', 'hevc'])
+
+  // Decodable: cloned as is; the editor turns its frames upright (src/engine/media).
+  const portrait = await readProject(await importVideo(join(media, 'portrait.mov'), dir))
+  assert.deepEqual([portrait.sources.screen?.width, portrait.sources.screen?.height], [200, 320])
+  assert.ok((await readFile(join(dir, 'portrait.studio', 'sources/screen.mov'))).equals(await readFile(join(media, 'portrait.mov'))))
+  assert.deepEqual((await readdir(join(dir, 'prores.studio', 'sources'))), ['screen.mov']) // no temporary file left
 })
 
 test('thumbnail is saved and becomes the Finder icon of a package', async () => {

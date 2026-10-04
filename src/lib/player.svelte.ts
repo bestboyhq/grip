@@ -158,7 +158,7 @@ function keepPlayhead() {
   p.playhead = src
   doc.dirty = true
   clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => void save().catch(fail), 1000)
+  saveTimer = setTimeout(() => void save().catch(() => {}), 1000) // a failure shows as doc.saveError
 }
 
 /** Seek while dragging the playhead: when paused, also plays a short grain of audio at t. */

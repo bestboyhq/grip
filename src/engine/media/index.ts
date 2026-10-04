@@ -21,6 +21,13 @@ export function fileUrl(absPath: string): string {
   return 'media://local/' + encodeURIComponent(absPath)
 }
 
+/** `what: <cause>`, or, when the media protocol answered 404, that the file is gone: its project was
+ *  moved or deleted while open, and a raw URL would tell the user nothing. */
+export function readError(what: string, name: string, e: unknown): Error {
+  const msg = e instanceof Error ? e.message : String(e)
+  return new Error(/\b404\b/.test(msg) ? `${name} is missing. Its project may have been moved or deleted.` : `${what}: ${msg}`)
+}
+
 /** Short name of a media: URL for messages, e.g. "sources/mic.m4a". */
 export const fileLabel = (url: string) => decodeURIComponent(url.replace(/^media:\/\/local\//, '')).split('/').slice(-2).join('/')
 
@@ -31,17 +38,20 @@ export async function openVideo(url: string): Promise<FrameSource> {
     const track = await input.getPrimaryVideoTrack()
     if (!track) throw new Error(`${name} has no video track`)
     if (!(await track.canDecode())) throw new Error(`${name} uses ${(await track.getCodec()) ?? 'an unknown'} video, which this Mac cannot decode`)
-    // ponytail: frames come out unrotated; a rotated import (portrait iPhone .mov) needs the compositor to apply track rotation.
-    const [width, height, first, duration] = await Promise.all([
-      track.getSquarePixelWidth(),
-      track.getSquarePixelHeight(),
+    const [width, height, first, duration, rotation, flip] = await Promise.all([
+      track.getDisplayWidth(), // as shown: a portrait phone video stores landscape frames plus a rotation
+      track.getDisplayHeight(),
       track.getFirstTimestamp(),
       track.computeDuration(), // end of the last frame; container metadata can disagree on VFR files
+      track.getRotation(),
+      track.getFlip(),
     ])
-    return new VideoFile(name, input, new VideoSampleSink(track), new EncodedPacketSink(track), width, height, first, duration)
+    const file = new VideoFile(name, input, new VideoSampleSink(track), new EncodedPacketSink(track), width, height, first, duration)
+    file.turned = rotation !== 0 || flip
+    return file
   } catch (e) {
     input.dispose()
-    throw e instanceof Error && e.message.startsWith(name) ? e : new Error(`Could not open ${name}: ${e instanceof Error ? e.message : e}`)
+    throw e instanceof Error && e.message.startsWith(name) ? e : readError(`Could not open ${name}`, name, e)
   }
 }
 
@@ -62,6 +72,7 @@ class VideoFile implements FrameSource {
   private ended = false // the decoder delivered the last frame
   private queue: Promise<unknown> = Promise.resolve()
   private closed = false
+  turned = false // frames need their rotation or flip applied to show upright
 
   constructor(name: string, input: Input, sink: VideoSampleSink, packets: EncodedPacketSink, width: number, height: number, first: number, duration: number) {
     this.name = name
@@ -91,12 +102,12 @@ class VideoFile implements FrameSource {
         while (!this.ended && this.frames[this.frames.length - 1].timestamp <= t + EPS) await this.pull(t)
       } catch (e) {
         await this.reset()
-        throw new Error(`Could not decode ${this.name} at ${t.toFixed(3)} s: ${e instanceof Error ? e.message : e}`)
+        throw readError(`Could not decode ${this.name} at ${t.toFixed(3)} s`, this.name, e)
       }
       i = this.find(t)
       if (i < 0) return null
     }
-    return this.frames[i].toVideoFrame()
+    return this.turned ? upright(this.frames[i]) : this.frames[i].toVideoFrame()
   }
 
   /** Index of the frame shown at t, if the window proves it (the next frame is known, or none follows). */
@@ -147,4 +158,13 @@ class VideoFile implements FrameSource {
     this.closed = true
     this.queue = this.queue.then(() => this.reset()).finally(() => this.input.dispose())
   }
+}
+
+/** The sample as shown, its rotation and flip applied, so every consumer sees upright frames of the
+ *  size the project stores. ponytail: one 2D canvas pass per frame, only for rotated files (phone
+ *  videos); rotate in the renderer's sampling if that ever shows in profiles. */
+function upright(s: VideoSample): VideoFrame {
+  const c = new OffscreenCanvas(s.displayWidth, s.displayHeight)
+  s.draw(c.getContext('2d')!, 0, 0)
+  return new VideoFrame(c, { timestamp: Math.round(s.timestamp * 1e6), duration: Math.round(s.duration * 1e6) })
 }
