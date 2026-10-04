@@ -23,7 +23,7 @@ export function layoutAt(l: ReturnType<typeof prepareLayout>, t: number): { scre
     screen = { rect: { x: (width - w) / 2, y: (height - h) / 2, w, h }, radius: st.radius * l.unit, shadow: st.shadow, device: st.device }
   }
   let camera: CameraLayer | null = null
-  if (project.sources.camera) {
+  if (project.sources.camera && st.camera.visible !== false) {
     const c = st.camera
     const w = c.size * l.unit
     const h = w / c.aspect

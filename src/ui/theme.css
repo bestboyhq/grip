@@ -1,18 +1,77 @@
-/* Design tokens shared by every window. Native macOS feel: system font, dark chrome. */
+/* Design tokens shared by every window. Native macOS feel: system font, dark graphite chrome,
+   dense controls, one accent. Components in src/ui/ read only these variables. */
 :root {
   color-scheme: dark;
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
   --mono: ui-monospace, 'SF Mono', Menlo, monospace;
-  --bg: #1e1e20;
-  --bg-raised: #2a2a2d;
-  --bg-hover: #333337;
-  --border: rgb(255 255 255 / 0.08);
-  --text: #f2f2f3;
-  --text-dim: #9a9aa1;
-  --accent: #7c6cff;
+
+  /* Surfaces, darkest to lightest. */
+  --bg: #111113; /* window */
+  --bg-panel: #1a1a1d; /* inspector, popovers */
+  --bg-raised: #252529; /* inputs, segmented tracks */
+  --bg-hover: #2e2e33;
+  --bg-active: #3a3a40;
+  --border: rgb(255 255 255 / 0.07);
+  --border-strong: rgb(255 255 255 / 0.13);
+
+  --text: #ececef;
+  --text-dim: #a0a0a8;
+  --text-faint: #6c6c75;
+
+  --accent: #7466ff;
+  --accent-strong: #5f4ff2; /* filled buttons */
+  --accent-text: #aaa2ff; /* accent on dark surfaces */
+  --accent-soft: rgb(116 102 255 / 0.18);
   --danger: #ff5f57;
+  --focus-ring: rgb(140 128 255 / 0.75);
+
+  --radius-sm: 5px;
   --radius: 8px;
+  --radius-lg: 12px;
+  --control-h: 26px;
+  --shadow-pop: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 12px 32px rgb(0 0 0 / 0.5);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
+
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; font: 13px/1.4 var(--font); color: var(--text); background: transparent; -webkit-font-smoothing: antialiased; user-select: none; overflow: hidden; }
-button { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
+input, textarea { user-select: text; }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.12); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background-color: rgb(255 255 255 / 0.22); }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+
+/* Buttons. `.btn` text button, `.btn.primary` filled accent, `.icon-btn` square icon button. */
+.btn, .icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--control-h); padding: 0 10px; border: 0; border-radius: 6px;
+  background: var(--bg-raised); color: var(--text); font-size: 12.5px; font-weight: 500; white-space: nowrap;
+  transition: background-color 120ms, color 120ms, opacity 120ms;
+}
+.btn:hover, .icon-btn:hover { background: var(--bg-hover); }
+.btn:active, .icon-btn:active { background: var(--bg-active); }
+.btn.primary { background: var(--accent-strong); color: #fff; }
+.btn.primary:hover { background: var(--accent); }
+.btn.ghost, .icon-btn { background: transparent; }
+.btn.ghost:hover, .icon-btn:hover { background: rgb(255 255 255 / 0.07); }
+.icon-btn { width: 28px; height: 28px; padding: 0; color: var(--text-dim); }
+.icon-btn:hover { color: var(--text); }
+.btn:disabled, .icon-btn:disabled { opacity: 0.35; pointer-events: none; }
+
+/* Shared tooltip bubble (src/ui/tooltip.ts). */
+.tooltip {
+  position: fixed; inset: auto; margin: 0; padding: 4px 8px; border: 0; border-radius: 6px;
+  background: #3a3a40; color: var(--text); font-size: 12px; line-height: 16px; white-space: nowrap;
+  box-shadow: var(--shadow-pop); pointer-events: none;
+  position-anchor: --tooltip; position-area: bottom; margin-top: 6px; position-try-fallbacks: flip-block;
+}
+.tooltip[data-side='left'] { position-area: left; margin: 0 8px 0 0; position-try-fallbacks: flip-inline; }
+.tooltip kbd { margin-left: 6px; color: var(--text-dim); font: inherit; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }
+}

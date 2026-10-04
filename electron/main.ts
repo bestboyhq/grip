@@ -9,6 +9,7 @@ import { registerExport } from './export.ts'
 import { registerShare } from './share.ts'
 import { registerTranscript } from './transcript.ts'
 import { registerCamera } from './camera.ts'
+import { registerEditor } from './editor.ts'
 
 // Dev: per-worktree user data, so parallel checkouts do not share locks, settings, or projects.
 if (!app.isPackaged) app.setPath('userData', join(import.meta.dirname, '../.context/userdata'))
@@ -22,6 +23,7 @@ app.whenReady().then(() => {
   registerShare()
   registerTranscript()
   registerCamera()
+  registerEditor()
 
   // `electron . --open <bundle.studio>` opens a project straight into the editor (dev and tests).
   const i = process.argv.indexOf('--open')

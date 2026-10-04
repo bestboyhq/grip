@@ -108,6 +108,9 @@ export interface Style {
   backgroundBlur: number // 0..1
   padding: number // units around the screen
   radius: number // units, screen corner radius
+  /** Units between the screen frame's edge and the recording inside it, filled with the recording's
+   *  edge color, so content clears the rounded corners. Absent = 0. */
+  inset?: number
   shadow: number // 0..1
   device: 'none' | 'macbook' | 'iphone' | 'ipad'
   motionBlur: boolean
@@ -119,8 +122,12 @@ export interface Style {
     loop: boolean // return to start position at the end
     click: 'none' | 'ripple' | 'circle' | 'shockwave'
     clickSound: boolean
+    /** system = the recorded cursor images; arrow = always the standard arrow (no I-beam or hand);
+     *  touch = a soft fingertip circle, for mobile-style demos. Absent = 'system'. */
+    set?: 'system' | 'arrow' | 'touch'
   }
   camera: {
+    visible?: boolean // absent = true; false hides the camera in every layout
     size: number // units, width of the PiP camera
     shape: 'circle' | 'rounded' | 'square'
     aspect: number // w/h, 1 = square
@@ -176,11 +183,13 @@ export const defaultStyle = (): Style => ({
   backgroundBlur: 0,
   padding: 80,
   radius: 14,
+  inset: 0,
   shadow: 0.6,
   device: 'none',
   motionBlur: true,
-  cursor: { visible: true, size: 1.6, smooth: true, hideIdle: true, loop: false, click: 'ripple', clickSound: false },
+  cursor: { visible: true, size: 1.6, smooth: true, hideIdle: true, loop: false, click: 'ripple', clickSound: false, set: 'system' },
   camera: {
+    visible: true,
     size: 300,
     shape: 'rounded',
     aspect: 1,
