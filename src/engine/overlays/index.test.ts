@@ -5,7 +5,7 @@ import type { InputEvent, Modifier } from '../../shared/events.ts'
 import { removeSourceRange, setSpeed, timeMap } from '../../shared/timemap.ts'
 import { captionCues } from '../transcript/index.ts'
 import { prepare, sceneAt, type SceneInput } from '../scene.ts'
-import { breakLines, captionAt, classifyKey, clicksAt, keystrokesAt, maxLineChars } from './index.ts'
+import { breakLines, captionAt, classifyKey, clicksAt, drawOverlays, keystrokesAt, maxLineChars } from './index.ts'
 
 const key = (t: number, k: string, mods: Modifier[] = [], hold = 0.08): InputEvent[] => [
   { t, type: 'key', down: true, key: k, code: 0, mods },
@@ -137,7 +137,7 @@ test('captions: the video shows exactly the exported subtitle cues, each word ac
   }
 })
 
-test('captions: a cut between two words starts a new caption', () => {
+test('captions: a jump cut over more than a second of speech starts a new caption', () => {
   // cut "on the project name" (words 18-21): "click" and "field" meet at a jump cut
   const clips = removeSourceRange([{ id: 'a', start: 0, end: 30, speed: 1, volume: 1 }], 0.5 + 18 * 0.3, 0.5 + 22 * 0.3)
   const p = prepare(input(clips))
@@ -179,6 +179,29 @@ test('captions: fillers hidden, edits applied, lines fit the aspect, pure in t',
   for (const i of shuffled) assert.equal(JSON.stringify(sceneAt(p, times[i])), forward[i])
 })
 
+test('captions: big text on vertical video pages through each cue instead of shrinking', () => {
+  const inp = input(undefined, 1080, 1920, [], '9:16')
+  inp.project.style.captions.size = 120
+  const p = prepare(inp)
+  const max = maxLineChars(1080, 1920, 120)
+  const cues = captionCues(inp.transcript!, timeMap(inp.project.clips))
+  const seen = new Map<number, string>()
+  for (let t = 0; t < 30; t += 1 / 60) {
+    const cap = captionAt(p.overlays, t)
+    if (!cap) continue
+    for (const l of [0, 1]) assert.ok(cap.words.filter((x) => x.line === l).map((x) => x.text).join(' ').length <= max, `${t}: line too long`)
+    const cue = cues.find((c) => c.start <= t && t < c.end)!
+    assert.ok(cap.words.every((w) => cue.words.some((x) => x.text === w.text)), `${t}: page outside its cue`)
+    for (const w of cue.words) if (w.start <= t && t < w.end) seen.set(w.start, w.text)
+    for (const w of cap.words.filter((x) => x.active)) assert.ok(cue.words.some((x) => x.text === w.text && x.start <= t + 1e-9))
+  }
+  // every word still shows while it is spoken
+  for (const w of cues.flatMap((c) => c.words)) {
+    const cap = captionAt(p.overlays, w.start + 1e-4)
+    assert.ok(cap?.words.some((x) => x.text === w.text && x.active), `${w.text} not shown at ${w.start}`)
+  }
+})
+
 test('breakLines balances two lines with the shorter one on top', () => {
   const words = 'so today I want to show you how to create a new project'.split(' ')
   const lines = breakLines(words, 42)
@@ -187,4 +210,35 @@ test('breakLines balances two lines with the shorter one on top', () => {
   assert.ok(top.length <= bottom.length && bottom.length - top.length < 8, `${top} / ${bottom}`)
   assert.deepEqual(breakLines(['short', 'line'], 42), [0, 0])
   assert.deepEqual(breakLines(['Supercalifragilisticexpialidocious'], 10), [0])
+})
+
+test('captions: a word appearing never sticks out past its backing', () => {
+  // A 2D context that measures every glyph 0.5 em wide and records where text shows.
+  const s = { font: '', rect: [0, 0], clip: Infinity, saved: [] as number[], back: Infinity, worst: -Infinity, drawn: 0 }
+  const em = () => Number(/([\d.]+)px/.exec(s.font)![1])
+  const width = (t: string) => [...t].length * em() * 0.5
+  const calls: Record<string, unknown> = {
+    save: () => s.saved.push(s.clip),
+    restore: () => (s.clip = s.saved.pop()!),
+    roundRect: (x: number, _y: number, w: number) => (s.rect = [x, x + w]),
+    rect: (x: number, _y: number, w: number) => (s.rect = [x, x + w]),
+    fill: () => (s.back = s.rect[1]),
+    clip: () => (s.clip = Math.min(s.clip, s.rect[1])),
+    measureText: (t: string) => ({ width: width(t), fontBoundingBoxAscent: em() * 0.8, fontBoundingBoxDescent: em() * 0.2 }),
+    fillText: (t: string, x: number) => {
+      s.drawn++
+      s.worst = Math.max(s.worst, Math.min(x + width(t), s.clip) - s.back)
+    },
+  }
+  const ctx = new Proxy(calls, {
+    get: (o, k) => (k === 'font' ? s.font : k in o ? o[k as string] : () => {}),
+    set: (o, k, v) => ((k === 'font' ? (s.font = v) : (o[k as string] = v)), true),
+  }) as unknown as CanvasRenderingContext2D
+  for (const animation of ['fade', 'slide'] as const) {
+    const inp = input()
+    inp.project.style.captions.animation = animation
+    const p = prepare(inp)
+    for (let t = 0; t < 15; t += 1 / 60) drawOverlays(ctx, sceneAt(p, t))
+  }
+  assert.ok(s.drawn > 100 && s.worst <= 1e-9, `text shows ${s.worst} px past its backing`)
 })

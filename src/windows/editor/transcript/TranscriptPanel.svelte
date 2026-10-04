@@ -4,11 +4,12 @@
 <script module lang="ts">
   import type { Clip, Transcript } from '../../../shared/project.ts'
   import { invoke, on } from '../../../lib/ipc.ts'
+  import { doc } from '../../../lib/doc.svelte.ts'
 
   type Phase = '' | 'queued' | 'download' | 'transcribe' | 'error'
 
   // A run outlives the panel (switching tabs, closing the sidebar): its state lives here.
-  const job = $state({ bundle: '', phase: '' as Phase, progress: 0, received: 0, total: 0, error: '' })
+  export const job = $state({ bundle: '', phase: '' as Phase, progress: 0, received: 0, total: 0, error: '' })
   on('transcript:progress', (p: { bundle: string; phase: Phase; progress: number; received?: number; total?: number }) => {
     if (p.bundle === job.bundle && job.phase !== '' && job.phase !== 'error') Object.assign(job, p)
   })
@@ -16,11 +17,15 @@
   /** Electron wraps handler errors in "Error invoking remote method ...": keep the reason. */
   const reason = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
-  async function run(bundle: string, done: (t: Transcript) => void) {
+  /** Transcribe the open project (here and from the Captions tab). The main process writes the file
+   *  and sets sources.transcript (a source, not an undoable edit); the editor applies that through
+   *  projects:sources. */
+  export async function transcribe() {
+    const bundle = doc.path
     Object.assign(job, { bundle, phase: 'queued', progress: 0, received: 0, total: 0, error: '' })
     try {
       const t: Transcript | null = await invoke('transcript:run', bundle)
-      if (t) done(t)
+      if (t && doc.path === bundle) doc.transcript = t
       job.phase = ''
     } catch (e) {
       Object.assign(job, { phase: 'error', error: reason(e) })
@@ -29,7 +34,7 @@
 </script>
 
 <script lang="ts">
-  import { doc, edit } from '../../../lib/doc.svelte.ts'
+  import { edit } from '../../../lib/doc.svelte.ts'
   import { player, seek } from '../../../lib/player.svelte.ts'
   import { mapRange, timeMap, toSource } from '../../../shared/timemap.ts'
   import {
@@ -106,21 +111,13 @@
     if (el && player.playing) el.scrollIntoView({ block: 'nearest' })
   })
 
-  function transcribe() {
-    const path = doc.path
-    // The main process writes the file and sets sources.transcript (a source, not an undoable edit);
-    // the editor applies that through projects:sources.
-    run(path, (transcript) => {
-      if (doc.path === path) doc.transcript = transcript
-    })
-  }
-
   const cancel = () => invoke('transcript:cancel', job.bundle)
 
+  /** To the word, or for a word that was cut, to the cut where it was. */
   function seekTo(i: number) {
     const w = t!.words[i]
-    const out = mapRange(map, w.start, w.end)[0]
-    if (out) seek(out[0])
+    const out = mapRange(map, w.start, w.end)[0] ?? mapRange(map, w.end, Infinity)[0]
+    seek(out ? out[0] : map.duration)
   }
 
   /** Words (and pause chips) the text selection covers; a word only touched at its edge is not in. */
@@ -199,28 +196,23 @@
   }
 </script>
 
+<!-- Lives in the inspector, which shows the "Transcript" title and the side padding. -->
 <section class="panel" aria-label="Transcript">
-  <header>
-    <h2>Transcript</h2>
-    {#if t}
-      <div class="export" role="group" aria-label="Export subtitles">
-        <span>Export</span>
-        <button onclick={() => exportAs('srt')} title="Export subtitles as SRT">SRT</button>
-        <button onclick={() => exportAs('vtt')} title="Export subtitles as WebVTT">VTT</button>
-      </div>
-    {/if}
-  </header>
-
   {#if error}
     <p class="error" role="alert">{error}</p>
   {/if}
 
-  {#if t}
+  {#if t && !t.words.length}
+    <div class="state">
+      <p class="title">No speech found</p>
+      <p class="dim">Studio heard no words in this recording, so there is nothing to caption or cut by text.</p>
+    </div>
+  {:else if t}
     {#if confirming}
       <div class="bar confirm" role="alertdialog" aria-label="Confirm cut">
         <span>
           {confirming === 'fillers'
-            ? `Cut ${fillerWords.length} filler word${fillerWords.length === 1 ? '' : 's'} from the video?`
+            ? `Cut ${fillerWords.length} filler word${fillerWords.length === 1 ? '' : 's'}?`
             : `Shorten ${suggested.length} pause${suggested.length === 1 ? '' : 's'} to ${PAUSE_KEEP} s?`}
         </span>
         <button class="ghost" onclick={() => (confirming = '')}>Cancel</button>
@@ -259,6 +251,7 @@
                   e.stopPropagation()
                   if (e.key === 'Enter') commit(i, e.currentTarget.value)
                   if (e.key === 'Escape') editing = -1
+                  if (editing === -1) body?.focus({ preventScroll: true }) // keep editing from the keyboard
                 }}
                 onblur={(e) => commit(i, e.currentTarget.value)}
               />
@@ -283,7 +276,14 @@
         </p>
       {/each}
     </div>
-    <footer>Select words and press Delete to cut them. Double-click a word to fix its caption.</footer>
+    <footer>
+      <p>Select words and press Delete to cut them. Double-click a word to fix its caption.</p>
+      <div class="export" role="group" aria-label="Export subtitles">
+        <span>Export subtitles</span>
+        <button onclick={() => exportAs('srt')} title="Export subtitles as SRT">SRT</button>
+        <button onclick={() => exportAs('vtt')} title="Export subtitles as WebVTT">VTT</button>
+      </div>
+    </footer>
   {:else if busyHere}
     <div class="state" aria-live="polite">
       <p class="title">
@@ -343,31 +343,17 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    background: var(--bg);
-    color: var(--text);
-  }
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: 40px;
-    padding: 0 12px 0 16px;
-    flex: none;
-  }
-  h2 {
-    margin: 0;
-    font-size: 13px;
-    font-weight: 600;
   }
   .export {
     display: flex;
     align-items: center;
     gap: 4px;
+    margin-top: 8px;
     color: var(--text-dim);
     font-size: 12px;
   }
   .export span {
-    margin-right: 2px;
+    flex: 1;
   }
   button {
     height: 24px;
@@ -404,13 +390,14 @@
   }
   .bar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    padding: 0 12px 10px 16px;
+    padding: 10px 0 12px;
     flex: none;
   }
   .bar button {
-    flex: 1;
+    flex: 1 1 auto;
   }
   .confirm span {
     flex: 1;
@@ -423,6 +410,7 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+    margin: 0 -16px; /* full width: the scrollbar sits at the panel edge */
     padding: 4px 16px 16px;
     border-top: 1px solid var(--border);
     font-size: 14px;
@@ -501,17 +489,22 @@
   }
   footer {
     flex: none;
-    padding: 8px 16px 10px;
+    margin: 0 -16px;
+    padding: 10px 16px 2px;
     border-top: 1px solid var(--border);
     color: var(--text-dim);
     font-size: 11px;
+    line-height: 1.45;
+  }
+  footer p {
+    margin: 0;
   }
   .state {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
-    padding: 8px 16px;
+    padding: 10px 0;
   }
   .state p {
     margin: 0;
@@ -560,7 +553,7 @@
     }
   }
   .error {
-    margin: 0 16px 8px;
+    margin: 10px 0 0;
     color: var(--danger);
     font-size: 12px;
   }

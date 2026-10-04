@@ -133,6 +133,8 @@
   aside {
     border-left: 1px solid var(--border);
     min-height: 0;
+    padding: 0 16px 8px; /* as the editor's inspector */
+    background: var(--bg-panel);
   }
   .error {
     color: var(--danger);

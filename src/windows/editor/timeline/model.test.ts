@@ -19,6 +19,10 @@ test('an item spanning a cut shows each surviving piece; only the outer pieces o
   )
   assert.equal(M.blockAt(m.zooms, 11)?.a, 10)
   assert.equal(M.blockAt(m.zooms, 15), null)
+  // A split or speed change inside an item is no cut: one block (one label), not two.
+  const sped = M.buildModel(parts([clip(0, 10), clip(10, 20, 2)], [zoom('z', 8, 14)]), [{ start: 9, end: 11, label: '⌘A' }], [])
+  assert.deepEqual(sped.zooms.blocks.map((b) => [b.a, b.b, b.head, b.tail]), [[8, 12, true, true]])
+  assert.equal(sped.keys.blocks.length, 1)
 })
 
 test('lanes are reused while their inputs keep identity', () => {

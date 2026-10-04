@@ -8,12 +8,19 @@
   import Slider from '../../../ui/Slider.svelte'
   import Toggle from '../../../ui/Toggle.svelte'
   import ColorPicker from '../../../ui/ColorPicker.svelte'
+  import { job, transcribe } from '../transcript/TranscriptPanel.svelte'
 
   type C = Style['captions']
   const c = $derived(doc.project!.style.captions)
   const init = defaultStyle().captions
   const set = <K extends keyof C>(k: K) => (v: C[K], merge?: string) => edit((p) => { p.style.captions[k] = v }, merge)
   const off = $derived(!c.visible)
+
+  /** Asking for captions here means wanting to see them. */
+  function generate() {
+    if (!c.visible) set('visible')(true)
+    transcribe()
+  }
 
   // Fonts every Mac has, so a project renders the same on any machine and in export.
   const fonts = [
@@ -31,7 +38,21 @@
 <Section>
   <Toggle label="Show captions" checked={c.visible} onchange={set('visible')} />
   {#if !doc.transcript}
-    <p class="note">Captions appear once the recording is transcribed in the Transcript tab.</p>
+    {@const s = doc.project!.sources}
+    {#if job.bundle === doc.path && job.phase && job.phase !== 'error'}
+      <p class="note">
+        {job.phase === 'download' ? 'Downloading the speech model' : 'Transcribing'}{job.progress ? ` · ${Math.round(job.progress * 100)}%.` : '…'}
+        Captions appear when it is done.
+      </p>
+    {:else if s.mic || s.system || s.imported}
+      <p class="note">Captions come from the transcript, made on this Mac. Fix their words in the Transcript tab.</p>
+      {#if job.bundle === doc.path && job.phase === 'error'}<p class="note error" role="alert">{job.error}</p>{/if}
+      <button class="btn" onclick={generate}>Transcribe</button>
+    {:else}
+      <p class="note">This recording has no voice to caption.</p>
+    {/if}
+  {:else if !doc.transcript.words.length}
+    <p class="note">Studio heard no words in this recording, so there is nothing to caption.</p>
   {/if}
 </Section>
 
@@ -49,4 +70,6 @@
 
 <style>
   .note { margin: 4px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--text-faint); }
+  .error { color: var(--danger); }
+  .btn { align-self: flex-start; margin-top: 8px; }
 </style>
