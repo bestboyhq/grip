@@ -11,19 +11,101 @@
     "build:native": "cd native && napi build --platform --release --dts index.d.ts --no-js",
     "start": "electron .",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "node --test 'src/**/*.test.ts' 'electron/**/*.test.ts'"
+    "test": "node --test 'src/**/*.test.ts' 'electron/**/*.test.ts'",
+    "package": "npm run build && electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.szymeo.studio",
+    "productName": "Studio",
+    "copyright": "Copyright © 2026 Studio",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "package.json",
+      "electron/**/*",
+      "!electron/**/*.test.ts",
+      "dist/**/*",
+      "native/studio.*.node"
+    ],
+    "asarUnpack": [
+      "native/*.node"
+    ],
+    "protocols": [
+      {
+        "name": "Studio",
+        "schemes": [
+          "studio"
+        ]
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "studio",
+        "name": "Studio Project",
+        "description": "Studio Project",
+        "role": "Editor",
+        "rank": "Owner",
+        "isPackage": true
+      }
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": "arm64"
+        },
+        {
+          "target": "zip",
+          "arch": "arm64"
+        }
+      ],
+      "category": "public.app-category.video",
+      "icon": "build/icon.png",
+      "identity": null,
+      "minimumSystemVersion": "15.0",
+      "extendInfo": {
+        "NSCameraUsageDescription": "Studio records your camera next to your screen when you pick a camera.",
+        "NSMicrophoneUsageDescription": "Studio records your voice when you pick a microphone.",
+        "NSAudioCaptureUsageDescription": "Studio records the sound your Mac plays when system audio is on.",
+        "NSBluetoothAlwaysUsageDescription": "Studio uses Bluetooth only for devices you connect, like headphones or a microphone.",
+        "NSBluetoothPeripheralUsageDescription": "Studio uses Bluetooth only for devices you connect, like headphones or a microphone.",
+        "UTExportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "com.szymeo.studio.project",
+            "UTTypeDescription": "Studio Project",
+            "UTTypeConformsTo": [
+              "com.apple.package",
+              "public.composite-content"
+            ],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": [
+                "studio"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "dmg": {
+      "title": "Studio"
+    },
+    "publish": null
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.10.6",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@types/node": "^24",
     "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "^6.0.3",
     "vite": "^8.3.2"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "mediabunny": "^1.61.1"
   }
 }
