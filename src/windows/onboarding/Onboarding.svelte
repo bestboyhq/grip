@@ -29,12 +29,14 @@
     ['countdown', 'Countdown', '3, 2, 1 before the recording starts.'],
     ['showWidget', 'Recording controls', 'A small timer with pause, restart, finish, and delete.'],
     ['showCamera', 'Camera preview', 'Your camera in a bubble while you record.'],
+    ['speakerNotes', 'Speaker notes', 'A prompter only you can see while you record.'],
     ['hideDesktopIcons', 'Hide desktop icons', 'Keeps a busy desktop out of your recordings.'],
   ]
   const SHORTCUTS = [
     ['New recording, or finish', '⌥⌘↩'],
     ['Pause or resume', '⌥⇧⌘P'],
     ['Delete recording', '⌥⇧⌘⌫'],
+    ['Start or stop the prompter', '⌥⌘.'],
   ]
 
   // The route is fixed for the window's life: read it once.
@@ -45,10 +47,17 @@
   let status = $state<Partial<Record<Permission, PermissionStatus>> | null>(null)
   let asked = $state<Permission[]>([]) // requested this session
   const screenOk = $derived(status?.screen === 'granted')
+  // Screen Recording turned on while this window is open: macOS applies it only after a relaunch.
+  let screenWas: PermissionStatus | undefined
+  const screenNew = $derived(screenOk && screenWas !== undefined && screenWas !== 'granted' && need !== 'screen') // the banner says it then
 
   // Live status: permissions change in System Settings, not here.
   onMount(() => {
-    const poll = () => invoke('recording:permissions').then((s) => (status = s), () => (status = {}))
+    const poll = () =>
+      invoke('recording:permissions').then(
+        (s) => ((screenWas ??= s?.screen), (status = s)),
+        () => (status = {}),
+      )
     poll()
     const t = setInterval(poll, 1000)
     return () => clearInterval(t)
@@ -60,6 +69,22 @@
   }
 </script>
 
+{#snippet needBanner()}
+  {#if need && status}
+    {#if status[need] !== 'granted'}
+      <div class="banner" role="alert">{NEED[need]}</div>
+    {:else if need === 'screen'}
+      <!-- Allowed, yet recording was refused: macOS applies a new grant only after a relaunch, and
+           can keep a stale one after an update. -->
+      <div class="banner" role="alert">
+        Screen Recording is on for Studio, but macOS refused to record. <button class="link" onclick={() => invoke('shell:relaunch')}>Restart Studio</button>
+        to apply it. Still refused? Turn Studio off and on again in
+        <button class="link" onclick={() => invoke('recording:openPermissionSettings', 'screen')}>System Settings</button>.
+      </div>
+    {/if}
+  {/if}
+{/snippet}
+
 {#snippet permissionList()}
   <ul class="rows">
     {#each ROWS.filter((r) => status?.[r.id]) as row (row.id)}
@@ -69,8 +94,11 @@
         <div class="text">
           <div class="title">{row.title}{#if row.required}<span class="tag">Required</span>{/if}</div>
           <div class="reason">{row.reason}</div>
-          {#if row.id === 'screen' && s !== 'granted' && asked.includes('screen')}
-            <div class="reason">Turned it on? macOS applies it after a restart. <button class="link" onclick={() => invoke('shell:relaunch')}>Restart Studio</button></div>
+          {#if row.id === 'screen' && (screenNew || (s !== 'granted' && asked.includes('screen')))}
+            <div class="reason">
+              {screenNew ? 'macOS applies it after a restart.' : 'Turned it on? macOS applies it after a restart.'}
+              <button class="link" onclick={() => invoke('shell:relaunch')}>Restart Studio</button>
+            </div>
           {/if}
         </div>
         {#if s === 'granted'}
@@ -78,7 +106,9 @@
         {:else if s === 'restricted'}
           <span class="reason">Set by your organization</span>
         {:else if s}
-          <button class="button" onclick={() => request(row.id)}>{s === 'notDetermined' ? 'Allow' : 'Open System Settings'}</button>
+          <button class="button" aria-label="{s === 'notDetermined' ? 'Allow' : 'Open System Settings for'} {row.title}" onclick={() => request(row.id)}
+            >{s === 'notDetermined' ? 'Allow' : 'Open System Settings'}</button
+          >
         {/if}
       </li>
     {/each}
@@ -97,7 +127,7 @@
     <section class="body">
       <h2>Allow access</h2>
       <p class="lead">Studio needs to see your screen to record it. The rest is up to you.</p>
-      {#if need && status?.[need] !== 'granted'}<div class="banner" role="alert">{NEED[need]}</div>{/if}
+      {@render needBanner()}
       {@render permissionList()}
     </section>
     <footer>
@@ -107,7 +137,7 @@
   {:else}
     <section class="body scroll">
       <h2>Settings</h2>
-      {#if need && status?.[need] !== 'granted'}<div class="banner" role="alert">{NEED[need]}</div>{/if}
+      {@render needBanner()}
       <h3>Permissions</h3>
       {@render permissionList()}
       <h3>Recording</h3>
@@ -180,6 +210,7 @@
     flex: 1;
     padding: 52px 40px 0;
     min-height: 0;
+    overflow-y: auto; /* a banner and hints never push Continue off the window */
   }
   .scroll {
     overflow-y: auto;
@@ -212,6 +243,14 @@
     box-shadow: inset 0 0 0 0.5px rgb(255 214 10 / 0.35);
     color: #ffe58a;
     font-size: 13px;
+    line-height: 1.45;
+  }
+  .banner .link {
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
   .rows {
     margin: 0;

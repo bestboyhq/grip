@@ -3,7 +3,9 @@
 //   studio://stop                                         finish the recording in progress
 //   studio://open?path=<absolute path to a .studio bundle>
 //   studio://open?url=<shared project link>               download it and open it (electron/share.ts)
+// Launch arguments: `[--open] <bundle.studio | video.mp4>`, `studio://` URLs, `--lab <Name>` (dev).
 // Pure: no electron imports, so node:test can run it.
+import { resolve } from 'node:path'
 
 export type Mode = 'display' | 'window' | 'area' | 'device'
 export type UrlAction = { kind: 'record'; mode?: Mode } | { kind: 'stop' } | { kind: 'open'; path: string } | { kind: 'import'; url: string }
@@ -33,6 +35,18 @@ export function parseStudioUrl(url: string): UrlAction | null {
     return path && path.startsWith('/') && path.endsWith('.studio') ? { kind: 'open', path } : null
   }
   return null
+}
+
+/** What a launch asks for. Files are absolute, relative ones resolved against `cwd` (the launching
+ *  shell's directory). A second instance's argv has Chromium's order: switches first, then the app
+ *  path ("." in dev), then the rest; lab names start with a letter. */
+export function parseLaunch(argv: string[], cwd: string): { lab?: string; urls: string[]; files: string[] } {
+  const args = argv.slice(1)
+  const lab = args.indexOf('--lab')
+  if (lab >= 0) return { lab: args.slice(lab + 1).find((a) => /^[a-z]/i.test(a)) ?? '', urls: [], files: [] }
+  const urls = args.filter((a) => /^studio:/i.test(a))
+  const files = args.filter((a) => !urls.includes(a) && !a.startsWith('-') && /\.(studio\/?|mp4|mov)$/i.test(a))
+  return { urls, files: files.map((a) => resolve(cwd, a)) }
 }
 
 function decode(s: string): string {

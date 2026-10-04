@@ -30,7 +30,8 @@ import { analyzeCamera } from './camera.ts'
 import { native } from './native.ts'
 import { createBundle, projectEvents, projectsDir, readProject, writeNewRecording } from './projects.ts'
 
-/** Main-process listeners (dock, quit prompt): 'state' (RecState), 'finished' and 'recovered' (bundle path). */
+/** Main-process listeners (dock, quit prompt): 'state' (RecState), 'finished' (bundle path,
+ *  { reason, message? }), and 'recovered' (bundle path). */
 export const recordingEvents = new EventEmitter()
 
 const PERMISSIONS: Permission[] = ['screen', 'accessibility', 'inputMonitoring', 'microphone', 'camera']
@@ -66,7 +67,7 @@ function finish(dir: string, sources: RecordingSources, reason = 'user', message
       await writeNewRecording(dir, sources)
       if (sources.camera) analyzeCamera(dir).catch((err) => console.error('analyzeCamera', dir, err))
       broadcast('recording:finished', dir, { reason, message })
-      recordingEvents.emit('finished', dir)
+      recordingEvents.emit('finished', dir, { reason, message })
     })()
     finished.set(dir, p)
   }

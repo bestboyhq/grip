@@ -7,7 +7,7 @@
   import { invoke, on } from '../../lib/ipc.ts'
   import Icon from '../recorder/Icon.svelte'
   import { fromEngine, setSettings, shell, startRequest, toEngine, windowList, type Rect, type StartRequest, type WindowSource } from '../recorder/shell.svelte.ts'
-  import { ASPECTS, constrain, presetFrame, presetSize, PRESETS, resize, type Handle } from './geometry.ts'
+  import { ASPECTS, constrain, formAt, presetFrame, presetSize, PRESETS, resize, type Handle } from './geometry.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
@@ -17,7 +17,7 @@
     bounds: Rect
     workArea: Rect
     scaleFactor: number
-    self: string[] // app names of our own windows in the engine's list
+    toolbarTop: number // the recording toolbar's top edge, local points
   }
   let display = $state<DisplayInfo | null>(null)
   let windows = $state<WindowSource[]>([])
@@ -32,6 +32,7 @@
 
   const W = $derived(display?.bounds.width ?? innerWidth)
   const H = $derived(display?.bounds.height ?? innerHeight)
+  const floor = $derived(display?.toolbarTop ?? H) // cards stay above the toolbar
   const scale = $derived(display?.scaleFactor ?? 2)
   const px = (pt: number) => Math.round(pt * scale)
   const toLocal = (r: Rect): Rect => ({ ...r, x: r.x - (display?.bounds.x ?? 0), y: r.y - (display?.bounds.y ?? 0) })
@@ -51,10 +52,7 @@
 
   // Window mode: the engine's window list (front to back), minus our own windows.
   $effect(() => {
-    if (shell.mode === 'window' && display) {
-      const self = display.self
-      windowList().then((list) => (windows = list.filter((w) => !self.includes(w.app))))
-    }
+    if (shell.mode === 'window') windowList().then((list) => (windows = list))
   })
   const hovered = $derived(locked ?? (mouse && display ? (windows.find((w) => inside(toLocal(fromEngine(w.frame)), mouse!)) ?? null) : null))
   const preset = $derived(hovered && choice.id === hovered.id ? choice.preset : 'current')
@@ -93,14 +91,18 @@
     save()
   }
 
-  function setSize(axis: 'width' | 'height', value: number) {
-    if (!sel || !Number.isFinite(value) || value <= 0) return
-    const ratio = ASPECTS[aspect]
-    const pt = value / scale
-    const next = { ...sel, [axis]: pt }
-    if (ratio) axis === 'width' ? (next.height = pt / ratio) : (next.width = pt * ratio)
-    sel = constrain(next, null, W, H)
-    save()
+  function setSize(axis: 'width' | 'height', input: HTMLInputElement) {
+    if (!sel) return
+    const value = +input.value
+    if (Number.isFinite(value) && value > 0 && value !== px(sel[axis])) {
+      const ratio = ASPECTS[aspect]
+      const pt = value / scale
+      const next = { ...sel, [axis]: pt }
+      if (ratio) axis === 'width' ? (next.height = pt / ratio) : (next.width = pt * ratio)
+      sel = constrain(next, ratio, W, H)
+      save()
+    }
+    input.value = String(px(sel[axis])) // the size it really is: clamped to the display, or the entry undone
   }
   function setAspect(a: string) {
     aspect = a
@@ -108,22 +110,18 @@
     save()
   }
 
-  // Area form: under the area, else above it, else inside its bottom edge; never over its center.
-  const form = $derived.by(() => {
-    if (!sel) return null
-    let y = sel.y + sel.height + 14
-    if (y + formH > H - 12) y = sel.y - 14 - formH
-    if (y < 12) y = sel.y + sel.height - formH - 14
-    return { x: Math.min(Math.max(sel.x + sel.width / 2 - formW / 2, 12), W - formW - 12), y }
-  })
+  const form = $derived(sel && formAt(sel, formW, formH, W, floor))
 
+  let takes = 0 // countdowns started; a newer one (Esc, then start again) ends the older loop
   async function begin(req: StartRequest, region: Rect) {
+    if (target) return
+    const take = ++takes
     target = region
     invoke('shell:countdown', true)
     if (shell.settings?.countdown) {
       for (count = 3; count > 0; count--) {
         await new Promise((r) => setTimeout(r, 1000))
-        if (!target) return // Esc
+        if (!target || take !== takes) return // Esc, or a newer countdown owns `count`
       }
     }
     count = 0
@@ -185,7 +183,7 @@
         role="group"
         aria-label="Record {hovered.app}"
         style:left="{Math.min(Math.max(frame.x + frame.width / 2, 170), W - 170)}px"
-        style:top="{Math.min(Math.max(frame.y + frame.height / 2, 120), H - 120)}px"
+        style:top="{Math.min(Math.max(frame.y + frame.height / 2, 120), floor - 120)}px"
         onpointerenter={() => (locked = hovered)}
         onpointerleave={() => (locked = null)}
       >
@@ -214,12 +212,20 @@
       {#if form}
         <div class="form" style:left="{form.x}px" style:top="{form.y}px" bind:offsetWidth={formW} bind:offsetHeight={formH} role="group" aria-label="Area" onpointerdown={(e) => e.stopPropagation()}>
           <label class="size"
-            ><input type="number" min="64" aria-label="Width in pixels" value={px(sel.width)} onchange={(e) => setSize('width', +e.currentTarget.value)} /><span>×</span><input
+            ><input
+              type="number"
+              min="64"
+              aria-label="Width in pixels"
+              value={px(sel.width)}
+              onchange={(e) => setSize('width', e.currentTarget)}
+              onblur={(e) => setSize('width', e.currentTarget)}
+            /><span>×</span><input
               type="number"
               min="64"
               aria-label="Height in pixels"
               value={px(sel.height)}
-              onchange={(e) => setSize('height', +e.currentTarget.value)}
+              onchange={(e) => setSize('height', e.currentTarget)}
+              onblur={(e) => setSize('height', e.currentTarget)}
             /></label
           >
           <div class="segmented" role="radiogroup" aria-label="Aspect ratio">

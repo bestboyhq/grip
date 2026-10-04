@@ -1,5 +1,6 @@
-// Menu bar icon: new recording, recent projects, open, import, settings, quit. While recording:
-// finish, pause, delete. Dropped .studio bundles open; dropped videos import as new projects.
+// Menu bar icon: new recording, recent projects, open, import, settings, quit. While recording a
+// click finishes, and the menu (right-click) has finish, pause, delete. Dropped .studio bundles
+// open; dropped videos import as new projects.
 import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { recentProjects } from '../projects.ts'
@@ -44,8 +45,14 @@ export function createTray() {
   tray = new Tray(icon('trayTemplate.png'))
   tray.setToolTip('Studio')
   const pop = async () => tray?.popUpContextMenu(Menu.buildFromTemplate(await template()))
-  tray.on('click', pop)
+  const running = () => ['recording', 'paused'].includes(recordingStatus())
+  // While recording the icon is a stop button: one click finishes, with no menu to land in the
+  // recording. Right-click still opens the menu.
+  tray.on('click', () => (running() ? command('stop') : pop()))
   tray.on('right-click', pop)
   tray.on('drop-files', (_e, files) => openFilesOrAlert(files))
-  statusListeners.push((s) => tray?.setImage(icon(s === 'idle' ? 'trayTemplate.png' : 'trayRecordingTemplate.png')))
+  statusListeners.push((s) => {
+    tray?.setImage(icon(s === 'idle' ? 'trayTemplate.png' : 'trayRecordingTemplate.png'))
+    tray?.setToolTip(s === 'idle' ? 'Studio' : 'Finish recording')
+  })
 }
