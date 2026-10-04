@@ -1,45 +1,378 @@
-// Owner: compositor. Screen rect (padding, aspect fit, device mockup), camera rect per layout
-// (pip, fullscreen, hidden, split) with animated layout transitions, and masks in output px.
-// STUB: centered screen with padding, PiP camera, no transitions.
+// Owner: compositor. Where each layer sits at output time t, in output px (unzoomed space):
+// the screen (padding, aspect fit, device mockup), the camera per CameraLayout item (pip,
+// fullscreen, hidden, split) with spring transitions in output time, face-follow crop, hide when
+// silent, and masks locked to the screen. Pure: prepareLayout precomputes, layoutAt evaluates.
 
-import type { TimeMap } from '../shared/timemap.ts'
-import { toSource } from '../shared/timemap.ts'
-import type { CameraLayer, MaskLayer, ScreenLayer, SceneInput } from './scene.ts'
+import type { CameraLayoutKind, Rect, Style, Word } from '../shared/project.ts'
+import { mapRange, toSource, type TimeMap } from '../shared/timemap.ts'
+import { springDuration, springProgress, type SpringConfig } from './motion/spring.ts'
+import type { CameraLayer, FaceSample, MaskLayer, ScreenLayer, SceneInput } from './scene.ts'
 
-export function prepareLayout(input: SceneInput, map: TimeMap, unit: number) {
-  return { input, map, unit }
+const SPRING: SpringConfig = { stiffness: 170, damping: 26, mass: 1 }
+const SETTLE = springDuration(SPRING)
+/** Masks fade OUTSIDE their range, so covered content never shows through a half-faded mask. */
+const MASK_FADE = 0.2
+/** Hide when silent: a gap of this many seconds without words hides the camera. */
+const SILENCE = 2
+const SPEECH_LEAD = 0.6 // show the camera before the first word, so it is in place when speech starts
+const SPEECH_TAIL = 0.8
+const FACE_SIGMA = 0.5 // seconds; smooths face detections so the crop glides instead of jittering
+
+type Kind = CameraLayoutKind
+const KINDS: Kind[] = ['pip', 'fullscreen', 'hidden', 'split']
+
+interface State {
+  screen: Rect
+  screenRadius: number
+  camera: Rect
+  cameraRadius: number
+  cameraOpacity: number
+  cameraShadow: number
 }
 
-export function layoutAt(l: ReturnType<typeof prepareLayout>, t: number): { screen: ScreenLayer | null; camera: CameraLayer | null; masks: MaskLayer[] } {
-  const { project, width, height } = l.input
+export function prepareLayout(input: SceneInput, map: TimeMap, unit: number) {
+  const targets = Object.fromEntries(KINDS.map((k) => [k, target(input, unit, k)])) as Record<Kind, State>
+  const changes = input.project.sources.camera ? kindChanges(input, map) : [{ t: -Infinity, kind: 'pip' as Kind }]
+  const faces = (input.faces ?? []).filter((f) => Number.isFinite(f.t)).sort((a, b) => a.t - b.t)
+  const masks = input.project.masks.map((m) => ({ m, ranges: mapRange(map, m.start, m.end) }))
+  return { input, map, unit, targets, changes, faces, masks }
+}
+
+export type PreparedLayout = ReturnType<typeof prepareLayout>
+
+export function layoutAt(l: PreparedLayout, t: number): { screen: ScreenLayer | null; camera: CameraLayer | null; masks: MaskLayer[] } {
+  const { project } = l.input
   const st = project.style
-  const s = project.sources.screen
-  let screen: ScreenLayer | null = null
-  if (s) {
-    const pad = st.padding * l.unit
-    const k = Math.min((width - 2 * pad) / s.width, (height - 2 * pad) / s.height)
-    const w = s.width * k
-    const h = s.height * k
-    screen = { rect: { x: (width - w) / 2, y: (height - h) / 2, w, h }, radius: st.radius * l.unit, shadow: st.shadow, device: st.device }
-  }
+  const s = stateAt(l, t, lastChange(l.changes, t))
+  const screen: ScreenLayer | null = project.sources.screen ? { rect: s.screen, radius: s.screenRadius, shadow: st.shadow, device: st.device } : null
+  const cs = project.sources.camera
   let camera: CameraLayer | null = null
-  if (project.sources.camera) {
-    const c = st.camera
-    const w = c.size * l.unit
-    const h = w / c.aspect
-    const inset = c.inset * l.unit
-    const x = c.position.endsWith('left') ? inset : width - inset - w
-    const y = c.position.startsWith('top') ? inset : height - inset - h
+  if (cs && s.cameraOpacity > 1e-3) {
+    const src = toSource(l.map, t)
     camera = {
-      rect: { x, y, w, h },
-      radius: c.shape === 'circle' ? Math.min(w, h) / 2 : c.shape === 'rounded' ? c.radius * l.unit : 0,
-      shadow: c.shadow,
-      mirror: c.mirror,
-      opacity: 1,
-      src: toSource(l.map, t),
-      crop: { x: 0, y: 0, w: 1, h: 1 },
-      removeBackground: c.removeBackground,
+      rect: s.camera,
+      radius: s.cameraRadius,
+      shadow: s.cameraShadow,
+      mirror: st.camera.mirror,
+      opacity: Math.min(s.cameraOpacity, 1),
+      src,
+      crop: cameraCrop(s.camera, cs.width, cs.height, st.camera.followFace ? faceAt(l.faces, src) : null),
+      removeBackground: st.camera.removeBackground && !!cs.matte,
+      lut: st.camera.lut,
     }
   }
-  return { screen, camera, masks: [] }
+  return { screen, camera, masks: screen ? masksAt(l, t, screen.rect) : [] }
+}
+
+// ---- Layout targets: the settled state of each camera layout kind. ----
+
+function target(input: SceneInput, unit: number, kind: Kind): State {
+  const { project, width: W, height: H } = input
+  const st = project.style
+  const c = st.camera
+  const src = project.sources.screen ?? { width: 16, height: 9 }
+  const pad = Math.max(0, st.padding * unit)
+  const area = { x: pad, y: pad, w: Math.max(1, W - 2 * pad), h: Math.max(1, H - 2 * pad) }
+  const radius = (r: Rect) => (st.device === 'none' ? Math.min(st.radius * unit, r.w / 2, r.h / 2) : deviceGeometry(st.device, r)!.displayRadius)
+
+  if (kind === 'split' && project.sources.camera) {
+    const b = deviceBounds(st.device, { x: 0, y: 0, w: src.width, h: src.height })
+    const aspect = b.w / b.h
+    const gap = Math.max(pad / 2, 16 * unit)
+    let screenBox: Rect, cam: Rect
+    if (W >= H) {
+      // Side by side: a portrait camera tile as tall as the screen, on the camera position's side.
+      const first = c.position.endsWith('left')
+      const camAspect = 0.75
+      const h = Math.min(area.h, (area.w - gap) / (aspect + camAspect))
+      const sw = h * aspect, cw = h * camAspect
+      const x = area.x + (area.w - sw - gap - cw) / 2, y = area.y + (area.h - h) / 2
+      screenBox = { x: first ? x + cw + gap : x, y, w: sw, h }
+      cam = { x: first ? x : x + sw + gap, y, w: cw, h }
+    } else {
+      // Stacked for vertical output: the camera fills the space under (or over) the screen.
+      const first = c.position.startsWith('top')
+      const camAspect = 0.8
+      const w = Math.min(area.w, (area.h - gap) / (1 / aspect + 1 / camAspect))
+      const sh = w / aspect, ch = w / camAspect
+      const x = area.x + (area.w - w) / 2, y = area.y + (area.h - sh - gap - ch) / 2
+      screenBox = { x, y: first ? y + ch + gap : y, w, h: sh }
+      cam = { x, y: first ? y : y + sh + gap, w, h: ch }
+    }
+    const screen = fitScreen(screenBox, src.width, src.height, st.device)
+    return {
+      screen,
+      screenRadius: radius(screen),
+      camera: cam,
+      cameraRadius: c.shape === 'square' ? 0 : Math.min(Math.max(st.radius, 12) * unit, cam.w / 2, cam.h / 2),
+      cameraOpacity: 1,
+      cameraShadow: c.shadow,
+    }
+  }
+
+  const screen = fitScreen(area, src.width, src.height, st.device)
+  const base = { screen, screenRadius: radius(screen) }
+  const cw = Math.max(1, c.size * unit)
+  const ch = cw / Math.max(c.aspect, 0.05)
+  const inset = c.inset * unit
+  const pip = { x: c.position.endsWith('left') ? inset : W - inset - cw, y: c.position.startsWith('top') ? inset : H - inset - ch, w: cw, h: ch }
+  const pipRadius = c.shape === 'circle' ? Math.min(cw, ch) / 2 : c.shape === 'rounded' ? Math.min(c.radius * unit, cw / 2, ch / 2) : 0
+  if (kind === 'fullscreen') return { ...base, camera: { x: 0, y: 0, w: W, h: H }, cameraRadius: 0, cameraOpacity: 1, cameraShadow: 0 }
+  if (kind === 'hidden') {
+    const k = 0.6
+    const small = { x: pip.x + (cw * (1 - k)) / 2, y: pip.y + (ch * (1 - k)) / 2, w: cw * k, h: ch * k }
+    return { ...base, camera: small, cameraRadius: pipRadius * k, cameraOpacity: 0, cameraShadow: c.shadow }
+  }
+  return { ...base, camera: pip, cameraRadius: pipRadius, cameraOpacity: 1, cameraShadow: c.shadow }
+}
+
+/** Largest screen rect whose device mockup (or the bare screen) fits centered in `box`. */
+export function fitScreen(box: Rect, srcW: number, srcH: number, device: Style['device']): Rect {
+  const b = deviceBounds(device, { x: 0, y: 0, w: srcW, h: srcH })
+  const k = Math.min(box.w / b.w, box.h / b.h)
+  return { x: box.x + (box.w - b.w * k) / 2 - b.x * k, y: box.y + (box.h - b.h * k) / 2 - b.y * k, w: srcW * k, h: srcH * k }
+}
+
+// ---- Camera layout timeline: which kind is active, and spring transitions between kinds. ----
+
+/** Change points in output time. The first is at -Infinity: the state at t = 0 is already settled. */
+// ponytail: O(boundaries x items) scan; an interval tree if projects reach thousands of layout items.
+function kindChanges(input: SceneInput, map: TimeMap): Array<{ t: number; kind: Kind }> {
+  const { project, transcript } = input
+  const items = project.layouts.flatMap((l) => mapRange(map, l.start, l.end).map(([s, e]) => ({ s, e, kind: l.kind, order: l.start })))
+  const silent = project.style.camera.hideWhenSilent && transcript ? silentRanges(transcript.words, map) : []
+  const cuts = [...new Set([0, map.duration, ...items.flatMap((i) => [i.s, i.e]), ...silent.flat()])].sort((a, b) => a - b)
+  const out: Array<{ t: number; kind: Kind }> = []
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const a = cuts[i], b = cuts[i + 1]
+    if (b - a < 1e-9) continue
+    const m = (a + b) / 2
+    let best: (typeof items)[number] | null = null
+    for (const it of items) if (it.s <= m && m < it.e && (!best || it.order >= best.order)) best = it
+    let kind: Kind = best?.kind ?? 'pip'
+    if (kind === 'pip' && silent.some(([s, e]) => s <= m && m < e)) kind = 'hidden'
+    if (kind !== out.at(-1)?.kind) out.push({ t: out.length ? a : -Infinity, kind })
+  }
+  return out.length ? out : [{ t: -Infinity, kind: 'pip' }]
+}
+
+/** Output ranges with no speech for at least SILENCE seconds (speech padded by lead and tail). */
+export function silentRanges(words: Word[], map: TimeMap): Array<[number, number]> {
+  const speech = words.flatMap((w) => mapRange(map, w.start, w.end)).sort((a, b) => a[0] - b[0])
+  const out: Array<[number, number]> = []
+  let from = 0
+  for (const [s, e] of speech) {
+    if (s - SPEECH_LEAD - from >= SILENCE) out.push([from, s - SPEECH_LEAD])
+    from = Math.max(from, e + SPEECH_TAIL)
+  }
+  if (map.duration - from >= SILENCE) out.push([from, map.duration])
+  return out
+}
+
+function lastChange(changes: Array<{ t: number }>, t: number): number {
+  let lo = 0, hi = changes.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (changes[mid].t <= t) lo = mid
+    else hi = mid - 1
+  }
+  return lo
+}
+
+/** State at t given the last change i. A transition interrupted by the next change blends from
+ *  wherever it was, so rapid changes and cuts never jump. */
+function stateAt(l: PreparedLayout, t: number, i: number, depth = 0): State {
+  const c = l.changes[i]
+  const to = l.targets[c.kind]
+  const dt = t - c.t
+  if (i === 0 || dt >= SETTLE || depth > 8) return to
+  const from = stateAt(l, c.t, i - 1, depth + 1)
+  const p = springProgress(dt, SPRING)
+  const mix = (a: number, b: number) => a + (b - a) * p
+  const rect = (a: Rect, b: Rect) => ({ x: mix(a.x, b.x), y: mix(a.y, b.y), w: mix(a.w, b.w), h: mix(a.h, b.h) })
+  return {
+    screen: rect(from.screen, to.screen),
+    screenRadius: mix(from.screenRadius, to.screenRadius),
+    camera: rect(from.camera, to.camera),
+    cameraRadius: Math.max(0, mix(from.cameraRadius, to.cameraRadius)),
+    cameraOpacity: Math.max(0, mix(from.cameraOpacity, to.cameraOpacity)),
+    cameraShadow: Math.max(0, mix(from.cameraShadow, to.cameraShadow)),
+  }
+}
+
+// ---- Camera crop and face follow. ----
+
+/** Normalized camera region shown in `rect`: the largest crop with the rect's aspect, or, with a
+ *  face, a closer crop that keeps the face centered (slightly high, like a framed portrait). */
+export function cameraCrop(rect: Rect, camW: number, camH: number, face: Omit<FaceSample, 't'> | null): Rect {
+  const target = rect.w / Math.max(rect.h, 1e-6)
+  const frame = camW / camH
+  let w = 1, h = 1
+  if (target < frame) w = target / frame
+  else h = frame / target
+  let cx = 0.5, cy = 0.5
+  if (face) {
+    const z = Math.min(Math.max((face.h * 3) / h, 0.35), 1)
+    w *= z
+    h *= z
+    cx = face.x + face.w / 2
+    cy = face.y + face.h / 2 + h * 0.08
+  }
+  const clamp = (v: number, hi: number) => Math.min(Math.max(v, 0), Math.max(hi, 0))
+  return { x: clamp(cx - w / 2, 1 - w), y: clamp(cy - h / 2, 1 - h), w, h }
+}
+
+/** Face box at camera source time t, Gaussian-smoothed over FACE_SIGMA; holds the nearest
+ *  detection through gaps. */
+export function faceAt(faces: FaceSample[], t: number): Omit<FaceSample, 't'> | null {
+  if (!faces.length) return null
+  const r = 3 * FACE_SIGMA
+  let lo = 0, hi = faces.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (faces[mid].t < t - r) lo = mid + 1
+    else hi = mid
+  }
+  let sum = 0, x = 0, y = 0, w = 0, h = 0
+  for (let i = lo; i < faces.length && faces[i].t <= t + r; i++) {
+    const f = faces[i]
+    const k = Math.exp(-((f.t - t) ** 2) / (2 * FACE_SIGMA ** 2))
+    sum += k
+    x += (f.x + f.w / 2) * k
+    y += (f.y + f.h / 2) * k
+    w += f.w * k
+    h += f.h * k
+  }
+  if (sum < 1e-6) {
+    const f = faces[Math.min(lo, faces.length - 1)]
+    const g = lo > 0 && Math.abs(faces[lo - 1].t - t) < Math.abs(f.t - t) ? faces[lo - 1] : f
+    return { x: g.x, y: g.y, w: g.w, h: g.h }
+  }
+  w /= sum
+  h /= sum
+  return { x: x / sum - w / 2, y: y / sum - h / 2, w, h }
+}
+
+// ---- Masks. ----
+
+function masksAt(l: PreparedLayout, t: number, screen: Rect): MaskLayer[] {
+  const out: MaskLayer[] = []
+  for (const { m, ranges } of l.masks) {
+    let opacity = 0
+    for (const [a, b] of ranges) opacity = Math.max(opacity, 1 - Math.max(a - t, t - b, 0) / MASK_FADE)
+    if (opacity <= 0) continue
+    const r = m.rect
+    out.push({ kind: m.kind, opacity: Math.min(opacity, 1), rect: { x: screen.x + r.x * screen.w, y: screen.y + r.y * screen.h, w: r.w * screen.w, h: r.h * screen.h } })
+  }
+  return out
+}
+
+// ---- Device mockups. Our own designs, drawn by the GPU compositor as stacked rounded rects. ----
+
+export type RGBA = [number, number, number, number]
+export interface DevicePart {
+  rect: Rect
+  radii: [number, number, number, number] // tl, tr, br, bl
+  top: RGBA // vertical gradient, sRGB 0..1
+  bottom: RGBA
+  over?: boolean // drawn above the screen content (Dynamic Island)
+}
+export interface Device {
+  parts: DevicePart[]
+  shadow: Array<{ rect: Rect; radius: number }> // shadow casters
+  displayRadius: number // corner radius of the screen content
+}
+
+const hex = (h: string, a = 1): RGBA => [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255, a]
+const grow = (r: Rect, l: number, t = l, rr = l, b = t): Rect => ({ x: r.x - l, y: r.y - t, w: r.w + l + rr, h: r.h + t + b })
+const all = (r: number): DevicePart['radii'] => [r, r, r, r]
+const dot = (cx: number, cy: number, r: number, c: RGBA): DevicePart => ({ rect: { x: cx - r, y: cy - r, w: 2 * r, h: 2 * r }, radii: all(r), top: c, bottom: c })
+
+/** Mockup geometry around a screen (display) rect. Every size is proportional to the screen, so
+ *  layout fits the whole device and the renderer draws the same shapes at any scale.
+ *  Orientation follows the screen: wider than tall is landscape. */
+export function deviceGeometry(device: Style['device'], s: Rect): Device | null {
+  if (device === 'macbook') {
+    const d = Math.max(s.w, s.h)
+    const side = 0.021 * d, top = 0.025 * d, chin = 0.036 * d, rim = 0.0026 * d
+    const lid = grow(s, side, top, side, chin)
+    const shell = grow(lid, rim, rim, rim, 0)
+    const baseW = shell.w * 1.14, baseH = 0.024 * d
+    const base = { x: s.x + s.w / 2 - baseW / 2, y: lid.y + lid.h, w: baseW, h: baseH }
+    const lidR = 0.032 * d
+    return {
+      displayRadius: 0.011 * d,
+      shadow: [{ rect: shell, radius: lidR }, { rect: base, radius: baseH / 2 }],
+      parts: [
+        { rect: shell, radii: [lidR, lidR, 0, 0], top: hex('#c9ccd2'), bottom: hex('#8e9198') },
+        { rect: lid, radii: [lidR - rim, lidR - rim, 0, 0], top: hex('#141518'), bottom: hex('#0b0b0d') },
+        dot(s.x + s.w / 2, s.y - top / 2, 0.0038 * d, hex('#23262d')),
+        dot(s.x + s.w / 2, s.y - top / 2, 0.0016 * d, hex('#3b4252')),
+        { rect: base, radii: [0.003 * d, 0.003 * d, baseH * 0.6, baseH * 0.6], top: hex('#e4e6ea'), bottom: hex('#9a9da5') },
+        { rect: { ...base, h: 0.0035 * d }, radii: [0.003 * d, 0.003 * d, 0, 0], top: hex('#f6f7f9'), bottom: hex('#d2d5da') },
+        { rect: { x: s.x + s.w / 2 - 0.075 * shell.w, y: base.y, w: 0.15 * shell.w, h: baseH * 0.42 }, radii: [0, 0, baseH * 0.3, baseH * 0.3], top: hex('#a4a7ae'), bottom: hex('#bcbfc5') },
+      ],
+    }
+  }
+  if (device === 'iphone' || device === 'ipad') {
+    const k = Math.min(s.w, s.h)
+    const land = s.w > s.h
+    const phone = device === 'iphone'
+    const bezel = (phone ? 0.034 : 0.05) * k, band = (phone ? 0.016 : 0.01) * k
+    const displayRadius = (phone ? 0.14 : 0.036) * k
+    const glass = grow(s, bezel)
+    const frame = grow(s, bezel + band)
+    const r0 = displayRadius + bezel
+    const metal: [RGBA, RGBA, RGBA, RGBA] = phone
+      ? [hex('#5a5b61'), hex('#2c2d31'), hex('#8a8b91'), hex('#3d3e43')] // titanium
+      : [hex('#8c9097'), hex('#5f636a'), hex('#b4b7bd'), hex('#74777e')] // space gray aluminum
+    const parts: DevicePart[] = []
+    if (phone) {
+      // Side buttons stick out of the frame: action, volume up/down on one side, power on the other.
+      const t = 0.009 * k, L = Math.max(s.w, s.h)
+      const along = land ? s.x : s.y
+      const btn = (side: 0 | 1, at: number, len: number) => {
+        const a = along + at * L
+        const r = land
+          ? { x: a, y: side ? frame.y + frame.h - band : frame.y - t, w: len * L, h: t + band }
+          : { x: side ? frame.x + frame.w - band : frame.x - t, y: a, w: t + band, h: len * L }
+        parts.push({ rect: r, radii: all(t * 0.8), top: metal[0], bottom: metal[1] })
+      }
+      // Landscape is portrait turned 90 degrees counterclockwise: the island ends up on the left.
+      btn(land ? 1 : 0, 0.2, 0.05)
+      btn(land ? 1 : 0, 0.29, 0.09)
+      btn(land ? 1 : 0, 0.41, 0.09)
+      btn(land ? 0 : 1, 0.33, 0.14)
+    }
+    parts.push(
+      { rect: frame, radii: all(r0 + band), top: metal[0], bottom: metal[1] },
+      { rect: grow(s, bezel + band * 0.45), radii: all(r0 + band * 0.45), top: metal[2], bottom: metal[3] },
+      { rect: glass, radii: all(r0), top: hex('#0a0a0c'), bottom: hex('#050506') },
+    )
+    if (phone) {
+      const w = 0.32 * k, h = 0.094 * k, off = 0.03 * k
+      const rect = land ? { x: s.x + off, y: s.y + s.h / 2 - w / 2, w: h, h: w } : { x: s.x + s.w / 2 - w / 2, y: s.y + off, w, h }
+      parts.push({ rect, radii: all(h / 2), top: hex('#000000'), bottom: hex('#000000'), over: true })
+    } else {
+      // The front camera sits on the long edge (landscape top, portrait right).
+      const r = 0.0075 * k
+      parts.push(land ? dot(s.x + s.w / 2, s.y - bezel / 2, r, hex('#1c1f26')) : dot(s.x + s.w + bezel / 2, s.y + s.h / 2, r, hex('#1c1f26')))
+    }
+    return { displayRadius, shadow: [{ rect: frame, radius: r0 + band }], parts }
+  }
+  return null
+}
+
+/** Bounding box of the screen plus its mockup. */
+export function deviceBounds(device: Style['device'], s: Rect): Rect {
+  const d = deviceGeometry(device, s)
+  if (!d) return s
+  let x0 = s.x, y0 = s.y, x1 = s.x + s.w, y1 = s.y + s.h
+  for (const p of d.parts) {
+    x0 = Math.min(x0, p.rect.x)
+    y0 = Math.min(y0, p.rect.y)
+    x1 = Math.max(x1, p.rect.x + p.rect.w)
+    y1 = Math.max(y1, p.rect.y + p.rect.h)
+  }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }

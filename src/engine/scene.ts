@@ -36,6 +36,7 @@ export interface CameraLayer {
   src: number // camera source time (seconds)
   crop: Rect // normalized region of the camera frame to show (face follow, aspect)
   removeBackground: boolean
+  lut?: string // bundle-relative .cube color grade
 }
 
 export interface CursorLayer {
@@ -112,6 +113,17 @@ export interface SceneInput {
   transcript: Transcript | null
   width: number
   height: number
+  /** Parsed sources.camera.faces, for face-follow crop. */
+  faces?: FaceSample[]
+}
+
+/** One face detection: camera source seconds, box normalized to the camera frame. */
+export interface FaceSample {
+  t: number
+  x: number
+  y: number
+  w: number
+  h: number
 }
 
 /** Heavy precomputation, done once per project revision and output size. */
