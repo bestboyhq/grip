@@ -14,7 +14,7 @@ import { doc, save } from './doc.svelte.ts'
 import type { InputEvent } from '../shared/events.ts'
 import type { Project, Transcript } from '../shared/project.ts'
 import { mapRange, timeMap, toOutput, toSource } from '../shared/timemap.ts'
-import { outputSize, prepare, type FaceSample, type Prepared } from '../engine/scene.ts'
+import { outputSize, prepare, sceneAt, type FaceSample, type Prepared, type Scene } from '../engine/scene.ts'
 import { renderFrame, type Media } from '../engine/compose.ts'
 import { Renderer } from '../engine/gpu/renderer.ts'
 import { fileUrl, openVideo } from '../engine/media/index.ts'
@@ -23,7 +23,9 @@ import { voiceRanges } from '../engine/layout.ts'
 import type { PlaybackMessage } from '../engine/audio/playback.worklet.ts'
 import workletUrl from '../engine/audio/playback.worklet.ts?worker&url'
 
-export const player = $state({ time: 0, duration: 0, playing: false, error: null as string | null })
+/** `prepared` counts preparations of the project for the preview (after edits, resizes, a face track
+ *  or speech arriving), so views derived from currentScene() know when to look again. */
+export const player = $state({ time: 0, duration: 0, playing: false, error: null as string | null, prepared: 0 })
 
 /** Timing for labs and logs; plain (not reactive) so the hot loop stays cheap. Set `sync` to an
  *  array to log [audio clock, frame time] (output seconds) for each frame drawn while playing. */
@@ -145,6 +147,10 @@ export function pause() {
 
 export const toggle = () => (player.playing ? pause() : play())
 
+/** The frame at the playhead as a Scene in the canvas's pixel size, from the preparation the preview
+ *  draws (face track and speech included), for hit-testing. Null until the first preparation. */
+export const currentScene = (): Scene | null => (prepared ? sceneAt(prepared, player.time) : null)
+
 export function seek(t: number) {
   player.time = Math.min(Math.max(t, 0), player.duration)
   if (player.playing) startRun(false)
@@ -237,6 +243,7 @@ function rebuild(project: Project, width: number, height: number) {
     syncSpeech(p)
     prepared = prepare({ project: p, events: events.value, transcript: transcript.value, width, height, faces: faces.value, speech: speech.value })
     stats.prepares++
+    player.prepared++
     stats.prepareMs = performance.now() - preparedAt
     player.duration = prepared.map.duration
     if (restore) {

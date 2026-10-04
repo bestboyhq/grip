@@ -4,15 +4,13 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { doc, edit, selection } from '../../lib/doc.svelte.ts'
-  import { player, attach } from '../../lib/player.svelte.ts'
-  import { prepare, sceneAt, outputSize, type Prepared, type Scene } from '../../engine/scene.ts'
+  import { player, attach, currentScene } from '../../lib/player.svelte.ts'
+  import { outputSize, type Scene } from '../../engine/scene.ts'
   import type { CameraPosition } from '../../shared/project.ts'
   import { cornerAt, outputPoint, reason, screenPoint } from './helpers.ts'
 
   const project = $derived(doc.project!)
-  // Geometry is resolution independent (style units scale with min(width, height)), so any output
-  // size works for hit-testing; 1080p keeps the numbers familiar.
-  const size = $derived(outputSize(project, 1080))
+  const size = $derived(outputSize(project, 1080)) // the frame's aspect
   const zooms = $derived(project.zooms.filter((z) => selection.ids.includes(z.id)))
 
   let frame = $state<HTMLElement>()
@@ -27,24 +25,20 @@
     }
   }
 
-  let cache: { rev: number; events: unknown; w: number; h: number; prepared: Prepared } | undefined
+  /** The frame the preview shows (the player's own preparation, so hit-testing sees exactly what is
+   *  drawn: a camera hidden while silent, face-follow crops, the zoomed-in camera size). */
   function scene(): Scene | null {
-    const { width: w, height: h } = size
     try {
-      if (!cache || cache.rev !== doc.rev || cache.events !== doc.events || cache.w !== w || cache.h !== h) {
-        const prepared = prepare({ project: $state.snapshot(project), events: doc.events, transcript: doc.transcript, width: w, height: h })
-        cache = { rev: doc.rev, events: doc.events, w, h, prepared }
-      }
-      return sceneAt(cache.prepared, player.time)
+      return currentScene()
     } catch {
       return null // an engine module mid-rewrite must not take the editor down
     }
   }
 
-  /** Pointer position in output px of the 1080p hit-test frame. */
-  function local(e: PointerEvent) {
+  /** Pointer position in px of scene s. */
+  function local(e: PointerEvent, s: { width: number; height: number }) {
     const r = frame!.getBoundingClientRect()
-    return { x: ((e.clientX - r.left) / r.width) * size.width, y: ((e.clientY - r.top) / r.height) * size.height }
+    return { x: ((e.clientX - r.left) / r.width) * s.width, y: ((e.clientY - r.top) / r.height) * s.height }
   }
 
   const inside = (p: { x: number; y: number }, r: { x: number; y: number; w: number; h: number }) =>
@@ -54,7 +48,7 @@
   const marker = $derived.by(() => {
     const z = zooms[0]
     if (!z || z.target.kind !== 'point') return null
-    doc.rev
+    player.prepared
     player.time
     const s = untrack(scene)
     const p = s && outputPoint(s, z.target.x, z.target.y)
@@ -63,12 +57,13 @@
 
   let gesture = 0
   let aiming = false
-  let drag = $state<{ ox: number; oy: number; x: number; y: number; w: number; h: number; r: number; corner: CameraPosition } | null>(null)
+  // In px of the scene the drag started on (W x H).
+  let drag = $state<{ W: number; H: number; ox: number; oy: number; x: number; y: number; w: number; h: number; r: number; corner: CameraPosition } | null>(null)
   let hover = $state<'camera' | 'aim' | ''>('')
 
   function aim(e: PointerEvent) {
     const s = scene()
-    const p = s && screenPoint(s, local(e).x, local(e).y)
+    const p = s && screenPoint(s, local(e, s).x, local(e, s).y)
     if (!p) return
     const ids = zooms.map((z) => z.id)
     edit((pr) => {
@@ -79,11 +74,11 @@
   function pointerdown(e: PointerEvent) {
     if (e.button !== 0) return
     const s = scene()
-    const p = local(e)
+    const p = s && local(e, s)
     const cam = s?.camera
-    if (cam && cam.opacity > 0.01 && inside(p, cam.rect)) {
+    if (s && p && cam && cam.opacity > 0.01 && inside(p, cam.rect)) {
       const { x, y, w, h } = cam.rect
-      drag = { ox: p.x - x, oy: p.y - y, x, y, w, h, r: cam.radius, corner: project.style.camera.position }
+      drag = { W: s.width, H: s.height, ox: p.x - x, oy: p.y - y, x, y, w, h, r: cam.radius, corner: project.style.camera.position }
     } else if (zooms.length) {
       aiming = true
       gesture++
@@ -94,15 +89,16 @@
   }
 
   function pointermove(e: PointerEvent) {
-    const p = local(e)
     if (drag) {
+      const p = local(e, { width: drag.W, height: drag.H })
       const x = p.x - drag.ox
       const y = p.y - drag.oy
-      drag = { ...drag, x, y, corner: cornerAt(x + drag.w / 2, y + drag.h / 2, size.width, size.height) }
+      drag = { ...drag, x, y, corner: cornerAt(x + drag.w / 2, y + drag.h / 2, drag.W, drag.H) }
     } else if (aiming) aim(e)
     else if (e.buttons === 0) {
-      const cam = scene()?.camera
-      hover = cam && cam.opacity > 0.01 && inside(p, cam.rect) ? 'camera' : zooms.length ? 'aim' : ''
+      const s = scene()
+      const cam = s?.camera
+      hover = s && cam && cam.opacity > 0.01 && inside(local(e, s), cam.rect) ? 'camera' : zooms.length ? 'aim' : ''
     }
   }
 
@@ -140,7 +136,7 @@
       {/if}
       {#if drag}
         <span class="quadrant {drag.corner}" aria-hidden="true"></span>
-        <span class="ghost" style:left={pct(drag.x, size.width)} style:top={pct(drag.y, size.height)} style:width={pct(drag.w, size.width)} style:height={pct(drag.h, size.height)} style:border-radius="{pct(drag.r, drag.w)} / {pct(drag.r, drag.h)}" aria-hidden="true"></span>
+        <span class="ghost" style:left={pct(drag.x, drag.W)} style:top={pct(drag.y, drag.H)} style:width={pct(drag.w, drag.W)} style:height={pct(drag.h, drag.H)} style:border-radius="{pct(drag.r, drag.w)} / {pct(drag.r, drag.h)}" aria-hidden="true"></span>
       {/if}
       {#if failed}<p class="failed" role="alert">Preview unavailable: {failed}</p>
       {:else if player.error}<p class="failed" role="alert">{player.error}</p>{/if}
