@@ -222,7 +222,7 @@
         <div class="toolbar">
           <AspectPicker />
           {#if aiming}<span class="aim-hint"><Icon name="target" size={15} />Click the preview to aim the selected zoom</span>
-          {:else if masking}<span class="aim-hint"><Icon name="target" size={15} />Drag on the preview to draw the mask, or drag the mask to move it</span>{/if}
+          {:else if masking}<span class="aim-hint"><Icon name="target" size={15} />Drag on the preview to place the mask</span>{/if}
         </div>
         <Preview />
       </section>

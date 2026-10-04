@@ -41,6 +41,7 @@
   import { onMount } from 'svelte'
   import { canEncodeVideo } from 'mediabunny'
   import { timeMap } from '../../../shared/timemap.ts'
+  import { formatTime } from '../helpers.ts'
   import { outputSize } from '../../../engine/scene.ts'
   import { fitEncoder } from '../../../engine/export/index.ts'
   import { estimateBytes, formatBytes, LIMITS, LOOPS, QUALITIES, RATES, SIZES, type Destination, type ExportOptions, type Format } from '../../../engine/export/options.ts'
@@ -119,7 +120,6 @@
     setTimeout(() => copied === j.id && (copied = ''), 1500)
   }
 
-  const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
   const file = (j: JobInfo) => j.path.split('/').pop()
 
   function detail(j: JobInfo): string {
@@ -130,7 +130,7 @@
     if (j.state === 'done') return `${{ clipboard: 'Copied to clipboard', share: 'Link ready', temp: 'Ready to share', file: 'Saved' }[j.dest]} · ${formatBytes(j.bytes ?? 0)}`
     const pct = `${Math.floor(j.progress * 100)}%`
     const elapsed = (Date.now() - (j.startedAt ?? Date.now())) / 1000
-    const left = j.progress > 0.02 && elapsed > 1 ? ` · ${clock((elapsed * (1 - j.progress)) / j.progress)} left` : ''
+    const left = j.progress > 0.02 && elapsed > 1 ? ` · ${formatTime((elapsed * (1 - j.progress)) / j.progress, 0)} left` : ''
     return `${pct} · ${j.phase}${left}`
   }
 </script>
@@ -170,7 +170,7 @@
 
     <p class="summary">
       {#if size}
-        <span>{size.width} × {size.height}</span><span>{clock(duration)}</span><span>{o.format === 'gif' && !o.maxMB ? '≈' : 'up to'} {formatBytes(estimate)}</span>
+        <span>{size.width} × {size.height}</span><span>{formatTime(duration, 0)}</span><span>{o.format === 'gif' && !o.maxMB ? '≈' : 'up to'} {formatBytes(estimate)}</span>
       {:else}
         <span>No project open</span>
       {/if}
