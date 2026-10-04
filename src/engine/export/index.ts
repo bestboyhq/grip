@@ -17,7 +17,7 @@ import { fileUrl, openVideo } from '../media/index.ts'
 import { renderAudio } from '../audio/index.ts'
 import { parseEvents } from '../../shared/events.ts'
 import type { Transcript } from '../../shared/project.ts'
-import { AUDIO_BITRATE, SAMPLE_RATE, Stall, frameCount, passes, videoBitrate, watch, type ExportIO, type ExportOptions, type JobSpec } from './options.ts'
+import { AUDIO_BITRATE, SAMPLE_RATE, Stall, frameCount, gifRefit, passes, videoBitrate, watch, type ExportIO, type ExportOptions, type JobSpec } from './options.ts'
 import { AAC_PRIMING, setEditDuration } from './mp4.ts'
 
 type Input = Omit<SceneInput, 'width' | 'height'>
@@ -191,18 +191,30 @@ async function gif(job: JobSpec, input: Input, media: Media, io: ExportIO): Prom
   const base = outputSize(input.project, o.size)
   const limit = o.maxMB * 1e6
   let k = 1
+  let shape: number[] | undefined
   const next = passes(io)
+  if (limit) {
+    // A size limit starts with a probe: the whole GIF at 240p (quick, nothing written) tells how many bytes
+    // this video makes and where they fall. Screen recordings come in bursts (a scroll, a page change), so
+    // no stretch of a pass predicts the rest; the probe's byte curve does.
+    const s = Math.min(1, 240 / Math.min(base.width, base.height))
+    const bar = next()
+    const probe = await gifPass(job, input, media, { write: async () => {}, progress: (p) => bar.progress(p / 4, 'Measuring') }, even(base.width * s), even(base.height * s), 0, 'Measuring')
+    if (!('curve' in probe)) throw new Error('The GIF size probe failed.')
+    shape = probe.curve.map((b) => b / probe.size)
+    k = Math.min(1, s * gifRefit(limit, probe.size))
+  }
   for (let pass = 1; ; pass++) {
-    const res = await gifPass(job, input, media, next(), even(base.width * k), even(base.height * k), limit, pass === 1 ? 'Rendering' : `Fitting under ${o.maxMB} MB`)
+    const res = await gifPass(job, input, media, next(), even(base.width * k), even(base.height * k), limit, pass === 1 ? 'Rendering' : `Fitting under ${o.maxMB} MB`, shape)
     if ('size' in res) return res.size
-    // Over the limit: bytes scale with pixel count, so shrink by the projected overshoot and retry.
-    k *= Math.sqrt(limit / res.projected) * 0.92
+    k *= gifRefit(limit, res.projected)
     if (Math.min(base.width, base.height) * k < 120) throw new Error(`This GIF cannot fit under ${o.maxMB} MB. Shorten it, lower the frame rate, or allow a larger size.`)
   }
 }
 
-/** One GIF encode at a fixed size. Stops early with the projected size once over `limit`. */
-async function gifPass(job: JobSpec, input: Input, media: Media, io: ExportIO, width: number, height: number, limit: number, phase: string): Promise<{ size: number } | { projected: number }> {
+/** One GIF encode at a fixed size: the size and the bytes written after each frame. Stops early once over
+ *  `limit` with the projected full size, from `shape` (a probe's bytes after each frame / its total) when given. */
+async function gifPass(job: JobSpec, input: Input, media: Media, io: ExportIO, width: number, height: number, limit: number, phase: string, shape?: number[]): Promise<{ size: number; curve: number[] } | { projected: number }> {
   const o = job.options
   const { p, r } = await stage(job, input, width, height)
   const worker = new Worker(new URL('./gif.worker.ts', import.meta.url), { type: 'module' })
@@ -224,6 +236,7 @@ async function gifPass(job: JobSpec, input: Input, media: Media, io: ExportIO, w
   const readback = new OffscreenCanvas(width, height).getContext('2d', { willReadFrequently: true })!
   let size = 0
   let written = 0
+  const curve: number[] = []
   const n = frameCount(p.map.duration, o.fps)
   const put = async (bytes: Uint8Array) => {
     if (bytes.length) await io.write(size, bytes)
@@ -240,16 +253,17 @@ async function gifPass(job: JobSpec, input: Input, media: Media, io: ExportIO, w
       // Two frames in flight: the worker encodes one while the next renders.
       while (inflight.length > 1) {
         await put(await watch(inflight.shift()!, 'GIF encoder'))
+        curve.push(size)
         io.progress((0.99 * ++written) / n, phase)
       }
-      // Over the limit, or headed there a quarter of the way in: stop and refit now, so a refit costs a
-      // quarter pass, not a whole one (a GIF that only overshoots late still refits at the end).
-      if (limit && written && (size > limit || (written > n / 4 && (size * n) / written > limit))) return { projected: (size * n) / written }
+      // Over the limit: stop and refit now.
+      if (limit && written && size > limit) return { projected: shape ? size / shape[written - 1] : (size * n) / written }
     }
     inflight.push(send({ finish: true }))
     for (const b of inflight) await put(await watch(b, 'GIF encoder'))
+    while (curve.length < n) curve.push(size)
     io.progress(0.99, 'Finalizing')
-    return limit && size > limit ? { projected: size } : { size }
+    return limit && size > limit ? { projected: size } : { size, curve }
   } finally {
     worker.terminate()
     r.destroy()

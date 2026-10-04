@@ -46,6 +46,12 @@ export function cleanOptions(o: Partial<ExportOptions> | null | undefined): Expo
   }
 }
 
+/** The options a job runs with. A share link (and the Share button's temp export) is always an H.264
+ *  MP4, whatever the dialog shows: the link page is a video page, and H.264 plays in every browser. */
+export function jobOptions(dest: Destination, o: Partial<ExportOptions> | null | undefined): ExportOptions {
+  return cleanOptions(dest === 'share' || dest === 'temp' ? { ...o, format: 'mp4', codec: 'h264' } : o)
+}
+
 export interface ExportRequest {
   bundle: string // absolute path of the .studio bundle
   project?: Project // snapshot to export; read from the bundle when absent
@@ -118,6 +124,13 @@ export const AUDIO_BITRATE = 160_000
 
 /** Every output frame, static or not, gets encoded: frame i shows output time i / fps. */
 export const frameCount = (duration: number, fps: number) => Math.max(1, Math.round(duration * fps))
+
+/** GIF size target: the factor that scales a GIF's sides from `bytes` (made or projected) to just under
+ *  `limit`. GIF bytes grow slower than the pixel count, about as pixels^0.75, so the side scales by
+ *  (limit / bytes)^(2/3), not by its square root. */
+// ponytail: 0.75 measured on the fixture from 360p to 1080p (0.70-0.82); fit it per GIF from the probe and
+// the first pass if targets keep landing far under.
+export const gifRefit = (limit: number, bytes: number) => (limit / bytes) ** (2 / 3) * 0.97
 
 /** GIF frame delay in centiseconds. Rounding the cumulative time keeps the total exact at any fps. */
 export const gifDelay = (i: number, fps: number) => Math.round(((i + 1) * 100) / fps) - Math.round((i * 100) / fps)

@@ -14,17 +14,22 @@
 
   /** For the Share button: export the open project as MP4 with the user's export settings into
    *  Studio's temp folder, and resolve to the file once it is complete. The file stays on disk while
-   *  a share upload reads it, across restarts. */
-  export async function exportVideo(): Promise<string> {
+   *  a share upload reads it, across restarts. `progress` hears 0..1 while it exports; aborting
+   *  `signal` cancels the export. */
+  export async function exportVideo(progress?: (p: number) => void, signal?: AbortSignal): Promise<string> {
     const project = doc.project
     if (!project) throw new Error('No project is open.')
     const seen = new Map<string, JobInfo>() // updates can arrive before enqueue answers
     let settle = (_: JobInfo) => {}
     const off = on('export:update', (j: JobInfo) => (seen.set(j.id, j), settle(j)))
+    let cancel = () => {}
     try {
-      const [job]: JobInfo[] = await invoke('export:enqueue', [{ bundle: doc.path, project: $state.snapshot(project), options: { ...saved(), format: 'mp4' }, dest: 'temp' }])
+      const [job]: JobInfo[] = await invoke('export:enqueue', [{ bundle: doc.path, project: $state.snapshot(project), options: saved(), dest: 'temp' }])
+      cancel = () => void invoke('export:cancel', job.id)
+      if (signal?.aborted) cancel()
+      signal?.addEventListener('abort', cancel)
       const end = await new Promise<JobInfo>((resolve) => {
-        settle = (j) => void (j.id === job.id && !active(j) && resolve(j))
+        settle = (j) => void (j.id === job.id && (active(j) ? progress?.(j.progress) : resolve(j)))
         settle(seen.get(job.id) ?? job)
       })
       if (end.state === 'done') return end.path
@@ -33,6 +38,7 @@
       throw new Error(clean(e))
     } finally {
       off()
+      signal?.removeEventListener('abort', cancel)
     }
   }
 </script>
@@ -184,7 +190,7 @@
 
     <footer>
       <button class="secondary" disabled={!doc.project} onclick={() => start('clipboard')}>Copy to Clipboard</button>
-      <button class="secondary" disabled={!doc.project} onclick={() => start('share')}>Share Link</button>
+      <button class="secondary" disabled={!doc.project} title="Uploads an H.264 MP4, which plays in every browser" onclick={() => start('share')}>Share Link</button>
       <!-- svelte-ignore a11y_autofocus -->
       <button class="primary" disabled={!doc.project} autofocus onclick={() => start('file')}>Export to File…</button>
     </footer>

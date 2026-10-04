@@ -23,7 +23,7 @@ import { hidden, openWindow } from './windows.ts'
 import { projectsDir, readProject } from './projects.ts'
 import { shareFile } from './share.ts'
 import type { Project } from '../src/shared/project.ts'
-import { DESTINATIONS, cleanOptions, safeFileName, uniqueName, type ExportOptions, type ExportRequest, type JobInfo, type JobSpec, type JobState } from '../src/engine/export/options.ts'
+import { DESTINATIONS, jobOptions, safeFileName, uniqueName, type ExportOptions, type ExportRequest, type JobInfo, type JobSpec, type JobState } from '../src/engine/export/options.ts'
 
 interface Job extends JobInfo {
   project?: Project // dropped once the job ends
@@ -39,8 +39,9 @@ let batch = { done: 0, failed: 0, last: undefined as Job | undefined }
 let lastDir = ''
 const tmpRoot = () => join(app.getPath('temp'), 'Studio Exports')
 const active = (j: Job) => j.state === 'queued' || j.state === 'running' || j.state === 'uploading'
-/** Exports still running or queued (the quit prompt asks before dropping them). */
-export const activeExports = () => [...jobs.values()].filter(active).length
+/** Exports still running or queued (the quit prompt asks before dropping them). Uploads are not
+ *  counted: they carry on after a restart (electron/share.ts). */
+export const activeExports = () => [...jobs.values()].filter((j) => j.state === 'queued' || j.state === 'running').length
 
 function info(j: Job): JobInfo {
   const { id, name, bundle, options, dest, path, state, progress, phase, error, url, bytes, startedAt, finishedAt } = j
@@ -169,7 +170,7 @@ async function enqueue(parent: BrowserWindow | null, reqs: ExportRequest[]): Pro
       if (r.path !== undefined && (typeof r.path !== 'string' || !isAbsolute(r.path))) throw new Error('Export paths must be absolute.')
       const project = r.project ?? (await readProject(r.bundle))
       const dest = DESTINATIONS.includes(r.dest) ? r.dest : 'file'
-      const options = cleanOptions(dest === 'temp' ? { ...r.options, format: 'mp4' } : r.options)
+      const options = jobOptions(dest, r.options)
       return { project, options, dest, bundle: r.bundle, name: project.name || basename(r.bundle, '.studio'), ext: options.format, path: r.path }
     }),
   )

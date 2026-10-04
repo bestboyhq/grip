@@ -2,10 +2,11 @@
 //   studio://record[?mode=display|window|area|device]   open the recording picker
 //   studio://stop                                         finish the recording in progress
 //   studio://open?path=<absolute path to a .studio bundle>
+//   studio://open?url=<shared project link>               download it and open it (electron/share.ts)
 // Pure: no electron imports, so node:test can run it.
 
 export type Mode = 'display' | 'window' | 'area' | 'device'
-export type UrlAction = { kind: 'record'; mode?: Mode } | { kind: 'stop' } | { kind: 'open'; path: string }
+export type UrlAction = { kind: 'record'; mode?: Mode } | { kind: 'stop' } | { kind: 'open'; path: string } | { kind: 'import'; url: string }
 
 const MODES = ['display', 'window', 'area', 'device']
 
@@ -26,6 +27,8 @@ export function parseStudioUrl(url: string): UrlAction | null {
   }
   if (action === 'stop') return { kind: 'stop' }
   if (action === 'open') {
+    const url = query.get('url')
+    if (url) return /^https?:\/\//i.test(url) ? { kind: 'import', url } : null
     const path = query.get('path')?.replace(/\/+$/, '')
     return path && path.startsWith('/') && path.endsWith('.studio') ? { kind: 'open', path } : null
   }

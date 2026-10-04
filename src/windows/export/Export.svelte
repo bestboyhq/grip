@@ -11,8 +11,6 @@
 
   onMount(async () => {
     const id = params.get('job') ?? ''
-    // Quitting or closing mid-export asks first (main shows the prompt, see electron/main.ts).
-    window.onbeforeunload = () => false
     try {
       const job: JobSpec = await invoke('export:job', id)
       let sent = 0
@@ -29,12 +27,10 @@
         },
       })
       status = 'Saving'
-      window.onbeforeunload = null
       await invoke('export:done', id, size)
     } catch (e) {
       console.error(e)
       status = 'Failed'
-      window.onbeforeunload = null
       await invoke('export:fail', id, e instanceof Error ? e.message : String(e)).catch(() => {})
     }
   })

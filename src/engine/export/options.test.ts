@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { Stall, cleanOptions, frameCount, gifDelay, passes, safeFileName, uniqueName, watch } from './options.ts'
+import { Stall, cleanOptions, frameCount, gifDelay, gifRefit, jobOptions, passes, safeFileName, uniqueName, watch } from './options.ts'
 
 test('frame counts and GIF delays add up to the timeline', () => {
   assert.equal(frameCount(24, 30), 720)
@@ -12,6 +12,41 @@ test('frame counts and GIF delays add up to the timeline', () => {
     for (let i = 0; i < n; i++) cs += gifDelay(i, fps)
     assert.equal(cs, Math.round((n * 100) / fps), `fps ${fps}`)
     for (let i = 0; i < n; i++) assert.ok(gifDelay(i, fps) >= 2, 'browsers slow down delays under 2 cs')
+  }
+})
+
+test('a GIF size limit lands close under the target, in few passes', () => {
+  // The fixture's 720p30 GIF as measured: MB after each tenth of its frames (bursty: a page change at
+  // 50-60%), and its full size at other scales of 720p (bytes grow about as pixels^0.7-0.8).
+  const curve = [0, 0.58, 1.03, 2.68, 3.09, 4.01, 7.76, 8.89, 9.57, 9.95, 10.31]
+  const shape = (f: number) => {
+    const i = Math.min(9, Math.floor(f * 10))
+    return (curve[i] + (curve[i + 1] - curve[i]) * (f * 10 - i)) / curve[10]
+  }
+  const sizes = [[0.5, 3.64], [2 / 3, 5.44], [1, 10.31], [1.5, 19.97]]
+  const total = (k: number) => {
+    const i = Math.max(0, Math.min(sizes.length - 2, sizes.findIndex(([s]) => s > k) - 1))
+    const [[k0, b0], [k1, b1]] = [sizes[i], sizes[i + 1]]
+    return b0 * Math.exp((Math.log(b1 / b0) / Math.log(k1 / k0)) * Math.log(k / k0))
+  }
+  for (const limit of [3, 5, 8]) {
+    // The probe (240p, a third of 720p) sets the first pass; a pass over the limit refits from its projection.
+    let k = Math.min(1, (1 / 3) * gifRefit(limit, total(1 / 3)))
+    let passes = 0
+    for (let over = true; over; ) {
+      passes++
+      over = false
+      for (let i = 1; i <= 720; i++) {
+        const size = total(k) * shape(i / 720)
+        if (size > limit) {
+          k *= gifRefit(limit, size / shape(i / 720))
+          over = true
+          break
+        }
+      }
+    }
+    assert.ok(total(k) > 0.85 * limit, `limit ${limit} MB: ${total(k).toFixed(2)} MB`)
+    assert.ok(passes <= 2, `limit ${limit} MB: ${passes} passes after the probe`)
   }
 })
 
@@ -32,6 +67,17 @@ test('options from storage or IPC snap to valid values', () => {
   assert.equal(cleanOptions({ format: 'gif' }).size, 720)
   assert.equal(cleanOptions({ codec: 'prores' as never }).codec, 'h264')
   assert.equal(cleanOptions(null).format, 'mp4')
+})
+
+test('share links are always H.264 MP4, whatever the dialog shows', () => {
+  const gif = { format: 'gif', size: 480, fps: 10, maxMB: 5 } as const
+  for (const dest of ['share', 'temp'] as const) {
+    assert.deepEqual(jobOptions(dest, gif), { ...cleanOptions({ ...gif, format: 'mp4' }), codec: 'h264' })
+    assert.equal(jobOptions(dest, { codec: 'hevc', size: 2160 }).codec, 'h264')
+    assert.equal(jobOptions(dest, { codec: 'hevc', size: 2160 }).size, 2160)
+  }
+  assert.equal(jobOptions('file', gif).format, 'gif')
+  assert.equal(jobOptions('clipboard', { codec: 'hevc' }).codec, 'hevc')
 })
 
 test('a stalled step rejects with Stall; retried passes never move the bar backwards', async () => {
