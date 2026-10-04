@@ -8,7 +8,7 @@ import { toOutput, type TimeMap } from '../../shared/timemap.ts'
 import type { InputEvent, Modifier } from '../../shared/events.ts'
 import type { Style } from '../../shared/project.ts'
 import { outputSize, type Caption, type Click, type Keystroke, type Scene, type SceneInput } from '../scene.ts'
-import { layoutAt, type prepareLayout } from '../layout.ts'
+import { screenAt, type prepareLayout } from '../layout.ts'
 import { springProgress } from '../motion/spring.ts'
 import { captionCues } from '../transcript/index.ts'
 
@@ -89,10 +89,19 @@ export function prepareOverlays(input: SceneInput, map: TimeMap, layout: ReturnT
 
 // ---- Clicks ----
 
+type Button = Extract<InputEvent, { button: unknown }>
+/** Per events array (replaced, never edited in place): what clicks and keystrokes read of it, so a
+ *  preparation after an edit does not walk a 2-hour recording's million events again. */
+const scanned = new WeakMap<InputEvent[], { downs: Button[]; presses: Press[]; typing: Array<{ start: number }> }>()
+function scan(events: InputEvent[]) {
+  let s = scanned.get(events)
+  if (!s) scanned.set(events, (s = { downs: events.filter((e): e is Button => e.type === 'down'), ...keyPresses(events) }))
+  return s
+}
+
 function clickTimes(events: InputEvent[], map: TimeMap) {
   const out: Array<{ start: number; x: number; y: number }> = []
-  for (const e of events) {
-    if (e.type !== 'down') continue
+  for (const e of scan(events).downs) {
     const start = toOutput(map, e.t)
     if (start !== null) out.push({ start, x: e.x, y: e.y }) // a click inside a cut never shows
   }
@@ -106,10 +115,10 @@ export function clicksAt(o: Prepared, t: number): Click[] {
   let lo = hi
   while (lo > 0 && t - o.clicks[lo - 1].start < CLICK_LIFE[style]) lo--
   const live = o.clicks.slice(lo, hi)
-  const screen = live.length && s ? layoutAt(o.layout, t).screen : null
-  if (!screen || !s) return []
-  const k = screen.rect.w / s.width
-  return live.map((c) => ({ x: screen.rect.x + c.x * k, y: screen.rect.y + c.y * k, age: t - c.start, style }))
+  const r = live.length && s ? screenAt(o.layout, t)?.screen : null
+  if (!r || !s) return []
+  const k = r.w / s.width
+  return live.map((c) => ({ x: r.x + c.x * k, y: r.y + c.y * k, age: t - c.start, style }))
 }
 
 // ---- Keystrokes ----
@@ -157,8 +166,10 @@ interface Group {
   count: number
 }
 
-function keyGroups(events: InputEvent[], map: TimeMap): Group[] {
-  type Press = { t: number; id: string; up: boolean; repeat: boolean; keys: string[]; bare: boolean }
+type Press = { t: number; id: string; up: boolean; repeat: boolean; keys: string[]; bare: boolean }
+
+/** Key presses to show and the typing around them, in source time. */
+function keyPresses(events: InputEvent[]) {
   const presses: Press[] = []
   const typing: Array<{ start: number }> = []
   const held = new Map<string, number>() // key -> latest down while held
@@ -181,6 +192,11 @@ function keyGroups(events: InputEvent[], map: TimeMap): Group[] {
     else if (c) presses.push({ t: e.t, id, up: false, repeat: e.t - (held.get(id) ?? -Infinity) < REPEAT_GAP, ...c })
     held.set(id, e.t)
   }
+  return { presses, typing }
+}
+
+function keyGroups(events: InputEvent[], map: TimeMap): Group[] {
+  const { presses, typing } = scan(events)
   const nearTyping = (t: number) => {
     const i = upper(typing, t + TYPING_GAP) - 1
     return i >= 0 && typing[i].start >= t - TYPING_GAP

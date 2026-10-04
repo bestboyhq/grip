@@ -9,13 +9,18 @@
 //
 // The playhead is saved in the project (source time, so it survives cuts) on pause and seek, as view
 // state outside edit(): no undo step. Attaching seeks back to it.
+//
+// After an edit the project is prepared again (src/engine/scene.ts), its heavy part (cursor path,
+// zoom camera) in a worker, so editing a 2-hour project never stalls the editor. Until the new
+// preparation lands the preview keeps the last frame rather than show the old timeline.
 
 import { doc, save } from './doc.svelte.ts'
 import type { InputEvent } from '../shared/events.ts'
-import type { Project, Transcript } from '../shared/project.ts'
-import { clipAt, mapRange, timeMap, toOutput, toSource } from '../shared/timemap.ts'
-import { outputSize, prepare, sceneAt, type FaceSample, type Prepared, type Scene } from '../engine/scene.ts'
-import { renderFrame, type Media } from '../engine/compose.ts'
+import type { Clip, Project, Transcript } from '../shared/project.ts'
+import { mapRange, timeMap, toOutput, toSource } from '../shared/timemap.ts'
+import { outputSize, prepare, sceneAt, type FaceSample, type Paths, type Prepared, type Scene, type SceneInput } from '../engine/scene.ts'
+import { prefetchCut, renderFrame, type Media } from '../engine/compose.ts'
+import type { PathsRequest } from '../engine/paths.worker.ts'
 import { Renderer } from '../engine/gpu/renderer.ts'
 import { fileUrl, openVideo } from '../engine/media/index.ts'
 import { SR, mix, peaks, planOf, scrubGrain, voiceGain, type Plan } from '../engine/audio/index.ts'
@@ -29,7 +34,7 @@ export const player = $state({ time: 0, duration: 0, playing: false, error: null
 
 /** Timing for labs and logs; plain (not reactive) so the hot loop stays cheap. Set `sync` to an
  *  array to log [audio clock, frame time] (output seconds) for each frame drawn while playing. */
-export const stats = { frames: 0, dropped: 0, renderMs: 0, maxRenderMs: 0, prepares: 0, prepareMs: 0, starved: 0, grains: 0, sync: null as Array<[number, number]> | null }
+export const stats = { frames: 0, dropped: 0, renderMs: 0, maxRenderMs: 0, prepares: 0, prepareMs: 0, prepareLatency: 0, starved: 0, grains: 0, sync: null as Array<[number, number]> | null }
 
 const LEAD = 0.05 // s from play or seek to the first scheduled frame; the first chunk mixes meanwhile (about 10 ms)
 const AHEAD = 0.6 // s of audio kept scheduled
@@ -47,6 +52,9 @@ let shown = { t: NaN, p: null as Prepared | null }
 let stale = true
 let staleAt = 0
 let preparedAt = 0
+let preparing = 0 // id of the preparation in flight, 0 = none
+let timing = '' // the project's clip timing, and the one `prepared` was made for
+let preparedTiming = ''
 let size = ''
 let events: { from: unknown; value: InputEvent[] } = { from: null, value: [] }
 let transcript: { from: unknown; value: Transcript | null } = { from: null, value: null }
@@ -93,7 +101,10 @@ export function attach(c: HTMLCanvasElement): () => void {
       void doc.rev
       void doc.path
       // The duration follows edits at once (seeks right after an edit clamp to it); frames re-prepare debounced.
-      if (doc.project) player.duration = timeMap(doc.project.clips).duration
+      if (doc.project) {
+        player.duration = timeMap(doc.project.clips).duration
+        timing = timingOf(doc.project.clips)
+      }
       stale = true
       staleAt = performance.now()
     })
@@ -118,6 +129,7 @@ export function attach(c: HTMLCanvasElement): () => void {
     renderer?.destroy()
     renderer = null
     prepared = null
+    preparing = 0
     canvas = null
     shown = { t: NaN, p: null }
     void ctx?.close()
@@ -164,9 +176,12 @@ export function seek(t: number) {
 
 /** Apply a pending edit now rather than at the next debounced frame: a play or seek right after an
  *  edit (keepingPlayhead seeks after every edit that moves content) must start in the new timeline,
- *  not play a moment of the old one. */
+ *  not play a moment of the old one. The caller starts the run, so its audio is the new mix at once;
+ *  frames follow when the preparation lands (frame() holds the last one until then). */
 function catchUp() {
-  if (stale && canvas && doc.project && size) rebuild(doc.project, canvas.width, canvas.height, false) // the caller starts the run
+  if (!canvas || !doc.project || !size || !(stale || preparing)) return
+  syncAudio($state.snapshot(doc.project) as Project, false)
+  if (stale && !preparing) rebuild(doc.project, canvas.width, canvas.height, false)
 }
 
 /** Store the playhead in the project as source time; saved to disk once it settles for a second. */
@@ -211,8 +226,8 @@ function frame(ts: number) {
     stale = true
     staleAt = 0
   }
-  // Debounced re-prepare: after 40 ms of quiet, or every 150 ms during a continuous drag.
-  if (stale && (ts - staleAt > 40 || ts - preparedAt > 150)) rebuild(project, w, h)
+  // Debounced re-prepare, one at a time: after 40 ms of quiet, or every 150 ms during a continuous drag.
+  if (stale && !preparing && (ts - staleAt > 40 || ts - preparedAt > 150)) rebuild(project, w, h)
   if (player.playing) {
     const t = clock()
     if (t >= player.duration) {
@@ -221,11 +236,12 @@ function frame(ts: number) {
     } else player.time = t
   }
   if (!prepared || !renderer) return
-  if (player.playing) prefetchCut(prepared, player.time)
+  if (player.playing) prefetchCut(prepared, media, player.time)
   if (inFlight) {
     if (player.playing) stats.dropped++
     return
   }
+  if (preparedTiming !== timing) return // the old timeline would show another moment than this one
   const t = player.time
   if (t === shown.t && prepared === shown.p) return
   shown = { t, p: prepared }
@@ -243,20 +259,13 @@ function frame(ts: number) {
     .finally(() => (inFlight = false))
 }
 
-/** Half a second before playback reaches a cut, start decoding where the next clip begins, so the
- *  frame after the cut is ready instead of waiting for a keyframe decode. */
-let warmed = NaN
-function prefetchCut(p: Prepared, t: number) {
-  const i = clipAt(p.map, t) + 1
-  const src = p.map.clips[i]?.start
-  if (src === undefined || src === warmed || p.map.outStarts[i] - t > 0.5) return
-  warmed = src
-  for (const k of Object.keys(media) as Array<keyof Media>) media[k]?.prefetch(src, toSource(p.map, t))
-}
+const timingOf = (clips: Clip[]) => clips.map((c) => `${c.start} ${c.end} ${c.speed}`).join()
 
+/** Prepare the project for the preview: its paths in the worker, the rest here when they land. */
 function rebuild(project: Project, width: number, height: number, splice = true) {
   stale = false
   preparedAt = performance.now()
+  let input: SceneInput
   try {
     // The render path must not touch reactive proxies: the project is copied; events and transcript
     // are raw state (plain already, and replaced rather than edited).
@@ -265,22 +274,91 @@ function rebuild(project: Project, width: number, height: number, splice = true)
     const p = $state.snapshot(project) as Project
     syncFaces(p)
     syncSpeech(p)
-    prepared = prepare({ project: p, events: events.value, transcript: transcript.value, width, height, faces: faces.value, speech: speech.value })
-    stats.prepares++
-    player.prepared++
-    stats.prepareMs = performance.now() - preparedAt
-    player.duration = prepared.map.duration
-    if (restore) {
-      // Reopen where the user left off; a moment cut out since then resumes at the next one kept.
-      restore = false
-      seek(toOutput(prepared.map, p.playhead) ?? mapRange(prepared.map, p.playhead, Infinity)[0]?.[0] ?? 0)
-    }
-    if (player.time > player.duration) player.time = player.duration
     syncMedia(p)
-    syncAudio(p, splice)
+    input = { project: p, events: events.value, transcript: transcript.value, width, height, faces: faces.value, speech: speech.value }
   } catch (e) {
-    fail(e)
+    return fail(e)
   }
+  const id = (preparing = ++requests)
+  pathsOffThread(input).then(
+    (paths) => {
+      if (preparing !== id) return // detached meanwhile
+      preparing = 0
+      apply(input, paths, splice)
+    },
+    (e) => {
+      if (preparing !== id) return
+      preparing = 0
+      fail(e)
+    },
+  )
+}
+let requests = 0
+
+function apply(input: SceneInput, paths: Paths, splice: boolean) {
+  const t0 = performance.now()
+  try {
+    prepared = prepare(input, paths)
+  } catch (e) {
+    return fail(e)
+  }
+  preparedTiming = timingOf(input.project.clips)
+  stats.prepares++
+  player.prepared++
+  stats.prepareMs = performance.now() - t0
+  stats.prepareLatency = performance.now() - preparedAt
+  if (!stale) {
+    // The latest edit (a newer one brings its own duration and mix with its preparation).
+    player.duration = prepared.map.duration
+    if (player.time > player.duration) player.time = player.duration
+    syncAudio(input.project, splice)
+  }
+  if (restore) {
+    // Reopen where the user left off; a moment cut out since then resumes at the next one kept.
+    restore = false
+    const map = prepared.map
+    seek(toOutput(map, input.project.playhead) ?? mapRange(map, input.project.playhead, Infinity)[0]?.[0] ?? 0)
+  }
+}
+
+let worker: Worker | null = null
+let calls = 0
+const replies = new Map<number, { resolve(p: Paths): void; reject(e: Error): void }>()
+let sent: Partial<Pick<SceneInput, 'events' | 'transcript' | 'faces'>> = {}
+
+/** preparePaths(input) in a worker (src/engine/paths.worker.ts), so a 2-hour project's cursor path and
+ *  zoom camera never stall the editor. Events, transcript, and face track cross only when they change. */
+export function pathsOffThread(input: SceneInput): Promise<Paths> {
+  if (!worker) {
+    const w = (worker = new Worker(new URL('../engine/paths.worker.ts', import.meta.url), { type: 'module' }))
+    w.onmessage = ({ data }) => {
+      const r = replies.get(data.id)
+      replies.delete(data.id)
+      if ('error' in data) r?.reject(new Error(data.error))
+      else r?.resolve(data.paths)
+    }
+    w.onerror = (e) => {
+      e.preventDefault()
+      for (const r of replies.values()) r.reject(new Error(`The preview engine stopped (${e.message}).`))
+      replies.clear()
+      w.terminate()
+      if (worker === w) (worker = null), (sent = {})
+    }
+  }
+  const { events, transcript, faces, ...rest } = input
+  const msg: PathsRequest = { id: ++calls, input: rest }
+  if (sent.events !== events) msg.events = events
+  if (sent.transcript !== transcript) msg.transcript = transcript
+  if (!('faces' in sent) || sent.faces !== faces) msg.faces = faces
+  const reply = new Promise<Paths>((resolve, reject) => replies.set(msg.id, { resolve, reject }))
+  try {
+    worker.postMessage(msg)
+  } catch (e) {
+    replies.delete(msg.id)
+    return Promise.reject(e)
+  }
+  sent = { events, transcript, faces }
+  return reply
 }
 
 function syncMedia(p: Project) {

@@ -43,21 +43,29 @@ export function toSource(m: TimeMap, out: number): number {
   return Math.min(c.start + (t - m.outStarts[i]) * c.speed, c.end)
 }
 
-/** Source seconds -> output seconds, or null when that moment is cut out. First occurrence wins. */
-// ponytail: linear scan over clips, binary search on a source-sorted index if thousands of clips matter.
+/** Source seconds -> output seconds, or null when that moment is cut out. First occurrence wins.
+ *  O(log n + clips holding src): every click, keystroke, and word of a 2-hour project goes through it. */
 export function toOutput(m: TimeMap, src: number): number | null {
-  for (let i = 0; i < m.clips.length; i++) {
-    const c = m.clips[i]
-    const last = i === m.clips.length - 1
-    if (src >= c.start - EPS && (src < c.end - EPS || (last && src <= c.end + EPS))) {
-      return m.outStarts[i] + (Math.max(src, c.start) - c.start) / c.speed
-    }
+  const { order, maxEnd } = indexOf(m)
+  const n = m.clips.length
+  let lo = 0
+  let hi = order.length // first k with clips[order[k]].start > src + EPS
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (m.clips[order[mid]].start <= src + EPS) lo = mid + 1
+    else hi = mid
   }
-  return null
+  let best = -1
+  for (let k = lo - 1; k >= 0 && maxEnd[k] >= src - EPS; k--) {
+    const i = order[k]
+    const c = m.clips[i]
+    if ((best < 0 || i < best) && src >= c.start - EPS && (src < c.end - EPS || (i === n - 1 && src <= c.end + EPS))) best = i
+  }
+  return best < 0 ? null : m.outStarts[best] + (Math.max(src, m.clips[best].start) - m.clips[best].start) / m.clips[best].speed
 }
 
-/** Clip indices sorted by source start, with a running max of source ends: lets mapRange visit
- *  only the clips that can overlap a range, O(log n + hits) instead of O(n). Built once per map. */
+/** Clip indices sorted by source start, with a running max of source ends: lets mapRange and
+ *  toOutput visit only the clips that can hold a time, O(log n + hits) instead of O(n). Built once per map. */
 const sourceIndex = new WeakMap<TimeMap, { order: number[]; maxEnd: number[] }>()
 function indexOf(m: TimeMap) {
   let ix = sourceIndex.get(m)

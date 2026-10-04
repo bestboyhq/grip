@@ -1,13 +1,17 @@
-<!-- Automated decode and mix checks, run by src/engine/media/media.test.ts in a hidden window:
+<!-- Automated decode, mix, and preview checks, run by src/engine/media/media.test.ts in a hidden window:
      #/dev?lab=PlayerChecks&dir=<generated media dir>&fixture=<optional .studio bundle>.
      Results land in window.__checks as [{ name, ok, detail }]. -->
 <script lang="ts">
   import { onMount } from 'svelte'
   import { createProject, type Project } from '../../../shared/project.ts'
-  import { prepare } from '../../../engine/scene.ts'
+  import { prepare, sceneAt } from '../../../engine/scene.ts'
   import { fileUrl, openVideo } from '../../../engine/media/index.ts'
   import { mix, peaks, planOf, renderAudio, voiceGains } from '../../../engine/audio/index.ts'
   import { parseEvents } from '../../../shared/events.ts'
+  import { splitAt, timeMap } from '../../../shared/timemap.ts'
+  import { doc, edit } from '../../../lib/doc.svelte.ts'
+  import { attach, pathsOffThread, player } from '../../../lib/player.svelte.ts'
+  import { stressProject } from '../../editor/timeline/stress.ts'
 
   let { params }: { params: URLSearchParams } = $props()
   type Check = { name: string; ok: boolean; detail: string }
@@ -144,6 +148,22 @@
       assert(warm < cold / 2, `prefetched jump ${warm.toFixed(1)} ms vs cold ${cold.toFixed(1)} ms`)
       return `prefetched jump ${warm.toFixed(1)} ms, cold ${cold.toFixed(1)} ms`
     })
+    await check('decoding a long file through keeps memory flat (bounded read cache)', async () => {
+      // 56 MB of noise: a read cache that keeps what it read grows by the file, as an export of an
+      // hour-long recording did. gc() and precise memory info come from media.test.ts's switches.
+      const heap = async () => {
+        for (let i = 0; i < 3; i++) (globalThis as any).gc(), await new Promise((r) => setTimeout(r, 50)) // buffers are freed after the collection
+        return (performance as any).memory.usedJSHeapSize / 2 ** 20
+      }
+      const src = await openVideo(fileUrl(`${dir}/big.mp4`))
+      for (let i = 0; i < 180; i++) (await src.frameAt(i / 30 + 0.001))?.close()
+      const open = await heap()
+      src.close()
+      await new Promise((r) => setTimeout(r, 200))
+      const held = open - (await heap()) // what the open file kept after reading it all
+      assert(held < 24, `the open file held ${held.toFixed(1)} MB after decoding 56 MB`)
+      return `the open file held ${held.toFixed(1)} MB after decoding 56 MB`
+    })
 
     await check('AAC audio stays aligned through encoder priming', async () => {
       const buf = await renderAudio(prepared(audioOnly(`${dir}/click.m4a`, 4)), '/', 0, 4)
@@ -257,6 +277,50 @@
         return `${plan.duration.toFixed(2)} s, ${preview.length} samples identical, ${plan.clicks.length} click sounds`
       })
     }
+
+    await check('editing a 2-hour project never stalls the editor, and the preview prepares the frames export does', async () => {
+      // The 2-hour stress project (500 clips, 300 zooms) in the real player; its media do not exist, the
+      // preparation after each edit is what counts.
+      const s = stressProject()
+      Object.assign(doc, { path: dir, events: s.events, transcript: s.transcript, project: s.project })
+      const canvas = document.createElement('canvas')
+      canvas.style.cssText = 'position: fixed; left: 0; top: 0; width: 640px; height: 360px'
+      document.body.append(canvas)
+      const detach = attach(canvas)
+      const tasks: number[] = []
+      const observer = new PerformanceObserver((l) => l.getEntries().forEach((e) => tasks.push(e.duration)))
+      const prepared = async (n: number) => {
+        for (const t0 = performance.now(); player.prepared <= n; await new Promise((r) => setTimeout(r, 10))) {
+          if (performance.now() - t0 > 30_000) throw new Error('no preparation within 30 s')
+        }
+      }
+      try {
+        await prepared(0)
+        observer.observe({ type: 'longtask' })
+        const edits = [(p: Project) => (p.zooms[10].level = 3), (p: Project) => (p.clips = splitAt(p.clips, timeMap(p.clips).duration / 3)), (p: Project) => (p.style.padding = 40)]
+        for (const fn of edits) {
+          const n = player.prepared
+          edit(fn)
+          await prepared(n)
+        }
+        observer.disconnect()
+        const worst = Math.max(0, ...tasks)
+        assert(worst < 50, `the main thread was blocked for ${worst.toFixed(0)} ms after an edit`)
+        // The worker's paths give the frames export computes inline.
+        const input = { project: $state.snapshot(doc.project!) as Project, events: s.events, transcript: s.transcript, width: 640, height: 360 }
+        const viaWorker = prepare(input, await pathsOffThread(input))
+        const inline = prepare(input)
+        const ts = Array.from({ length: 40 }, (_, i) => (i * inline.map.duration) / 40)
+        assert(ts.every((t) => JSON.stringify(sceneAt(viaWorker, t)) === JSON.stringify(sceneAt(inline, t))), 'a frame prepared through the worker differs from export')
+        return `longest main-thread task across ${edits.length} edits ${worst.toFixed(0)} ms; ${ts.length} frames identical to export's`
+      } finally {
+        observer.disconnect()
+        detach()
+        canvas.remove()
+        doc.project = null
+      }
+    })
+
     done = true
     ;(window as any).__checks = $state.snapshot(checks)
   })
