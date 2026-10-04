@@ -113,6 +113,22 @@ test('layout changes animate in output time, and an interrupted transition blend
   close(at(q, 8).camera!.rect, before)
 })
 
+test('the camera hides and comes back in place: a fullscreen camera fades where it is, not toward the corner', () => {
+  const p = project((p) => (p.layouts = [{ id: 'a', start: 0, end: 5, kind: 'fullscreen' }, { id: 'b', start: 5, end: 10, kind: 'hidden' }, { id: 'c', start: 10, end: 15, kind: 'fullscreen' }]))
+  const center = (r: Rect) => [r.x + r.w / 2, r.y + r.h / 2]
+  for (const t of [5.05, 5.15, 10.05, 10.15]) {
+    const cam = at(p, t).camera!
+    assert.ok(cam.opacity > 0 && cam.opacity < 1, `fading at ${t}`)
+    const [x, y] = center(cam.rect)
+    assert.ok(Math.abs(x - W / 2) < 1e-6 && Math.abs(y - H / 2) < 1e-6, `stays centered at ${t}`)
+  }
+  close(at(p, 12).camera!.rect, { x: 0, y: 0, w: W, h: H })
+  const q = project((p) => (p.layouts = [{ id: 'b', start: 5, end: 10, kind: 'hidden' }]))
+  const pip = at(q, 1).camera!.rect
+  const [px, py] = center(pip), [hx, hy] = center(at(q, 5.1).camera!.rect)
+  assert.ok(Math.abs(px - hx) < 1e-6 && Math.abs(py - hy) < 1e-6, 'a corner camera shrinks around its center')
+})
+
 test('a layout item across a cut keeps its state; one starting after a cut is timed in output time', () => {
   // Cut source 10-20. The item spans the cut: no transition at the seam.
   const p = project((p) => {

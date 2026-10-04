@@ -151,6 +151,9 @@ export const toggle = () => (player.playing ? pause() : play())
  *  draws (face track and speech included), for hit-testing. Null until the first preparation. */
 export const currentScene = (): Scene | null => (prepared ? sceneAt(prepared, player.time) : null)
 
+/** The face track and mic speech the preview loaded, for other renders of the project (thumbnail). */
+export const loadedExtras = () => ({ faces: faces.value, speech: speech.value })
+
 export function seek(t: number) {
   player.time = Math.min(Math.max(t, 0), player.duration)
   if (player.playing) startRun(false)

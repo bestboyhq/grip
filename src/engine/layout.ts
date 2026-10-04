@@ -146,12 +146,8 @@ function target(input: SceneInput, unit: number, kind: Kind): State {
   const pip = { x: c.position.endsWith('left') ? edge : W - edge - cw, y: c.position.startsWith('top') ? edge : H - edge - ch, w: cw, h: ch }
   const pipRadius = c.shape === 'circle' ? Math.min(cw, ch) / 2 : c.shape === 'rounded' ? Math.min(c.radius * unit, cw / 2, ch / 2) : 0
   if (kind === 'fullscreen') return { ...base, camera: { x: 0, y: 0, w: W, h: H }, cameraRadius: 0, cameraOpacity: 1, cameraShadow: 0, pip: 0 }
-  if (kind === 'hidden') {
-    const k = 0.6
-    const small = { x: pip.x + (cw * (1 - k)) / 2, y: pip.y + (ch * (1 - k)) / 2, w: cw * k, h: ch * k }
-    return { ...base, camera: small, cameraRadius: pipRadius * k, cameraOpacity: 0, cameraShadow: c.shadow, pip: 1 }
-  }
-  return { ...base, camera: pip, cameraRadius: pipRadius, cameraOpacity: 1, cameraShadow: c.shadow, pip: 1 }
+  const corner: State = { ...base, camera: pip, cameraRadius: pipRadius, cameraOpacity: 1, cameraShadow: c.shadow, pip: 1 }
+  return kind === 'hidden' ? { ...corner, ...hiddenCamera(corner) } : corner
 }
 
 /** Largest recording rect whose frame (the recording plus `inset` px on every side) fits centered
@@ -253,10 +249,14 @@ function lastChange(changes: Array<{ t: number }>, t: number): number {
  *  wherever it was, so rapid changes and cuts never jump. */
 function stateAt(l: PreparedLayout, t: number, i: number, depth = 0): State {
   const c = l.changes[i]
-  const to = l.targets[c.kind]
+  let to = l.targets[c.kind]
   const dt = t - c.t
   if (i === 0 || dt >= SETTLE || depth > 8) return to
-  const from = stateAt(l, c.t, i - 1, depth + 1)
+  let from = stateAt(l, c.t, i - 1, depth + 1)
+  // The camera hides and appears in place, whatever layout it leaves or enters: a fullscreen or split
+  // camera fades where it is instead of flying to the corner as a ghost.
+  if (c.kind === 'hidden') to = { ...to, ...hiddenCamera(from) }
+  else if (l.changes[i - 1].kind === 'hidden' && from.cameraOpacity < 1e-3) from = { ...from, ...hiddenCamera(to) }
   const p = springProgress(dt, SPRING)
   const mix = (a: number, b: number) => a + (b - a) * p
   const rect = (a: Rect, b: Rect) => ({ x: mix(a.x, b.x), y: mix(a.y, b.y), w: mix(a.w, b.w), h: mix(a.h, b.h) })
@@ -270,6 +270,19 @@ function stateAt(l: PreparedLayout, t: number, i: number, depth = 0): State {
     cameraOpacity: Math.max(0, mix(from.cameraOpacity, to.cameraOpacity)),
     cameraShadow: Math.max(0, mix(from.cameraShadow, to.cameraShadow)),
     pip: mix(from.pip, to.pip),
+  }
+}
+
+/** The camera of `s` stepped back to 60% around its center and faded out. */
+function hiddenCamera(s: State): Pick<State, 'camera' | 'cameraRadius' | 'cameraOpacity' | 'cameraShadow' | 'pip'> {
+  const k = 0.6
+  const r = s.camera
+  return {
+    camera: { x: r.x + (r.w * (1 - k)) / 2, y: r.y + (r.h * (1 - k)) / 2, w: r.w * k, h: r.h * k },
+    cameraRadius: s.cameraRadius * k,
+    cameraOpacity: 0,
+    cameraShadow: s.cameraShadow,
+    pip: s.pip,
   }
 }
 

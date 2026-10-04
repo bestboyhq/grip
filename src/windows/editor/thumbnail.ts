@@ -1,6 +1,7 @@
 // The project's Finder, Quick Look, and recent-projects thumbnail: one frame rendered by the same
 // compositor as preview and export, handed to the main process as PNG bytes (projects:thumbnail).
 import { doc } from '../../lib/doc.svelte.ts'
+import { loadedExtras } from '../../lib/player.svelte.ts'
 import { invoke } from '../../lib/ipc.ts'
 import { outputSize, prepare } from '../../engine/scene.ts'
 import { renderFrame, type Media } from '../../engine/compose.ts'
@@ -24,7 +25,7 @@ export async function sendThumbnail(): Promise<void> {
     if (screen) media.screen = await openVideo(url(screen.file))
     if (camera) media.camera = await openVideo(url(camera.file))
     if (camera?.matte && project.style.camera.removeBackground) media.matte = await openVideo(url(camera.matte))
-    const prepared = prepare({ project, events: doc.events, transcript: doc.transcript, width, height })
+    const prepared = prepare({ project, events: doc.events, transcript: doc.transcript, width, height, ...loadedExtras() })
     // The frame the user last looked at; a fifth in when they never moved the playhead.
     const t = resumeAt(project.clips, project.playhead) || timeMap(project.clips).duration * 0.2
     await renderFrame(renderer, prepared, media, t)
