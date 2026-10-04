@@ -8,6 +8,7 @@ export type MouseButton = 'left' | 'right' | 'other'
 export type InputEvent =
   | { t: number; type: 'move'; x: number; y: number }
   | { t: number; type: 'down' | 'up'; x: number; y: number; button: MouseButton }
+  // dx, dy = pixel-precise scroll deltas as macOS reports them (natural scrolling applied), in screen.mp4 pixels.
   | { t: number; type: 'scroll'; x: number; y: number; dx: number; dy: number }
   // key: label through the active layout ("a", "Ж", "↩", "F5", "Space"); mods in macOS order.
   | { t: number; type: 'key'; down: boolean; key: string; code: number; mods: Modifier[] }
