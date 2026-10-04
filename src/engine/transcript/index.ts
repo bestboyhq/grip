@@ -68,17 +68,21 @@ export interface Cue {
   words: OutWord[]
 }
 
-/** Readable subtitle lines. A phrase ends at a cut (so no cue shows a word the viewer no longer
- *  hears), at a pause over 1 s, and after a sentence; a phrase too long for one line (42 characters,
- *  7 seconds) splits into lines of even length rather than leaving one word dangling. A cue stays
- *  HOLD after its last word for reading, but never over the next cue or across a cut. */
+/** Readable subtitle lines. A phrase ends at a pause over 1 s, as spoken or as played, after a
+ *  sentence, and where the video jumps back; a cut that only took out a filler or a few words keeps
+ *  the phrase whole, so cleaning up speech never chops its captions. A phrase too long for one line
+ *  (42 characters, 7 seconds) splits into lines of even length rather than leaving one word
+ *  dangling, each line showing until the next one starts. The last line stays HOLD after its last
+ *  word for reading, but never over the next cue or across a cut. */
 export function cues(words: OutWord[], m: TimeMap): Cue[] {
+  const src = (k: number, out: number) => m.clips[k].start + (out - m.outStarts[k]) * m.clips[k].speed
   const phrases: OutWord[][] = []
   for (const w of words) {
     if (!w.text) continue
     const phrase = phrases[phrases.length - 1]
     const prev = phrase?.[phrase.length - 1]
-    if (!prev || cutBetween(m, prev.last, w.first) || w.start - prev.end > 1 || /[.!?…。？！]["'”’»)\]]*$/.test(prev.text)) phrases.push([w])
+    const spoken = prev ? src(w.first, w.start) - src(prev.last, prev.end) : NaN // NaN: no phrase yet
+    if (!(spoken > -EPS && spoken <= 1) || w.start - prev!.end > 1 || /[.!?…。？！]["'”’»)\]]*$/.test(prev!.text)) phrases.push([w])
     else phrase.push(w)
   }
   const out: Cue[] = []
@@ -87,7 +91,10 @@ export function cues(words: OutWord[], m: TimeMap): Cue[] {
     const lines = Math.max(Math.ceil(chars / 42), Math.ceil((phrase[phrase.length - 1].end - phrase[0].start) / 7))
     let cur: Cue | undefined
     for (const w of phrase) {
-      if (cur && (cur.text.length >= chars / lines || cur.text.length + 1 + w.text.length > 42 || w.end - cur.start > 7)) cur = undefined
+      if (cur && (cur.text.length >= chars / lines || cur.text.length + 1 + w.text.length > 42 || w.end - cur.start > 7)) {
+        cur.end = w.start
+        cur = undefined
+      }
       if (!cur) out.push((cur = { start: w.start, end: w.end, text: w.text, words: [w] }))
       else {
         cur.end = w.end
@@ -111,12 +118,6 @@ export function cues(words: OutWord[], m: TimeMap): Cue[] {
  *  show when. Filler words stay out unless a caption fix brings one back. */
 export function captionCues(t: Transcript, m: TimeMap, edits: Record<number, string> = {}): Cue[] {
   return cues(outputWords(t, m, edits).filter((w) => !t.words[w.i].filler || edits[w.i] !== undefined), m)
-}
-
-/** Whether source time is missing between clip a and a later clip b: a cut, or clips out of order. */
-function cutBetween(m: TimeMap, a: number, b: number): boolean {
-  for (let k = a; k < b; k++) if (Math.abs(m.clips[k].end - m.clips[k + 1].start) > EPS) return true
-  return a > b
 }
 
 function stamp(s: number, sep: ',' | '.'): string {

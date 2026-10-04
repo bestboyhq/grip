@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Clip, Transcript, Word } from '../../shared/project.ts'
 import { removeOutputRange, removeSourceRange, setSpeed, timeMap, toSource } from '../../shared/timemap.ts'
-import { cues, deleteWords, detectLanguage, fillers, isFiller, longPauses, outputWords, shortenPauses, toSRT, toVTT, wordAt } from './index.ts'
+import { captionCues, cues, deleteWords, detectLanguage, fillers, isFiller, longPauses, outputWords, shortenPauses, toSRT, toVTT, wordAt } from './index.ts'
 
 // Words as Parakeet gives them for the fixture mic track (source seconds).
 const SPOKEN: Array<[number, number, string]> = [
@@ -61,18 +61,24 @@ test('after any cuts and speed changes, every caption word lands where it is spo
       if (left > 0.999) assert.ok(out.some((o) => o.i === i), `run ${run}: "${w.text}" plays but has no caption`)
       if (left < 1e-6) assert.ok(!out.some((o) => o.i === i), `run ${run}: "${w.text}" was cut but has a caption`)
     })
-    // No cue runs across a cut: between two words of a cue, all source time plays.
-    for (const c of cues(out, m)) {
+    // A cue reads as spoken: its words run forward in source time, at most 1 s apart, so it may
+    // run over a cut that took out a filler or a word, but never over a jump back or a long gap.
+    const all = cues(out, m)
+    all.forEach((c, n) => {
       for (let k = 1; k < c.words.length; k++) {
         const [p, q] = [words[c.words[k - 1].i], words[c.words[k].i]]
-        assert.ok(q.start >= p.end - 1e-6 && heard(clips, p.end, q.start) >= q.start - p.end - 1e-6, `run ${run}: cue "${c.text}" spans a cut`)
+        assert.ok(q.start >= p.end - 1e-6 && q.start - p.end <= 1 + 1e-6, `run ${run}: cue "${c.text}" spans a jump`)
       }
       assert.ok(c.text.length <= 42 && c.end > c.start)
-      // The hold after the last word never crosses a cut either.
+      // The hold after the last word of a phrase never crosses a cut; a line within a phrase
+      // shows until the next line starts.
+      const next = all[n + 1]
+      const [p, q] = [words[c.words[c.words.length - 1].i], next && words[next.words[0].i]]
+      if (q && c.end === next.start && q.start >= p.end - 1e-6 && q.start - p.end <= 1 + 1e-6) return
       const a = toSource(m, c.words[c.words.length - 1].end - 1e-6)
       const b = toSource(m, c.end - 1e-6)
       assert.ok(b >= a - 1e-6 && heard(clips, a, b) >= b - a - 1e-6, `run ${run}: cue "${c.text}" holds across a cut`)
-    }
+    })
   }
 })
 
@@ -100,6 +106,15 @@ test('SRT and VTT: cues in output time, split at cuts, sped up, with caption fix
   assert.equal(blocks.at(-1)![1].split(' --> ')[1], ts(20.73 + 0.7 - cut - (12.72 - 11.2) / 2))
   const vtt = toVTT({ language: 'en', words: [{ start: 0, end: 1, text: '<b>&' }] }, full())
   assert.equal(vtt, 'WEBVTT\n\n00:00:00.000 --> 00:00:01.700\n&lt;b&gt;&amp;\n')
+})
+
+test('cutting filler words leaves the captions whole: same lines, no blink between them', () => {
+  const before = captionCues(transcript, timeMap(full()))
+  const after = captionCues(transcript, timeMap(deleteWords(full(), words, fillers(transcript, timeMap(full())))))
+  assert.deepEqual(after.map((c) => c.text), before.map((c) => c.text))
+  assert.equal(after[0].text, 'Hi, so today I want to show you')
+  // Lines of one sentence follow each other directly: the caption never drops out mid-sentence.
+  assert.equal(after[0].end, after[1].start)
 })
 
 test('deleting words keeps every frame of their neighbours', () => {

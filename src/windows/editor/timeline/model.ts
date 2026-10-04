@@ -73,7 +73,13 @@ export function lane<T extends Timed>(map: TimeMap, items: T[]): Lane<T> {
   const blocks: Block[] = []
   let maxLen = 0
   items.forEach((it, i) => {
-    const pieces = mapRange(map, it.start, it.end)
+    const pieces: Array<[number, number]> = []
+    for (const [a, b] of mapRange(map, it.start, it.end)) {
+      const last = pieces.at(-1)
+      // A split or speed change is not a cut: the item runs on as one block, one label.
+      if (last && a - last[1] < EPS && Math.abs(toSource(map, a) - toSource(map, last[1] - EPS)) < 1e-4) last[1] = b
+      else pieces.push([a, b])
+    }
     pieces.forEach(([a, b], k) => {
       blocks.push({ a, b, i, head: k === 0, tail: k === pieces.length - 1 })
       if (b - a > maxLen) maxLen = b - a

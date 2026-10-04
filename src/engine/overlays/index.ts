@@ -50,6 +50,7 @@ const CAP_OUT = 0.16
 const WORD_IN = 0.14
 const LINE_H = 1.36 // caption line box height, em
 const LINE_GAP = 0.1 // em between line boxes
+const PAD = 0.42 // em of caption backing beside the text
 
 // ---- Placement shared by captions and keystrokes, so the two never overlap. ----
 
@@ -233,7 +234,7 @@ export function keystrokesAt(o: Prepared, t: number): Keystroke[] {
 
 // ---- Captions ----
 // Which words show when comes from the transcript engine (captionCues), the same cues SRT and VTT
-// export, so burned-in captions and subtitle files always agree. Here only layout: lines per cue.
+// export, so burned-in captions and subtitle files always agree. Here only layout: pages and lines per cue.
 
 interface Page {
   start: number // output seconds
@@ -263,6 +264,35 @@ export function maxLineChars(width: number, height: number, size: number): numbe
   return Math.max(8, Math.min(portrait(width, height) ? 24 : 42, fit))
 }
 
+/** Word ranges [from, to) of a caption's pages. One page when the words fit two lines of maxChars;
+ *  else (big text, vertical video) the fewest pages that each do, as even as possible so no word is
+ *  left alone, rather than shrinking the text the user chose. */
+function paginate(texts: string[], maxChars: number): Array<[number, number]> {
+  const fits = (ws: string[]) => {
+    const lines = breakLines(ws, maxChars)
+    return [0, 1].every((l) => {
+      const line = ws.filter((_, j) => lines[j] === l)
+      return line.length < 2 || chars(line.join(' ')) <= maxChars // a word too long for any line has one of its own
+    })
+  }
+  if (fits(texts)) return [[0, texts.length]]
+  // ponytail: O(words^3) per caption, fine for captions of at most 42 characters.
+  const best = [{ pages: 0, widest: 0, from: 0 }]
+  for (let i = 1; i <= texts.length; i++) {
+    best[i] = { pages: Infinity, widest: Infinity, from: 0 }
+    for (let j = 0; j < i; j++) {
+      const ws = texts.slice(j, i)
+      if (!fits(ws)) continue
+      const pages = best[j].pages + 1
+      const widest = Math.max(best[j].widest, chars(ws.join(' ')))
+      if (pages < best[i].pages || (pages === best[i].pages && widest < best[i].widest)) best[i] = { pages, widest, from: j }
+    }
+  }
+  const out: Array<[number, number]> = []
+  for (let i = texts.length; i > 0; i = best[i].from) out.unshift([best[i].from, i])
+  return out
+}
+
 function captionPages(input: SceneInput, map: TimeMap): Page[] {
   const { project, transcript } = input
   const st = project.style.captions
@@ -271,10 +301,21 @@ function captionPages(input: SceneInput, map: TimeMap): Page[] {
   const canon = outputSize(project, 1080)
   const maxChars = maxLineChars(canon.width, canon.height, st.size)
   const cues = captionCues(transcript, map, project.captionEdits)
-  return cues.map((c, i) => {
-    const lines = breakLines(c.words.map((w) => w.text), maxChars)
-    return { start: c.start, end: c.end, fadeOut: c.end < (cues[i + 1]?.start ?? Infinity), words: c.words.map((w, j) => ({ text: w.text, start: w.start, line: lines[j] })) }
+  const pages: Page[] = []
+  cues.forEach((c, i) => {
+    const groups = paginate(c.words.map((w) => w.text), maxChars).map(([from, to]) => c.words.slice(from, to))
+    groups.forEach((g, k) => {
+      const lines = breakLines(g.map((w) => w.text), maxChars)
+      const next = groups[k + 1]?.[0].start
+      pages.push({
+        start: k ? g[0].start : c.start,
+        end: next ?? c.end,
+        fadeOut: next === undefined && c.end < (cues[i + 1]?.start ?? Infinity),
+        words: g.map((w, j) => ({ text: w.text, start: w.start, line: lines[j] })),
+      })
+    })
   })
+  return pages
 }
 
 export function captionAt(o: Prepared, t: number): Caption | null {
@@ -465,13 +506,14 @@ function family(f: string): string {
   return `${generic ? f : JSON.stringify(f)}, ${SYSTEM}`
 }
 
-/** Dark text gets a light backing, light text a dark one. */
+/** Dark text gets a light backing, light text a dark one; opaque enough that the text on the
+ *  screen under a caption does not read through it. */
 function backing(color: string): string {
   const m = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(color.trim())
-  if (!m) return 'rgb(0 0 0 / 0.7)'
+  if (!m) return 'rgb(0 0 0 / 0.88)'
   const hex = m[1].length === 3 ? [...m[1]].map((c) => c + c).join('') : m[1]
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5 ? 'rgb(255 255 255 / 0.86)' : 'rgb(0 0 0 / 0.7)'
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5 ? 'rgb(255 255 255 / 0.92)' : 'rgb(0 0 0 / 0.88)'
 }
 
 function drawCaption(ctx: Ctx, c: Caption, scene: Scene) {
@@ -491,8 +533,8 @@ function drawCaption(ctx: Ctx, c: Caption, scene: Scene) {
     return idx.reduce((n, i) => n + ws[i], 0) + (idx.length - 1) * ctx.measureText(' ').width
   }
   const widest = Math.max(...Array.from({ length: nLines }, (_, l) => lineWidth(l, widths)))
-  if (widest > maxW) {
-    em *= maxW / widest // a very long word: shrink to fit rather than run off the frame
+  if (widest + 2 * PAD * em > maxW) {
+    em *= maxW / (widest + 2 * PAD * em) // a very long word: shrink to fit rather than run off the frame
     widths = measure()
   }
   const space = ctx.measureText(' ').width
@@ -503,7 +545,7 @@ function drawCaption(ctx: Ctx, c: Caption, scene: Scene) {
   const margin = captionMargin(W, H, unit, st.position)
   const slide = st.animation === 'slide' ? (1 - c.progress) * 0.5 * em * (bottom ? 1 : -1) : 0
   const top0 = (bottom ? H - margin - blockH : margin) + slide
-  const padX = 0.42 * em
+  const padX = PAD * em
   const word = st.mode === 'word'
 
   ctx.save()
@@ -526,6 +568,13 @@ function drawCaption(ctx: Ctx, c: Caption, scene: Scene) {
     }
     const baseline = y + lineH / 2 + (m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2
     let x = x0
+    ctx.save()
+    if (shown < lw) {
+      // A word appearing is wiped in with the backing as it grows, never sticking out past it.
+      ctx.beginPath()
+      ctx.rect(x0 - padX, 0, shown + 1.5 * padX, H)
+      ctx.clip()
+    }
     ctx.fillStyle = st.color
     for (const i of idx) {
       const w = c.words[i]
@@ -537,6 +586,7 @@ function drawCaption(ctx: Ctx, c: Caption, scene: Scene) {
       }
       x += widths[i] + space
     }
+    ctx.restore()
   }
   ctx.restore()
 }
