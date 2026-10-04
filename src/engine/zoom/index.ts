@@ -19,12 +19,15 @@
 // All of this happens in the screen's viewport (layoutAt(...).screen.viewport): the whole output, or
 // the screen's own panel in split layouts. The camera is stepped in viewport space (the center is the
 // content point at the viewport's center) and viewAt turns that into the output-wide View.
+// The picture-in-picture camera is drawn over the zoomed screen, unzoomed: the follow camera keeps
+// the cursor and clicked elements out from under it (layout's pipCameraAt, as it sits once stepped
+// back for the zoom). This happens while stepping, so viewAt stays a cheap lookup.
 
 import { uid, type Project, type Rect, type Sources, type Style, type Zoom } from '../../shared/project.ts'
 import type { InputEvent } from '../../shared/events.ts'
 import { mapRange, toOutput, type TimeMap } from '../../shared/timemap.ts'
 import type { Loupe, SceneInput, View } from '../scene.ts'
-import { screenAt, type prepareLayout, type ScreenPlace } from '../layout.ts'
+import { pipCameraAt, screenAt, type prepareLayout, type ScreenPlace } from '../layout.ts'
 import { cursorPoint, type prepareCursor } from '../motion/index.ts'
 import { springDuration, springProgress, mix, type SpringConfig } from '../motion/spring.ts'
 import { typingSegments, type Segment } from '../input/index.ts'
@@ -36,6 +39,8 @@ const BRIDGE = 1 // s: a shorter gap between zooms pans across instead of zoomin
 const DEAD_ZONE = 0.5 // the cursor roams this fraction of the half view before the camera pans
 const FOCUS_ZONE = 0.4 // clicked elements and typing stay this close to the center, so they show whole
 const EDGE_ZONE = 0.85 // the cursor never gets closer to the frame edge than this
+const CAMERA_CLEAR = 28 // screen points x cursor size (about a cursor's height, magnified with it by the
+// zoom) the cursor and clicked elements keep from a picture-in-picture camera
 const LEAD = 0.6 // s: zooms and framing start this long before a click or typing (spring is ~98% there)
 const KEEP = 1 // s: a clicked element stays framed this long after the click
 const HOLD = 2 // s: an auto zoom holds this long after its last click or keystroke
@@ -133,6 +138,9 @@ function baseScale(vp: Rect, r: Rect, b: Rect): number {
   return vp.w / vp.h < (r.w / r.h) * 0.98 ? Math.max(1, vp.h / b.h) : 1
 }
 
+/** How far scale s magnifies past the rest framing `base`: 0 at rest, 1 at twice that or more. */
+const magnified = (s: number, base: number) => clamp(Math.log2(s / base), 0, 1)
+
 /** The part of the screen a zoomed view may show: inset so its corners stay clear of the rounded ones
  *  (a view corner inside a corner of radius r needs an inset of r * (1 - 1/sqrt 2) on both edges). */
 function inner(r: Rect, radius: number): Rect {
@@ -149,6 +157,40 @@ function clampCenter(c: Pt, r: Rect, s: number, vp: Rect): Pt {
 
 /** Move center c the least so that p lies within (rx, ry) of it. */
 const keep = (c: Pt, p: Pt, rx: number, ry: number): Pt => ({ x: clamp(c.x, p.x - rx, p.x + rx), y: clamp(c.y, p.y - ry, p.y + ry) })
+
+/** Move center c the least, along one axis and within `bounds`, so that content point p shows
+ *  outside the corner camera `cam` (output px) grown by m, on its side facing the viewport's center.
+ *  Unchanged when p is clear already, or when no pan clears it (the view is against the screen
+ *  corner under the camera). `hold`, the previous aim, keeps the pan steady: p stays on the side of
+ *  the camera the aim had it on, and the aim holds while it clears p by up to m more, so a cursor
+ *  jittering at the camera's edge (with a clicked field pulling the view the other way) neither
+ *  shakes the view nor flips it from one side of the camera to the other. */
+function clear(c: Pt, p: Pt, hold: Pt | null, cam: Rect, m: number, s: number, vp: Rect, bounds: Rect): Pt {
+  const mx = vp.x + vp.w / 2
+  const my = vp.y + vp.h / 2
+  // The side of the frame the camera sits on, and its inner edges grown by m.
+  const sx = cam.x + cam.w / 2 > mx ? 1 : -1
+  const sy = cam.y + cam.h / 2 > my ? 1 : -1
+  const ex = sx > 0 ? cam.x - m : cam.x + cam.w + m
+  const ey = sy > 0 ? cam.y - m : cam.y + cam.h + m
+  // How far p shows past each edge with the view centered at v (past both: under the camera).
+  const pastX = (v: Pt) => sx * (mx + (p.x - v.x) * s - ex)
+  const pastY = (v: Pt) => sy * (my + (p.y - v.y) * s - ey)
+  const q = clampCenter(c, bounds, s, vp) // where the view will be
+  const dx = pastX(q)
+  const dy = pastY(q)
+  if (dx <= 0 || dy <= 0) return c
+  // The least pan along each axis that clears p, where the bounds allow it.
+  const x = q.x + (sx * dx) / s
+  const y = q.y + (sy * dy) / s
+  const k = clampCenter({ x, y }, bounds, s, vp)
+  const okX = Math.abs(k.x - x) < 1e-6
+  const okY = Math.abs(k.y - y) < 1e-6
+  const hx = hold ? pastX(hold) : dx
+  const hy = hold ? pastY(hold) : dy
+  if (okX && (!okY || hx <= hy)) return { x: hx <= 0 && hx >= -m ? hold!.x : x, y: c.y }
+  return okY ? { x: c.x, y: hy <= 0 && hy >= -m ? hold!.y : y } : c
+}
 
 /** Exact one-step update of the spring over dt: [h, g, h', g'] where displacement after dt is
  *  d * h + v * g and velocity d * h' + v * g' (linear in the initial state, closed form). */
@@ -168,14 +210,16 @@ export function prepareZoom(input: SceneInput, map: TimeMap, layout: ReturnType<
 let last: { events: InputEvent[]; cursor: Float32Array; key: string; path: ZoomPath } | null = null
 
 /** The camera samples: plain data, a function of the output size, the zooms, the clips' timing, the
- *  events, the cursor path, and where the layout puts the screen over time. Edits that leave all of
- *  that alone (background, cursor size, captions, masks, a camera corner) reuse the last samples. */
+ *  events, the cursor path, and where the layout puts the screen and the corner camera over time (the
+ *  view keeps the cursor out from under the camera). Edits that leave all of that alone (background,
+ *  cursor size, captions, masks) reuse the last samples. */
 // ponytail: one cached result, recomputed whole when its inputs change (~90 ms per 2 hours, in the
 // preview's worker); resume from the first changed second if zoom edits must land faster.
 export function zoomPath(input: SceneInput, map: TimeMap, layout: ReturnType<typeof prepareLayout>, cursor: ReturnType<typeof prepareCursor>) {
   const { project, events, width, height } = input
-  const screens = Object.values(layout.targets).map((s) => [s.screen, s.screenRadius, s.viewport])
-  const key = JSON.stringify([width, height, project.sources.screen ?? null, project.zooms, map.clips.map((c) => [c.start, c.end, c.speed]), layout.changes, screens])
+  const screens = Object.values(layout.targets).map((s) => [s.screen, s.screenRadius, s.viewport, s.camera, s.pip, s.cameraOpacity])
+  const camera = !!project.sources.camera && [project.style.camera.position, project.style.camera.visible]
+  const key = JSON.stringify([width, height, project.sources.screen ?? null, project.zooms, map.clips.map((c) => [c.start, c.end, c.speed]), layout.changes, screens, camera])
   if (last?.events !== events || last.cursor !== cursor.x || last.key !== key) last = { events, cursor: cursor.x, key, path: simulate(input, map, layout, cursor) }
   return last.path
 }
@@ -228,12 +272,14 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
     while (si < cam.length && cam[si].b <= ts) si++
     const span = si < cam.length && cam[si].a <= ts ? cam[si] : null
     const zoom = span?.zoom
-    const s = Math.max(baseScale(vp, r, bounds), zoom ? zoom.level : 1)
+    const b0 = baseScale(vp, r, bounds)
+    const s = Math.max(b0, zoom ? zoom.level : 1)
 
     let c: Pt = { x: vp.x + vp.w / 2, y: vp.y + vp.h / 2 }
     if (zoom?.target.kind === 'point') c = aim = { x: r.x + zoom.target.x * r.w, y: r.y + zoom.target.y * r.h }
     else if (zoom || s > 1) {
-      // Follow: the cursor roams a dead zone, focus places stay central, the cursor stays in frame.
+      // Follow: the cursor roams a dead zone, focus places stay central, both stay out from under a
+      // picture-in-picture camera, and the cursor stays in frame above all.
       // Everything is read LAG ahead so the trailing spring lands on time.
       const tl = t + LAG
       const cp = cursorPt(tl, r)
@@ -247,6 +293,13 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
       c = aim ?? { x: r.x + r.w / 2, y: r.y + r.h / 2 }
       if (cp) c = keep(c, cp, DEAD_ZONE * hw, DEAD_ZONE * hh)
       for (let i = fi; i < frames.length && frames[i].a <= tl; i++) if (frames[i].b >= tl) c = keep(c, frames[i].p, FOCUS_ZONE * hw, FOCUS_ZONE * hh)
+      // The camera as it will sit once the view gets there (it steps back while zoomed in).
+      const pip = pipCameraAt(layout, tl, magnified(s, b0))
+      if (pip) {
+        const m = CAMERA_CLEAR * (screen.scale || 1) * (r.w / screen.width) * Math.max(1, project.style.cursor.size) * s
+        for (let i = fi; i < frames.length && frames[i].a <= tl; i++) if (frames[i].b >= tl) c = clear(c, frames[i].p, aim, pip, m, s, vp, bounds)
+        if (cp) c = clear(c, cp, aim, pip, m, s, vp, bounds)
+      }
       if (cp) c = keep(c, cp, EDGE_ZONE * hw, EDGE_ZONE * hh)
       c = aim = clampCenter(c, bounds, s, vp)
     }
@@ -294,7 +347,7 @@ export function viewAt(z: ReturnType<typeof prepareZoom>, t: number): View {
 export function zoomAmount(z: ReturnType<typeof prepareZoom>, t: number, v: View): number {
   const s = screenAt(z.layout, t)
   if (!s) return 0
-  return clamp(Math.log2(v.scale / baseScale(s.viewport, s.screen, inner(s.screen, s.screenRadius))), 0, 1)
+  return magnified(v.scale, baseScale(s.viewport, s.screen, inner(s.screen, s.screenRadius)))
 }
 
 export function loupeAt(z: ReturnType<typeof prepareZoom>, t: number): Loupe | null {

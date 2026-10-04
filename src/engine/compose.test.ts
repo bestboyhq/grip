@@ -65,6 +65,15 @@ test('preparePaths reuses what an edit left alone, and matches a fresh preparati
   const d = preparePaths(input)
   assert.ok(d.cursor === a.cursor && d.zoom !== c.zoom, 'padding moves the screen: the camera follows')
 
+  // With a corner camera the view keeps the cursor out from under it: moving the camera moves the view.
+  project.sources.camera = { file: 'c.mp4', width: 1280, height: 720, fps: 30, scale: 1 }
+  const withCam = preparePaths(input)
+  project.style.camera.position = 'top-left'
+  const moved = preparePaths(input)
+  assert.ok(moved.zoom !== withCam.zoom, 'a camera corner change: the camera path is recomputed')
+  delete project.sources.camera
+  project.style.camera.position = 'bottom-right'
+
   project.clips = [clip(0, 8), clip(11, 20)]
   const e = preparePaths(input)
   assert.ok(e.cursor !== a.cursor && e.zoom !== d.zoom, 'a cut: both again')
