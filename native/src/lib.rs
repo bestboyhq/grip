@@ -3,6 +3,7 @@
 //! Each module is owned by one domain; see AGENTS.md "Layout".
 
 mod clock;
+mod writer; // the one AVAssetWriter wrapper every recorded file goes through
 mod permissions; // capture
 mod capture; // capture: ScreenCaptureKit screen + system audio, recording session
 mod mic; // audio: microphone capture + level meter

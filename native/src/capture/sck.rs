@@ -1,6 +1,8 @@
 //! ScreenCaptureKit: display, window, and area capture with system audio, plus the display and
 //! window listings for the recorder UI.
 
+use std::ffi::c_void;
+use std::ptr::NonNull;
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -15,11 +17,12 @@ use objc2_app_kit::{
     NSApplicationActivationOptions, NSBitmapImageFileType, NSBitmapImageRep, NSImageCompressionFactor,
     NSRunningApplication, NSScreen,
 };
-use objc2_core_foundation::{CFArray, CFDictionary, CGPoint, CGRect, CGSize};
+use objc2_core_foundation::{CFArray, CFDictionary, CFRetained, CFString, CFType, CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{
     CGDisplayBounds, CGDisplayCopyDisplayMode, CGDisplayIsBuiltin, CGDisplayIsMain, CGDisplayIsOnline, CGDisplayMode,
     CGGetActiveDisplayList, CGImage, CGPreflightScreenCaptureAccess, CGRectMakeWithDictionaryRepresentation,
     CGWindowListCopyWindowInfo, CGWindowListOption, kCGColorSpaceSRGB, kCGDisplayStreamYCbCrMatrix_ITU_R_709_2,
+    kCGWindowBounds, kCGWindowOwnerPID,
 };
 use objc2_core_media::{CMSampleBuffer, CMTime};
 use objc2_core_video::kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
@@ -33,10 +36,10 @@ use objc2_screen_capture_kit::{
     SCStreamOutput, SCStreamOutputType, SCWindow,
 };
 
-use super::writer::{fit_encoder, interleaved_f32, ns_error};
-use super::{Rect, Target, Tracks, host_ns};
+use super::{Rect, Target, Tracks};
 use crate::input::CaptureGeometry;
-use crate::permissions::{Permission, missing};
+use crate::permissions::{Permission, PermissionStatus, missing, permission_status};
+use crate::writer::{fit_encoder, interleaved_f32, ns_error};
 
 /// What a target records: output size, frame rate, and how global points map to its pixels.
 pub struct Plan {
@@ -145,9 +148,18 @@ fn content(on_screen_only: bool) -> Result<Retained<SCShareableContent>, String>
     rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "Timed out listing screen content".to_string())?
 }
 
+const FINDER: &str = "com.apple.finder";
+
 /// Kept out of every capture, video and audio: our own processes (main app and its helpers,
 /// so the widget, camera preview, and area picker never show) and system notification banners.
-fn excluded(content: &SCShareableContent) -> Retained<NSArray<SCRunningApplication>> {
+/// Hiding desktop icons leaves Finder out too, except its windows: the icons are Finder's
+/// desktop window, which `content` does not list.
+/// ponytail: Finder windows opened after the start stay hidden with the icons; follow them with
+/// SCStream.updateContentFilter if that matters.
+fn excluded(
+    content: &SCShareableContent,
+    hide_icons: bool,
+) -> (Retained<NSArray<SCRunningApplication>>, Retained<NSArray<SCWindow>>) {
     let pid = std::process::id() as i32;
     let bundle = NSBundle::mainBundle().bundleIdentifier().map(|s| s.to_string());
     let apps: Vec<_> = unsafe { content.applications() }
@@ -156,10 +168,15 @@ fn excluded(content: &SCShareableContent) -> Retained<NSArray<SCRunningApplicati
             let id = unsafe { a.bundleIdentifier() }.to_string();
             (unsafe { a.processID() }) == pid
                 || id == "com.apple.notificationcenterui"
+                || (hide_icons && id == FINDER)
                 || bundle.as_ref().is_some_and(|b| id == *b || id.starts_with(&format!("{b}.")))
         })
         .collect();
-    NSArray::from_retained_slice(&apps)
+    let finder_windows: Vec<_> = unsafe { content.windows() }
+        .iter()
+        .filter(|w| hide_icons && unsafe { w.owningApplication() }.is_some_and(|a| unsafe { a.bundleIdentifier() }.to_string() == FINDER))
+        .collect();
+    (NSArray::from_retained_slice(&apps), NSArray::from_retained_slice(&finder_windows))
 }
 
 fn find_window(content: &SCShareableContent, id: u32) -> Option<Retained<SCWindow>> {
@@ -184,18 +201,112 @@ fn display_at(r: CGRect) -> u32 {
         .unwrap_or(0)
 }
 
+/// Owner pid and frame (global points) of window `id`, from the window server: no permission needed.
+fn window_info(id: u32) -> Option<(i32, CGRect)> {
+    let list = CGWindowListCopyWindowInfo(CGWindowListOption::OptionIncludingWindow, id)?;
+    // SAFETY: a CFArray of CFDictionary is toll-free bridged to NSArray of NSDictionary.
+    let list: &NSArray<NSDictionary<NSString, AnyObject>> = unsafe { &*(&*list as *const CFArray).cast() };
+    let info = list.firstObject()?;
+    let pid = number(&info, cf_ns(unsafe { kCGWindowOwnerPID }))? as i32;
+    Some((pid, cg_rect(&info, cf_ns(unsafe { kCGWindowBounds }))?))
+}
+
+fn cf_ns(s: &CFString) -> &NSString {
+    // SAFETY: CFString is toll-free bridged to NSString.
+    unsafe { &*(s as *const CFString).cast() }
+}
+
 pub fn window_exists(id: u32) -> bool {
-    CGWindowListCopyWindowInfo(CGWindowListOption::OptionIncludingWindow, id).is_some_and(|a| a.count() > 0)
+    window_info(id).is_some()
 }
 
 /// Why the source of `target` is gone, if it is.
 pub fn lost(target: &Target) -> Option<&'static str> {
-    match *target {
-        Target::Display { display_id } | Target::Area { display_id, .. } if !CGDisplayIsOnline(display_id) => {
+    match target {
+        Target::Display { display_id } | Target::Area { display_id, .. } if !CGDisplayIsOnline(*display_id) => {
             Some("The display was disconnected.")
         }
-        Target::Window { window_id } if !window_exists(window_id) => Some("The window was closed."),
+        Target::Window { window_id, .. } if !window_exists(*window_id) => Some("The window was closed."),
+        Target::Device { device_id } if !crate::camera::is_connected(device_id) => {
+            Some("The iPhone or iPad was disconnected.")
+        }
         _ => None,
+    }
+}
+
+#[link(name = "ApplicationServices", kind = "framework")]
+unsafe extern "C" {
+    fn AXUIElementCreateApplication(pid: i32) -> *mut CFType;
+    fn AXUIElementCopyAttributeValue(element: &CFType, attribute: &CFString, value: *mut *mut CFType) -> i32;
+    fn AXUIElementSetAttributeValue(element: &CFType, attribute: &CFString, value: &CFType) -> i32;
+    fn AXValueCreate(kind: u32, value: *const c_void) -> *mut CFType;
+    fn AXValueGetValue(value: &CFType, kind: u32, out: *mut c_void) -> u8;
+}
+const AX_POINT: u32 = 1; // kAXValueTypeCGPoint
+const AX_SIZE: u32 = 2; // kAXValueTypeCGSize
+
+fn retained(p: *mut CFType) -> Option<CFRetained<CFType>> {
+    NonNull::new(p).map(|p| unsafe { CFRetained::from_raw(p) })
+}
+
+fn ax_get(element: &CFType, attribute: &str) -> Option<CFRetained<CFType>> {
+    let mut out = std::ptr::null_mut();
+    let err = unsafe { AXUIElementCopyAttributeValue(element, &CFString::from_str(attribute), &mut out) };
+    retained(out).filter(|_| err == 0)
+}
+
+fn ax_frame(window: &CFType) -> Option<CGRect> {
+    let (mut origin, mut size) = (CGPoint::ZERO, CGSize::ZERO);
+    let point = unsafe { AXValueGetValue(&*ax_get(window, "AXPosition")?, AX_POINT, (&mut origin as *mut CGPoint).cast()) };
+    let sized = unsafe { AXValueGetValue(&*ax_get(window, "AXSize")?, AX_SIZE, (&mut size as *mut CGSize).cast()) };
+    (point != 0 && sized != 0).then(|| CGRect::new(origin, size))
+}
+
+fn ax_set<T>(window: &CFType, attribute: &str, kind: u32, value: &T) -> bool {
+    retained(unsafe { AXValueCreate(kind, (value as *const T).cast()) }).is_some_and(|v| unsafe {
+        AXUIElementSetAttributeValue(window, &CFString::from_str(attribute), &v) == 0
+    })
+}
+
+fn near(a: CGRect, b: CGRect) -> bool {
+    [a.origin.x - b.origin.x, a.origin.y - b.origin.y, a.size.width - b.size.width, a.size.height - b.size.height]
+        .iter()
+        .all(|d| d.abs() < 1.0)
+}
+
+/// Move and resize window `id` to `frame` (global points) with the Accessibility API before it is
+/// recorded. Returns where it ended up: an app may hold a minimum size or keep it on screen.
+pub fn place_window(id: u32, frame: Rect) -> Result<CGRect, String> {
+    if permission_status(Permission::Accessibility) != PermissionStatus::Granted {
+        return Err(missing(Permission::Accessibility).into());
+    }
+    let (pid, now) = window_info(id).ok_or("That window is no longer open.")?;
+    let app = retained(unsafe { AXUIElementCreateApplication(pid) }).ok_or("That app cannot be controlled.")?;
+    let windows = ax_get(&app, "AXWindows").ok_or("Studio could not move that window.")?;
+    // SAFETY: AXWindows is a CFArray of AXUIElements.
+    let windows: &CFArray<CFType> = unsafe { &*(&*windows as *const CFType).cast() };
+    // ponytail: the public API has no window id, so the window is found by its frame; two windows
+    // of one app stacked exactly may swap. _AXUIElementGetWindow (private) if that ever bites.
+    let window = (0..windows.len())
+        .filter_map(|i| windows.get(i))
+        .find(|w| ax_frame(w).is_some_and(|f| near(f, now)))
+        .ok_or("Studio could not move that window.")?;
+    let target = CGRect::new(CGPoint::new(frame.x, frame.y), CGSize::new(frame.w, frame.h));
+    // Size, move, size again: a move can clamp the size and a resize can push the window.
+    let moved = ax_set(&window, "AXSize", AX_SIZE, &target.size)
+        & ax_set(&window, "AXPosition", AX_POINT, &target.origin)
+        & ax_set(&window, "AXSize", AX_SIZE, &target.size);
+    if !moved {
+        return Err("Studio could not move that window.".into());
+    }
+    // The window server shows the new frame a moment later; record from there.
+    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+    loop {
+        let r = window_info(id).map(|(_, r)| r).ok_or("That window is no longer open.")?;
+        if near(r, target) || std::time::Instant::now() > deadline {
+            return Ok(r);
+        }
+        std::thread::sleep(Duration::from_millis(20));
     }
 }
 
@@ -204,18 +315,20 @@ pub fn prepare(
     target: &Target,
     fps: Option<f64>,
     audio: bool,
+    hide_icons: bool,
 ) -> Result<(Retained<SCContentFilter>, Retained<SCStreamConfiguration>, Plan), String> {
     let content = content(false)?;
     let config = unsafe { SCStreamConfiguration::new() };
     let (filter, area, display_id) = match *target {
         Target::Display { display_id } | Target::Area { display_id, .. } => {
             let display = find_display(&content, display_id).ok_or("That display is no longer connected.")?;
+            let (apps, keep) = excluded(&content, hide_icons);
             let filter = unsafe {
                 SCContentFilter::initWithDisplay_excludingApplications_exceptingWindows(
                     SCContentFilter::alloc(),
                     &display,
-                    &excluded(&content),
-                    &NSArray::new(),
+                    &apps,
+                    &keep,
                 )
             };
             let b = CGDisplayBounds(display_id);
@@ -237,8 +350,12 @@ pub fn prepare(
             };
             (filter, area, display_id)
         }
-        Target::Window { window_id } => {
+        Target::Window { window_id, frame } => {
             let window = find_window(&content, window_id).ok_or("That window is no longer open.")?;
+            let frame = match frame {
+                Some(f) => place_window(window_id, f)?,
+                None => unsafe { window.frame() },
+            };
             let filter =
                 unsafe { SCContentFilter::initWithDesktopIndependentWindow(SCContentFilter::alloc(), &window) };
             unsafe {
@@ -253,10 +370,11 @@ pub fn prepare(
             {
                 app.activateWithOptions(NSApplicationActivationOptions::empty());
             }
-            let frame = unsafe { window.frame() };
             (filter, frame, display_at(frame))
         }
-        Target::Synthetic { .. } => return Err("Synthetic targets do not use ScreenCaptureKit".into()),
+        Target::Synthetic { .. } | Target::Device { .. } => {
+            return Err("This target does not use ScreenCaptureKit".into());
+        }
     };
     let scale = unsafe { SCShareableContent::infoForFilter(&filter).pointPixelScale() } as f64;
     let scale = if scale > 0.0 { scale } else { 2.0 };
@@ -332,7 +450,7 @@ fn cg_rect(info: &NSDictionary<NSString, AnyObject>, key: &NSString) -> Option<C
 }
 
 fn on_sample(t: &Tracks, sb: &CMSampleBuffer, kind: SCStreamOutputType) {
-    let host = host_ns(unsafe { sb.presentation_time_stamp() });
+    let Some(host) = crate::clock::cm_ns(unsafe { sb.presentation_time_stamp() }) else { return };
     if kind == SCStreamOutputType::Screen {
         let Some(info) = frame_info(sb) else { return };
         // Idle/blank/suspended frames carry no image: only real content goes into the file.
@@ -435,7 +553,7 @@ impl Stream {
 /// On-screen app windows, front to back, with small thumbnails.
 pub fn windows() -> Result<Vec<Window>, String> {
     let content = content(true)?;
-    let own: Vec<i32> = excluded(&content).iter().map(|a| unsafe { a.processID() }).collect();
+    let own: Vec<i32> = excluded(&content, false).0.iter().map(|a| unsafe { a.processID() }).collect();
     let found: Vec<(Retained<SCWindow>, Window)> = unsafe { content.windows() }
         .iter()
         .filter_map(|w| unsafe {

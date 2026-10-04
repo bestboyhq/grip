@@ -3,6 +3,8 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use objc2_core_media::{CMTime, CMTimeFlags};
+
 unsafe extern "C" {
     fn mach_absolute_time() -> u64;
     fn mach_timebase_info(info: *mut [u32; 2]) -> i32;
@@ -18,6 +20,14 @@ pub fn host_to_ns(ticks: u64) -> u64 {
     let mut tb = [0u32; 2];
     unsafe { mach_timebase_info(&mut tb) };
     (ticks as u128 * tb[0] as u128 / tb[1] as u128) as u64
+}
+
+/// Nanoseconds of a CoreMedia timestamp on the host clock (ScreenCaptureKit, AVCapture). None when invalid.
+pub fn cm_ns(t: CMTime) -> Option<u64> {
+    if !t.flags.contains(CMTimeFlags::Valid) || t.timescale <= 0 || t.value < 0 {
+        return None;
+    }
+    Some((t.value as i128 * 1_000_000_000 / t.timescale as i128) as u64)
 }
 
 /// Session clock: source time 0 = recording start, paused intervals removed.
@@ -61,6 +71,13 @@ impl SessionClock {
 
 /// The clock of the current recording session, shared by every capture module.
 pub static SESSION: SessionClock = SessionClock::new();
+
+/// Tests that start or stop SESSION run one at a time, whatever module they are in.
+#[cfg(test)]
+pub fn serial() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 #[cfg(test)]
 mod tests {

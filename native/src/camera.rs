@@ -1,21 +1,20 @@
 //! Owner: camera. AVFoundation camera and iPhone/iPad (CoreMediaIO) capture, Vision analysis.
 //!
-//! How capture.rs drives this (all calls from one thread; none need the main thread):
+//! How capture/mod.rs drives this (all calls from one thread; none need the main thread):
 //! - Webcam: `CameraRecorder::start(id, "<bundle>/sources/camera.mp4")` (or `start_with(.., height)`
 //!   for 720/1080/2160) BEFORE `clock::SESSION.start()`, so the camera warms up during the countdown;
 //!   frames before the session start are dropped and the first kept frame opens the file at t = 0.
-//!   Call `pause()`/`resume()` next to `SESSION.pause()`/`resume()`, then `stop()` and put the
+//!   Call `pause()`/`resume()` next to `SESSION.pause()`/`resume()`, then `stop(end)` and put the
 //!   returned `VideoInfo` into `sources.camera`. The camera keeps running through pauses.
 //! - iPhone/iPad screen as the recording target: `DeviceRecorder::start(id, ".../screen.mp4",
-//!   ".../system.m4a")` with the same lifecycle. `stop()` returns `DeviceInfo`: `video` goes into
-//!   `sources.screen` (scale 1), `audio` into `sources.system`, and `rotations` into
+//!   Some(".../system.m4a"))` with the same lifecycle. `stop(end)` returns `DeviceInfo`: `video` goes
+//!   into `sources.screen` (scale 1), `audio` into `sources.system`, and `rotations` into
 //!   `sources.screen.rotations` (the file keeps the first frame's orientation; see `Rotation`).
 //!   Device ids come from `listCameras()` entries with kind "ios".
 //! - Both fail cleanly with a one-line, plain-language reason (no camera access, unplugged, ...).
 //!   Camera access must already be granted: request it (permissions.rs) before starting.
 
 mod analyze;
-mod writer;
 
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
@@ -42,25 +41,33 @@ use objc2_core_video::{CVPixelBuffer, CVPixelBufferGetHeight, CVPixelBufferGetWi
 use objc2_foundation::{NSArray, NSNotification, NSNotificationCenter, NSObject, NSObjectProtocol, NSString};
 
 use crate::clock::{self, SessionClock};
-use writer::{ns_error, AudioWriter, VideoSpec, VideoWriter};
+use crate::permissions::{Permission, missing};
+use crate::writer::{self, AudioWriter, VideoSpec, VideoWriter, interleaved_f32, ns_error};
 
 /// Camera quality when the caller does not choose one.
 pub const DEFAULT_HEIGHT: u32 = 1080;
 const TARGET_FPS: f64 = 30.0;
+/// Device audio: what the capture output converts to (writer::pcm_settings).
+const AUDIO_RATE: f64 = 48_000.0;
 
 pub struct VideoInfo {
     pub width: u32,
     pub height: u32,
     pub fps: f64,
-    /// Frames written to the file.
+    /// Seconds the track spans.
+    pub duration: f64,
+    /// Frames written to the file (diagnostics: the tests check them).
+    #[cfg_attr(not(test), allow(dead_code))]
     pub frames: u32,
     /// Frames lost: late in the capture pipeline, encoder busy, or out of order.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub dropped: u32,
 }
 
 /// From source time `t` on, stored frames must be turned `deg` degrees clockwise to be upright.
 /// An iPhone/iPad changes its screen size when rotated; the file keeps the first frame's size and
 /// orientation, so a frame of swapped size is stored turned 90° counter-clockwise (deg = 90).
+#[napi(object)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rotation {
     pub t: f64,
@@ -177,6 +184,11 @@ fn find_device(id: &str) -> Result<Retained<AVCaptureDevice>, String> {
         .ok_or_else(|| "That camera is not connected.".to_string())
 }
 
+/// Whether camera or iPhone/iPad `id` is still plugged in.
+pub fn is_connected(id: &str) -> bool {
+    find_device(id).is_ok()
+}
+
 /// Frame rate to run a format at: 30 when supported, else the closest below, else the lowest above.
 fn format_fps(ranges: &[(f64, f64)]) -> f64 {
     if ranges.iter().any(|&(lo, hi)| lo <= TARGET_FPS + 0.01 && hi >= TARGET_FPS - 0.01) {
@@ -221,7 +233,7 @@ fn resolve_format(device: &AVCaptureDevice, height: u32) -> Option<Resolved> {
     let (width, height, fps, ranges) = &infos[i];
     // Exact frame duration: 1/30 when a range covers it, else the range's own (e.g. 1001/30000).
     let frame = if (*fps - TARGET_FPS).abs() < 0.01 {
-        CMTime { value: 1, timescale: 30, ..writer::cm_time(0.0, 30) }
+        unsafe { CMTime::new(1, 30) }
     } else {
         let r = ranges.iter().find(|r| unsafe { (r.maxFrameRate() - fps).abs() < 0.01 || (r.minFrameRate() - fps).abs() < 0.01 })?;
         if unsafe { (r.maxFrameRate() - fps).abs() < 0.01 } { unsafe { r.minFrameDuration() } } else { unsafe { r.maxFrameDuration() } }
@@ -288,8 +300,7 @@ fn check_access() -> Result<(), String> {
     let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(AVMediaTypeVideo.expect("AVMediaTypeVideo")) };
     match status {
         AVAuthorizationStatus::Authorized => Ok(()),
-        AVAuthorizationStatus::NotDetermined => Err("Studio has not been allowed to use the camera yet.".into()),
-        _ => Err("Camera access is off. Turn it on in System Settings > Privacy & Security > Camera.".into()),
+        _ => Err(missing(Permission::Camera).into()),
     }
 }
 
@@ -371,7 +382,7 @@ impl Sink {
             Some(clock) => unsafe { CMSyncConvertTime(pts, clock, &CMClock::host_time_clock()) },
             None => pts,
         };
-        let ns = writer::time_ns(host)?;
+        let ns = clock::cm_ns(host)?;
         if ns >= st.pause.0 && ns < st.pause.1 {
             return None;
         }
@@ -385,31 +396,35 @@ impl Sink {
         let media = unsafe { format.media_type() };
         if media == kCMMediaType_Video {
             if let Some(pb) = unsafe { sb.image_buffer() } {
-                self.on_frame(&mut st, &pb, t);
+                self.on_frame(&mut st, pb, t);
             }
         } else if media == kCMMediaType_Audio {
             let Some(path) = &self.audio_path else { return };
+            let Some((samples, 2, rate)) = interleaved_f32(sb) else { return };
+            if rate != AUDIO_RATE {
+                return;
+            }
             if st.audio.is_none() && st.audio_error.is_none() {
-                match AudioWriter::create(path) {
+                match AudioWriter::new(path, AUDIO_RATE, 2) {
                     Ok(a) => st.audio = Some(a),
                     Err(e) => st.audio_error = Some(e),
                 }
             }
             if let Some(audio) = st.audio.as_mut() {
-                audio.append(sb, t);
+                audio.push(t, &samples);
             }
         }
     }
 
-    fn on_frame(&self, st: &mut State, pb: &CVPixelBuffer, t: f64) {
-        let (w, h) = (CVPixelBufferGetWidth(pb), CVPixelBufferGetHeight(pb));
+    fn on_frame(&self, st: &mut State, pb: CFRetained<CVPixelBuffer>, t: f64) {
+        let (w, h) = (CVPixelBufferGetWidth(&pb), CVPixelBufferGetHeight(&pb));
         if st.video.is_none() {
             if st.error.is_some() {
                 return;
             }
             let (width, height) = self.size.unwrap_or((w, h));
-            let spec = VideoSpec { width, height, fps: self.fps, bits_per_pixel: self.bits_per_pixel, realtime: true, timescale: 90_000, start: 0.0 };
-            match VideoWriter::create(&self.video_path, spec) {
+            let spec = VideoSpec { width, height, fps: self.fps, bits_per_pixel: self.bits_per_pixel, realtime: true };
+            match VideoWriter::new(&self.video_path, spec) {
                 Ok(v) => st.video = Some(v),
                 Err(e) => {
                     st.error = Some(e);
@@ -420,13 +435,19 @@ impl Sink {
         let State { video: Some(video), rotator, deg, rotations, .. } = st else { return };
         let (cw, ch) = (video.spec.width, video.spec.height);
         let turned = self.rotate && w != h && (w, h) == (ch, cw);
-        let rotated = if turned { rotate_into(rotator, pb, video.pool().as_deref()) } else { None };
-        if turned && rotated.is_none() {
-            video.dropped += 1;
-            return;
-        }
+        let frame = if turned {
+            match rotate_into(rotator, &pb, video.pool().as_deref()) {
+                Some(r) => r,
+                None => {
+                    video.dropped += 1;
+                    return;
+                }
+            }
+        } else {
+            pb
+        };
         let now = if turned { 90 } else { 0 };
-        if video.append(rotated.as_deref().unwrap_or(pb), t) && now != *deg {
+        if video.frame(frame, Some(t)) && now != *deg {
             *deg = now;
             rotations.push(Rotation { t: video.last_time().unwrap_or(t), deg: now });
         }
@@ -443,14 +464,9 @@ impl Sink {
             return Err(st.error.take().unwrap_or_else(|| "The camera did not deliver any video.".into()));
         };
         let end = end.or(video.last_time().map(|l| l + 1.0 / self.fps)).unwrap_or(0.0);
-        let info = VideoInfo {
-            width: video.spec.width as u32,
-            height: video.spec.height as u32,
-            fps: self.fps,
-            frames: video.frames,
-            dropped: video.dropped + self.capture_drops.load(Ordering::Relaxed),
-        };
-        video.finish(end)?;
+        let (width, height, frames) = (video.spec.width as u32, video.spec.height as u32, video.frames);
+        let dropped = video.dropped + self.capture_drops.load(Ordering::Relaxed);
+        let info = VideoInfo { width, height, fps: self.fps, duration: video.finish(end)?, frames, dropped };
         let audio = match audio {
             Some(a) => a.finish(end).inspect_err(|e| eprintln!("device audio: {e}")).is_ok(),
             None => {
@@ -635,11 +651,10 @@ impl Capture {
         self.queue.exec_sync(|| {});
     }
 
-    /// Stop and finalize the files.
-    fn finish(mut self) -> Result<(VideoInfo, bool, Vec<Rotation>), String> {
-        let end = self.sink.clock.source_secs(clock::now_ns());
+    /// Stop and finalize the files, the last frame held until source time `end`.
+    fn finish(mut self, end: f64) -> Result<(VideoInfo, bool, Vec<Rotation>), String> {
         self.halt();
-        self.sink.finish(end)
+        self.sink.finish(Some(end))
     }
 }
 
@@ -697,9 +712,9 @@ impl CameraRecorder {
         self.capture.sink.resume_at(clock::now_ns());
     }
 
-    /// Stop and finalize the file.
-    pub fn stop(self) -> Result<VideoInfo, String> {
-        self.capture.finish().map(|(info, _, _)| info)
+    /// Stop and finalize the file, ending at source time `end` with the rest of the recording.
+    pub fn stop(self, end: f64) -> Result<VideoInfo, String> {
+        self.capture.finish(end).map(|(info, _, _)| info)
     }
 }
 
@@ -709,10 +724,11 @@ pub struct DeviceRecorder {
 }
 
 impl DeviceRecorder {
-    pub fn start(device_id: &str, video_path: &Path, audio_path: &Path) -> Result<Self, String> {
+    /// Record the device screen to `video_path`, and its audio to `audio_path` when given.
+    pub fn start(device_id: &str, video_path: &Path, audio_path: Option<&Path>) -> Result<Self, String> {
         check_access()?;
         check_dir(video_path)?;
-        check_dir(audio_path)?;
+        audio_path.map(check_dir).transpose()?;
         let device = find_device(device_id).map_err(|_| "That iPhone or iPad is not connected.".to_string())?;
         if !unsafe { device.hasMediaType(AVMediaTypeMuxed.expect("AVMediaTypeMuxed")) } {
             return Err("That device is not an iPhone or iPad screen.".into());
@@ -722,12 +738,15 @@ impl DeviceRecorder {
             .map(|r| unsafe { r.maxFrameRate() })
             .fold(0.0, f64::max);
         let mut sink = Sink::new(&clock::SESSION, video_path, if fps > 0.0 { fps } else { 60.0 }, 0.1, None, true);
-        sink.audio_path = Some(audio_path.to_owned());
+        sink.audio_path = audio_path.map(Path::to_owned);
         let capture = Capture::start(device, sink, None, |session, delegate, queue| {
             add_video_output(session, delegate, queue, None)?;
+            if audio_path.is_none() {
+                return Ok(());
+            }
             let audio = unsafe { AVCaptureAudioDataOutput::new() };
             unsafe {
-                audio.setAudioSettings(Some(&writer::pcm_settings()));
+                audio.setAudioSettings(Some(&writer::pcm_settings(AUDIO_RATE, 2)));
                 audio.setSampleBufferDelegate_queue(Some(ProtocolObject::from_ref(delegate)), Some(queue));
                 if session.canAddOutput(&audio) {
                     session.addOutput(&audio);
@@ -746,8 +765,8 @@ impl DeviceRecorder {
         self.capture.sink.resume_at(clock::now_ns());
     }
 
-    pub fn stop(self) -> Result<DeviceInfo, String> {
-        self.capture.finish().map(|(video, audio, rotations)| DeviceInfo { video, audio, rotations })
+    pub fn stop(self, end: f64) -> Result<DeviceInfo, String> {
+        self.capture.finish(end).map(|(video, audio, rotations)| DeviceInfo { video, audio, rotations })
     }
 }
 

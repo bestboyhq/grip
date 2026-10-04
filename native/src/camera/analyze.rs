@@ -18,7 +18,7 @@ use objc2_vision::{
     VNGeneratePersonSegmentationRequestQualityLevel, VNRequest, VNSequenceRequestHandler,
 };
 
-use super::writer::{ns_error, nv12_attributes, VideoSpec, VideoWriter};
+use crate::writer::{ns_error, nv12_attributes, VideoSpec, VideoWriter};
 
 const FACE_INTERVAL: f64 = 0.1; // seconds between face samples (10 Hz)
 const FACE_SIGMA: f64 = 0.25; // seconds, Gaussian smoothing of the face track
@@ -83,7 +83,6 @@ fn run(path: &Path, matte_path: &Path, cancel: &AtomicBool, progress: &mut impl 
         f if f > 0.0 => f,
         _ => 30.0,
     };
-    let timescale = unsafe { track.naturalTimeScale() };
     let total = (length * fps).max(1.0);
 
     let reader = unsafe { AVAssetReader::assetReaderWithAsset_error(&asset) }.map_err(|e| ns_error(&e))?;
@@ -138,16 +137,9 @@ fn run(path: &Path, matte_path: &Path, cancel: &AtomicBool, progress: &mut impl 
             return fail(writer, "Vision returned no person matte.".into());
         };
         if writer.is_none() {
-            let spec = VideoSpec {
-                width: CVPixelBufferGetWidth(&mask),
-                height: CVPixelBufferGetHeight(&mask),
-                fps,
-                bits_per_pixel: 0.05,
-                realtime: false,
-                timescale,
-                start: t,
-            };
-            match VideoWriter::create(matte_path, spec) {
+            let (width, height) = (CVPixelBufferGetWidth(&mask), CVPixelBufferGetHeight(&mask));
+            let spec = VideoSpec { width, height, fps, bits_per_pixel: 0.05, realtime: false };
+            match VideoWriter::new(matte_path, spec) {
                 Ok(w) => writer = Some(w),
                 Err(e) => return fail(None, e),
             }
@@ -156,8 +148,8 @@ fn run(path: &Path, matte_path: &Path, cancel: &AtomicBool, progress: &mut impl 
         let Some(out) = w.pool().and_then(|p| super::pixel_buffer(&p)) else {
             return fail(writer, "Out of memory for the matte.".into());
         };
-        if !matte_to_nv12(&mask, &out) || !w.append(&out, t) {
-            let e = w.error.clone().unwrap_or("Could not write the matte.".into());
+        if !matte_to_nv12(&mask, &out) || !w.frame(out, Some(t)) {
+            let e = w.error().unwrap_or("Could not write the matte.".into());
             return fail(writer, e);
         }
         if want_face {

@@ -8,7 +8,8 @@
 //   recording:windows -> Window[]          (rejects with a one-line reason without Screen Recording)
 //   recording:microphones -> Microphone[]
 //   recording:micMonitor(micId?)           start the level meter; recording:micMonitorStop ends it
-//   recording:start({ target, cameraId?, micId?, systemAudio, fps? }) -> RecState
+//   recording:start({ target, cameraId?, micId?, systemAudio, hideDesktopIcons?, fps? }) -> RecState
+//     target: display | window (frame?: move and resize it there first) | area | device (iPhone/iPad)
 //   recording:pause | recording:resume | recording:cancel | recording:restart -> RecState
 //   recording:stop -> RecordingSources | null
 // Calls in the wrong state are no-ops that return the current state.
@@ -22,13 +23,13 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
-import { readdir, rm, stat } from 'node:fs/promises'
+import { rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { Permission, RecordingEvent, RecordingSources, StartOptions } from '../native/index.d.ts'
 import { createProject } from '../src/shared/project.ts'
 import { analyzeCamera } from './camera.ts'
 import { native } from './native.ts'
-import { createBundle, projectsDir, writeProject } from './projects.ts'
+import { createBundle, projectEvents, projectsDir, readProject, writeProject } from './projects.ts'
 
 /** Main-process listeners (dock, quit prompt): 'state' (RecState), 'finished' and 'recovered' (bundle path). */
 export const recordingEvents = new EventEmitter()
@@ -102,6 +103,7 @@ async function start(req: StartRequest) {
       micId: req.micId ?? undefined,
       systemAudio: Boolean(req.systemAudio),
       fps: req.fps ?? undefined,
+      hideDesktopIcons: Boolean(req.hideDesktopIcons),
     }
     return await native.startRecording(options, onEvent)
   } catch (err) {
@@ -118,29 +120,16 @@ async function stop() {
   return sources
 }
 
-/** A crash or power loss leaves a bundle with sources but no project.json: make it whole. */
-async function recoverInterrupted() {
-  const root = projectsDir()
-  const names = await readdir(root).catch(() => [] as string[])
-  for (const name of names) {
-    const dir = join(root, name)
-    if (!name.endsWith('.studio') || dir === bundle || existsSync(join(dir, 'project.json'))) continue
-    // A live recording (another instance) writes every second; only touch files at rest.
-    const screen = await stat(join(dir, 'sources', 'screen.mp4')).catch(() => null)
-    if (!screen || Date.now() - screen.mtimeMs < 30_000) continue
-    try {
-      const sources = await native.recoverRecording(dir)
-      await writeProject(dir, createProject(basename(dir, '.studio'), sources))
-      broadcast('recording:recovered', dir)
-      recordingEvents.emit('recovered', dir)
-    } catch (err) {
-      console.error('Could not recover', dir, err)
-    }
-  }
+/** A crash or power loss leaves a bundle with sources but no project.json. projects.ts rebuilds it
+ *  at launch (repairing the files through native.repairRecording); tell the user and finish its camera. */
+async function recovered(dir: string) {
+  broadcast('recording:recovered', dir)
+  recordingEvents.emit('recovered', dir)
+  if ((await readProject(dir)).sources.camera) await analyzeCamera(dir)
 }
 
 export function registerRecording() {
-  recoverInterrupted().catch((err) => console.error('recoverInterrupted', err))
+  projectEvents.on('recovered', (dir: string) => recovered(dir).catch((err) => console.error('recovered', dir, err)))
 
   ipcMain.handle('recording:state', () => native.recordingState())
   ipcMain.handle('recording:permissions', () => Object.fromEntries(PERMISSIONS.map((k) => [k, native.permissionStatus(k)])))

@@ -11,7 +11,6 @@
 pub mod recover;
 pub mod sck;
 pub mod synthetic;
-pub mod writer;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,17 +23,16 @@ use napi::bindgen_prelude::spawn_blocking;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use objc2_core_foundation::CFRetained;
-use objc2_core_media::CMTime;
 use objc2_core_video::CVPixelBuffer;
 use objc2_foundation::{
     NSArray, NSNumber, NSURL, NSURLVolumeAvailableCapacityForImportantUsageKey, NSURLVolumeAvailableCapacityKey,
 };
 
-use crate::camera::CameraRecorder;
+use crate::camera::{CameraRecorder, DeviceRecorder, Rotation};
 use crate::clock::{self, SESSION};
 use crate::input::{CaptureGeometry, InputRecorder};
 use crate::mic::{self, MicRecorder};
-use writer::{AudioWriter, VideoWriter};
+use crate::writer::{AudioWriter, VideoSpec, VideoWriter};
 
 const GB: u64 = 1 << 30;
 /// Refuse to start below this much free space.
@@ -65,7 +63,9 @@ pub struct Rect {
     pub h: f64,
 }
 
-/// What to record. An area rect is in points relative to its display's top-left corner.
+/// What to record. An area rect is in points relative to its display's top-left corner. A window
+/// `frame` (global points) moves and resizes the window there first, which needs Accessibility.
+/// A device is an iPhone or iPad over USB (listCameras kind 'ios'); its audio is the system track.
 #[napi(discriminant = "kind", discriminant_case = "lowercase")]
 #[derive(Clone, Debug)]
 pub enum Target {
@@ -74,10 +74,14 @@ pub enum Target {
     },
     Window {
         window_id: u32,
+        frame: Option<Rect>,
     },
     Area {
         display_id: u32,
         rect: Rect,
+    },
+    Device {
+        device_id: String,
     },
     /// Scrolling test pattern and a tone: for tests and agents without Screen Recording permission.
     Synthetic {
@@ -97,6 +101,8 @@ pub struct StartOptions {
     pub system_audio: bool,
     /// Frames per second; default the display refresh rate, capped at 60.
     pub fps: Option<f64>,
+    /// Leave the desktop icons out of display and area recordings.
+    pub hide_desktop_icons: Option<bool>,
 }
 
 /// Matches VideoSource in src/shared/project.ts.
@@ -108,6 +114,8 @@ pub struct VideoSourceInfo {
     pub height: u32,
     pub fps: f64,
     pub scale: f64,
+    /// iPhone/iPad rotation changes (see camera::Rotation).
+    pub rotations: Option<Vec<Rotation>>,
 }
 
 /// Matches AudioSource in src/shared/project.ts.
@@ -158,14 +166,6 @@ pub enum RecordingEvent {
 }
 
 pub type Emit = Arc<dyn Fn(RecordingEvent) + Send + Sync>;
-
-/// Host time in ns of a CoreMedia timestamp on the host clock (ScreenCaptureKit, AVCapture).
-pub fn host_ns(t: CMTime) -> u64 {
-    if t.timescale <= 0 || t.value < 0 {
-        return 0;
-    }
-    (t.value as i128 * 1_000_000_000 / t.timescale as i128) as u64
-}
 
 /// Free bytes on the volume of `dir`. "Important usage" counts purgeable space on APFS but
 /// reads 0 on some other volumes (HFS+, disk images), so take the larger of the two.
@@ -227,6 +227,20 @@ impl synthetic::Sink for Tracks {
 enum Source {
     Sck(sck::Stream),
     Synthetic(synthetic::Source),
+    /// Writes screen.mp4 and system.m4a itself, at the device's own size and rate.
+    Device(DeviceRecorder),
+}
+
+impl Source {
+    /// Stop delivering. A device finalizes its files here, until `end`.
+    fn stop(self, end: f64) -> Option<Result<crate::camera::DeviceInfo, String>> {
+        match self {
+            Source::Sck(s) => s.stop(),
+            Source::Synthetic(s) => s.stop(),
+            Source::Device(d) => return Some(d.stop(end)),
+        }
+        None
+    }
 }
 
 struct Recording {
@@ -271,14 +285,24 @@ impl Recording {
                 let geometry = CaptureGeometry { x: 0.0, y: 0.0, w: w as f64, h: h as f64, scale: 1.0 };
                 (sck::Plan { width: w, height: h, fps: opts.fps.unwrap_or(30.0).clamp(1.0, 60.0), geometry }, None)
             }
+            // The device writes its own screen.mp4 (camera.rs); its size comes with the first frame.
+            Target::Device { .. } => (sck::Plan { width: 0, height: 0, fps: 0.0, geometry: Default::default() }, None),
             ref t => {
-                let (filter, config, plan) = sck::prepare(t, opts.fps, opts.system_audio)?;
+                let hide_icons = opts.hide_desktop_icons.unwrap_or(false);
+                let (filter, config, plan) = sck::prepare(t, opts.fps, opts.system_audio, hide_icons)?;
                 (plan, Some((filter, config)))
             }
         };
-        let video = VideoWriter::new(&dir.join("screen.mp4"), plan.width, plan.height, plan.fps)?;
+        let video = match opts.target {
+            Target::Device { .. } => None,
+            _ => {
+                let (width, height, fps) = (plan.width, plan.height, plan.fps);
+                let spec = VideoSpec { width, height, fps, bits_per_pixel: 0.12, realtime: true };
+                Some(VideoWriter::new(&dir.join("screen.mp4"), spec)?)
+            }
+        };
         let tracks = Arc::new(Tracks {
-            video: Mutex::new(Some(video)),
+            video: Mutex::new(video),
             system: Mutex::new(None),
             geometry: Arc::new(Mutex::new(plan.geometry)),
             size: (plan.width, plan.height),
@@ -318,7 +342,11 @@ impl Recording {
         width: usize,
         height: usize,
     ) -> Result<(), String> {
-        if self.opts.system_audio {
+        let device = match &self.opts.target {
+            Target::Device { device_id } => Some(device_id.clone()),
+            _ => None,
+        };
+        if self.opts.system_audio && device.is_none() {
             *self.tracks.system.lock().unwrap() = Some(AudioWriter::new(&self.dir.join("system.m4a"), 48_000.0, 2)?);
         }
         // Mic, camera, and input start first (devices warm up); they stamp nothing until SESSION starts.
@@ -334,15 +362,27 @@ impl Recording {
                 Err(e) => self.warn("camera", format!("Recording without the camera: {e}")),
             }
         }
-        match InputRecorder::start(&self.dir, self.tracks.geometry.clone()) {
-            Ok(r) => self.input = Some(r),
-            Err(e) => self.warn("input", format!("The cursor, clicks, and keys are not recorded: {e}")),
+        // The pointer and keys are the Mac's: an iPhone or iPad screen has none of them.
+        if device.is_none() {
+            match InputRecorder::start(&self.dir, self.tracks.geometry.clone()) {
+                Ok(r) => {
+                    if let Some(why) = r.warning() {
+                        self.warn("input", why.into());
+                    }
+                    self.input = Some(r);
+                }
+                Err(e) => self.warn("input", format!("The cursor, clicks, and keys are not recorded: {e}")),
+            }
         }
-        self.source = Some(match sck {
-            Some((filter, config)) => {
+        self.source = Some(match (sck, device) {
+            (Some((filter, config)), _) => {
                 Source::Sck(sck::Stream::start(&filter, &config, self.tracks.clone(), self.opts.system_audio)?)
             }
-            None => Source::Synthetic(synthetic::Source::start(
+            (None, Some(id)) => {
+                let audio = self.opts.system_audio.then(|| self.dir.join("system.m4a"));
+                Source::Device(DeviceRecorder::start(&id, &self.dir.join("screen.mp4"), audio.as_deref())?)
+            }
+            (None, None) => Source::Synthetic(synthetic::Source::start(
                 self.tracks.clone(),
                 width,
                 height,
@@ -366,6 +406,9 @@ impl Recording {
         if let Some(c) = &self.camera {
             c.pause();
         }
+        if let Some(Source::Device(d)) = &self.source {
+            d.pause();
+        }
     }
 
     fn resume(&mut self) {
@@ -373,6 +416,9 @@ impl Recording {
         self.paused_at = None;
         if let Some(c) = &self.camera {
             c.resume();
+        }
+        if let Some(Source::Device(d)) = &self.source {
+            d.resume();
         }
         // The screen may have changed while paused without sending a frame since: show it now.
         if let (Some(t), Some(v)) = (SESSION.source_secs(clock::now_ns()), self.tracks.video.lock().unwrap().as_mut()) {
@@ -480,11 +526,7 @@ impl Recording {
             thread::sleep(Duration::from_millis(10));
         }
         self.stop_monitor();
-        match self.source.take() {
-            Some(Source::Sck(s)) => s.stop(),
-            Some(Source::Synthetic(s)) => s.stop(),
-            None => {}
-        }
+        let device = self.source.take().and_then(|s| s.stop(end));
         let rel = |f: &str| format!("sources/{f}");
         let mut problems: Vec<String> = vec![];
         let events = match self.input.take().map(|i| i.stop()) {
@@ -495,13 +537,14 @@ impl Recording {
             }
             _ => None,
         };
-        let camera = match self.camera.take().map(|c| c.stop()) {
+        let camera = match self.camera.take().map(|c| c.stop(end)) {
             Some(Ok(v)) => Some(VideoSourceInfo {
                 file: rel("camera.mp4"),
                 width: v.width,
                 height: v.height,
                 fps: v.fps,
                 scale: 1.0,
+                rotations: None,
             }),
             Some(Err(e)) => {
                 problems.push(format!("Camera: {e}"));
@@ -519,56 +562,64 @@ impl Recording {
         let taken = self.mic.lock().unwrap().take();
         let mic = taken.and_then(|m| audio(m.finish(end), "mic.m4a", &mut problems));
         let taken = self.tracks.system.lock().unwrap().take();
-        let system = taken.and_then(|a| {
+        let mut system = taken.and_then(|a| {
             let ch = a.channels;
             audio(a.finish(end).map(|_| ch), "system.m4a", &mut problems)
         });
         let taken = self.tracks.video.lock().unwrap().take();
-        let (screen, duration) = match taken.map(|v| v.finish(end)) {
-            Some(Ok(d)) => {
-                let (w, h) = self.tracks.size;
-                (
-                    Some(VideoSourceInfo {
-                        file: rel("screen.mp4"),
-                        width: w as u32,
-                        height: h as u32,
-                        fps: self.fps,
-                        scale: self.scale,
-                    }),
-                    d,
-                )
+        let (w, h) = self.tracks.size;
+        let video = |width, height, fps, scale, rotations| VideoSourceInfo {
+            file: rel("screen.mp4"),
+            width,
+            height,
+            fps,
+            scale,
+            rotations,
+        };
+        let (screen, duration) = match (device, taken.map(|v| v.finish(end))) {
+            (Some(Ok(d)), _) => {
+                if d.audio {
+                    system = Some(AudioSourceInfo { file: rel("system.m4a"), channels: 2, sample_rate: mic::RATE });
+                }
+                let v = d.video;
+                let rotations = (!d.rotations.is_empty()).then_some(d.rotations);
+                (Some(video(v.width, v.height, v.fps, 1.0, rotations)), v.duration)
             }
-            Some(Err(e)) => {
+            (None, Some(Ok(d))) => (Some(video(w as u32, h as u32, self.fps, self.scale, None)), d),
+            (Some(Err(e)), _) | (None, Some(Err(e))) => {
                 problems.push(e);
                 (None, end)
             }
-            None => (None, end),
+            (None, None) => (None, end),
         };
         SESSION.start(0);
-        let (reason, message) = match (screen.is_some(), problems.is_empty()) {
-            (true, true) => (reason.to_string(), message),
+        let sources = RecordingSources { duration, screen, camera, mic, system, events };
+        match (sources.screen.is_some(), problems.is_empty()) {
+            (true, true) => (sources, reason.to_string(), message),
             (true, false) => {
                 self.warn("finish", format!("Some tracks could not be saved. {}", problems.join(" ")));
-                (reason.to_string(), message)
+                (sources, reason.to_string(), message)
             }
-            (false, _) => ("error".to_string(), Some(format!("Nothing was recorded. {}", problems.join(" ")))),
-        };
-        (RecordingSources { duration, screen, camera, mic, system, events }, reason, message)
+            // A writer that failed mid-way (disk full) left its fragments: make them whole.
+            (false, _) => match self.dir.parent().map(recover::recover) {
+                Some(Ok(s)) => {
+                    let why = format!("Writing the recording failed, so it ends early. {}", problems.join(" "));
+                    (s, "error".into(), Some(why))
+                }
+                _ => (sources, "error".into(), Some(format!("Nothing was recorded. {}", problems.join(" ")))),
+            },
+        }
     }
 
     /// Stop everything and delete what was recorded.
     fn cancel(mut self) {
         self.stop_monitor();
-        match self.source.take() {
-            Some(Source::Sck(s)) => s.stop(),
-            Some(Source::Synthetic(s)) => s.stop(),
-            None => {}
-        }
+        let _ = self.source.take().and_then(|s| s.stop(0.0));
         if let Some(i) = self.input.take() {
             let _ = i.stop();
         }
         if let Some(c) = self.camera.take() {
-            let _ = c.stop();
+            let _ = c.stop(0.0);
         }
         if let Some(m) = self.mic.lock().unwrap().take() {
             m.cancel();
@@ -772,15 +823,9 @@ pub async fn list_windows() -> napi::Result<Vec<sck::Window>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clock::serial;
     use std::process::Command;
     use std::time::Instant;
-
-    /// Session tests share the global session and clock: run them one at a time.
-    static SERIAL: Mutex<()> = Mutex::new(());
-
-    fn serial() -> MutexGuard<'static, ()> {
-        SERIAL.lock().unwrap_or_else(|e| e.into_inner())
-    }
 
     /// A fresh bundle with a hostile name.
     fn bundle(tag: &str) -> PathBuf {
@@ -804,6 +849,7 @@ mod tests {
             mic_id: None,
             system_audio: audio,
             fps: Some(30.0),
+            hide_desktop_icons: None,
         }
     }
 
@@ -869,13 +915,28 @@ mod tests {
         assert!(gap < 0.2, "largest frame gap {gap}");
         assert!(pts.len() > 60, "{} frames", pts.len());
 
+        // Input events ran on the session clock: the pointer is there from the start, nothing
+        // lands in the pause or after the end.
+        assert_eq!(s.events.as_deref(), Some("sources/events.jsonl"));
+        let text = fs::read_to_string(dir.join("sources/events.jsonl")).unwrap();
+        let ev: Vec<serde_json::Value> = text.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        let first_move = ev.iter().find(|e| e["type"] == "move").expect("pointer position").clone();
+        assert!(first_move["t"].as_f64().unwrap() < 0.1, "{first_move}");
+        assert!(ev.iter().all(|e| e["t"].as_f64().unwrap() <= s.duration), "events end with the recording");
         let s = s.screen.unwrap();
         assert_eq!((s.file.as_str(), s.width, s.height, s.fps), ("sources/screen.mp4", 1280, 720, 30.0));
         let log = log.lock().unwrap();
-        assert!(
-            log.iter().any(|e| matches!(e, RecordingEvent::Warning { code, .. } if code == "input")),
-            "input stub warned"
-        );
+        // The input recorder's permission warning reaches the recorder UI as a recording warning.
+        use crate::permissions::{Permission, PermissionStatus, permission_status};
+        let keys = [Permission::InputMonitoring, Permission::Accessibility]
+            .iter()
+            .any(|p| permission_status(*p) == PermissionStatus::Granted);
+        let warned = log.iter().find_map(|e| match e {
+            RecordingEvent::Warning { code, message } if code == "input" => Some(message.clone()),
+            _ => None,
+        });
+        assert_eq!(warned.is_some(), !keys, "{warned:?}");
+        assert!(warned.is_none_or(|m| m.contains("Input Monitoring") && !m.contains('\n')));
         assert!(matches!(log.iter().rev().find(|e| matches!(e, RecordingEvent::Finished { .. })),
             Some(RecordingEvent::Finished { reason, .. }) if reason == "user"));
     }
@@ -886,7 +947,8 @@ mod tests {
         let dir = bundle("still");
         let file = dir.join("screen.mp4");
         let pattern = synthetic::Pattern::new(640, 360);
-        let mut v = VideoWriter::new(&file, 640, 360, 30.0).unwrap();
+        let spec = VideoSpec { width: 640, height: 360, fps: 30.0, bits_per_pixel: 0.12, realtime: true };
+        let mut v = VideoWriter::new(&file, spec).unwrap();
         // The only frame arrives before the clock starts, like ScreenCaptureKit's first frame.
         v.frame(pattern.frame(0).unwrap(), None);
         for i in 1..30 {
@@ -1063,7 +1125,7 @@ mod tests {
         let main = objc2_core_graphics::CGMainDisplayID();
         for target in [
             Target::Display { display_id: main },
-            Target::Window { window_id: 1 },
+            Target::Window { window_id: 1, frame: None },
             Target::Area { display_id: main, rect: Rect { x: 0.0, y: 0.0, w: 400.0, h: 300.0 } },
         ] {
             let opts = StartOptions { target, ..synthetic(&dir, true) };
@@ -1074,6 +1136,31 @@ mod tests {
         }
         assert_eq!(sck::windows().unwrap_err(), crate::permissions::missing(crate::permissions::Permission::Screen));
         assert!(!sck::displays().is_empty(), "displays list without permission");
+    }
+
+    /// Moving a window needs Accessibility; without it the reason is one line, and nothing moves.
+    #[test]
+    fn window_placement_without_accessibility_fails_cleanly() {
+        use crate::permissions::{Permission, PermissionStatus, missing, permission_status};
+        if permission_status(Permission::Accessibility) == PermissionStatus::Granted {
+            return; // granted here: the denied path cannot be exercised
+        }
+        let err = sck::place_window(1, Rect { x: 0.0, y: 0.0, w: 800.0, h: 600.0 }).unwrap_err();
+        assert_eq!(err, missing(Permission::Accessibility));
+    }
+
+    /// An iPhone or iPad target that is not there fails in one line and leaves nothing behind.
+    #[test]
+    fn missing_device_fails_cleanly() {
+        let _g = serial();
+        let dir = bundle("device");
+        let (emit, log) = events();
+        let target = Target::Device { device_id: "no-such-iphone".into() };
+        let err = start(StartOptions { target, ..synthetic(&dir, true) }, emit).unwrap_err();
+        assert!(!err.is_empty() && !err.contains('\n'), "{err}");
+        assert_eq!(state(), RecState::Idle);
+        assert_eq!(fs::read_dir(dir.join("sources")).map_or(0, |d| d.count()), 0, "nothing left behind");
+        assert!(!log.lock().unwrap().iter().any(|e| matches!(e, RecordingEvent::Warning { code, .. } if code == "input")));
     }
 
     /// Small disk images: refused below 1 GB free; a disk that fills up mid-recording ends it cleanly.
@@ -1162,7 +1249,7 @@ mod tests {
             for _ in 0..(3600 * 100) {
                 let t = device as f64 / (rate * (1.0 + ppm / 1e6));
                 let (pad, skip, nudge) =
-                    writer::align(written as u64, (t * rate).round() as i64, 480, rate, device > 0);
+                    crate::writer::align(written as u64, (t * rate).round() as i64, 480, rate, device > 0);
                 written += (pad + 480 - skip) as i64 + nudge as i64;
                 device += 480;
             }

@@ -44,7 +44,7 @@ use crate::clock;
 
 /// Maps global display points (origin top-left of the main display) to screen.mp4 pixels.
 /// Shared and mutable: window capture follows a moving window.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct CaptureGeometry {
     pub x: f64, // captured rect in global points
     pub y: f64,
@@ -78,7 +78,16 @@ enum Event<'a> {
     Scroll { x: f64, y: f64, dx: f64, dy: f64 },
     Key { down: bool, key: &'a str, code: u16, mods: Vec<&'static str> },
     #[serde(rename_all = "camelCase")]
-    Cursor { id: &'a str, hot_x: f64, hot_y: f64, w: usize, h: usize, scale: f64 },
+    Cursor {
+        id: &'a str,
+        hot_x: f64,
+        hot_y: f64,
+        w: usize,
+        h: usize,
+        scale: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        kind: Option<&'static str>,
+    },
     Secure { on: bool },
 }
 
@@ -522,6 +531,20 @@ fn system_cursor() -> Option<Retained<NSCursor>> {
     NSCursor::currentSystemCursor().or_else(|| unsafe { msg_send![NSCursor::class(), arrowCursor] })
 }
 
+/// The standard cursors the editor's built-in set redraws, by snapshot hash: arrow, pointer, ibeam
+/// (events.ts `kind`). Their images match the system cursor's exactly while the app has AppKit up.
+fn standard_cursors() -> Vec<(u64, &'static str)> {
+    let class = NSCursor::class();
+    let cursors: [(Option<Retained<NSCursor>>, &'static str); 3] = unsafe {
+        [
+            (msg_send![class, arrowCursor], "arrow"),
+            (msg_send![class, pointingHandCursor], "pointer"),
+            (msg_send![class, IBeamCursor], "ibeam"),
+        ]
+    };
+    cursors.into_iter().filter_map(|(c, kind)| Some((snapshot(&*c?)?.hash, kind))).collect()
+}
+
 fn snapshot(cursor: &NSCursor) -> Option<Snapshot> {
     let image = cursor.image();
     let pt = image.size();
@@ -562,6 +585,7 @@ struct Cursors {
     saved: HashSet<u64>,
     last: Option<(u64, u64)>, // (image hash, scale bits) of the last recorded cursor event
     size: f64,
+    standard: Vec<(u64, &'static str)>,
 }
 
 impl Cursors {
@@ -583,7 +607,9 @@ impl Cursors {
             self.saved.insert(c.hash);
         }
         let k = c.px_per_pt;
-        let ev = Event::Cursor { id: &id, hot_x: round(c.hot.0 * k, 100.0), hot_y: round(c.hot.1 * k, 100.0), w: c.w, h: c.h, scale: round(scale, 1e6) };
+        let kind = self.standard.iter().find(|s| s.0 == c.hash).map(|s| s.1);
+        let (hot_x, hot_y) = (round(c.hot.0 * k, 100.0), round(c.hot.1 * k, 100.0));
+        let ev = Event::Cursor { id: &id, hot_x, hot_y, w: c.w, h: c.h, scale: round(scale, 1e6), kind };
         if s.emit(now, &ev) {
             self.last = Some((c.hash, scale.to_bits()));
         }
@@ -662,7 +688,7 @@ impl InputRecorder {
             (true, false) => Some("Keystrokes are not recorded: allow Studio in System Settings > Privacy & Security > Input Monitoring."),
             (false, _) => Some("Keystrokes and scrolling are not recorded: allow Studio in System Settings > Privacy & Security > Input Monitoring."),
         };
-        let cursors = Cursors { dir: cursors, saved: HashSet::new(), last: None, size: cursor_size() };
+        let cursors = Cursors { dir: cursors, saved: HashSet::new(), last: None, size: cursor_size(), standard: standard_cursors() };
         let s = shared.clone();
         let ticker = std::thread::Builder::new().name("input-ticker".into()).spawn(move || ticker(s, cursors));
         let mut threads: Vec<_> = tap.into_iter().collect();
@@ -819,24 +845,27 @@ mod tests {
         w.push(0.1234567891, &Event::Move { x: 1.5, y: 2.0 });
         w.push(1.0, &Event::Key { down: true, key: "\"", code: 39, mods: vec!["⇧"] });
         w.push(1.1, &Event::Key { down: false, key: "\\ é ✨", code: 42, mods: vec![] });
-        w.push(2.0, &Event::Cursor { id: "00ff", hot_x: 10.0, hot_y: 10.0, w: 280, h: 400, scale: 2.5 });
+        w.push(2.0, &Event::Cursor { id: "00ff", hot_x: 10.0, hot_y: 10.0, w: 280, h: 400, scale: 2.5, kind: None });
+        w.push(2.5, &Event::Cursor { id: "00ff", hot_x: 10.0, hot_y: 10.0, w: 280, h: 400, scale: 2.5, kind: Some("ibeam") });
         w.push(3.0, &Event::Secure { on: true });
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "", "buffered until flushed");
         w.flush(true);
         assert!(w.buf.is_empty() && w.err.is_none());
         let ev = read_events(&dir);
-        assert_eq!(ev.len(), 5);
+        assert_eq!(ev.len(), 6);
         assert_eq!(ev[0], json!({ "t": 0.123457, "type": "move", "x": 1.5, "y": 2.0 }));
         assert_eq!(ev[1]["key"], "\"");
         assert_eq!(ev[1]["mods"], json!(["⇧"]));
         assert_eq!(ev[2]["key"], "\\ é ✨");
         assert_eq!(ev[3], json!({ "t": 2.0, "type": "cursor", "id": "00ff", "hotX": 10.0, "hotY": 10.0, "w": 280, "h": 400, "scale": 2.5 }));
-        assert_eq!(ev[4], json!({ "t": 3.0, "type": "secure", "on": true }));
+        assert_eq!(ev[4]["kind"], "ibeam");
+        assert_eq!(ev[5], json!({ "t": 3.0, "type": "secure", "on": true }));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn tap_and_polling_record_each_button_change_once() {
+        let _g = clock::serial();
         let dir = tmp("buttons");
         let s = Shared {
             writer: Mutex::new(Writer { file: File::create(dir.join("events.jsonl")).unwrap(), buf: Vec::new(), err: None }),
@@ -878,6 +907,15 @@ mod tests {
         let dim = |i: usize| u32::from_be_bytes(png[i..i + 4].try_into().unwrap()) as usize;
         assert_eq!((dim(16), dim(20)), (a.w, a.h));
         std::fs::remove_dir_all(dir).unwrap();
+        // The standard cursors are told apart. Arrow and I-beam images load only once AppKit runs
+        // (the app, not cargo test); the pointing hand is there either way.
+        let standard = standard_cursors();
+        let kinds: Vec<_> = standard.iter().map(|s| s.1).collect();
+        assert!(kinds.contains(&"pointer") && kinds.iter().all(|k| ["arrow", "pointer", "ibeam"].contains(k)), "{kinds:?}");
+        assert!(standard.iter().all(|s| standard.iter().filter(|o| o.0 == s.0).count() == 1), "distinct images");
+        let hand: Option<Retained<NSCursor>> = unsafe { msg_send![NSCursor::class(), pointingHandCursor] };
+        let hash = snapshot(&hand.unwrap()).unwrap().hash;
+        assert_eq!(standard.iter().find(|s| s.0 == hash).map(|s| s.1), Some("pointer"));
     }
 
     /// Records for real in this process with the tap and with the polling fallback. Both must
@@ -887,6 +925,7 @@ mod tests {
         if system_cursor().is_none() {
             return eprintln!("no window server: skipped");
         }
+        let _g = clock::serial();
         for use_tap in [true, false] {
             let dir = tmp(if use_tap { "tap" } else { "poll" });
             let geometry = Arc::new(Mutex::new(CaptureGeometry { x: 0.0, y: 0.0, w: 1440.0, h: 900.0, scale: 2.0 }));
@@ -899,9 +938,11 @@ mod tests {
             rec.stop().unwrap();
             let ev = read_events(&dir);
             let p = CGEvent::location(CGEvent::new(None).as_deref());
-            let mv = ev.iter().find(|e| e["type"] == "move").expect("initial pointer position");
-            assert!(mv["t"].as_f64().unwrap() < 0.1);
-            assert!((mv["x"].as_f64().unwrap() - p.x * 2.0).abs() < 1.0, "{mv} vs {p:?}");
+            let first = ev.iter().find(|e| e["type"] == "move").expect("initial pointer position");
+            assert!(first["t"].as_f64().unwrap() < 0.1);
+            // Someone may move the mouse meanwhile: the last recorded position is where it is now.
+            let last = ev.iter().rev().find(|e| e["type"] == "move").unwrap();
+            assert!((last["x"].as_f64().unwrap() - p.x * 2.0).abs() < 1.0, "{last} vs {p:?}");
             let cur = ev.iter().find(|e| e["type"] == "cursor").expect("cursor image");
             assert!(dir.join("cursors").join(format!("{}.png", cur["id"].as_str().unwrap())).exists());
             assert!(cur["scale"].as_f64().unwrap() > 0.0);
