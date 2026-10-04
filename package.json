@@ -27,6 +27,10 @@
       "package.json",
       "electron/**/*",
       "!electron/**/*.test.ts",
+      "src/shared/**/*.ts",
+      "src/engine/**/*.ts",
+      "!src/**/*.test.ts",
+      "server/client.ts",
       "dist/**/*",
       "native/studio.*.node"
     ],
@@ -49,6 +53,15 @@
         "role": "Editor",
         "rank": "Owner",
         "isPackage": true
+      },
+      {
+        "ext": [
+          "mp4",
+          "mov"
+        ],
+        "name": "Video",
+        "role": "Viewer",
+        "rank": "Alternate"
       }
     ],
     "mac": {

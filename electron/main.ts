@@ -1,6 +1,6 @@
 // Main process entry. Domains register their IPC in electron/<domain>.ts. The app shell (menu bar,
 // dock, windows, shortcuts, URL scheme, quit prompts, crash reports, updates) lives in electron/shell/.
-import { app, BrowserWindow, crashReporter, dialog, nativeTheme } from 'electron'
+import { app, BrowserWindow, crashReporter, dialog, nativeTheme, shell } from 'electron'
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { release } from 'node:os'
@@ -8,13 +8,14 @@ import { registerMediaProtocol } from './media.ts'
 import { hidden, openWindow, watchDisplays } from './windows.ts'
 import { registerRecording } from './recording.ts'
 import { registerProjects } from './projects.ts'
-import { registerExport } from './export.ts'
+import { activeExports, registerExport } from './export.ts'
 import { registerShare } from './share.ts'
 import { registerTranscript } from './transcript.ts'
 import { registerCamera } from './camera.ts'
 import { registerEditor } from './editor.ts'
 import { registerSettings, settings } from './shell/settings.ts'
-import { command, openOnboarding, openProject, recordingStatus, registerRecorder, setQuitting, showPicker, stopAndWait, warmUp } from './shell/recorder.ts'
+import { command, openFilesOrAlert, openOnboarding, openProject, recordingStatus, registerRecorder, setQuitting, showPicker, stopAndWait, warmUp } from './shell/recorder.ts'
+import { setAppMenu } from './shell/menu.ts'
 import { createTray } from './shell/tray.ts'
 import { checkForUpdates } from './shell/update.ts'
 import { parseStudioUrl } from './shell/url.ts'
@@ -55,7 +56,7 @@ let ready = false
 const early: string[] = []
 app.on('open-file', (e, path) => {
   e.preventDefault()
-  if (ready) openProject(path)
+  if (ready) openFilesOrAlert([path])
   else early.push(path)
 })
 app.on('open-url', (e, url) => {
@@ -74,7 +75,7 @@ function openUrl(url: string) {
   else if (a?.kind === 'open') openProject(a.path)
 }
 
-/** Act on launch arguments: `--lab <Name>`, `[--open] <bundle.studio>`, `studio://` URLs. False when there were none. */
+/** Act on launch arguments: `--lab <Name>`, `[--open] <bundle.studio | video.mp4>`, `studio://` URLs. False when there were none. */
 function launch(argv: string[]): boolean {
   const lab = argv.indexOf('--lab')
   if (lab > 0) {
@@ -85,7 +86,7 @@ function launch(argv: string[]): boolean {
   let acted = false
   for (const a of argv.slice(1)) {
     if (/^studio:/i.test(a)) openUrl(a)
-    else if (/\.studio\/?$/i.test(a) && !a.startsWith('-')) openProject(a)
+    else if (/\.(studio\/?|mp4|mov)$/i.test(a) && !a.startsWith('-')) openFilesOrAlert([a])
     else continue
     acted = true
   }
@@ -107,13 +108,14 @@ app.whenReady().then(() => {
   registerSettings()
   registerRecorder()
   watchDisplays()
+  setAppMenu()
   createTray()
   warmUp()
   ready = true
 
   const queued = early.splice(0)
   const acted = launch(process.argv)
-  for (const item of queued) /^studio:/i.test(item) ? openUrl(item) : openProject(item)
+  for (const item of queued) /^studio:/i.test(item) ? openUrl(item) : openFilesOrAlert([item])
   if (!acted && !queued.length) settings().onboarded ? showPicker() : openOnboarding()
   checkForUpdates()
 })
@@ -128,23 +130,31 @@ app.on('activate', () => {
 // Quit prompts. Cancel always means: keep running, nothing changed.
 app.on('before-quit', async (e) => {
   if (quitting) return
-  if (recordingStatus() === 'idle') return quit(true)
+  const recording = recordingStatus() !== 'idle'
+  const exports = activeExports()
+  if (!recording && !exports) return quit(true)
   e.preventDefault()
   const { response } = await dialog.showMessageBox({
     type: 'warning',
-    message: 'A recording is in progress.',
-    detail: 'Studio can save it and then quit.',
-    buttons: ['Cancel', 'Save Recording and Quit'],
+    message: recording ? 'A recording is in progress.' : exports === 1 ? 'An export is in progress.' : `${exports} exports are in progress.`,
+    detail: recording ? 'Studio can save it and then quit.' : 'Quitting now stops it. Your project is safe.',
+    buttons: ['Cancel', recording ? 'Save Recording and Quit' : 'Stop and Quit'],
     defaultId: 0,
     cancelId: 0,
   })
   if (response !== 1) return
   quit(true)
-  await stopAndWait()
+  if (recording) await stopAndWait()
   app.quit()
 })
-// A window with work that dies with it (an export) sets `onbeforeunload`; ask before closing it.
 app.on('web-contents-created', (_e, wc) => {
+  // A file dropped where no page handles it, or a stray link, must never replace a window's page.
+  wc.on('will-navigate', (e) => e.preventDefault())
+  wc.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  // A window with work that dies with it (an export) sets `onbeforeunload`; ask before closing it.
   wc.on('will-prevent-unload', (e) => {
     const win = BrowserWindow.fromWebContents(wc)
     const options = {

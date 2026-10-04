@@ -29,7 +29,7 @@
 </script>
 
 <script lang="ts">
-  import { doc, edit, save } from '../../../lib/doc.svelte.ts'
+  import { doc, edit } from '../../../lib/doc.svelte.ts'
   import { player, seek } from '../../../lib/player.svelte.ts'
   import { mapRange, timeMap, toSource } from '../../../shared/timemap.ts'
   import {
@@ -45,8 +45,8 @@
     type Pause,
   } from '../../../engine/transcript/index.ts'
 
-  // Plain copies: the hot paths below walk every word, and doc's deep proxies make that slow.
-  const t = $derived(doc.transcript ? ($state.snapshot(doc.transcript) as Transcript) : null)
+  // doc.transcript is raw (never proxied), so the hot paths below walk plain words.
+  const t = $derived(doc.transcript)
   const clips = $derived(doc.project ? $state.snapshot(doc.project.clips) : [])
   const edits = $derived(doc.project ? $state.snapshot(doc.project.captionEdits) : {})
   const map = $derived(timeMap(clips))
@@ -80,7 +80,6 @@
 
   let model = $state<{ model: boolean; size: number } | null>(null)
   let error = $state('')
-  let loadedFor = ''
   let confirming = $state<'' | 'fillers' | 'pauses'>('')
   let editing = $state(-1)
   let body = $state<HTMLElement>()
@@ -90,18 +89,7 @@
   const hasAudio = $derived(!!(doc.project?.sources.mic || doc.project?.sources.system || doc.project?.sources.imported))
   const mb = (n: number) => Math.round(n / 1e6)
 
-  // Open project: pick up its transcript from disk, and learn whether the model is downloaded.
-  $effect(() => {
-    const path = doc.path
-    if (!path || doc.transcript || loadedFor === path) return
-    loadedFor = path
-    invoke('transcript:load', path).then(
-      (loaded: Transcript | null) => {
-        if (loaded && doc.path === path) doc.transcript = loaded
-      },
-      (e: unknown) => (error = reason(e)),
-    )
-  })
+  // The editor loads the transcript with the project; here we only learn whether the model is downloaded.
   $effect(() => {
     if (!t && !model) invoke('transcript:status').then((s) => (model = s))
   })
@@ -120,15 +108,10 @@
 
   function transcribe() {
     const path = doc.path
+    // The main process writes the file and sets sources.transcript (a source, not an undoable edit);
+    // the editor applies that through projects:sources.
     run(path, (transcript) => {
-      if (doc.path !== path || !doc.project) return
-      doc.transcript = transcript
-      // The transcript is a recording source, not an edit: set outside undo (Cmd+Z must not
-      // "undo" it), then saved like any change. The main process already wrote it to disk.
-      doc.project.sources.transcript = 'sources/transcript.json'
-      doc.rev++
-      doc.dirty = true
-      void save()
+      if (doc.path === path) doc.transcript = transcript
     })
   }
 

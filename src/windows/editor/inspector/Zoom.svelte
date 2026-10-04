@@ -3,7 +3,7 @@
   import { doc, edit, selection } from '../../../lib/doc.svelte.ts'
   import type { Zoom } from '../../../shared/project.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
-  import * as zoomEngine from '../../../engine/zoom/index.ts'
+  import { generateAutoZooms } from '../../../engine/zoom/index.ts'
   import Section from '../../../ui/Section.svelte'
   import Segmented from '../../../ui/Segmented.svelte'
   import Slider from '../../../ui/Slider.svelte'
@@ -15,17 +15,12 @@
   const z = $derived(selected[0])
   const screen = $derived(project.sources.screen)
 
-  // generateAutoZooms(events, sources) lands with the auto-zoom engine; until then enabling only
-  // re-enables existing automatic zooms.
-  const generate = (zoomEngine as unknown as { generateAutoZooms?: (e: typeof doc.events, s: typeof project.sources) => Zoom[] }).generateAutoZooms
-
+  // Turning auto zoom on re-enables the automatic zooms, or makes them when there are none yet.
   function setAuto(enabled: boolean) {
     edit((p) => {
       p.style.autoZoom.enabled = enabled
       const autos = p.zooms.filter((x) => x.auto)
-      if (enabled && !autos.length && generate) {
-        p.zooms.push(...generate(doc.events, p.sources).map((x) => ({ ...x, auto: true, level: p.style.autoZoom.level })))
-      }
+      if (enabled && !autos.length) p.zooms.push(...generateAutoZooms(doc.events, p.sources, p.style.autoZoom))
       for (const x of autos) x.enabled = enabled
     })
   }
@@ -52,7 +47,7 @@
     const r = el.getBoundingClientRect()
     const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
     const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
-    each((s) => (s.target = { kind: 'point', x, y }), `target:${gesture}`)
+    each((s) => { s.target = { kind: 'point', x, y } }, `target:${gesture}`)
   }
   function nudge(e: KeyboardEvent) {
     if (z?.target.kind !== 'point') return
@@ -63,7 +58,7 @@
     e.preventDefault()
     const { x, y } = z.target
     const c = (v: number) => Math.min(1, Math.max(0, v))
-    each((s) => (s.target = { kind: 'point', x: c(x + dx), y: c(y + dy) }))
+    each((s) => { s.target = { kind: 'point', x: c(x + dx), y: c(y + dy) } })
   }
   const pct = (v: number) => `${Math.round(v * 100)}%`
 </script>
@@ -87,7 +82,7 @@
   <Section title="Target">
     <Segmented
       value={z.target.kind}
-      onchange={(v) => each((s) => (s.target = v === 'cursor' ? { kind: 'cursor' } : { kind: 'point', x: 0.5, y: 0.5 }))}
+      onchange={(v) => each((s) => { s.target = v === 'cursor' ? { kind: 'cursor' } : { kind: 'point', x: 0.5, y: 0.5 } })}
       options={[
         { value: 'cursor', label: 'Follow cursor', icon: 'cursor' },
         { value: 'point', label: 'Fixed point', icon: 'target' },

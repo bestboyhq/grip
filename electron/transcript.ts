@@ -16,7 +16,7 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { ReadableStream } from 'node:stream/web'
 import { native } from './native.ts'
-import { readProject, writeProject } from './projects.ts'
+import { readProject, updateProject } from './projects.ts'
 import { detectLanguage, isFiller } from '../src/engine/transcript/index.ts'
 import type { Transcript } from '../src/shared/project.ts'
 
@@ -124,10 +124,8 @@ async function transcribe(bundle: string, signal: AbortSignal, send: (p: Progres
   const language = detectLanguage(words, app.getLocale().slice(0, 2))
   const transcript: Transcript = { language, words: words.map((w) => (isFiller(w.text, language) ? { ...w, filler: true } : w)) }
   await writeAtomic(inBundle(bundle, TRANSCRIPT), JSON.stringify(transcript))
-  // Re-read: the editor may have saved since. It also sets the field itself once this returns.
-  const project = await readProject(bundle)
-  project.sources.transcript = TRANSCRIPT
-  await writeProject(bundle, project)
+  // A source, not an edit: set on disk under the save lock; open editors get it via projects:sources.
+  await updateProject(bundle, (p) => void (p.sources.transcript = TRANSCRIPT))
   return transcript
 }
 

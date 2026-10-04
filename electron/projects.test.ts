@@ -1,6 +1,7 @@
 // Bundle lifecycle on a real file system: unique and hostile names, atomic save with backup,
 // migration refusal, rename, recovery of interrupted recordings, import, thumbnails, recents, presets.
-// Needs ffmpeg (as does the fixture generator).
+// Needs ffmpeg (as does the fixture generator). Software H.264: VideoToolbox can stall when another
+// process holds the hardware encoder, which would hang the suite.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -8,16 +9,16 @@ import { mkdtemp, mkdir, readFile, readdir, writeFile, rm, truncate, stat } from
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { createProject, PROJECT_VERSION } from '../src/shared/project.ts'
-import { createBundle, importVideo, readProject, recentProjects, recoverBundles, renameBundle, sanitizeName, saveProject, saveThumbnail, updateProject, updateRecent, writeProject } from './projects.ts'
+import { createBundle, importVideo, readProject, recentProjects, recoverBundles, renameBundle, sanitizeName, saveProject, saveThumbnail, updateProject, updateRecent, writeNewRecording, writeProject } from './projects.ts'
 import { applyPreset, deletePreset, exportPreset, importPreset, listPresets, savePreset } from './presets.ts'
 
 const root = await mkdtemp(join(tmpdir(), 'studio #1 ✨ café '))
 const ff = (...args: string[]) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args])
 const media = join(root, 'media')
 await mkdir(media)
-ff('-f', 'lavfi', '-i', 'testsrc2=s=320x200:r=30:d=2', '-f', 'lavfi', '-i', 'sine=f=440:d=2:sample_rate=48000', '-shortest', '-c:v', 'h264_videotoolbox', '-c:a', 'aac', join(media, 'Clip #2 ✨ é.mov'))
+ff('-f', 'lavfi', '-i', 'testsrc2=s=320x200:r=30:d=2', '-f', 'lavfi', '-i', 'sine=f=440:d=2:sample_rate=48000', '-shortest', '-c:v', 'libx264', '-c:a', 'aac', join(media, 'Clip #2 ✨ é.mov'))
 ff('-f', 'lavfi', '-i', 'sine=f=440:d=3:sample_rate=44100', '-ac', '2', '-c:a', 'aac', join(media, 'mic.m4a'))
-ff('-f', 'lavfi', '-i', 'testsrc2=s=640x400:r=30:d=6', '-c:v', 'h264_videotoolbox', '-g', '30', '-movflags', '+frag_keyframe+empty_moov+default_base_moof', join(media, 'screen.mp4'))
+ff('-f', 'lavfi', '-i', 'testsrc2=s=640x400:r=30:d=6', '-c:v', 'libx264', '-g', '30', '-movflags', '+frag_keyframe+empty_moov+default_base_moof', join(media, 'screen.mp4'))
 ff('-f', 'lavfi', '-i', 'testsrc2=s=320x200:r=30:d=1', '-c:v', 'prores_ks', join(media, 'prores.mov'))
 ff('-f', 'lavfi', '-i', 'testsrc2=s=320x200:d=1', '-frames:v', '1', join(media, 'thumb.png'))
 
@@ -146,6 +147,18 @@ test('an interrupted recording is rebuilt from the files on disk', async () => {
   assert.equal((await readProject(fromBak)).playhead, 3)
   assert.equal(await stat(join(empty, 'project.json')).catch(() => null), null)
   assert.deepEqual(await recoverBundles(dir), [])
+})
+
+test('a finished recording opens already directed: auto zooms from its clicks', async () => {
+  const bundle = await createBundle('Take #1 ✨', join(root, 'new'))
+  const lines = [{ t: 0, type: 'move', x: 100, y: 100 }]
+  for (const t of [1, 1.4, 1.8]) lines.push({ t, type: 'down', x: 320, y: 200, button: 'left' } as never, { t: t + 0.05, type: 'up', x: 320, y: 200, button: 'left' } as never)
+  await writeFile(join(bundle, 'sources', 'events.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n'))
+  const p = await writeNewRecording(bundle, { ...sources, events: 'sources/events.jsonl' })
+  assert.ok(p.zooms.length >= 1 && p.zooms.every((z) => z.auto && z.enabled && z.start < 1 && z.end > 1.8), JSON.stringify(p.zooms))
+  assert.deepEqual((await readProject(bundle)).zooms, p.zooms)
+  const quiet = await writeNewRecording(await createBundle('Quiet', join(root, 'new')), sources) // no events: no zooms, no error
+  assert.deepEqual(quiet.zooms, [])
 })
 
 test('import clones an .mp4/.mov into a new bundle', async () => {

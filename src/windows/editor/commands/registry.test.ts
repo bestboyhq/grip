@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { commandFor, commands, keyOf, registerCommands, run, search, type Command } from './registry.ts'
+import { commandFor, commands, consumesKey, keyOf, registerCommands, run, search, type Command } from './registry.ts'
 
 const ev = (key: string, code: string, mods: { ctrl?: boolean; alt?: boolean; shift?: boolean; meta?: boolean } = {}, repeat = false) =>
   ({ key, code, ctrlKey: !!mods.ctrl, altKey: !!mods.alt, shiftKey: !!mods.shift, metaKey: !!mods.meta, repeat, isComposing: false, target: null }) as unknown as KeyboardEvent
@@ -38,6 +38,32 @@ test('registry: replace by id, unregister, enabled, repeat', () => {
   off()
   off2()
   assert.equal(commands().length, 0)
+})
+
+test('shortcuts stay off in text fields; other controls keep their keys only when keyboard-focused', () => {
+  const el = (tagName: string, attrs: { type?: string; role?: string; keyboard?: boolean; editable?: boolean } = {}) =>
+    ({ tagName, type: attrs.type, isContentEditable: !!attrs.editable, getAttribute: (n: string) => (n === 'role' ? (attrs.role ?? null) : null), matches: () => !!attrs.keyboard }) as unknown as EventTarget
+  const text = el('INPUT', { type: 'text' })
+  for (const key of [' ', 'z', 'ArrowLeft', 'Backspace']) assert.ok(consumesKey(text, key), `text field takes ${key}`)
+  assert.ok(consumesKey(el('DIV', { editable: true }), 'c'))
+  assert.ok(consumesKey(el('TEXTAREA'), ' '))
+  // The transcript: Delete cuts selected words there, never the clip under the playhead.
+  assert.ok(consumesKey(el('DIV', { role: 'textbox' }), 'Delete'))
+  assert.ok(!consumesKey(el('DIV', { role: 'textbox' }), ' '))
+  // Clicked controls: Space plays, arrows step.
+  assert.ok(!consumesKey(el('BUTTON'), ' '))
+  assert.ok(!consumesKey(el('INPUT', { type: 'radio' }), 'ArrowRight'))
+  assert.ok(!consumesKey(el('INPUT', { type: 'range' }), 'ArrowLeft'))
+  assert.ok(!consumesKey(el('SELECT'), ' '))
+  // Keyboard-focused controls keep their own keys, and only those.
+  assert.ok(consumesKey(el('BUTTON', { keyboard: true }), ' '))
+  assert.ok(!consumesKey(el('BUTTON', { keyboard: true }), 'ArrowLeft'))
+  assert.ok(consumesKey(el('INPUT', { type: 'radio', keyboard: true }), 'ArrowRight'))
+  assert.ok(consumesKey(el('INPUT', { type: 'range', keyboard: true }), 'ArrowLeft'))
+  assert.ok(consumesKey(el('INPUT', { type: 'checkbox', keyboard: true }), ' '))
+  assert.ok(!consumesKey(el('INPUT', { type: 'checkbox', keyboard: true }), 'c'))
+  assert.ok(!consumesKey(el('CANVAS', { keyboard: true }), ' '))
+  assert.equal(commandFor({ ...ev('z', 'KeyZ', { meta: true }), target: text } as KeyboardEvent), undefined)
 })
 
 test('search ranks title prefixes, then word starts, then anywhere', () => {

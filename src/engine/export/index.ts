@@ -71,6 +71,7 @@ export async function fitEncoder(o: Pick<ExportOptions, 'codec' | 'fps' | 'quali
   const ok = (w: number, h: number, hw: boolean) =>
     canEncodeVideo(codec, { width: w, height: h, frameRate: o.fps, quality: new Quality({ bitrate: videoBitrate(w, h, o) }), hardwareAcceleration: hw ? 'prefer-hardware' : 'no-preference' })
   for (const hardware of [true, false]) {
+    if (hardware && !(await hardwareEncodes(codec))) continue
     if (await ok(width, height, hardware)) return { width, height, hardware }
     let lo = 0
     let hi = 1
@@ -82,6 +83,38 @@ export async function fitEncoder(o: Pick<ExportOptions, 'codec' | 'fps' | 'quali
     if (lo > 0) return { width: even(width * lo), height: even(height * lo), hardware }
   }
   throw new Error(`This Mac cannot encode ${o.codec === 'hevc' ? 'HEVC' : 'H.264'} video.`)
+}
+
+const probes = new Map<string, Promise<boolean>>()
+/** Whether the hardware encoder really returns packets. VideoToolbox can accept a configuration and
+ *  then never output a frame (seen in headless sessions), which would stall an export at 0% forever;
+ *  one test frame per codec and app run tells. */
+function hardwareEncodes(codec: 'avc' | 'hevc'): Promise<boolean> {
+  let p = probes.get(codec)
+  if (!p) probes.set(codec, (p = probe(codec === 'hevc' ? 'hvc1.1.6.L93.B0' : 'avc1.4d0028')))
+  return p
+}
+function probe(codec: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const finish = (ok: boolean) => {
+      clearTimeout(timer)
+      if (encoder.state !== 'closed') encoder.close()
+      resolve(ok)
+    }
+    const encoder = new VideoEncoder({ output: () => finish(true), error: () => finish(false) })
+    const timer = setTimeout(() => finish(false), 3000)
+    try {
+      const canvas = new OffscreenCanvas(1280, 720)
+      canvas.getContext('2d')!.fillRect(0, 0, 1280, 720)
+      encoder.configure({ codec, width: 1280, height: 720, bitrate: 4e6, framerate: 30, hardwareAcceleration: 'prefer-hardware' })
+      const frame = new VideoFrame(canvas, { timestamp: 0 })
+      encoder.encode(frame, { keyFrame: true })
+      frame.close()
+      encoder.flush().catch(() => finish(false))
+    } catch {
+      finish(false)
+    }
+  })
 }
 
 async function stage(job: JobSpec, input: Input, width: number, height: number) {
@@ -137,11 +170,8 @@ async function mp4(job: JobSpec, input: Input, media: Media, io: ExportIO): Prom
       }
       for (let i = 0; i < n; i++) {
         const t = i / o.fps
-        ;(globalThis as any).__step = ['audio', i]
         await audioUntil(t + 0.5)
-        ;(globalThis as any).__step = ['render', i]
         await renderFrame(r, p, media, t)
-        ;(globalThis as any).__step = ['add', i]
         await video.add(t, 1 / o.fps)
       }
       await audioUntil(Infinity)

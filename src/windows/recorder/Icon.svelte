@@ -2,7 +2,7 @@
 <script lang="ts" module>
   export type IconName =
     | 'display' | 'window' | 'area' | 'device' | 'camera' | 'camera-off' | 'mic' | 'mic-off' | 'speaker' | 'speaker-off'
-    | 'gear' | 'chevron' | 'close' | 'pause' | 'play' | 'stop' | 'restart' | 'trash' | 'check' | 'screen' | 'keyboard'
+    | 'gear' | 'chevron' | 'close' | 'pause' | 'play' | 'stop' | 'restart' | 'trash' | 'check' | 'screen' | 'keyboard' | 'accessibility'
 </script>
 
 <script lang="ts">
@@ -21,8 +21,8 @@
   aria-hidden="true"
 >
   {#if name === 'display'}
-    <rect x="1.5" y="1.5" width="23" height="13.5" rx="2.6" />
-    <path d="M9.5 18.5h7M13 15v3.5" />
+    <rect x="1.5" y="1" width="23" height="18" rx="2.6" />
+    <rect x="4.6" y="13.2" width="16.8" height="2.6" rx="1.3" fill="currentColor" stroke="none" />
   {:else if name === 'window'}
     <rect x="1.5" y="1" width="23" height="18" rx="2.6" />
     <path d="M1.5 5.9h23" />
@@ -30,11 +30,12 @@
     <circle cx="6.9" cy="3.5" r="0.55" fill="currentColor" stroke="none" />
     <circle cx="9.2" cy="3.5" r="0.55" fill="currentColor" stroke="none" />
   {:else if name === 'area'}
-    <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" />
-    <path d="M10 12h4M12 10v4" stroke-width={stroke * 0.85} />
+    <path d="M3 7.5V5a2 2 0 0 1 2-2h2.5M16.5 3H19a2 2 0 0 1 2 2v2.5M21 16.5V19a2 2 0 0 1-2 2h-2.5M7.5 21H5a2 2 0 0 1-2-2v-2.5" />
+    <path d="M10.5 3h3M10.5 21h3M3 10.5v3M21 10.5v3" />
   {:else if name === 'device'}
     <rect x="6" y="1.5" width="12" height="21" rx="3" />
     <path d="M10.5 4.6h3" />
+    <path d="M9.2 9h.01M12 9h.01M14.8 9h.01M9.2 12.3h.01M12 12.3h.01M14.8 12.3h.01M9.2 15.6h.01M12 15.6h.01M14.8 15.6h.01M9.2 18.9h.01M12 18.9h.01M14.8 18.9h.01" />
   {:else if name === 'camera' || name === 'camera-off'}
     <rect x="1.5" y="6" width="14" height="12" rx="2.8" />
     <path d="M15.5 10.6l5.4-3.1a.7.7 0 0 1 1.1.6v7.8a.7.7 0 0 1-1.1.6l-5.4-3.1" />
@@ -78,5 +79,9 @@
   {:else if name === 'keyboard'}
     <rect x="1.5" y="5" width="21" height="14" rx="2.6" />
     <path d="M5.5 9h1M9.5 9h1M13.5 9h1M17.5 9h1M5.5 12.5h1M9.5 12.5h1M13.5 12.5h1M17.5 12.5h1M8 16h8" />
+  {:else if name === 'accessibility'}
+    <circle cx="12" cy="12" r="9.5" />
+    <circle cx="12" cy="7.4" r="1.4" fill="currentColor" stroke="none" />
+    <path d="M7.5 10.2l4.5 1.1 4.5-1.1M12 11.3v3.2l-2.3 3.6M12 14.5l2.3 3.6" />
   {/if}
 </svg>

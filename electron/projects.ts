@@ -12,6 +12,7 @@
 //   projects:recent() -> RecentProject[]      most recent first
 //   projects:rename(path, name) -> { path, name }   unique within the folder
 //   projects:remove(path)                     moves the bundle to the Trash
+//   projects:reveal(path)                     selects the bundle in Finder
 //   projects:presets:*                        see ./presets.ts
 // Event to all windows: projects:sources(path, sources) after a main-side updateProject().
 //
@@ -23,6 +24,8 @@ import { access, copyFile, mkdir, open, readFile, readdir, rename, rm, rmdir, st
 import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import { createProject, type Project, type Sources } from '../src/shared/project.ts'
 import { migrate, newerError, validateProject } from '../src/shared/migrate.ts'
+import { parseEvents } from '../src/shared/events.ts'
+import { generateAutoZooms } from '../src/engine/zoom/index.ts'
 import { registerPresets } from './presets.ts'
 
 export interface Recovered {
@@ -52,6 +55,19 @@ export async function createBundle(name: string, dir = projectsDir()): Promise<s
   const [path] = await claim(dir, sanitizeName(name))
   await mkdir(join(path, 'sources'))
   return path
+}
+
+/** project.json for a recording that just finished (or was recovered): defaults plus auto zooms
+ *  from its clicks and typing, so it opens already directed. */
+export async function writeNewRecording(bundle: string, sources: Sources, created = new Date()): Promise<Project> {
+  const p = createProject(basename(bundle, '.studio'), sources)
+  p.createdAt = created.toISOString()
+  if (sources.events) {
+    const events = parseEvents(await readFile(join(bundle, sources.events), 'utf8').catch(() => ''))
+    p.zooms = generateAutoZooms(events, sources, p.style.autoZoom)
+  }
+  await writeProject(bundle, p)
+  return p
 }
 
 /** Atomic save that keeps the previous version as project.json.bak. */
@@ -105,7 +121,7 @@ export function updateProject(bundle: string, fn: (p: Project) => void): Promise
     const p = await readProject(b)
     fn(p)
     await write(b, validateProject(p))
-    for (const w of electron.BrowserWindow?.getAllWindows() ?? []) w.webContents.send('projects:sources', b, p.sources)
+    for (const w of electron.BrowserWindow?.getAllWindows() ?? []) if (!w.isDestroyed()) w.webContents.send('projects:sources', b, p.sources)
     return p
   })
 }
@@ -206,10 +222,7 @@ export async function rebuildProject(bundle: string): Promise<Project | null> {
   if (audio(system)) sources.system = audio(system)!
   if (files.includes('events.jsonl')) sources.events = 'sources/events.jsonl'
   if (files.includes('transcript.json')) sources.transcript = 'sources/transcript.json'
-  const p = createProject(basename(bundle, '.studio'), sources)
-  p.createdAt = (await stat(bundle)).birthtime.toISOString()
-  await writeProject(bundle, p)
-  return p
+  return writeNewRecording(bundle, sources, (await stat(bundle)).birthtime)
 }
 
 /** Import an .mp4 or .mov as a new project: the file is cloned in (instant on APFS), its video is
@@ -406,10 +419,13 @@ export function bundleArg(path: unknown): string {
   return follow(p)
 }
 
+/** Interrupted recordings rebuilt at launch (set by registerProjects). */
+export let recoveredAtLaunch: Promise<Recovered[]> = Promise.resolve([])
+
 export function registerProjects() {
   const { app, ipcMain, dialog, shell, BrowserWindow } = electron
   // Snapshot interrupted recordings now, before anything can start a new one.
-  const recovered = recoverBundles().catch((e) => (console.error('[projects] recovery failed:', e), [] as Recovered[]))
+  const recovered = (recoveredAtLaunch = recoverBundles().catch((e) => (console.error('[projects] recovery failed:', e), [] as Recovered[])))
   const opened = (path: string) => {
     app.addRecentDocument(path)
     return updateRecent((l) => [path, ...l.filter((p) => p !== path)])
@@ -448,6 +464,7 @@ export function registerProjects() {
     if (to !== from) await updateRecent((l) => l.map((p) => (p === from ? to : p)))
     return { path: to, name: basename(to, '.studio') }
   })
+  ipcMain.handle('projects:reveal', (_e, path: unknown) => shell.showItemInFolder(bundleArg(path)))
   ipcMain.handle('projects:remove', async (_e, path: unknown) => {
     const bundle = bundleArg(path)
     if (!(await stat(bundle).catch(() => null))?.isDirectory()) throw new Error(`“${basename(bundle, '.studio')}” was not found.`)

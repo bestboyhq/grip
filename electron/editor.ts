@@ -1,11 +1,15 @@
 // Owner: editor. "editor:*" IPC channels:
 //   editor:importAsset(bundle, file, kind) -> "assets/<name>"
+//   editor:tempFile(name) -> absolute path of a new temp file (the Share button's video export)
+//   editor:closed()  the window finished saving after "editor:close" (electron/shell/recorder.ts)
 // Copies a user-picked file (background image, LUT, music) into the bundle, so projects stay portable
 // and sources stay immutable. The renderer is untrusted: both paths and the kind are validated here.
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
+import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { copyFile, mkdir, stat } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join, relative } from 'node:path'
+import { safeFileName } from '../src/engine/export/options.ts'
 
 const KINDS: Record<string, { ext: string[]; max: number; what: string }> = {
   image: { ext: ['.png', '.jpg', '.jpeg', '.webp'], max: 200e6, what: 'a PNG, JPEG, or WebP image' },
@@ -48,4 +52,10 @@ export async function importAsset(bundle: unknown, file: unknown, kind: unknown)
 
 export function registerEditor() {
   ipcMain.handle('editor:importAsset', (_e, bundle, file, kind) => importAsset(bundle, file, kind))
+  // In export's temp root, which it sweeps after a day: long enough for a resumable upload.
+  ipcMain.handle('editor:tempFile', async (_e, name: unknown) => {
+    const dir = join(app.getPath('temp'), 'Studio Exports', randomUUID())
+    await mkdir(dir, { recursive: true })
+    return join(dir, safeFileName(String(name ?? '')) || 'Studio.mp4')
+  })
 }

@@ -23,12 +23,11 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
 import { readdir, rm, stat } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import type { Permission, RecordingEvent, RecordingSources, StartOptions } from '../native/index.d.ts'
-import { createProject } from '../src/shared/project.ts'
 import { analyzeCamera } from './camera.ts'
 import { native } from './native.ts'
-import { createBundle, projectsDir, writeProject } from './projects.ts'
+import { createBundle, projectsDir, writeNewRecording } from './projects.ts'
 
 /** Main-process listeners (dock, quit prompt): 'state' (RecState), 'finished' and 'recovered' (bundle path). */
 export const recordingEvents = new EventEmitter()
@@ -63,7 +62,7 @@ function finish(dir: string, sources: RecordingSources, reason = 'user', message
         broadcast('recording:error', message ?? 'Nothing was recorded.')
         return
       }
-      await writeProject(dir, createProject(basename(dir, '.studio'), sources))
+      await writeNewRecording(dir, sources)
       if (sources.camera) analyzeCamera(dir).catch((err) => console.error('analyzeCamera', dir, err))
       broadcast('recording:finished', dir, { reason, message })
       recordingEvents.emit('finished', dir)
@@ -130,7 +129,7 @@ async function recoverInterrupted() {
     if (!screen || Date.now() - screen.mtimeMs < 30_000) continue
     try {
       const sources = await native.recoverRecording(dir)
-      await writeProject(dir, createProject(basename(dir, '.studio'), sources))
+      await writeNewRecording(dir, sources)
       broadcast('recording:recovered', dir)
       recordingEvents.emit('recovered', dir)
     } catch (err) {

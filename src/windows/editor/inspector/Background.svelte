@@ -57,8 +57,8 @@
   let thumbs = $state<Map<string, string>>()
   thumbnails().then((m) => (thumbs = m), () => {})
 
-  const setBg = (b: Background, merge?: string) => edit((p) => (p.style.background = b), merge)
-  const set = <K extends keyof Style>(k: K) => (v: Style[K], merge?: string) => edit((p) => (p.style[k] = v), merge)
+  const setBg = (b: Background, merge?: string) => edit((p) => { p.style.background = b }, merge)
+  const set = <K extends keyof Style>(k: K) => (v: Style[K], merge?: string) => edit((p) => { p.style[k] = v }, merge)
 
   const stops = $derived(bg.kind === 'gradient' ? bg.stops : (GRADIENTS[0].stops))
   const angle = $derived(bg.kind === 'gradient' ? bg.angle : 135)

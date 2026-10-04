@@ -12,7 +12,7 @@
   type C = Style['captions']
   const c = $derived(doc.project!.style.captions)
   const init = defaultStyle().captions
-  const set = <K extends keyof C>(k: K) => (v: C[K], merge?: string) => edit((p) => (p.style.captions[k] = v), merge)
+  const set = <K extends keyof C>(k: K) => (v: C[K], merge?: string) => edit((p) => { p.style.captions[k] = v }, merge)
   const off = $derived(!c.visible)
 
   // Fonts every Mac has, so a project renders the same on any machine and in export.

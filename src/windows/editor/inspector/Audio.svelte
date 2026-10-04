@@ -17,7 +17,7 @@
     error = ''
     try {
       const file = await importFile('audio', '.m4a,.mp3,.aac,.wav,audio/mp4,audio/mpeg,audio/aac,audio/wav')
-      if (file) edit((p) => (p.audio.music = { file, volume: p.audio.music?.volume ?? 0.25 }))
+      if (file) edit((p) => { p.audio.music = { file, volume: p.audio.music?.volume ?? 0.25 } })
     } catch (e) {
       error = String((e as Error).message)
     }

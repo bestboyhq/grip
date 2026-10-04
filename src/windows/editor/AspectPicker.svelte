@@ -25,7 +25,7 @@
       const g = gcd(width, height)
       next = { w: width / g, h: height / g }
     } else next = v as Aspect
-    edit((p) => (p.style.aspect = next))
+    edit((p) => { p.style.aspect = next })
   }
 
   // Ratios past 5:1 either way make outputs no encoder or platform accepts.
@@ -34,7 +34,7 @@
     if (!custom || !(v > 0)) return
     const other = key === 'w' ? custom.h : custom.w
     const clamped = Math.min(Math.max(v, other / 5), other * 5)
-    edit((p) => (p.style.aspect = { ...custom, [key]: Math.round(clamped * 100) / 100 }))
+    edit((p) => { p.style.aspect = { ...custom, [key]: Math.round(clamped * 100) / 100 } })
   }
 </script>
 

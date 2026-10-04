@@ -11,5 +11,17 @@ declare global {
   }
 }
 
-export const invoke = (channel: string, ...args: unknown[]) => window.studio.invoke(channel, ...args)
+/** Rejects with the handler's own message, without Electron's "Error invoking remote method" wrapper. */
+export const invoke = (channel: string, ...args: unknown[]) =>
+  window.studio.invoke(channel, ...args).catch((e: unknown) => {
+    throw new Error(String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (\w*Error: )?/, ''))
+  })
 export const on = (channel: string, cb: (...args: any[]) => void) => window.studio.on(channel, cb)
+
+/** A window's drop handler: .studio bundles open, .mp4/.mov videos import as new projects. Rejects
+ *  with a plain-language reason. */
+export function dropFiles(e: DragEvent): Promise<void> {
+  e.preventDefault()
+  const paths = [...(e.dataTransfer?.files ?? [])].map((f) => window.studio.pathForFile(f)).filter(Boolean)
+  return paths.length ? invoke('shell:open-files', paths) : Promise.resolve()
+}
