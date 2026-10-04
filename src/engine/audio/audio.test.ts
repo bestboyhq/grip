@@ -260,12 +260,15 @@ test('reader resamples 44.1 kHz onto the 48 kHz grid', async () => {
   near(Math.max(...x[0]), 0.5, 0.01, 'amplitude')
 })
 
-test('peaks: shape, exactness against brute force, any zoom', async () => {
+test('peaks: shape, exactness against brute force, any zoom, across parallel segments', async () => {
   const x = bursts(10, [1, 4.2, 9.5])
   const f = await openAudio(new BlobSource(wav([x])), 'p.wav')
-  const a = await analyze(f)
+  const a = analyze(f, 76800) // 1.6 s segments: ranges below span several, decoded 4 at a time
+  await a.ready(9.4, 9.6) // the last segment only; earlier ones may still be decoding
+  near(queryPeaks(a.base, 9.4, 9.6, 1)[1], 0.5, 0.01, 'last segment ready on its own')
+  await a.ready(0, 10)
   for (const [from, to, buckets] of [[0, 10, 1000], [0, 10, 7], [4, 4.5, 333], [9.4, 9.6, 50]] as const) {
-    const pk = queryPeaks(a.levels, from, to, buckets)
+    const pk = queryPeaks(a.base, from, to, buckets)
     assert.equal(pk.length, 2 * buckets)
     for (let k = 0; k < buckets; k++) {
       const s = Math.floor(((from + ((to - from) * k) / buckets) * SR) / 256) * 256
@@ -276,4 +279,7 @@ test('peaks: shape, exactness against brute force, any zoom', async () => {
       assert.ok(pk[2 * k] <= 0 && pk[2 * k] >= -1)
     }
   }
+  const whole = new LoudnessMeter()
+  whole.push([x, x])
+  near((await a.lufs)!, whole.integrated()!, 0.01, 'segment loudness blocks join into the whole-file loudness (mono heard on both channels)')
 })

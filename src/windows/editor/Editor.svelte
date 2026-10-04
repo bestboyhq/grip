@@ -3,12 +3,11 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { doc, undo, redo, canUndo, canRedo, save, selection } from '../../lib/doc.svelte.ts'
-  import { player, toggle, seek } from '../../lib/player.svelte.ts'
+  import { toggle } from '../../lib/player.svelte.ts'
   import { invoke, on } from '../../lib/ipc.ts'
   import { fileUrl } from '../../engine/media/index.ts'
   import { parseEvents } from '../../shared/events.ts'
   import type { Project, Sources, Transcript } from '../../shared/project.ts'
-  import { timeMap, toSource } from '../../shared/timemap.ts'
   import Icon from '../../ui/Icon.svelte'
   import { tooltip } from '../../ui/tooltip.ts'
   import Preview from './Preview.svelte'
@@ -18,7 +17,7 @@
   import Timeline from './timeline/Timeline.svelte'
   import ExportDialog from './export/ExportDialog.svelte'
   import ShareButton from './share/ShareButton.svelte'
-  import { formatTime, reason, resumeAt } from './helpers.ts'
+  import { reason } from './helpers.ts'
   import { sendThumbnail } from './thumbnail.ts'
 
   let { params }: { params: URLSearchParams } = $props()
@@ -49,51 +48,19 @@
     const t = transcript as Transcript | null
     doc.events = raw(events)
     doc.transcript = t && Array.isArray(t.words) ? { ...t, words: raw(t.words) } : null
-    doc.project = project
-    // seek() clamps to player.duration, which the player may only learn once it attaches.
-    player.duration ||= timeMap(project.clips).duration
-    seek(resumeAt(project.clips, project.playhead))
+    doc.project = project // the player seeks to the saved playhead when the preview attaches
   }
 
   onMount(() => {
     load(params.get('project') ?? '').catch((e) => (error = reason(e)))
   })
 
-  const map = $derived(doc.project ? timeMap(doc.project.clips) : null)
   const aiming = $derived(!!doc.project?.zooms.some((z) => selection.ids.includes(z.id)))
-  const duration = $derived(map?.duration ?? 0)
   const history = $derived.by(() => (doc.rev, { undo: canUndo(), redo: canRedo() }))
 
   $effect(() => {
     document.title = doc.project?.name || 'Studio'
   })
-
-  // Reopen where the user left off: persist the playhead (source time, so it survives cuts) once it
-  // settles. It is view state, not an edit, so it bypasses undo.
-  function persistPlayhead() {
-    const p = doc.project
-    if (!p || !map) return
-    const src = toSource(map, player.time)
-    if (Math.abs(p.playhead - src) < 1e-3) return
-    p.playhead = src
-    doc.dirty = true
-    save()
-  }
-  $effect(() => {
-    if (!doc.project || player.playing) return
-    player.time
-    const id = setTimeout(persistPlayhead, 1000)
-    return () => clearTimeout(id)
-  })
-
-  /** Jump to the previous/next clip boundary (or the start/end). */
-  function step(dir: -1 | 1) {
-    if (!map) return
-    const marks = [0, ...map.outStarts, map.duration]
-    const t = player.time
-    const next = dir < 0 ? marks.filter((m) => m < t - 0.05).at(-1) ?? 0 : marks.find((m) => m > t + 0.05) ?? map.duration
-    seek(next)
-  }
 
   // Main-process domains (camera analysis) add sources after recording; keep the open document current.
   $effect(() =>
@@ -155,7 +122,7 @@
   }
 </script>
 
-<svelte:window {onkeydown} onbeforeunload={() => (persistPlayhead(), save())} />
+<svelte:window {onkeydown} onbeforeunload={() => void save()} />
 
 <div class="editor">
   <header class="titlebar">
@@ -199,15 +166,6 @@
           {#if aiming}<span class="aim-hint"><Icon name="target" size={15} />Click the preview to aim the selected zoom</span>{/if}
         </div>
         <Preview />
-        <div class="transport" role="toolbar" aria-label="Playback">
-          <span class="time">{formatTime(player.time)}</span>
-          <button class="icon-btn" onclick={() => step(-1)} {@attach tooltip('Previous clip')}><Icon name="skip-back" /></button>
-          <button class="icon-btn play" onclick={toggle} {@attach tooltip(player.playing ? 'Pause' : 'Play', 'Space')}>
-            <Icon name={player.playing ? 'pause' : 'play'} size={20} />
-          </button>
-          <button class="icon-btn" onclick={() => step(1)} {@attach tooltip('Next clip')}><Icon name="skip-forward" /></button>
-          <span class="time dim">{formatTime(duration)}</span>
-        </div>
       </section>
       <Inspector />
     </main>
@@ -239,10 +197,6 @@
   .stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .toolbar { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; }
   .aim-hint { display: flex; align-items: center; gap: 6px; margin-left: auto; color: var(--text-faint); font-size: 12px; }
-  .transport { flex: none; display: flex; align-items: center; justify-content: center; gap: 6px; height: 48px; }
-  .time { width: 76px; font-size: 12.5px; font-variant-numeric: tabular-nums; text-align: right; color: var(--text); }
-  .time.dim { text-align: left; color: var(--text-faint); }
-  .play { width: 34px; height: 34px; border-radius: 50%; color: var(--text); }
 
   .timeline { flex: none; height: clamp(170px, 30vh, 340px); border-top: 1px solid var(--border); overflow: auto; }
 

@@ -142,13 +142,14 @@
         <span class="quadrant {drag.corner}" aria-hidden="true"></span>
         <span class="ghost" style:left={pct(drag.x, size.width)} style:top={pct(drag.y, size.height)} style:width={pct(drag.w, size.width)} style:height={pct(drag.h, size.height)} aria-hidden="true"></span>
       {/if}
-      {#if failed}<p class="failed" role="alert">Preview unavailable: {failed}</p>{/if}
+      {#if failed}<p class="failed" role="alert">Preview unavailable: {failed}</p>
+      {:else if player.error}<p class="failed" role="alert">{player.error}</p>{/if}
     </div>
   </div>
 </div>
 
 <style>
-  .viewport { position: relative; flex: 1; min-height: 0; display: flex; padding: 4px 24px 8px; }
+  .viewport { position: relative; flex: 1; min-height: 0; display: flex; padding: 4px 24px 10px; }
   .fit { flex: 1; min-width: 0; container-type: size; display: grid; place-items: center; }
   .frame {
     position: relative; aspect-ratio: var(--ar); width: min(100cqw, 100cqh * var(--ar));

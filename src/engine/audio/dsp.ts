@@ -294,38 +294,41 @@ export class Limiter {
 
 // ---- Loudness: ITU-R BS.1770-4 integrated loudness (LUFS) of 48 kHz audio ----
 
-const K = [
-  { b: [1.53512485958697, -2.69169618940638, 1.19839281085285], a: [-1.69065929318241, 0.73248077421585] },
-  { b: [1, -2, 1], a: [-1.99004745483398, 0.99007225036621] },
-]
+// K-weighting: a high shelf (b0 b1 b2 / 1 a1 a2), then the RLB high-pass (1 -2 1 / 1 c1 c2).
+const B0 = 1.53512485958697, B1 = -2.69169618940638, B2 = 1.19839281085285, A1 = -1.69065929318241, A2 = 0.73248077421585
+const C1 = -1.99004745483398, C2 = 0.99007225036621
+const BLOCK_LEN = SR / 10
 
 export class LoudnessMeter {
-  private z: Float64Array[] = [] // biquad state per channel: [x1, x2, y1, y2] per stage
-  private sub: number[] = [] // channel-summed mean square per 100 ms
+  /** Channel-summed mean square of each complete 100 ms of input. Blocks of consecutive meters concatenate. */
+  readonly blocks: number[] = []
+  private z: Float64Array[] = [] // per channel: x1 x2 (input), y1 y2 (shelf out), v1 v2 (high-pass out)
   private acc = 0
   private n = 0
 
-  /** Push audio as it will be heard (a mono mic is pushed as two identical channels). */
-  push(chs: Float32Array[], len = chs[0].length) {
-    while (this.z.length < chs.length) this.z.push(new Float64Array(8))
-    for (let i = 0; i < len; i++) {
+  /** Push audio as it will be heard. `weight` 2 counts a mono source played on both channels. */
+  push(chs: Float32Array[], len = chs[0].length, weight = 1) {
+    while (this.z.length < chs.length) this.z.push(new Float64Array(6))
+    for (let i = 0; i < len; ) {
+      const e = Math.min(len, i + BLOCK_LEN - this.n)
       for (let c = 0; c < chs.length; c++) {
+        const x = chs[c]
         const z = this.z[c]
-        let x = chs[c][i]
-        for (let s = 0; s < 2; s++) {
-          const { b, a } = K[s]
-          const o = s * 4
-          const y = b[0] * x + b[1] * z[o] + b[2] * z[o + 1] - a[0] * z[o + 2] - a[1] * z[o + 3]
-          z[o + 1] = z[o]
-          z[o] = x
-          z[o + 3] = z[o + 2]
-          z[o + 2] = y
-          x = y
+        let x1 = z[0], x2 = z[1], y1 = z[2], y2 = z[3], v1 = z[4], v2 = z[5], acc = 0
+        for (let j = i; j < e; j++) {
+          const x0 = x[j]
+          const y = B0 * x0 + B1 * x1 + B2 * x2 - A1 * y1 - A2 * y2
+          const v = y - 2 * y1 + y2 - C1 * v1 - C2 * v2
+          x2 = x1, x1 = x0, y2 = y1, y1 = y, v2 = v1, v1 = v
+          acc += v * v
         }
-        this.acc += x * x
+        z[0] = x1, z[1] = x2, z[2] = y1, z[3] = y2, z[4] = v1, z[5] = v2
+        this.acc += acc * weight
       }
-      if (++this.n === SR / 10) {
-        this.sub.push(this.acc / this.n)
+      this.n += e - i
+      i = e
+      if (this.n === BLOCK_LEN) {
+        this.blocks.push(this.acc / BLOCK_LEN)
         this.acc = 0
         this.n = 0
       }
@@ -334,15 +337,20 @@ export class LoudnessMeter {
 
   /** Integrated loudness in LUFS, or null for silence. */
   integrated(): number | null {
-    const blocks: number[] = []
-    for (let i = 3; i < this.sub.length; i++) blocks.push((this.sub[i - 3] + this.sub[i - 2] + this.sub[i - 1] + this.sub[i]) / 4)
-    const lufs = (p: number) => -0.691 + 10 * Math.log10(p)
-    const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length
-    const abs = blocks.filter((p) => lufs(p) > -70)
-    if (!abs.length) return null
-    const rel = lufs(mean(abs)) - 10
-    return lufs(mean(abs.filter((p) => lufs(p) > rel)))
+    return integratedLoudness(this.blocks)
   }
+}
+
+/** BS.1770 gated loudness of 100 ms mean-square blocks (400 ms windows, 75% overlap). */
+export function integratedLoudness(sub: number[]): number | null {
+  const blocks: number[] = []
+  for (let i = 3; i < sub.length; i++) blocks.push((sub[i - 3] + sub[i - 2] + sub[i - 1] + sub[i]) / 4)
+  const lufs = (p: number) => -0.691 + 10 * Math.log10(p)
+  const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length
+  const abs = blocks.filter((p) => lufs(p) > -70)
+  if (!abs.length) return null
+  const rel = lufs(mean(abs)) - 10
+  return lufs(mean(abs.filter((p) => lufs(p) > rel)))
 }
 
 /** Static gain that brings speech measured at `lufs` to -16 LUFS, within sane bounds. */

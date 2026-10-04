@@ -35,13 +35,17 @@
         loadError = e instanceof Error ? e.message : String(e)
       }
     })()
+    stats.sync = []
     const timer = setInterval(() => {
-      const fps = stats.frames
-      line = `${stats.renderMs.toFixed(1)} ms/frame (max ${stats.maxRenderMs.toFixed(1)}) · ${stats.dropped} dropped · ${stats.starved} audio frames starved · prepare ${stats.prepareMs.toFixed(1)} ms ×${stats.prepares} · ${fps} frames`
+      // Largest gap between the audio being heard and the frame drawn, over the last 250 ms of playback.
+      const av = stats.sync!.reduce((m, [a, v]) => Math.max(m, Math.abs(a - v) * 1000), -1)
+      stats.sync = []
+      line = `${stats.renderMs.toFixed(1)} ms/frame (max ${stats.maxRenderMs.toFixed(1)}) · ${stats.dropped} dropped · ${stats.starved} audio frames starved · A/V ${av < 0 ? 'n/a' : `${av.toFixed(1)} ms`} · ${stats.grains} scrub grains · prepare ${stats.prepareMs.toFixed(1)} ms ×${stats.prepares} · ${stats.frames} frames`
     }, 250)
     ;(window as any).__player = { player, stats, play, pause, seek, scrub, toggle }
     return () => {
       clearInterval(timer)
+      stats.sync = null
       stop?.()
     }
   })

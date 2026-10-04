@@ -25,11 +25,11 @@
 <div class="win">
   <div class="side"><div class="on">Projects</div><div>Team</div><div>Billing</div><div>Settings</div></div>
   <div class="main">
-    <h1>Create a project</h1><p>Give it a name and invite your team. Café ☕ edition.</p>
+    <div id="content"><h1>Create a project</h1><p>Give it a name and invite your team. Café ☕ edition.</p>
     <label>Project name</label><div class="input" id="name"><span id="nameText"></span><span class="caret" id="caret" style="display:none"></span></div>
     <label>Description</label><div class="input" id="desc"><span id="descText" style="color:#999">Optional</span></div>
     <span class="btn" id="btn">Create project</span>
-    <div class="list" id="list"></div>
+    <div class="list" id="list"></div></div>
     <div class="toast" id="toast">Project created ✓</div>
   </div>
 </div>
@@ -47,6 +47,6 @@
     const age = t - S.click.up
     document.getElementById('toast').style.opacity = age > 0 && age < 3 ? String(Math.min(1, age * 4, (3 - age) * 4)) : '0'
     const sc = t >= S.scroll.start ? Math.min(1, (t - S.scroll.start) / S.scroll.dur) * S.scroll.px : 0
-    document.getElementById('list').style.transform = `translateY(${-sc}px)`
+    document.getElementById('content').style.transform = `translateY(${-sc}px)` // the whole page scrolls, as in a real app
   }
 </script></body></html>
