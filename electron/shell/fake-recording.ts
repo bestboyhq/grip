@@ -74,10 +74,12 @@ export function registerFakeRecording(bundle: string) {
     }, 33)
   })
   handle('recording:micMonitorStop', () => clearInterval(meter))
-  handle('recording:start', async (req: unknown) => {
+  let inputs = { cameraId: '', micId: '', systemAudio: true }
+  handle('recording:start', async (req: typeof inputs) => {
     console.log('[fake recording] start', JSON.stringify(req))
     if (state !== 'idle') return state
     if (process.env.STUDIO_FAKE_FAIL) throw new Error(process.env.STUDIO_FAKE_FAIL)
+    inputs = req
     set('starting')
     await wait(300)
     return set('recording')
@@ -90,14 +92,17 @@ export function registerFakeRecording(bundle: string) {
     if (state !== 'recording' && state !== 'paused') return null
     set('stopping')
     // A new project per take, like a real recording: the stand-in's sources, cloned (instant on
-    // APFS), with fresh edits. The stand-in itself is never written to.
+    // APFS), with fresh edits, minus the inputs this take had off. The stand-in is never written to.
     const { sources } = JSON.parse(await readFile(join(bundle, 'project.json'), 'utf8')) as Project
+    if (!inputs.cameraId) delete sources.camera
+    if (!inputs.micId) delete sources.mic
+    if (!inputs.systemAudio) delete sources.system
     const dir = await createBundle(recordingName(new Date(), (n) => existsSync(join(projectsDir(), `${n}.studio`))))
     await cp(join(bundle, 'sources'), join(dir, 'sources'), { recursive: true, mode: constants.COPYFILE_FICLONE })
     await writeNewRecording(dir, sources)
     set('idle')
     sendAll('recording:finished', dir, { reason: 'user' })
-    recordingEvents.emit('finished', dir)
+    recordingEvents.emit('finished', dir, { reason: 'user' })
     return sources
   })
 }

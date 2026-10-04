@@ -1,8 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseStudioUrl } from './url.ts'
+import { parseLaunch, parseStudioUrl } from './url.ts'
 import { plainError } from './errors.ts'
-import { areaOf, fit, place, reachable } from './bounds.ts'
+import { areaOf, arrangement, fit, place, reachable } from './bounds.ts'
+import { hold, release } from './session.ts'
 
 test('studio:// urls', () => {
   assert.deepEqual(parseStudioUrl('studio://record'), { kind: 'record' })
@@ -20,6 +21,21 @@ test('studio:// urls', () => {
   assert.equal(parseStudioUrl('studio://open?path=/etc/passwd'), null)
   assert.equal(parseStudioUrl('studio://delete'), null)
   assert.equal(parseStudioUrl('https://record'), null)
+})
+
+test('launch arguments', () => {
+  const exe = '/Applications/Studio.app/Contents/MacOS/Studio'
+  // A second instance from another directory: its relative paths are its own.
+  assert.deepEqual(parseLaunch([exe, '--allow-file-access-from-files', 'Demo #1 ✨.studio', 'clip.mov', 'studio://stop'], '/Users/me/Movies'), {
+    urls: ['studio://stop'],
+    files: ['/Users/me/Movies/Demo #1 ✨.studio', '/Users/me/Movies/clip.mov'],
+  })
+  // A studio://open URL is a URL, not a file, though it ends in .studio.
+  assert.deepEqual(parseLaunch([exe, 'studio://open?path=/a/b.studio'], '/'), { urls: ['studio://open?path=/a/b.studio'], files: [] })
+  // Dev labs: first launch keeps the order; a second instance gets switches first, then ".".
+  assert.equal(parseLaunch(['electron', '.', '--lab', 'RecorderShell'], '/').lab, 'RecorderShell')
+  assert.equal(parseLaunch(['electron', '--lab', '--enable-logging', '.', 'RecorderShell&ref=/x.png'], '/').lab, 'RecorderShell&ref=/x.png')
+  assert.deepEqual(parseLaunch(['electron', '.'], '/'), { urls: [], files: [] })
 })
 
 test('plain-language errors', () => {
@@ -55,4 +71,29 @@ test('window placement', () => {
   assert.deepEqual(place({ width: 880, height: 64 }, main, 20), { x: 316, y: 860, width: 880, height: 64 })
   assert.equal(areaOf({ x: 1400, y: 0, width: 400, height: 300 }, [main, ext]), 1)
   assert.equal(areaOf({ x: 9000, y: 0, width: 10, height: 10 }, [main, ext]), -1)
+})
+
+test('finish or delete while the engine starts runs once it records', () => {
+  // Finish clicked twice while starting: one stop, sent when recording begins.
+  let held = hold(hold(null, 'stop'), 'stop')
+  assert.deepEqual(release(held, 'starting'), [null, 'stop'])
+  assert.deepEqual(release(held, 'recording'), ['stop', null])
+  // Delete wins over Finish, in either order.
+  assert.equal(hold(hold(null, 'stop'), 'cancel'), 'cancel')
+  assert.equal(hold(hold(null, 'cancel'), 'stop'), 'cancel')
+  // The start failed: there is nothing to stop, and nothing stays held for the next take.
+  held = hold(null, 'cancel')
+  assert.deepEqual(release(held, 'idle'), [null, null])
+})
+
+test('display arrangement: only real changes rebuild the picker', () => {
+  const workArea = { x: 0, y: 33, width: 1512, height: 949 }
+  const display = { id: 1, bounds: { x: 0, y: 0, width: 1512, height: 982 }, workArea, scaleFactor: 2, rotation: 0 }
+  const now = arrangement([display])
+  // The Dock or menu bar changing the work area is the burst macOS sends all the time.
+  const docked = { ...display, workArea: { ...workArea, height: 870 } }
+  assert.equal(arrangement([docked]), now)
+  assert.notEqual(arrangement([{ ...display, scaleFactor: 1 }]), now)
+  assert.notEqual(arrangement([{ ...display, bounds: { x: 0, y: 0, width: 1728, height: 1117 } }]), now)
+  assert.notEqual(arrangement([display, { ...display, id: 2 }]), now)
 })

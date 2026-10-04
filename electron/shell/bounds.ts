@@ -34,6 +34,12 @@ export function place(size: { width: number; height: number }, area: Rect, botto
   return fit({ x, y, ...size }, area)
 }
 
+/** What the picking overlays depend on: each display's id, bounds, scale, and rotation. Work-area
+ *  changes (the Dock, the menu bar) leave it alone. */
+export function arrangement(displays: Array<{ id: number; bounds: Rect; scaleFactor: number; rotation: number }>): string {
+  return JSON.stringify(displays.map((d) => [d.id, d.bounds, d.scaleFactor, d.rotation]))
+}
+
 /** Index of the area holding most of `b` (where a window "is"), -1 when it is on none. */
 export function areaOf(b: Rect, areas: Rect[]): number {
   let best = -1

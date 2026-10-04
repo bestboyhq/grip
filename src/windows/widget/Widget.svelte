@@ -25,9 +25,15 @@
     if (confirm) run(confirm)
     confirm = null
   }
+
+  /** Right-click: hide the controls for this recording. The menu bar icon brings them back. */
+  async function menu(e: MouseEvent) {
+    const items = [{ id: 'hide', label: 'Hide Recording Controls' }]
+    if ((await invoke('shell:popup', items, e.clientX, e.clientY)) === 'hide') window.close()
+  }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && (confirm = null)} />
+<svelte:window onkeydown={(e) => e.key === 'Escape' && (confirm = null)} oncontextmenu={menu} />
 
 <main class="widget">
   {#if confirm}

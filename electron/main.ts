@@ -18,7 +18,7 @@ import { command, openFilesOrAlert, openOnboarding, openProject, recordingStatus
 import { setAppMenu } from './shell/menu.ts'
 import { createTray } from './shell/tray.ts'
 import { checkForUpdates } from './shell/update.ts'
-import { parseStudioUrl } from './shell/url.ts'
+import { parseLaunch, parseStudioUrl } from './shell/url.ts'
 import { plainError } from './shell/errors.ts'
 import { registerFakeRecording } from './shell/fake-recording.ts'
 
@@ -64,8 +64,8 @@ app.on('open-url', (e, url) => {
   if (ready) openUrl(url)
   else early.push(url)
 })
-app.on('second-instance', (_e, argv) => {
-  if (!quitting && !launch(argv)) showPicker()
+app.on('second-instance', (_e, argv, cwd) => {
+  if (!quitting && !launch(argv, cwd)) showPicker()
 })
 
 function openUrl(url: string) {
@@ -75,22 +75,13 @@ function openUrl(url: string) {
   else if (a?.kind === 'open') openProject(a.path)
 }
 
-/** Act on launch arguments: `--lab <Name>`, `[--open] <bundle.studio | video.mp4>`, `studio://` URLs. False when there were none. */
-function launch(argv: string[]): boolean {
-  const lab = argv.indexOf('--lab')
-  if (lab > 0) {
-    // A second instance's argv carries Chromium switches too: the name is the next non-flag.
-    openWindow(`dev?lab=${argv.slice(lab + 1).find((a) => !a.startsWith('-')) ?? ''}`)
-    return true
-  }
-  let acted = false
-  for (const a of argv.slice(1)) {
-    if (/^studio:/i.test(a)) openUrl(a)
-    else if (/\.(studio\/?|mp4|mov)$/i.test(a) && !a.startsWith('-')) openFilesOrAlert([a])
-    else continue
-    acted = true
-  }
-  return acted
+/** Act on launch arguments (parseLaunch); `cwd` is the launching shell's directory. False when there were none. */
+function launch(argv: string[], cwd = process.cwd()): boolean {
+  const { lab, urls, files } = parseLaunch(argv, cwd)
+  if (lab !== undefined) openWindow(`dev?lab=${lab}`)
+  urls.forEach(openUrl)
+  for (const f of files) openFilesOrAlert([f])
+  return lab !== undefined || urls.length + files.length > 0
 }
 
 app.whenReady().then(() => {
@@ -127,24 +118,33 @@ app.on('activate', () => {
   if (!BrowserWindow.getAllWindows().some((w) => w.isVisible())) showPicker()
 })
 
-// Quit prompts. Cancel always means: keep running, nothing changed.
+// Quit prompts. Cancel always means: keep running, nothing changed. ⌘Q again while one is open
+// does not stack a second prompt.
+let asking = false
 app.on('before-quit', async (e) => {
   if (quitting) return
   const recording = recordingStatus() !== 'idle'
   const exports = activeExports()
   if (!recording && !exports) return quit(true)
   e.preventDefault()
-  const { response } = await dialog.showMessageBox({
-    type: 'warning',
-    message: recording ? 'A recording is in progress.' : exports === 1 ? 'An export is in progress.' : `${exports} exports are in progress.`,
-    detail: recording ? 'Studio can save it and then quit.' : 'Quitting now stops it. Your project is safe.',
-    buttons: ['Cancel', recording ? 'Save Recording and Quit' : 'Stop and Quit'],
-    defaultId: 0,
-    cancelId: 0,
-  })
+  if (asking) return
+  asking = true
+  // Hidden runs (agents, tests) never block on a modal: they save and quit.
+  const { response } = hidden
+    ? { response: 1 }
+    : await dialog
+        .showMessageBox({
+          type: 'warning',
+          message: recording ? 'A recording is in progress.' : exports === 1 ? 'An export is in progress.' : `${exports} exports are in progress.`,
+          detail: recording ? 'Studio can save it and then quit.' : 'Quitting now stops it. Your project is safe.',
+          buttons: ['Cancel', recording ? 'Save Recording and Quit' : 'Stop and Quit'],
+          defaultId: 0,
+          cancelId: 0,
+        })
+        .finally(() => (asking = false))
   if (response !== 1) return
   quit(true)
-  if (recording) await stopAndWait()
+  await stopAndWait() // returns at once when the recording ended while the prompt was open
   app.quit()
 })
 app.on('web-contents-created', (_e, wc) => {

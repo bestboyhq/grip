@@ -13,6 +13,11 @@ export interface Settings {
   showWidget: boolean
   showCamera: boolean // camera bubble on screen while picking and recording
   hideDesktopIcons: boolean
+  /** Speaker notes on screen while picking and recording; only the user sees them. */
+  speakerNotes: boolean
+  notes: string
+  /** Prompter scroll speed in lines per minute, and text size in points. */
+  prompter: { speed: number; size: number }
   /** Last recording area: display id and rect in points relative to that display. */
   area: { display: number; rect: Rect; aspect: string } | null
   onboarded: boolean
@@ -28,6 +33,9 @@ const defaults: Settings = {
   showWidget: true,
   showCamera: true,
   hideDesktopIcons: false,
+  speakerNotes: false,
+  notes: '',
+  prompter: { speed: 20, size: 24 }, // about 150 words a minute
   area: null,
   onboarded: false,
   windows: {},

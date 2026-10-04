@@ -1,5 +1,5 @@
 // The recording flow around the capture engine: toolbar, picking overlays, countdown, recording
-// widget, camera bubble, global shortcuts, and the editor once a recording finishes.
+// widget, camera bubble, speaker notes, global shortcuts, and the editor once a recording finishes.
 //
 // The capture engine (electron/recording.ts) reports state and finished recordings on
 // `recordingEvents`; its controls are IPC only, so the recorder window is the session controller:
@@ -15,12 +15,13 @@
 //   shell:countdown(on)           a countdown runs (Esc cancels it: "shell:escape")
 //   shell:start(opts)             overlay -> controller: start recording with these options
 //   shell:fail(error)             a recording call failed: plain-language message or permission fix
-//   shell:display(id)             display geometry for an overlay
+//   shell:display(id)             display geometry for an overlay, and where the toolbar sits on it
 //   shell:popup(items, x, y)      native menu at (x, y) in the sender window -> picked id | null
 //   shell:open-project(path?)     open a bundle in the editor (no path: Open dialog)
 //   shell:open-files(paths)       dropped files: bundles open, videos import first; rejects with a reason
 //   shell:open-settings           the settings window (onboarding route, settings page)
 //   shell:relaunch                macOS applies a new Screen Recording grant only after a relaunch
+//   notes:prompter                main -> speaker notes window: start or stop the prompter (⌥⌘.)
 // Editor windows: "editor:close" asks one to save and refresh its thumbnail; it answers editor:closed.
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, Notification, screen, type BrowserWindowConstructorOptions, type MenuItemConstructorOptions } from 'electron'
 import { existsSync, statSync } from 'node:fs'
@@ -28,18 +29,20 @@ import { basename, isAbsolute, resolve } from 'node:path'
 import { importVideo, recoveredAtLaunch } from '../projects.ts'
 import { recordingEvents } from '../recording.ts'
 import { activeDisplay, hidden, openWindow, reveal, sendAll, setRecordingDock, windowsOf } from '../windows.ts'
-import { place } from './bounds.ts'
+import { arrangement, place } from './bounds.ts'
 import { plainError, type Permission } from './errors.ts'
+import { hold, release, type Held } from './session.ts'
 import { setSettings, settings, settingsListeners } from './settings.ts'
 import type { Mode } from './url.ts'
 
 export type Status = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping'
 export type Command = 'start' | 'stop' | 'pause' | 'resume' | 'toggle-pause' | 'cancel' | 'restart'
 
-export const SHORTCUTS = { record: 'Alt+Command+Return', pause: 'Alt+Shift+Command+P', cancel: 'Alt+Shift+Command+Backspace' }
+export const SHORTCUTS = { record: 'Alt+Command+Return', pause: 'Alt+Shift+Command+P', cancel: 'Alt+Shift+Command+Backspace', prompter: 'Alt+Command+.' }
 const TOOLBAR = { width: 882, height: 64 }
 const WIDGET = { width: 280, height: 48 }
 const BUBBLE = 216 // camera bubble window; the circle inside leaves room for its shadow
+const NOTES = { width: 440, height: 260 }
 
 let toolbar: BrowserWindow | null = null
 let loaded: Promise<unknown> = Promise.resolve()
@@ -128,7 +131,7 @@ export function showPicker(m?: Mode) {
   reveal(win)
   if (m) pick(m)
   else broadcast()
-  updateBubble()
+  updateHelpers()
 }
 
 export function closePicker() {
@@ -136,11 +139,15 @@ export function closePicker() {
   counting = false
   pick(null)
   toolbar?.hide()
-  updateBubble()
+  updateHelpers()
 }
+
+/** Stop or cancel asked for while the engine starts; sent once it records (setStatus). */
+let held: Held = null
 
 /** Send a command to the controller, which calls the capture engine. */
 export async function command(cmd: Command, opts?: unknown) {
+  if ((cmd === 'stop' || cmd === 'cancel') && status === 'starting') return void (held = hold(held, cmd))
   if (cmd === 'restart' && status !== 'idle') {
     clock = { elapsed: 0, at: status === 'recording' ? Date.now() : 0 }
     broadcast()
@@ -153,21 +160,29 @@ export async function command(cmd: Command, opts?: unknown) {
 /** Load the controller ahead of first use (tray menu, shortcuts). */
 export const warmUp = () => void controller()
 
+/** Ask, then delete the recording in progress. The shortcut held down or pressed again while the
+ *  question is open asks once. */
+let confirming = false
 export async function cancelRecording() {
-  if (status === 'idle') return
-  const { response } = await dialog.showMessageBox({
-    type: 'warning',
-    message: 'Delete this recording?',
-    detail: 'Everything recorded so far will be deleted.',
-    buttons: ['Keep Recording', 'Delete'],
-    defaultId: 0,
-    cancelId: 0,
-  })
-  if (response === 1) command('cancel')
+  if (status === 'idle' || confirming) return
+  confirming = true
+  const { response } = await dialog
+    .showMessageBox({
+      type: 'warning',
+      message: 'Delete this recording?',
+      detail: 'Everything recorded so far will be deleted.',
+      buttons: ['Keep Recording', 'Delete'],
+      defaultId: 0,
+      cancelId: 0,
+    })
+    .finally(() => (confirming = false))
+  if (response === 1 && recordingStatus() !== 'idle') command('cancel') // it may have ended meanwhile
 }
 
-/** Stop the recording and wait until it is saved (quit prompt). Null when it did not finish in time. */
+/** Stop the recording and wait until it is saved (quit prompt). Null when it did not finish in
+ *  time, or when nothing is recording. */
 export function stopAndWait(): Promise<string | null> {
+  if (status === 'idle') return Promise.resolve(null)
   return new Promise((done) => {
     waiters.push(done)
     command('stop')
@@ -185,6 +200,12 @@ function pick(m: Mode | null) {
   escape(overlays)
   broadcast()
 }
+
+/** The display arrangement the picker was laid out for. macOS reports metrics changes in bursts
+ *  (another app's Dock icon, the menu bar); only a real change moves the toolbar or rebuilds the
+ *  overlays, which would lose the pick in progress. */
+const displays = () => arrangement(screen.getAllDisplays())
+let covered = ''
 
 function openOverlays() {
   for (const d of screen.getAllDisplays()) {
@@ -248,6 +269,39 @@ function updateBubble() {
   w.once('ready-to-show', () => reveal(w, false))
 }
 
+/** Speaker notes: a prompter under the menu bar, near the camera, while picking and recording. */
+function updateNotes() {
+  const want = settings().speakerNotes && (picking || status !== 'idle')
+  const open = windowsOf('notes')[0]
+  if (!want) {
+    if (open) globalShortcut.unregister(SHORTCUTS.prompter)
+    return open?.destroy()
+  }
+  if (open) return
+  const area = activeDisplay().workArea
+  const w = openWindow('notes', {
+    ...floating,
+    ...NOTES,
+    x: Math.round(area.x + (area.width - NOTES.width) / 2),
+    y: area.y + 12,
+    resizable: true,
+    minWidth: 300,
+    minHeight: 150,
+    vibrancy: 'hud',
+    visualEffectState: 'active',
+  })
+  protect(w, 1)
+  w.once('ready-to-show', () => reveal(w, false))
+  // Start or stop the prompter from any app, the one being recorded included.
+  shortcut(SHORTCUTS.prompter, () => w.isDestroyed() || w.webContents.send('notes:prompter'))
+}
+
+/** Windows that follow the picker and the recording: camera bubble and speaker notes. */
+function updateHelpers() {
+  updateBubble()
+  updateNotes()
+}
+
 // ---- Status from the engine ----
 
 function setStatus(next: Status) {
@@ -274,9 +328,12 @@ function setStatus(next: Status) {
     shortcut(SHORTCUTS.pause, () => command('toggle-pause'))
     shortcut(SHORTCUTS.cancel, cancelRecording)
   }
-  updateBubble()
+  updateHelpers()
   broadcast()
   for (const f of statusListeners) f(next)
+  const [send, still] = release(held, next)
+  held = still
+  if (send) command(send)
 }
 
 /** A system notification; clicking it runs `then`. Never in hidden runs (agents, tests). */
@@ -384,7 +441,7 @@ export function openOnboarding(query = '') {
     maximizable: false,
     fullscreenable: false,
     titleBarStyle: 'hiddenInset',
-    backgroundColor: '#1e1e20',
+    backgroundColor: '#111113', // var(--bg): no flash of another gray while the page loads
   })
 }
 
@@ -431,7 +488,9 @@ export function registerRecorder() {
   ipcMain.handle('shell:display', (_e, id: number) => {
     const d = screen.getAllDisplays().find((d) => d.id === Number(id)) ?? screen.getPrimaryDisplay()
     // `self`: names our own windows carry in the engine's window list (dev runs as "Electron").
-    return { id: d.id, label: d.label, bounds: d.bounds, workArea: d.workArea, scaleFactor: d.scaleFactor, self: [app.getName(), basename(process.execPath)] }
+    // `toolbarTop`: where the toolbar's top edge sits on this display (local points); cards stay above it.
+    const toolbarTop = place(TOOLBAR, d.workArea, 20).y - d.bounds.y
+    return { id: d.id, label: d.label, bounds: d.bounds, workArea: d.workArea, scaleFactor: d.scaleFactor, toolbarTop, self: [app.getName(), basename(process.execPath)] }
   })
   ipcMain.handle('shell:popup', (e, items: PopupItem[], x: number, y: number) => {
     const win = BrowserWindow.fromWebContents(e.sender)
@@ -462,19 +521,25 @@ export function registerRecorder() {
   ipcMain.handle('shell:open-files', (_e, paths: unknown) => openFiles(Array.isArray(paths) ? paths.filter((p) => typeof p === 'string' && isAbsolute(p)) : []))
   ipcMain.handle('editor:closed', (e) => closers.get(e.sender.id)?.())
 
-  settingsListeners.push(updateBubble)
+  settingsListeners.push(updateHelpers)
   recordingEvents.on('state', setStatus)
-  recordingEvents.on('finished', (bundle: string) => {
+  recordingEvents.on('finished', (bundle: string, end?: { reason?: string; message?: string }) => {
     for (const done of waiters.splice(0)) done(bundle)
-    if (!quitting) openProject(bundle)
+    if (quitting) return
+    openProject(bundle)
+    // It stopped on its own (disk full, display unplugged, a write failed): say why, over the editor.
+    if (end?.reason && end.reason !== 'user') void alert('Studio stopped recording.', end.message ?? 'The recording was saved.')
   })
   // Recordings cut off by a crash or power loss, made whole at launch (capture repairs its own
   // files, projects rebuilds the rest): each opens in the editor, which says it was recovered.
   recordingEvents.on('recovered', (bundle: string) => openProject(bundle, true))
   recoveredAtLaunch.then((list) => list.forEach((r) => openProject(r.path, true)))
   shortcut(SHORTCUTS.record, () => (status === 'idle' ? showPicker() : command('stop')))
+  covered = displays()
   for (const e of ['display-added', 'display-removed', 'display-metrics-changed'] as const) {
     screen.on(e as 'display-added', () => {
+      if (displays() === covered) return
+      covered = displays()
       if (picking && toolbar) toolbar.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))
       if (windowsOf('area').length && !counting) {
         for (const w of windowsOf('area')) w.destroy()

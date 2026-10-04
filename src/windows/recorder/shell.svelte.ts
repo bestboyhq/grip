@@ -79,10 +79,12 @@ export async function inputs(): Promise<{ cameras: Device[]; mics: Device[]; dev
   return { cameras: list.filter((c) => c.kind !== 'ios'), devices: list.filter((c) => c.kind === 'ios'), mics: Array.isArray(mics) ? mics : [] }
 }
 
-/** The recordable windows. Without Screen Recording the engine rejects: an empty list. */
+/** The recordable windows, front to back, minus our own. Without Screen Recording the engine
+ *  rejects: an empty list. */
 export async function windowList(): Promise<WindowSource[]> {
-  const list = await invoke('recording:windows').catch(() => [])
-  return Array.isArray(list) ? list : []
+  const [list, display] = await Promise.all([invoke('recording:windows').catch(() => []), invoke('shell:display', 0)])
+  const self: string[] = display.self // our app names in the engine's list (dev runs as "Electron")
+  return Array.isArray(list) ? list.filter((w) => !self.includes(w.app)) : []
 }
 
 export const toEngine = (r: Rect): EngineRect => ({ x: r.x, y: r.y, w: r.width, h: r.height })

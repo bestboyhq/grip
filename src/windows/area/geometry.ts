@@ -68,12 +68,24 @@ export function resize(o: Rect, h: Handle | 'new', px: number, py: number, ratio
   return { width: w, height: hh, x: clamp(x, 0, W - w), y: clamp(y, 0, H - hh) }
 }
 
-/** `r` with `ratio` applied around its center, shrunk to fit W x H, and moved fully inside. */
+/** Top-left of a w x h form for area `sel`: under it, else above it, else inside its bottom edge;
+ *  never over its center, past the display's edges (W wide), or under the toolbar below `floor`. */
+export function formAt(sel: Rect, w: number, h: number, W: number, floor: number): { x: number; y: number } {
+  const GAP = 14
+  const EDGE = 12
+  let y = sel.y + sel.height + GAP
+  if (y + h > floor - EDGE) y = sel.y - GAP - h
+  if (y < EDGE) y = Math.min(sel.y + sel.height - GAP, floor - EDGE) - h
+  return { x: clamp(sel.x + sel.width / 2 - w / 2, EDGE, W - w - EDGE), y }
+}
+
+/** `r` with `ratio` applied around its center, shrunk to fit W x H (keeping the ratio; without one,
+ *  each side on its own), and moved fully inside. */
 export function constrain(r: Rect, ratio: number | null, W: number, H: number): Rect {
   let w = r.width
   let h = ratio ? w / ratio : r.height
-  const k = Math.min(1, W / w, H / h)
-  w = Math.max(MIN, w * k)
-  h = Math.max(MIN, h * k)
+  const k = ratio ? Math.min(1, W / w, H / h) : 1
+  w = Math.max(MIN, Math.min(w * k, W))
+  h = Math.max(MIN, Math.min(h * k, H))
   return { width: w, height: h, x: clamp(r.x + r.width / 2 - w / 2, 0, W - w), y: clamp(r.y + r.height / 2 - h / 2, 0, H - h) }
 }

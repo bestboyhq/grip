@@ -6,7 +6,23 @@
   import { onMount } from 'svelte'
   import { dropFiles, invoke, on } from '../../lib/ipc.ts'
   import Icon from './Icon.svelte'
-  import { ensurePermission, inputs, meterLevel, popup, setSettings, shell, startRequest, type Device, type MenuItem, type Mode, type Settings, type StartRequest } from './shell.svelte.ts'
+  import {
+    ensurePermission,
+    inputs,
+    meterLevel,
+    popup,
+    setSettings,
+    shell,
+    startRequest,
+    windowList,
+    type Device,
+    type MenuItem,
+    type Mode,
+    type Settings,
+    type StartRequest,
+    type Target,
+    type WindowSource,
+  } from './shell.svelte.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
@@ -83,16 +99,33 @@
     const id = await popup(items, el)
     const device = lists.devices.find((d) => d.id === id)
     if (!device) return invoke('shell:pick', null)
+    record(device.name, { kind: 'device', deviceId: device.id })
+  }
+
+  /** Right-click on Window: the recordable windows as a list, for one that is hidden or hard to point at. */
+  async function pickWindow(el: HTMLElement) {
+    const list = await windowList()
+    const label = (w: WindowSource) => (w.title ? `${w.app} - ${w.title.length > 60 ? `${w.title.slice(0, 59)}…` : w.title}` : w.app)
+    const id = await popup(list.length ? list.map((w) => ({ id: String(w.id), label: label(w) })) : [{ label: 'No windows to record', enabled: false }], el)
+    const win = list.find((w) => String(w.id) === id)
+    if (!win) return
+    invoke('shell:pick', null)
+    record(win.app, { kind: 'window', windowId: win.id })
+  }
+
+  /** Record a target picked from a menu: the countdown runs here, on the toolbar. */
+  async function record(name: string, target: Target) {
     if (s?.countdown) {
-      countdown = { n: 3, name: device.name }
-      while (countdown && countdown.n > 0) {
+      countdown = { n: 3, name }
+      const mine = countdown // canceled, or replaced by a newer countdown: this one stops
+      while (countdown === mine && mine.n > 0) {
         await new Promise((r) => setTimeout(r, 1000))
-        if (countdown) countdown.n--
+        if (countdown === mine) mine.n--
       }
-      if (!countdown) return // canceled
+      if (countdown !== mine) return
       countdown = null
     }
-    run('start', startRequest({ kind: 'device', deviceId: device.id }))
+    run('start', startRequest(target))
   }
 
   async function pickInput(kind: 'camera' | 'mic', el: HTMLElement) {
@@ -104,10 +137,12 @@
         { id: 'none', label: none, checked: !current },
         { separator: true },
         ...(list.length ? list.map((d) => ({ id: d.id, label: d.name, checked: d.id === current?.id })) : [{ label: kind === 'camera' ? 'No cameras found' : 'No microphones found', enabled: false }]),
+        ...(kind === 'camera' && current ? [{ separator: true }, { id: 'preview', label: 'Show Camera Preview', checked: !!s?.showCamera }] : []),
       ],
       el,
     )
     if (!id) return
+    if (id === 'preview') return setSettings({ showCamera: !s?.showCamera })
     if (id === 'none') return setSettings({ [kind]: null })
     // Just in time: the system prompt (or System Settings) appears when the user picks a device.
     if (await ensurePermission(kind === 'camera' ? 'camera' : 'microphone')) setSettings({ [kind]: id })
@@ -118,7 +153,7 @@
     const toggles: Array<[keyof Settings, string]> = [
       ['countdown', 'Countdown Before Recording'],
       ['showWidget', 'Show Recording Controls'],
-      ['showCamera', 'Show Camera Preview'],
+      ['speakerNotes', 'Show Speaker Notes'],
       ['hideDesktopIcons', 'Hide Desktop Icons'],
     ]
     const id = await popup(
@@ -132,7 +167,11 @@
 </script>
 
 <svelte:window
-  onkeydown={(e) => e.key === 'Escape' && invoke(shell.mode ? 'shell:pick' : 'shell:close-picker', null)}
+  onkeydown={(e) => {
+    if (e.key !== 'Escape') return
+    if (countdown) countdown = null
+    else invoke(shell.mode ? 'shell:pick' : 'shell:close-picker', null)
+  }}
   ondragover={(e) => e.preventDefault()}
   ondrop={(e) => dropFiles(e).catch((err: Error) => invoke('shell:warn', err.message))}
 />
@@ -148,7 +187,13 @@
     <button class="close" aria-label="Close" onclick={() => invoke('shell:close-picker')}><Icon name="close" size={22} stroke={2.4} /></button>
     <span class="sep"></span>
     {#each MODES as m (m.id)}
-      <button class="mode" class:on={shell.mode === m.id} aria-pressed={shell.mode === m.id} onclick={(e) => choose(m.id, e.currentTarget)}>
+      <button
+        class="mode"
+        class:on={shell.mode === m.id}
+        aria-pressed={shell.mode === m.id}
+        onclick={(e) => choose(m.id, e.currentTarget)}
+        oncontextmenu={(e) => m.id === 'window' && pickWindow(e.currentTarget)}
+      >
         <span class="icon"><Icon name={m.id} width={m.w} height={m.h} /></span>
         <span class="name">{m.label}</span>
       </button>
@@ -159,17 +204,17 @@
       <span class="label">{camera ? short(camera.name) : 'No camera'}</span>
     </button>
     <button class="pick mic" class:off={!mic} onclick={(e) => pickInput('mic', e.currentTarget)}>
-      <Icon name={mic ? 'mic' : 'mic-off'} size={24} stroke={1.85} />
+      <Icon name={mic ? 'mic' : 'mic-off'} width={12} height={17} stroke={1.5} />
       <span class="label">{mic ? short(mic.name) : 'No microphone'}</span>
-      {#if mic}<span class="meter" aria-hidden="true"><span style:width="{Math.max(3, level * 134)}px"></span></span>{/if}
+      {#if mic}<span class="meter" aria-hidden="true"><span style:width="{Math.max(3, level * 135.5)}px"></span></span>{/if}
     </button>
     <button class="pick system" class:off={!s?.systemAudio} aria-pressed={!!s?.systemAudio} onclick={() => setSettings({ systemAudio: !s?.systemAudio })}>
-      <Icon name={s?.systemAudio ? 'speaker' : 'speaker-off'} size={21} stroke={1.75} />
+      <Icon name={s?.systemAudio ? 'speaker' : 'speaker-off'} width={20} height={16} stroke={1.5} />
       <span class="label">{s?.systemAudio ? 'Record system audio' : 'No system audio'}</span>
     </button>
     <span class="sep"></span>
     <button class="gear" aria-label="Recording settings" onclick={(e) => openSettings(e.currentTarget)}>
-      <Icon name="gear" size={21.5} stroke={1.4} />
+      <Icon name="gear" size={18} />
       <Icon name="chevron" width={11} height={6.6} stroke={1.5} />
     </button>
   {/if}
@@ -221,19 +266,19 @@
   .sep {
     width: 1px;
     height: 44px;
-    margin: 0 6px;
-    background: rgb(255 255 255 / 0.13);
+    margin: 1px 6px 0;
+    background: rgb(255 255 255 / 0.105);
   }
   .close {
-    margin-right: 12.5px;
+    margin: 0 12px 0 0.5px;
   }
   .mode {
     width: 60px;
     height: 52px;
     flex-direction: column;
     justify-content: flex-start;
-    padding-top: 6px;
-    gap: 4.4px;
+    padding-top: 6.75px;
+    gap: 4.15px;
     color: #fff;
   }
   /* Icons of different heights share one centered box, so the labels line up. */
@@ -279,42 +324,52 @@
     text-overflow: ellipsis;
   }
   .camera {
-    width: 122px;
-    margin-left: 17.5px;
-    padding-right: 12px; /* a long name never touches the microphone */
+    width: 123px;
+    margin-left: 16.5px;
+    padding-right: 10px; /* a long name never touches the microphone */
+    gap: 8.5px;
   }
   .mic {
     width: 134px;
-    padding-left: 4px;
-    gap: 7px;
+    padding-left: 8px;
+    gap: 10px;
+  }
+  .mic :global(svg) {
+    margin-top: -2.5px;
   }
   .system {
     width: 160px;
-    margin: 0 14px 0 24px;
+    margin: 0 13.5px 0 24px;
   }
+  .system :global(svg) {
+    margin-top: -1px;
+  }
+  /* Level of the chosen microphone: a faint track under it, the level a dot at silence. */
   .meter {
     position: absolute;
-    left: 0;
-    right: 0;
-    bottom: -1px;
-    height: 2px;
-    display: flex;
-    align-items: center;
-    border-radius: 1px;
-    background: rgb(0 0 0 / 0.22);
-  }
-  .meter span {
+    left: -2.5px;
+    right: 1px;
+    top: 36.5px;
     height: 3px;
     border-radius: 1.5px;
-    background: rgb(255 255 255 / 0.72);
+    background: rgb(255 255 255 / 0.05);
+  }
+  .meter span {
+    display: block;
+    height: 3px;
+    border-radius: 1.5px;
+    background: rgb(255 255 255 / 0.4);
     transition: width 60ms linear;
   }
   .gear {
-    margin-left: 10px;
+    margin-left: 10.5px;
     height: 36px;
-    padding: 0 5px;
-    gap: 4px;
+    padding: 0 5px 0 6.5px;
+    gap: 6.5px;
     color: rgb(255 255 255 / 0.55);
+  }
+  .gear :global(svg + svg) {
+    margin-top: 2px;
   }
   .gear:hover {
     background: rgb(255 255 255 / 0.07);

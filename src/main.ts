@@ -8,6 +8,7 @@ const routes: Record<string, () => Promise<{ default: Component<{ params: URLSea
   widget: () => import('./windows/widget/Widget.svelte'),
   area: () => import('./windows/area/Area.svelte'),
   camera: () => import('./windows/camera/Camera.svelte'),
+  notes: () => import('./windows/notes/Notes.svelte'),
   onboarding: () => import('./windows/onboarding/Onboarding.svelte'),
   export: () => import('./windows/export/Export.svelte'),
   dev: () => import('./windows/dev/Dev.svelte'),
