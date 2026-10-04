@@ -1,0 +1,18 @@
+/* Design tokens shared by every window. Native macOS feel: system font, dark chrome. */
+:root {
+  color-scheme: dark;
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --bg: #1e1e20;
+  --bg-raised: #2a2a2d;
+  --bg-hover: #333337;
+  --border: rgb(255 255 255 / 0.08);
+  --text: #f2f2f3;
+  --text-dim: #9a9aa1;
+  --accent: #7c6cff;
+  --danger: #ff5f57;
+  --radius: 8px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; font: 13px/1.4 var(--font); color: var(--text); background: transparent; -webkit-font-smoothing: antialiased; user-select: none; overflow: hidden; }
+button { font: inherit; color: inherit; }

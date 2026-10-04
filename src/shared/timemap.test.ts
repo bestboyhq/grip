@@ -1,0 +1,39 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import type { Clip } from './project.ts'
+import { timeMap, toSource, toOutput, mapRange, splitAt, removeOutputRange, removeSourceRange, setSpeed } from './timemap.ts'
+
+const clip = (start: number, end: number, speed = 1): Clip => ({ id: `${start}`, start, end, speed, volume: 1 })
+const near = (a: number | null, b: number) => assert.ok(a !== null && Math.abs(a - b) < 1e-6, `${a} != ${b}`)
+
+test('round trip through cuts and speed changes', () => {
+  // source 0-10 normal, cut 10-20, 20-30 at 2x
+  const m = timeMap([clip(0, 10), clip(20, 30, 2)])
+  near(m.duration, 15)
+  near(toSource(m, 5), 5)
+  near(toSource(m, 12), 24)
+  near(toOutput(m, 24), 12)
+  assert.equal(toOutput(m, 15), null)
+  near(toOutput(m, 30), 15)
+  for (let t = 0; t <= 15; t += 0.37) near(toOutput(m, toSource(m, t)), t)
+})
+
+test('mapRange splits a range across a cut', () => {
+  const m = timeMap([clip(0, 10), clip(20, 30, 2)])
+  assert.deepEqual(mapRange(m, 8, 22), [[8, 10], [10, 11]])
+  assert.deepEqual(mapRange(m, 12, 18), [])
+})
+
+test('edits', () => {
+  let c = [clip(0, 30)]
+  c = splitAt(c, 10)
+  assert.equal(c.length, 2)
+  c = removeOutputRange(c, 10, 20) // remove source 10-20
+  near(timeMap(c).duration, 20)
+  near(toSource(timeMap(c), 10), 20)
+  c = removeSourceRange(c, 25, 26)
+  near(timeMap(c).duration, 19)
+  c = setSpeed(c, 0, 10, 4)
+  near(timeMap(c).duration, 11.5)
+  near(toOutput(timeMap(c), 20), 2.5)
+})

@@ -1,0 +1,52 @@
+<!doctype html>
+<!-- A fake app UI that reacts to a scripted timeline. render(t) draws the state at time t.
+     No cursor: like a real capture, the cursor is drawn later from events. -->
+<html><head><meta charset="utf-8"><style>
+  html,body{margin:0;height:100%;font:15px -apple-system,system-ui,sans-serif;background:#e9e7ef;overflow:hidden}
+  .menubar{height:25px;background:rgba(246,246,246,.85);display:flex;gap:18px;align-items:center;padding:0 14px;font-size:13px}
+  .win{position:absolute;left:120px;top:70px;width:1200px;height:760px;background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden;display:flex}
+  .side{width:220px;background:#f5f5f7;border-right:1px solid #e3e3e8;padding:44px 12px}
+  .side div{padding:7px 10px;border-radius:6px;color:#333}
+  .side .on{background:#dcdcf5;color:#3b2fd1}
+  .main{flex:1;padding:40px 48px;position:relative}
+  h1{margin:0 0 6px;font-size:26px}
+  p{color:#666;margin:0 0 28px}
+  label{display:block;font-size:13px;color:#555;margin-bottom:6px}
+  .input{height:40px;border:1px solid #ccc;border-radius:8px;padding:0 12px;display:flex;align-items:center;font-size:16px;width:520px;margin-bottom:22px}
+  .input.focus{border-color:#6c5ce7;box-shadow:0 0 0 3px rgba(108,92,231,.25)}
+  .caret{width:1.5px;height:20px;background:#222;margin-left:1px}
+  .btn{display:inline-block;background:#6c5ce7;color:#fff;padding:11px 22px;border-radius:8px;font-weight:600}
+  .btn.down{background:#5546c9;transform:scale(.97)}
+  .list{margin-top:34px;border-top:1px solid #eee}
+  .row{padding:14px 4px;border-bottom:1px solid #eee;display:flex;justify-content:space-between}
+  .toast{position:absolute;right:30px;top:30px;background:#1e1e1e;color:#fff;padding:12px 18px;border-radius:10px;opacity:0;transition:none}
+</style></head><body>
+<div class="menubar"><b>Acme</b><span>File</span><span>Edit</span><span>View</span><span>Window</span><span>Help</span></div>
+<div class="win">
+  <div class="side"><div class="on">Projects</div><div>Team</div><div>Billing</div><div>Settings</div></div>
+  <div class="main">
+    <h1>Create a project</h1><p>Give it a name and invite your team. Café ☕ edition.</p>
+    <label>Project name</label><div class="input" id="name"><span id="nameText"></span><span class="caret" id="caret" style="display:none"></span></div>
+    <label>Description</label><div class="input" id="desc"><span id="descText" style="color:#999">Optional</span></div>
+    <span class="btn" id="btn">Create project</span>
+    <div class="list" id="list"></div>
+    <div class="toast" id="toast">Project created ✓</div>
+  </div>
+</div>
+<script>
+  const S = JSON.parse(new URLSearchParams(location.search).get('s')) // { typing, click, focus, scroll }
+  const rows = Array.from({length: 30}, (_, i) => `<div class="row"><span>Project ${i + 1}</span><span style="color:#999">${i + 2} days ago</span></div>`).join('')
+  document.getElementById('list').innerHTML = rows
+  window.render = (t) => {
+    const n = Math.max(0, Math.min(S.typing.text.length, Math.floor((t - S.typing.start) * S.typing.cps)))
+    document.getElementById('nameText').textContent = t >= S.typing.start ? S.typing.text.slice(0, n) : ''
+    const focused = t >= S.focus
+    document.getElementById('name').classList.toggle('focus', focused)
+    document.getElementById('caret').style.display = focused && Math.floor(t * 2) % 2 === 0 ? 'block' : 'none'
+    document.getElementById('btn').classList.toggle('down', t >= S.click.down && t < S.click.up)
+    const age = t - S.click.up
+    document.getElementById('toast').style.opacity = age > 0 && age < 3 ? String(Math.min(1, age * 4, (3 - age) * 4)) : '0'
+    const sc = t >= S.scroll.start ? Math.min(1, (t - S.scroll.start) / S.scroll.dur) * S.scroll.px : 0
+    document.getElementById('list').style.transform = `translateY(${-sc}px)`
+  }
+</script></body></html>
