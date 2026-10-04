@@ -1,5 +1,5 @@
 {
   "name": "studio-native",
   "private": true,
-  "napi": { "binaryName": "studio" }
+  "napi": { "binaryName": "studio", "constEnum": false }
 }

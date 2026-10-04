@@ -21,6 +21,7 @@ objc2-core-media = "0.3"
 objc2-core-video = "0.3"
 objc2-core-graphics = "0.3"
 objc2-core-foundation = "0.3"
+objc2-core-audio-types = "0.3"
 objc2-vision = "0.3"
 block2 = "0.6"
 dispatch2 = "0.3"
@@ -31,3 +32,5 @@ napi-build = "2"
 
 [profile.release]
 lto = "thin"
+# Apple's strip (run for the default "debuginfo") can leave a LINKEDIT string pool dyld rejects on macOS 27.
+strip = "none"
