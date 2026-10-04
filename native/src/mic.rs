@@ -19,11 +19,10 @@ use objc2_av_foundation::{
     AVCaptureDeviceDiscoverySession, AVCaptureDeviceInput, AVCaptureDevicePosition, AVCaptureDeviceTypeExternal,
     AVCaptureDeviceTypeMicrophone, AVCaptureOutput, AVCaptureSession, AVMediaTypeAudio,
 };
-use objc2_core_audio_types::kAudioFormatLinearPCM;
 use objc2_core_media::{CMAudioFormatDescriptionGetStreamBasicDescription, CMSampleBuffer};
 use objc2_foundation::{NSArray, NSString};
 
-use crate::capture::writer::{AudioWriter, dict, interleaved_f32, num, obj};
+use crate::writer::{AudioWriter, interleaved_f32, ns_error, pcm_settings};
 use crate::clock::SESSION;
 use crate::permissions::{Permission, PermissionStatus, missing, permission_status};
 
@@ -111,8 +110,8 @@ define_class!(
         #[unsafe(method(captureOutput:didOutputSampleBuffer:fromConnection:))]
         fn did_output(&self, _output: &AVCaptureOutput, sb: &CMSampleBuffer, _c: &AVCaptureConnection) {
             let pts = unsafe { sb.presentation_time_stamp() };
-            if let Some((samples, _, _)) = interleaved_f32(sb) {
-                (self.ivars())(crate::capture::host_ns(pts), &samples);
+            if let (Some(ns), Some((samples, _, _))) = (crate::clock::cm_ns(pts), interleaved_f32(sb)) {
+                (self.ivars())(ns, &samples);
             }
         }
     }
@@ -133,18 +132,10 @@ unsafe impl Send for Capture {}
 impl Capture {
     fn start(device: Retained<AVCaptureDevice>, channels: usize, on_pcm: OnPcm) -> Result<Self, String> {
         let input = unsafe { AVCaptureDeviceInput::deviceInputWithDevice_error(&device) }
-            .map_err(|e| format!("Cannot use the microphone: {}", crate::capture::writer::ns_error(&e)))?;
+            .map_err(|e| format!("Cannot use the microphone: {}", ns_error(&e)))?;
         let session = unsafe { AVCaptureSession::new() };
         let output = unsafe { AVCaptureAudioDataOutput::new() };
-        let settings = dict(&[
-            ("AVFormatIDKey", num(kAudioFormatLinearPCM as f64)),
-            ("AVSampleRateKey", num(RATE)),
-            ("AVNumberOfChannelsKey", num(channels as f64)),
-            ("AVLinearPCMBitDepthKey", num(32.0)),
-            ("AVLinearPCMIsFloatKey", obj(objc2_foundation::NSNumber::new_bool(true))),
-            ("AVLinearPCMIsNonInterleaved", obj(objc2_foundation::NSNumber::new_bool(false))),
-        ]);
-        unsafe { output.setAudioSettings(Some(&settings)) };
+        unsafe { output.setAudioSettings(Some(&pcm_settings(RATE, channels))) };
         let delegate = Delegate::alloc().set_ivars(on_pcm);
         let delegate: Retained<Delegate> = unsafe { msg_send![super(delegate), init] };
         let queue = DispatchQueue::new("studio.mic", None);

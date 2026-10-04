@@ -12,7 +12,7 @@ use objc2_core_video::*;
 use objc2_foundation::NSURL;
 
 use super::analyze::{self, Rect};
-use super::writer::{self, nv12_attributes, VideoSpec, VideoWriter, AUDIO_RATE};
+use crate::writer::{self, nv12_attributes, VideoSpec, VideoWriter};
 use super::*;
 
 /// A scratch folder per test, removed afterwards. Hostile on purpose: '#', emoji, accents, spaces.
@@ -76,9 +76,10 @@ fn sample(pb: &CVPixelBuffer, host_ns: u64) -> CFRetained<CMSampleBuffer> {
     unsafe { CFRetained::from_raw(NonNull::new(out).unwrap()) }
 }
 
-/// Decoded frames: (pts seconds, (w, h), mean luma of the left half, top quarter, bottom quarter).
+/// Decoded frames: (pts seconds, (w, h), mean luma of the left half, top quarter, bottom quarter,
+/// lower middle (where a webcam subject sits), left edge).
 #[allow(deprecated)]
-fn decode(path: &Path) -> Vec<(f64, (usize, usize), f64, f64, f64)> {
+fn decode(path: &Path) -> Vec<(f64, (usize, usize), f64, f64, f64, f64, f64)> {
     let url = NSURL::from_file_path(path).unwrap();
     unsafe {
         let asset = AVURLAsset::URLAssetWithURL_options(&url, None);
@@ -105,8 +106,9 @@ fn decode(path: &Path) -> Vec<(f64, (usize, usize), f64, f64, f64)> {
             let left = mean(w / 8, w / 2 - w / 8, h / 4, h - h / 4);
             let top = mean(w / 4, w - w / 4, h / 16, h / 4);
             let bottom = mean(w / 4, w - w / 4, h - h / 4, h - h / 16);
+            let (middle, edge) = (mean(w * 2 / 5, w * 3 / 5, h / 2, h * 9 / 10), mean(0, w / 16, h / 2, h * 9 / 10));
             CVPixelBufferUnlockBaseAddress(&pb, CVPixelBufferLockFlags::ReadOnly);
-            out.push((sb.presentation_time_stamp().seconds(), (w, h), left, top, bottom));
+            out.push((sb.presentation_time_stamp().seconds(), (w, h), left, top, bottom, middle, edge));
         }
         assert_eq!(reader.status(), AVAssetReaderStatus::Completed);
         out
@@ -119,15 +121,16 @@ fn duration(path: &Path) -> f64 {
     unsafe { AVURLAsset::URLAssetWithURL_options(&url, None).duration().seconds() }
 }
 
-/// Presentation times of the stored samples, without decoding.
+/// Presentation times of the stored samples, or of the frames a decoder outputs (what analysis sees).
 #[allow(deprecated)]
-fn sample_times(path: &Path) -> Vec<f64> {
+fn sample_times(path: &Path, decoded: bool) -> Vec<f64> {
     let url = NSURL::from_file_path(path).unwrap();
     unsafe {
         let asset = AVURLAsset::URLAssetWithURL_options(&url, None);
         let track = asset.tracksWithMediaType(AVMediaTypeVideo.unwrap()).firstObject().expect("video track");
         let reader = AVAssetReader::assetReaderWithAsset_error(&asset).unwrap();
-        let output = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(&track, None);
+        let settings = decoded.then(|| nv12_attributes(None));
+        let output = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(&track, settings.as_deref());
         reader.addOutput(&output);
         assert!(reader.startReading());
         let mut out = Vec::new();
@@ -154,11 +157,11 @@ fn an_hour_with_pauses_has_no_drift() {
     let pb = frame(64, 64, 100, 100);
     let t0: u64 = 7_000_000 * MS;
     CLOCK.start(t0);
-    let period_ns = |k: u64| k * 1_001_000_000 / 30_000; // 29.97 fps capture clock
+    let period_ns = |k: u64| k * 1_001_000_000_000 / 30_000; // 29.97 fps capture clock
     let (mut paused_ns, mut expected) = (0u64, Vec::new());
     let mut k = 0u64;
     let minutes20 = 1200 * 1000 * MS;
-    while period_ns(k) < 120 * 1000 * MS {
+    while period_ns(k) < 3600 * 1000 * MS {
         // A 7 s pause every 20 minutes of recording.
         if k > 0 && period_ns(k) / minutes20 != period_ns(k - 1) / minutes20 {
             let wall = t0 + period_ns(k) + paused_ns;
@@ -174,7 +177,7 @@ fn an_hour_with_pauses_has_no_drift() {
     }
     let (info, _, _) = sink.finish(None).unwrap();
     assert_eq!((info.frames as usize, info.dropped), (expected.len(), 0));
-    let stored = sample_times(&path);
+    let stored = sample_times(&path, false);
     assert_eq!(stored.len(), expected.len());
     let worst = stored.iter().zip(&expected).skip(1).map(|(a, b)| (a - b).abs()).fold(0.0, f64::max);
     assert!(worst < 1.0 / 90_000.0, "worst timestamp error {worst} s over an hour");
@@ -259,33 +262,28 @@ fn device_rotation_is_undone_and_recorded_with_gapless_audio() {
         sink.on_sample(&sample(&pb, t0 + 3 * MS + k * period));
     }
     // Audio: 1024-frame buffers with jitter, then a 100 ms dropout.
+    let format = writer::pcm_format(AUDIO_RATE, 2).unwrap();
     let chunk = 1024u64;
     let mut pos = 0u64; // samples
     while pos < 72_000 {
         let jitter = if (pos / chunk) % 2 == 0 { 0 } else { MS / 2 };
         let host = t0 + 20 * MS + pos * 1_000_000_000 / AUDIO_RATE as u64 + jitter;
-        let mut sb = writer::pcm_buffer(chunk as usize, |i, _| ((i as f32) * 0.05).sin() * 0.5).unwrap();
-        let timing = CMSampleTimingInfo {
-            duration: CMTime { value: 1, timescale: AUDIO_RATE as i32, flags: CMTimeFlags::Valid, epoch: 0 },
-            presentationTimeStamp: CMTime { value: host as i64, timescale: 1_000_000_000, flags: CMTimeFlags::Valid, epoch: 0 },
-            decodeTimeStamp: unsafe { objc2_core_media::kCMTimeInvalid },
-        };
-        let mut out = std::ptr::null_mut();
-        unsafe { CMSampleBuffer::create_copy_with_new_timing(None, &sb, 1, &timing, NonNull::from(&mut out)) };
-        sb = unsafe { CFRetained::from_raw(NonNull::new(out).unwrap()) };
-        sink.on_sample(&sb);
+        let samples: Vec<f32> = (0..chunk as usize * 2).map(|i| ((i / 2) as f32 * 0.05).sin() * 0.5).collect();
+        let pts = CMTime { value: host as i64, timescale: 1_000_000_000, flags: CMTimeFlags::Valid, epoch: 0 };
+        sink.on_sample(&writer::pcm_buffer(&format, &samples, pts).unwrap());
         pos += if pos == 24 * chunk { chunk + 4800 } else { chunk };
     }
     let (info, has_audio, rotations) = sink.finish(Some(1.6)).unwrap();
     assert!(has_audio);
-    assert_eq!((info.width, info.height, info.frames), (180, 320, 90));
+    assert_eq!((info.width, info.height, info.frames, info.duration), (180, 320, 90, 1.6));
     assert_eq!(rotations.len(), 2, "{rotations:?}");
     assert_eq!(rotations[0].deg, 90);
     assert!((rotations[0].t - (3.0 + 30.0 * 1000.0 / 60.0) / 1000.0).abs() < 1e-3, "{rotations:?}");
     assert_eq!(rotations[1].deg, 0);
 
     let frames = decode(&video);
-    assert_eq!(frames.len(), 90);
+    assert_eq!(frames.len(), 92, "the last frame repeated twice to hold it until the end");
+    assert!((duration(&video) - 1.6).abs() < 0.01, "{}", duration(&video));
     assert!(frames.iter().all(|f| f.1 == (180, 320)), "constant size");
     // Turned counter-clockwise: the landscape's bright right half is now on top.
     let turned = &frames[45];
@@ -301,10 +299,10 @@ fn device_rotation_is_undone_and_recorded_with_gapless_audio() {
 fn a_crash_leaves_a_playable_file() {
     let dir = Dir::new("crash");
     let path = dir.file("crash.mp4");
-    let spec = VideoSpec { width: 320, height: 180, fps: 30.0, bits_per_pixel: 0.15, realtime: false, timescale: 90_000, start: 0.0 };
-    let mut w = VideoWriter::create(&path, spec).unwrap();
+    let spec = VideoSpec { width: 320, height: 180, fps: 30.0, bits_per_pixel: 0.15, realtime: false };
+    let mut w = VideoWriter::new(&path, spec).unwrap();
     for k in 0..120 {
-        assert!(w.append(&frame(320, 180, (k * 2) as u8, 0), k as f64 / 30.0));
+        assert!(w.frame(frame(320, 180, (k * 2) as u8, 0), Some(k as f64 / 30.0)));
     }
     std::thread::sleep(std::time::Duration::from_millis(500));
     std::mem::forget(w); // no finish(): what a crash or power loss leaves on disk
@@ -316,10 +314,10 @@ fn a_crash_leaves_a_playable_file() {
 fn analysis_matches_camera_timing_and_cleans_up_on_cancel() {
     let dir = Dir::new("analysis");
     let input = dir.file("camera.mp4");
-    let spec = VideoSpec { width: 640, height: 360, fps: 30.0, bits_per_pixel: 0.15, realtime: false, timescale: 90_000, start: 0.0 };
-    let mut w = VideoWriter::create(&input, spec).unwrap();
+    let spec = VideoSpec { width: 640, height: 360, fps: 30.0, bits_per_pixel: 0.15, realtime: false };
+    let mut w = VideoWriter::new(&input, spec).unwrap();
     for k in 0..45 {
-        w.append(&frame(640, 360, 60 + k as u8, 180), 0.004 + k as f64 / 30.0);
+        w.frame(frame(640, 360, 60 + k as u8, 180), Some(0.004 + k as f64 / 30.0));
     }
     w.finish(1.5).unwrap();
     let out = input.parent().unwrap().join("analysis");
@@ -339,6 +337,35 @@ fn analysis_matches_camera_timing_and_cleans_up_on_cancel() {
     let e = analyze::analyze(&input, &out, &AtomicBool::new(true), |_| {}).err().unwrap();
     assert!(e.contains("cancelled"));
     assert_eq!(std::fs::read_dir(&out).unwrap().count(), 1, "only the earlier faces file remains");
+}
+
+/// A real webcam-style clip of a person: `STUDIO_PERSON_VIDEO=<file.mp4> cargo test real_person`.
+/// Skipped without it (no such clip ships with the repo).
+#[test]
+fn analysis_of_a_real_person_finds_the_face_and_the_body() {
+    let Ok(input) = std::env::var("STUDIO_PERSON_VIDEO") else { return eprintln!("STUDIO_PERSON_VIDEO not set: skipped") };
+    let dir = Dir::new("person");
+    let r = analyze::analyze(Path::new(&input), &dir.0, &AtomicBool::new(false), |_| {}).unwrap();
+    let camera = sample_times(Path::new(&input), true);
+    assert_eq!(r.frames as usize, camera.len());
+    let matte = decode(&r.matte);
+    assert_eq!(matte.len(), camera.len(), "one matte frame per camera frame");
+    for (m, c) in matte.iter().zip(&camera).skip(1) {
+        assert!((m.0 - c).abs() < 1e-4, "matte at {} vs camera at {c}", m.0);
+    }
+    // The person fills the lower middle; the background at the edge is cut away.
+    let (middle, edge) = matte.iter().fold((0.0, 0.0), |a, m| (a.0 + m.5, a.1 + m.6));
+    let (middle, edge) = (middle / matte.len() as f64, edge / matte.len() as f64);
+    println!("{} frames, matte luma middle {middle:.0} edge {edge:.0}, {} face samples", r.frames, r.face_samples);
+    assert!(middle > 180.0 && edge < 40.0, "middle {middle} edge {edge}");
+    let faces: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(&r.faces).unwrap()).unwrap();
+    let duration = camera.last().unwrap() - camera[0];
+    assert!((faces.len() as f64 - duration * 10.0).abs() < 3.0, "about 10 face samples a second: {}", faces.len());
+    for f in &faces {
+        let (x, y, w, h) = (f["x"].as_f64().unwrap(), f["y"].as_f64().unwrap(), f["w"].as_f64().unwrap(), f["h"].as_f64().unwrap());
+        let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+        assert!((0.35..0.65).contains(&cx) && (0.15..0.6).contains(&cy) && (0.1..0.5).contains(&w), "face {f}");
+    }
 }
 
 #[test]
@@ -370,7 +397,7 @@ fn recording_fails_cleanly_without_a_camera() {
     let e = CameraRecorder::start("no-such-camera", &dir.file("never.mp4")).err().expect("must fail");
     println!("{e}");
     assert!(!e.is_empty() && !e.contains('\n'), "one line: {e}");
-    let e = DeviceRecorder::start("no-such-device", &dir.file("never.mp4"), &dir.file("never.m4a")).err().expect("must fail");
+    let e = DeviceRecorder::start("no-such-device", &dir.file("never.mp4"), Some(&dir.file("never.m4a"))).err().expect("must fail");
     println!("{e}");
     assert!(!e.is_empty() && !e.contains('\n'), "one line: {e}");
     let e = CameraRecorder::start("x", Path::new("/no/such/dir/camera.mp4")).err().unwrap();
@@ -398,7 +425,7 @@ fn capture_outputs_accept_our_settings_and_route_samples_to_the_sink() {
     add_video_output(&session, &delegate, &queue, None).unwrap();
     let audio = unsafe { AVCaptureAudioDataOutput::new() };
     unsafe {
-        audio.setAudioSettings(Some(&writer::pcm_settings()));
+        audio.setAudioSettings(Some(&writer::pcm_settings(AUDIO_RATE, 2)));
         audio.setSampleBufferDelegate_queue(Some(ProtocolObject::from_ref(&*delegate)), Some(&queue));
     }
 
@@ -416,3 +443,4 @@ fn capture_outputs_accept_our_settings_and_route_samples_to_the_sink() {
     let (info, _, _) = sink.finish(Some(0.5)).unwrap();
     assert_eq!((info.frames, info.dropped), (1, 1));
 }
+

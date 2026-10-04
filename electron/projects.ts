@@ -14,10 +14,12 @@
 //   projects:remove(path)                     moves the bundle to the Trash
 //   projects:presets:*                        see ./presets.ts
 // Event to all windows: projects:sources(path, sources) after a main-side updateProject().
+// Main-process event: projectEvents 'recovered' (path) for each bundle rebuilt at launch.
 //
 // Other main-process domains import the helpers below; keep their signatures.
 import electron from 'electron'
 import { execFile } from 'node:child_process'
+import { EventEmitter } from 'node:events'
 import { constants, existsSync } from 'node:fs'
 import { access, copyFile, mkdir, open, readFile, readdir, rename, rm, rmdir, stat } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path'
@@ -30,6 +32,8 @@ export interface Recovered {
   name: string
   duration: number
 }
+
+export const projectEvents = new EventEmitter()
 
 export interface RecentProject {
   path: string
@@ -185,6 +189,8 @@ export async function rebuildProject(bundle: string): Promise<Project | null> {
     await writeProject(bundle, bak)
     return bak
   }
+  // A recording cut short ends in movie fragments mediabunny stops before: make them whole first.
+  await import('./native.ts').then(({ native }) => native.repairRecording(bundle)).catch((e) => console.warn(`[projects] ${bundle}:`, e))
   const files = await readdir(join(bundle, 'sources')).catch(() => [] as string[])
   const media = async (stem: string) => {
     const f = files.find((f) => /\.(mp4|mov|m4a|caf|wav)$/i.test(f) && f.slice(0, f.lastIndexOf('.')) === stem)
@@ -410,6 +416,7 @@ export function registerProjects() {
   const { app, ipcMain, dialog, shell, BrowserWindow } = electron
   // Snapshot interrupted recordings now, before anything can start a new one.
   const recovered = recoverBundles().catch((e) => (console.error('[projects] recovery failed:', e), [] as Recovered[]))
+  recovered.then((list) => list.forEach((r) => projectEvents.emit('recovered', r.path)))
   const opened = (path: string) => {
     app.addRecentDocument(path)
     return updateRecent((l) => [path, ...l.filter((p) => p !== path)])

@@ -52,19 +52,19 @@ const HID_LISTEN_EVENT: u32 = 1;
 pub fn missing(kind: Permission) -> &'static str {
     match kind {
         Permission::Screen => {
-            "Screen Recording is off for Studio. Turn it on in System Settings > Privacy & Security > Screen & System Audio Recording."
+            "Studio needs Screen Recording permission. Turn it on in System Settings > Privacy & Security > Screen & System Audio Recording."
         }
         Permission::Accessibility => {
-            "Accessibility is off for Studio. Turn it on in System Settings > Privacy & Security > Accessibility."
+            "Studio needs Accessibility permission. Turn it on in System Settings > Privacy & Security > Accessibility."
         }
         Permission::InputMonitoring => {
-            "Input Monitoring is off for Studio. Turn it on in System Settings > Privacy & Security > Input Monitoring."
+            "Studio needs Input Monitoring permission. Turn it on in System Settings > Privacy & Security > Input Monitoring."
         }
         Permission::Microphone => {
-            "Microphone access is off for Studio. Turn it on in System Settings > Privacy & Security > Microphone."
+            "Studio needs Microphone permission. Turn it on in System Settings > Privacy & Security > Microphone."
         }
         Permission::Camera => {
-            "Camera access is off for Studio. Turn it on in System Settings > Privacy & Security > Camera."
+            "Studio needs Camera permission. Turn it on in System Settings > Privacy & Security > Camera."
         }
     }
 }

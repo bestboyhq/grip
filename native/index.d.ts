@@ -109,9 +109,6 @@ export interface RecordingSources {
 
 export declare function recordingState(): RecState
 
-/** Recover a recording a crash interrupted (no project.json): remux its files and return its sources. */
-export declare function recoverRecording(bundleDir: string): Promise<RecordingSources>
-
 export type RecState = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping'
 
 export interface Rect {
@@ -122,6 +119,13 @@ export interface Rect {
 }
 
 /**
+ * A recording a crash or power loss cut short ends in movie fragments that the editor's demuxer
+ * stops before: rewrite each such file as a regular MP4 (passthrough, no re-encode). Files that
+ * are already whole are left alone. Rejects with the first file that could not be repaired.
+ */
+export declare function repairRecording(bundleDir: string): Promise<void>
+
+/**
  * Ask for `kind` (the system prompt appears only the first time) and return the new status.
  * If it stays denied, send the user to `openPermissionSettings`.
  */
@@ -130,6 +134,16 @@ export declare function requestPermission(kind: Permission): Promise<PermissionS
 export declare function restartRecording(): Promise<RecState>
 
 export declare function resumeRecording(): RecState
+
+/**
+ * From source time `t` on, stored frames must be turned `deg` degrees clockwise to be upright.
+ * An iPhone/iPad changes its screen size when rotated; the file keeps the first frame's size and
+ * orientation, so a frame of swapped size is stored turned 90° counter-clockwise (deg = 90).
+ */
+export interface Rotation {
+  t: number
+  deg: number
+}
 
 /** Meter `micId` (default mic when absent) at ~30 Hz until `stopMicMonitor`. Replaces a running meter. */
 export declare function startMicMonitor(micId: string | undefined | null, onLevel: ((arg: MicLevel) => void)): Promise<void>
@@ -143,6 +157,8 @@ export interface StartOptions {
   systemAudio: boolean
   /** Frames per second; default the display refresh rate, capped at 60. */
   fps?: number
+  /** Leave the desktop icons out of display and area recordings. */
+  hideDesktopIcons?: boolean
 }
 
 /**
@@ -156,11 +172,16 @@ export declare function stopMicMonitor(): void
 /** Stop and finalize. Resolves with the sources (null when nothing was recording). */
 export declare function stopRecording(): Promise<RecordingSources | null>
 
-/** What to record. An area rect is in points relative to its display's top-left corner. */
+/**
+ * What to record. An area rect is in points relative to its display's top-left corner. A window
+ * `frame` (global points) moves and resizes the window there first, which needs Accessibility.
+ * A device is an iPhone or iPad over USB (listCameras kind 'ios'); its audio is the system track.
+ */
 export type Target =
   | { kind: 'display'; displayId: number }
-  | { kind: 'window'; windowId: number }
+  | { kind: 'window'; windowId: number; frame?: Rect }
   | { kind: 'area'; displayId: number; rect: Rect }
+  | { kind: 'device'; deviceId: string }
   | { kind: 'synthetic'; width?: number; height?: number }
 
 /**
@@ -189,6 +210,8 @@ export interface VideoSourceInfo {
   height: number
   fps: number
   scale: number
+  /** iPhone/iPad rotation changes (see camera::Rotation). */
+  rotations?: Array<Rotation>
 }
 
 /**

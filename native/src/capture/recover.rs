@@ -19,7 +19,7 @@ use objc2_core_graphics::{CGDisplayBounds, CGDisplayCopyDisplayMode, CGDisplayMo
 use objc2_core_media::{CMAudioFormatDescriptionGetStreamBasicDescription, CMFormatDescription};
 use objc2_foundation::NSURL;
 
-use super::writer::ns_error;
+use crate::writer::ns_error;
 use super::{AudioSourceInfo, RecordingSources, VideoSourceInfo};
 
 /// True when the file has top-level movie fragments: written but never finalized.
@@ -99,6 +99,7 @@ fn probe_video(path: &Path, file: &str, scale: f64) -> Option<(VideoSourceInfo, 
             height: size.height as u32,
             fps: if fps > 0.0 { fps.round().min(60.0) } else { 30.0 },
             scale,
+            rotations: None,
         };
         (info, duration)
     })
@@ -116,15 +117,29 @@ fn probe_audio(path: &Path, file: &str) -> Option<AudioSourceInfo> {
     Some(AudioSourceInfo { file: file.into(), channels: asbd.mChannelsPerFrame, sample_rate: asbd.mSampleRate })
 }
 
-/// Make an interrupted recording in `<bundle>/sources/` whole again and describe it.
-pub fn recover(bundle: &Path) -> Result<RecordingSources, String> {
+/// Make the files of an interrupted recording in `<bundle>/sources/` whole again. Every file is
+/// tried; the first failure is returned. One repair at a time: launch recovery and opening the
+/// same bundle may ask at once, and the second finds the files already whole.
+pub fn repair(bundle: &Path) -> Result<(), String> {
+    static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
     let dir = bundle.join("sources");
+    let mut first = Ok(());
     for f in ["screen.mp4", "system.m4a", "mic.m4a", "camera.mp4"] {
         let path = dir.join(f);
-        if is_fragmented(&path) {
-            remux(&path).map_err(|e| format!("{f}: {e}"))?;
+        if is_fragmented(&path)
+            && let Err(e) = remux(&path)
+        {
+            first = first.and(Err(format!("{f}: {e}")));
         }
     }
+    first
+}
+
+/// Make an interrupted recording whole again and describe it.
+pub fn recover(bundle: &Path) -> Result<RecordingSources, String> {
+    repair(bundle)?;
+    let dir = bundle.join("sources");
     let rel = |f: &str| format!("sources/{f}");
     // The display's backing scale was not saved; the main display's is the best guess.
     let main = CGMainDisplayID();
@@ -142,10 +157,12 @@ pub fn recover(bundle: &Path) -> Result<RecordingSources, String> {
     })
 }
 
-/// Recover a recording a crash interrupted (no project.json): remux its files and return its sources.
+/// A recording a crash or power loss cut short ends in movie fragments that the editor's demuxer
+/// stops before: rewrite each such file as a regular MP4 (passthrough, no re-encode). Files that
+/// are already whole are left alone. Rejects with the first file that could not be repaired.
 #[napi]
-pub async fn recover_recording(bundle_dir: String) -> napi::Result<RecordingSources> {
-    spawn_blocking(move || recover(Path::new(&bundle_dir)))
+pub async fn repair_recording(bundle_dir: String) -> napi::Result<()> {
+    spawn_blocking(move || repair(Path::new(&bundle_dir)))
         .await
         .map_err(|e| napi::Error::from_reason(e.to_string()))?
         .map_err(napi::Error::from_reason)
