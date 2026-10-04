@@ -56,7 +56,7 @@ Every domain obeys these invariants:
 ## Commands
 
 - `npm run dev -- --open <bundle.studio>` runs the app.
-  `STUDIO_CDP_PORT=<port>` exposes its windows to `agent-browser --cdp <port>`.
+  `STUDIO_CDP_PORT=<port>` exposes its windows to `agent-browser --cdp <port>`, and `STUDIO_HIDDEN=1` keeps them off screen.
 - `npm run build:native` builds the Rust addon.
 - `npx electron scripts/fixture/make.ts [out.studio]` generates a synthetic 24 s recording with events, camera, mic speech, and system audio, by default at `.context/fixtures/Demo #1 ✨ café.studio`.
 - `npm test` runs node:test on pure modules, `npm run check` type-checks, `cd native && cargo test` tests the addon.

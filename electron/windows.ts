@@ -11,7 +11,9 @@ export function openWindow(route: string, opts: BrowserWindowConstructorOptions 
     height: 820,
     backgroundColor: '#00000000',
     ...opts,
-    webPreferences: { preload, sandbox: true, contextIsolation: true, ...opts.webPreferences },
+    // STUDIO_HIDDEN=1: never show windows (agents and tests inspect them over CDP).
+    ...(process.env.STUDIO_HIDDEN ? { show: false, paintWhenInitiallyHidden: true } : {}),
+    webPreferences: { preload, sandbox: true, contextIsolation: true, ...opts.webPreferences, ...(process.env.STUDIO_HIDDEN ? { backgroundThrottling: false } : {}) },
   })
   const dev = process.env.VITE_DEV_SERVER_URL
   if (dev) win.loadURL(`${dev}#/${route}`)
