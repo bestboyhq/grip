@@ -3,7 +3,6 @@
 // loudness normalization -> limiter), click sounds. Everything in output time via the time map.
 // The graph is ./mix.ts; it runs in a worker (./worker.ts). This module is the main-thread API.
 
-import type { Project } from '../../shared/project.ts'
 import type { Prepared } from '../scene.ts'
 import { SR } from './dsp.ts'
 import { planOf, type Plan } from './mix.ts'
@@ -49,24 +48,7 @@ export function mix(session: string, plan: Plan, start: number, frames: number):
   return mixing.call({ op: 'render', session, plan, start, frames })
 }
 
-/** Linear gain that brings the voice at `url` to about -16 LUFS. Measured once, cached in the bundle. */
-const gains = new Map<string, Promise<number>>()
-export function voiceGain(url: string): Promise<number> {
-  let g = gains.get(url)
-  if (!g) {
-    gains.set(url, (g = analysis.call<number>({ op: 'gain', url })))
-    g.catch(() => gains.delete(url))
-  }
-  return g
-}
-
-/** Loudness gains for the project's enhanced mic, keyed by url, for planOf(). */
-export async function voiceGains(project: Project, bundle: string): Promise<Map<string, number>> {
-  const urls = planOf(project, [], bundle).tracks.filter((t) => t.voice).map((t) => t.url)
-  return new Map(await Promise.all(urls.map(async (u) => [u, await voiceGain(u)] as const)))
-}
-
-const exports_ = new WeakMap<Prepared, Promise<{ plan: Plan; session: string }>>()
+const exports_ = new WeakMap<Prepared, { plan: Plan; session: string }>()
 let exportId = 0
 
 /** Render output-time audio [from, to) as 48 kHz stereo, for export. Memory stays flat: callers
@@ -74,12 +56,8 @@ let exportId = 0
  *  graph, so they join without a seam; the length is exactly round(to*48000) - round(from*48000). */
 export async function renderAudio(p: Prepared, bundle: string, from: number, to: number): Promise<AudioBuffer> {
   let e = exports_.get(p)
-  if (!e) {
-    e = voiceGains(p.input.project, bundle).then((g) => ({ plan: planOf(p.input.project, p.input.events, bundle, g), session: `export-${++exportId}` }))
-    exports_.set(p, e)
-    e.catch(() => exports_.delete(p))
-  }
-  const { plan, session } = await e
+  if (!e) exports_.set(p, (e = { plan: planOf(p.input.project, p.input.events, bundle), session: `export-${++exportId}` }))
+  const { plan, session } = e
   const a = Math.round(from * SR)
   const b = Math.round(to * SR)
   if (!(b >= a)) throw new RangeError(`renderAudio: empty or reversed range ${from}..${to}`)

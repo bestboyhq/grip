@@ -1,16 +1,15 @@
-// Audio worker: the mixer (preview and export) and source analysis (peaks, loudness), off the main
+// Audio worker: the mixer (preview and export) and source analysis (waveform peaks), off the main
 // thread. ./index.ts runs two of these, so a long analysis never delays real-time mixing.
 
 import rnnoiseUrl from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url'
 import { fileLabel as label, fileUrl, urlSource } from '../media/index.ts'
-import { SR, voiceGain } from './dsp.ts'
+import { SR } from './dsp.ts'
 import { Mixer, openFile, type Env, type Plan } from './mix.ts'
 import { PEAK_SPP, analyze, cachePath, decodeAnalysis, encodeAnalysis, queryPeaks, rawPeaks, type Analysis } from './source.ts'
 
 export type Request =
   | { op: 'render'; session: string; plan: Plan; start: number; frames: number }
   | { op: 'peaks'; url: string; from: number; to: number; buckets: number }
-  | { op: 'gain'; url: string }
 
 let rnnoise: Promise<WebAssembly.Module> | undefined
 const env: Env = {
@@ -52,8 +51,8 @@ function analysis(url: string): Promise<Analysis> {
         if (hit) return hit
       }
       const job = analyze(f)
-      job.lufs.then(
-        (lufs) => void (cache && fetch(fileUrl(cache), { method: 'PUT', body: encodeAnalysis(job.base, lufs) }).catch((e) => console.warn(`Could not cache the waveform of ${f.label}: ${e}`))),
+      job.ready(0, Infinity).then(
+        () => void (cache && fetch(fileUrl(cache), { method: 'PUT', body: encodeAnalysis(job.base) }).catch((e) => console.warn(`Could not cache the waveform of ${f.label}: ${e}`))),
         () => void analyses.delete(url), // a later request retries
       )
       return job
@@ -80,8 +79,6 @@ self.onmessage = async ({ data }: MessageEvent<Request & { id: number }>) => {
     } else if (data.op === 'peaks') {
       const v = await peaks(data)
       postMessage({ id: data.id, value: v }, { transfer: [v.buffer] })
-    } else if (data.op === 'gain') {
-      postMessage({ id: data.id, value: voiceGain(await (await analysis(data.url)).lufs) })
     }
   } catch (e) {
     postMessage({ id: data.id, error: e instanceof Error ? e.message : String(e) })

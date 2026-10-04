@@ -6,7 +6,7 @@
   import { createProject, type Project } from '../../../shared/project.ts'
   import { prepare, sceneAt } from '../../../engine/scene.ts'
   import { fileUrl, openVideo } from '../../../engine/media/index.ts'
-  import { mix, peaks, planOf, renderAudio, voiceGains } from '../../../engine/audio/index.ts'
+  import { mix, peaks, planOf, renderAudio } from '../../../engine/audio/index.ts'
   import { parseEvents } from '../../../shared/events.ts'
   import { splitAt, timeMap } from '../../../shared/timemap.ts'
   import { doc, edit } from '../../../lib/doc.svelte.ts'
@@ -180,17 +180,17 @@
       assert(pk.length === 600 && Math.max(...pk) > 0.3, 'peaks of the mp4 audio')
       return `click at ${a.toFixed(4)} s`
     })
-    await check('AAC music starts at full level, every loop (no silent head)', async () => {
+    await check('AAC music starts at full level and loops without a dip at the seams', async () => {
       const p = createProject('t', { duration: 6 })
       p.audio.music = { file: `${dir}/tone44.m4a`, volume: 1 } // 2 s of 44.1 kHz sine: loops at 2 s and 4 s
       const x = (await renderAudio(prepared(p), '/', 0, 6)).getChannelData(0)
       const rms = (a: number, b: number) => Math.sqrt(x.subarray(a, b).reduce((s, v) => s + v * v, 0) / (b - a))
-      const steady = rms(24000, 48000)
-      // After the 5 ms edge fade (start) and past the 10 ms loop crossfade (seam).
-      const head = rms(240, 480) / steady
-      const seam = rms(96240, 96480) / steady
-      assert(head > 0.9 && seam > 0.9, `head ${head.toFixed(2)}, loop seam ${seam.toFixed(2)} of the steady level`)
-      return `head ${head.toFixed(2)}, seam ${seam.toFixed(2)}`
+      const head = rms(240, 480) / rms(24000, 48000) // after the 5 ms edge fade at the start
+      // The 10 ms across each seam against the same 10 ms mid-loop, 1 s (440 whole periods) earlier.
+      const seams = [96000, 192000].map((s) => rms(s - 240, s + 240) / rms(s - 48240, s - 47760))
+      const dB = (r: number) => `${(20 * Math.log10(r)).toFixed(2)} dB`
+      assert(head > 0.9 && seams.every((r) => r > 0.97), `head ${head.toFixed(2)} of the steady level, seams ${seams.map(dB)} against mid-loop`)
+      return `head ${head.toFixed(2)}, seams ${seams.map(dB)}`
     })
     await check('renderAudio length is exact; a 2x clip renders half the duration; chunks join exactly', async () => {
       const p = audioOnly(`${dir}/click.m4a`, 4)
@@ -263,7 +263,7 @@
         p.clips = Array.from({ length: 200 }, (_, i) => ({ id: `${i}`, start: i * 0.12, end: i * 0.12 + 0.1, speed: [1, 1.2, 2, 2.5][i % 4], volume: 1 }))
         const events = parseEvents(await (await fetch(fileUrl(`${fixture}/${p.sources.events}`))).text())
         // Preview: what the player sends, 200 ms at a time from the start.
-        const plan = planOf(p, events, fixture, await voiceGains(p, fixture))
+        const plan = planOf(p, events, fixture)
         const total = Math.round(plan.duration * 48000)
         const preview: number[] = []
         for (let s = 0; s < total; s += 9600) preview.push(...(await mix('parity', plan, s, Math.min(9600, total - s)))[0])

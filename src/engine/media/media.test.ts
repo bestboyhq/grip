@@ -2,9 +2,9 @@
 // ffmpeg, starts Vite, and launches itself as Electron's main script, which opens the
 // PlayerChecks lab (src/windows/dev/labs/PlayerChecks.svelte) hidden and reports its results.
 // Covers: frameAt on VFR H.264 with B-frames, HEVC, and the fixture; stepping backward; decoding
-// ahead across a cut; a bounded read cache; AAC priming alignment; a full-level head on every music
-// loop; an imported .mp4 as its own audio; renderAudio length, 2x, chunk joins; peaks cache; editing
-// a 2-hour project without stalling the editor.
+// ahead across a cut; a bounded read cache; AAC priming alignment; seamless music loops; an imported
+// .mp4 as its own audio; renderAudio length, 2x, chunk joins; peaks cache; editing a 2-hour project
+// without stalling the editor.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile, execFileSync } from 'node:child_process'
