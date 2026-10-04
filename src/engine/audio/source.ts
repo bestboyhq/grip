@@ -4,6 +4,7 @@
 
 import { ALL_FORMATS, AudioSampleSink, Input, type AudioSample, type Source } from 'mediabunny'
 import { LoudnessMeter, SR, integratedLoudness, interpolate, sincTable } from './dsp.ts'
+import { readError } from '../media/index.ts'
 
 export interface AudioFile {
   label: string // bundle-relative name for error messages
@@ -27,7 +28,7 @@ export async function openAudio(source: Source, label: string): Promise<AudioFil
   } catch (e) {
     input.dispose()
     if (e instanceof Error && e.message.startsWith(label)) throw e
-    throw new Error(`Could not read ${label}: ${e instanceof Error ? e.message : e}`)
+    throw readError(`Could not read ${label}`, label, e)
   }
 }
 

@@ -15,7 +15,7 @@
 // Share links: once the file is complete, main hands it to share:upload (electron/share.ts) and the
 // queue moves on; the job is done when the link exists.
 import { app, BrowserWindow, ClipboardItem, clipboard, dialog, ipcMain, Notification, shell, type IpcMainInvokeEvent } from 'electron'
-import { open, mkdir, readdir, readFile, rename, rm, stat, type FileHandle } from 'node:fs/promises'
+import { open, mkdir, readdir, readFile, rename, rm, stat, writeFile, type FileHandle } from 'node:fs/promises'
 import { existsSync, rmSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -102,6 +102,7 @@ async function pump() {
   try {
     await mkdir(dirname(j.path), { recursive: true })
     j.tmp = join(dirname(j.path), `.${basename(j.path)}.partial`)
+    await writeFile(partialLog(), j.tmp).catch(() => {}) // before the partial exists; a finished export leaves a harmless stale line
     j.fh = await open(j.tmp, 'w')
   } catch (err) {
     return finish(j, 'failed', fsMessage(err, j.path))
@@ -186,8 +187,15 @@ async function enqueue(parent: BrowserWindow | null, reqs: ExportRequest[]): Pro
   return out
 }
 
+/** The partial file of the running export, so the next launch deletes it if Studio dies mid-export
+ *  (will-quit never runs on a crash, kill, or power loss) instead of leaving a hidden file beside the
+ *  user's videos. One line: exports run one at a time. */
+const partialLog = () => join(app.getPath('userData'), 'export-partial.txt')
+
 /** Temp exports older than a day go, except files a share upload still reads (uploads survive restarts). */
 async function sweepTemp() {
+  const stale = await readFile(partialLog(), 'utf8').catch(() => '')
+  if (isAbsolute(stale) && /\/\.[^/]+\.partial$/.test(stale)) await rm(stale, { force: true }).catch(() => {})
   const root = tmpRoot()
   // ponytail: reads the sharing domain's state file; a share:busy(path) contract if more callers need it.
   const uploading: string[] = await readFile(join(app.getPath('userData'), 'share.json'), 'utf8').then(

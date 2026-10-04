@@ -33,7 +33,8 @@
 
   async function load(requested: string) {
     if (!requested) throw new Error('No project was given to open.')
-    const { project, path } = (await invoke('projects:open', requested)) as { project: Project; path: string } // path follows renames
+    const opened = (await invoke('projects:open', requested)) as { project: Project; path: string; notice?: string } // path follows renames
+    const { project, path } = opened
     const [events, transcript] = await Promise.all([
       project.sources.events
         ? fetch(fileUrl(`${path}/${project.sources.events}`)).then((r) => (r.ok ? r.text() : '')).then(parseEvents, () => [])
@@ -51,9 +52,10 @@
     doc.project = project // the player seeks to the saved playhead when the preview attaches
     if (fresh) {
       doc.dirty = true
-      void save()
+      save().catch(() => {}) // a failure shows as doc.saveError
     }
-    if (params.has('recovered')) notice = 'This recording was recovered after Studio quit unexpectedly.'
+    if (opened.notice) notice = opened.notice
+    else if (params.has('recovered')) notice = 'This recording was recovered after Studio quit unexpectedly.'
     afterFirstFrame(thumbnail)
   }
 
@@ -203,7 +205,12 @@
     {/if}
   </header>
 
-  {#if notice}
+  {#if doc.saveError}
+    <!-- Stays until a save lands: the edits are only in this window until then. -->
+    <p class="notice" role="alert">
+      {doc.saveError}<button class="btn ghost" onclick={() => save().catch(() => {})}>Try Again</button>
+    </p>
+  {:else if notice}
     <p class="notice" role="alert">
       {notice}<button class="icon-btn" aria-label="Dismiss" onclick={() => (notice = '')}><Icon name="close" size={14} /></button>
     </p>
@@ -268,7 +275,7 @@
   .notice {
     position: fixed; z-index: 10; top: 58px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; margin: 0;
     padding: 4px 4px 4px 12px; border-radius: 8px; background: var(--bg-panel); box-shadow: var(--shadow-pop), inset 0 0 0 0.5px rgb(255 255 255 / 0.1);
-    font-size: 12.5px; white-space: nowrap;
+    width: max-content; max-width: calc(100vw - 48px); font-size: 12.5px; line-height: 1.4;
   }
   .notice .icon-btn { width: 22px; height: 22px; }
   .error { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 40px; color: var(--text-dim); text-align: center; }

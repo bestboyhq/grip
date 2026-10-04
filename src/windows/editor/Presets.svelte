@@ -130,7 +130,7 @@
   ul { margin: 0; padding: 0; list-style: none; max-height: 260px; overflow-y: auto; }
   li { display: flex; align-items: center; gap: 2px; }
   .item {
-    flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border: 0; border-radius: 6px;
+    flex: 1; min-width: 0; display: block; height: 28px; padding: 0 8px; border: 0; border-radius: 6px;
     background: none; font-size: 12.5px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .item:hover { background: var(--accent-strong); color: #fff; }

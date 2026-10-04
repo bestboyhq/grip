@@ -7,6 +7,7 @@ import { createReadStream } from 'node:fs'
 import { mkdir, rename, stat, writeFile } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import { dirname, extname, normalize } from 'node:path'
+import { followFile } from './projects.ts'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true } },
@@ -29,7 +30,7 @@ const isCacheFile = (path: string) => path === normalize(path) && /\.studio\/cac
 
 export function registerMediaProtocol() {
   protocol.handle('media', async (req) => {
-    const path = decodeURIComponent(new URL(req.url).pathname.slice(1))
+    const path = followFile(decodeURIComponent(new URL(req.url).pathname.slice(1)))
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS })
     if (req.method === 'PUT') {
       if (!isCacheFile(path)) return new Response('only bundle cache files are writable', { status: 403, headers: CORS })

@@ -91,6 +91,21 @@
     await check('frameAt is exact on variable frame rate H.264 with B-frames', () => frames('vfr.mp4', vfr, (i) => Math.round(1.164 * 8 * i)))
     const cfr = Array.from({ length: 60 }, (_, i) => i / 30)
     await check('frameAt is exact on HEVC', () => frames('hevc.mp4', cfr, (i) => Math.round(1.164 * 3 * i)))
+    await check('a portrait phone video (landscape frames plus a rotation) comes out upright', async () => {
+      // 128x64 frames, left half white, displayed turned 90 degrees: 64x128, white at the bottom.
+      const src = await openVideo(fileUrl(`${dir}/rotated.mov`))
+      const f = (await src.frameAt(0.5))!
+      const c = new OffscreenCanvas(f.displayWidth, f.displayHeight)
+      const g = c.getContext('2d')!
+      g.drawImage(f, 0, 0)
+      const at = (y: number) => g.getImageData(f.displayWidth / 2, y, 1, 1).data[0]
+      const [w, h, top, bottom] = [f.displayWidth, f.displayHeight, at(16), at(f.displayHeight - 16)]
+      f.close()
+      src.close()
+      assert(src.width === 64 && src.height === 128 && w === 64 && h === 128, `size ${src.width}x${src.height}, frame ${w}x${h}; want 64x128`)
+      assert(top < 60 && bottom > 200, `gray ${top} at the top, ${bottom} at the bottom: the frame is not upright`)
+      return `${w}x${h}, upright`
+    })
 
     await check('AAC audio stays aligned through encoder priming', async () => {
       const buf = await renderAudio(prepared(audioOnly(`${dir}/click.m4a`, 4)), '/', 0, 4)
