@@ -17,6 +17,9 @@ export interface VideoSource {
   fps: number
   /** Backing scale factor of the captured display (2 on retina). */
   scale: number
+  /** iPhone/iPad rotation changes, by source time: from t on, turn the stored frames `deg`
+   *  degrees clockwise to show them upright (the file keeps its first frame's orientation). */
+  rotations?: Array<{ t: number; deg: number }>
 }
 
 export interface AudioSource {
