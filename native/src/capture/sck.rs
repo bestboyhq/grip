@@ -145,8 +145,9 @@ fn content(on_screen_only: bool) -> Result<Retained<SCShareableContent>, String>
     rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "Timed out listing screen content".to_string())?
 }
 
-/// Our own processes (main app and its helpers): kept out of every capture, video and audio.
-fn ours(content: &SCShareableContent) -> Retained<NSArray<SCRunningApplication>> {
+/// Kept out of every capture, video and audio: our own processes (main app and its helpers,
+/// so the widget, camera preview, and area picker never show) and system notification banners.
+fn excluded(content: &SCShareableContent) -> Retained<NSArray<SCRunningApplication>> {
     let pid = std::process::id() as i32;
     let bundle = NSBundle::mainBundle().bundleIdentifier().map(|s| s.to_string());
     let apps: Vec<_> = unsafe { content.applications() }
@@ -154,6 +155,7 @@ fn ours(content: &SCShareableContent) -> Retained<NSArray<SCRunningApplication>>
         .filter(|a| {
             let id = unsafe { a.bundleIdentifier() }.to_string();
             (unsafe { a.processID() }) == pid
+                || id == "com.apple.notificationcenterui"
                 || bundle.as_ref().is_some_and(|b| id == *b || id.starts_with(&format!("{b}.")))
         })
         .collect();
@@ -212,7 +214,7 @@ pub fn prepare(
                 SCContentFilter::initWithDisplay_excludingApplications_exceptingWindows(
                     SCContentFilter::alloc(),
                     &display,
-                    &ours(&content),
+                    &excluded(&content),
                     &NSArray::new(),
                 )
             };
@@ -433,7 +435,7 @@ impl Stream {
 /// On-screen app windows, front to back, with small thumbnails.
 pub fn windows() -> Result<Vec<Window>, String> {
     let content = content(true)?;
-    let own: Vec<i32> = ours(&content).iter().map(|a| unsafe { a.processID() }).collect();
+    let own: Vec<i32> = excluded(&content).iter().map(|a| unsafe { a.processID() }).collect();
     let found: Vec<(Retained<SCWindow>, Window)> = unsafe { content.windows() }
         .iter()
         .filter_map(|w| unsafe {
