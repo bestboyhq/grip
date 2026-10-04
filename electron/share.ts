@@ -242,19 +242,10 @@ export async function importProject(link: string, ask: boolean): Promise<string 
   }
 }
 
-function openSharedLink(url: string) {
+/** studio://open?url=<project link>, routed here by the app shell (electron/main.ts) once the app is ready. */
+export function openSharedLink(url: string) {
   importProject(url, true).catch((e) => dialog.showErrorBox('Could not open the shared project', plain(e)))
 }
-
-// studio://open?url=<project link>. Registered at import: macOS delivers the URL that launched the app before ready.
-// Other studio:// commands belong to the app shell.
-const pendingLinks: string[] = []
-app.on('open-url', (event, url) => {
-  if (!url.startsWith('studio://open?') || !new URL(url).searchParams.get('url')) return
-  event.preventDefault()
-  if (app.isReady() && stateFile) openSharedLink(url)
-  else pendingLinks.push(url)
-})
 
 export function registerShare() {
   stateFile = join(app.getPath('userData'), 'share.json')
@@ -326,5 +317,4 @@ export function registerShare() {
   })
   ipcMain.handle('share:import', (_e, url: string) => importProject(url, false))
 
-  for (const url of pendingLinks.splice(0)) openSharedLink(url)
 }

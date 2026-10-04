@@ -15,6 +15,10 @@ test('studio:// urls', () => {
   assert.deepEqual(parseStudioUrl(`studio://open?path=${path}`), { kind: 'open', path })
   assert.deepEqual(parseStudioUrl(`studio://open?path=${encodeURIComponent(path)}/`), { kind: 'open', path })
   assert.deepEqual(parseStudioUrl('studio://open?path=/a/100%.studio'), { kind: 'open', path: '/a/100%.studio' })
+  // Shared project links (the link page's "Open in Studio") import; only http(s) links do.
+  const link = 'https://share.example/v/abcdefghijklmnopqrstuv/project.tar?k=key'
+  assert.deepEqual(parseStudioUrl(`studio://open?url=${encodeURIComponent(link)}`), { kind: 'import', url: link })
+  assert.equal(parseStudioUrl(`studio://open?url=${encodeURIComponent('file:///etc/passwd')}`), null)
   // Only absolute bundle paths open.
   assert.equal(parseStudioUrl('studio://open?path=relative.studio'), null)
   assert.equal(parseStudioUrl('studio://open?path=/etc/passwd'), null)

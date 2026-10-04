@@ -9,7 +9,7 @@ import { hidden, openWindow, watchDisplays } from './windows.ts'
 import { registerRecording } from './recording.ts'
 import { registerProjects } from './projects.ts'
 import { activeExports, registerExport } from './export.ts'
-import { registerShare } from './share.ts'
+import { openSharedLink, registerShare } from './share.ts'
 import { registerTranscript } from './transcript.ts'
 import { registerCamera } from './camera.ts'
 import { registerEditor } from './editor.ts'
@@ -73,6 +73,7 @@ function openUrl(url: string) {
   if (a?.kind === 'record') showPicker(a.mode)
   else if (a?.kind === 'stop' && recordingStatus() !== 'idle') command('stop')
   else if (a?.kind === 'open') openProject(a.path)
+  else if (a?.kind === 'import') openSharedLink(a.url)
 }
 
 /** Act on launch arguments: `--lab <Name>`, `[--open] <bundle.studio | video.mp4>`, `studio://` URLs. False when there were none. */
@@ -153,19 +154,5 @@ app.on('web-contents-created', (_e, wc) => {
   wc.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
-  })
-  // A window with work that dies with it (an export) sets `onbeforeunload`; ask before closing it.
-  wc.on('will-prevent-unload', (e) => {
-    const win = BrowserWindow.fromWebContents(wc)
-    const options = {
-      type: 'warning' as const,
-      message: 'An export is in progress.',
-      detail: 'Closing now stops the export. Your project is safe.',
-      buttons: ['Cancel', 'Stop Export'],
-      defaultId: 0,
-      cancelId: 0,
-    }
-    if ((win ? dialog.showMessageBoxSync(win, options) : dialog.showMessageBoxSync(options)) === 1) e.preventDefault()
-    else quit(false) // the quit (if any) is off: Electron aborts it when a window refuses to close
   })
 })

@@ -1,20 +1,20 @@
 <!-- Owner: sharing. The editor top bar's Share button: a popover that shares the video or the whole editable project
      as a link, with upload progress, copy link, and a private toggle. Uploads run in the main process
      (electron/share.ts) and carry on when the popover closes, the window closes, or the app restarts.
-     Mount: <ShareButton exportVideo={...} />, where exportVideo exports the open project and resolves to the MP4 path
-     (the file must stay until the upload is done). -->
+     Mount: <ShareButton exportVideo={...} />, where exportVideo(progress?, signal?) exports the open project and resolves
+     to the MP4 path (the file must stay until the upload is done), reporting 0..1 progress and stopping when signal aborts. -->
 <script lang="ts">
   import type { Job } from '../../../../electron/share.ts'
   import { doc, save } from '../../../lib/doc.svelte.ts'
   import { invoke, on } from '../../../lib/ipc.ts'
 
-  let { exportVideo }: { exportVideo?: () => Promise<string> } = $props()
+  let { exportVideo }: { exportVideo?: (progress?: (p: number) => void, signal?: AbortSignal) => Promise<string> } = $props()
 
   const uid = $props.id()
   let jobs = $state.raw<Job[]>([])
   let kind = $state<'video' | 'project'>('video')
   let wantPrivate = $state(false) // privacy of the next share
-  let exporting = $state(false)
+  let exporting = $state<{ p: number; stop: AbortController } | null>(null)
   let error = $state('')
   let toast = $state('')
   let toastTimer: ReturnType<typeof setTimeout> | undefined
@@ -34,6 +34,7 @@
   const active = $derived([latest('video'), latest('project')].find(busy))
   const isPrivate = $derived(job && job.state !== 'failed' ? job.private : wantPrivate)
   const pct = (j: Job) => (j.size ? Math.min(100, Math.floor((j.sent / j.size) * 100)) : 0)
+  const ring = $derived(exporting ? Math.floor(exporting.p * 100) : active ? pct(active) : null) // the trigger's progress
   const mb = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${(n / 1e6).toFixed(1)} MB`) // decimal, like Finder
   const count = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
   const plain = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
@@ -46,21 +47,23 @@
 
   async function share() {
     error = ''
+    const stop = new AbortController()
     try {
       let path = doc.path
       if (kind === 'video') {
-        exporting = true
-        path = await exportVideo!()
-        exporting = false
+        exporting = { p: 0, stop }
+        path = await exportVideo!((p) => exporting && (exporting.p = p), stop.signal)
+        exporting = null
       } else await save()
       const opts = { title: doc.project?.name, private: wantPrivate, project: doc.path }
       // The link exists (and is on the clipboard) as soon as the server knows the upload; null = canceled first.
       if (await invoke('share:upload', path, opts)) flash('Link copied')
     } catch (e) {
       const msg = plain(e)
-      if (!jobs.some((j) => j.note === msg)) error = msg // a failed job already says why
+      // Canceled here: nothing to report. A failed job already says why.
+      if (!stop.signal.aborted && !jobs.some((j) => j.note === msg)) error = msg
     } finally {
-      exporting = false
+      exporting = null
     }
   }
 
@@ -103,11 +106,11 @@
   }
 </script>
 
-<button class="trigger" popovertarget="{uid}-share" style:anchor-name="--{uid}-share" aria-label={active ? `Sharing, ${pct(active)}%` : 'Share'}>
-  {#if active}
+<button class="trigger" popovertarget="{uid}-share" style:anchor-name="--{uid}-share" aria-label={ring !== null ? `Sharing, ${ring}%` : 'Share'}>
+  {#if ring !== null}
     <svg class="ring" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
       <circle cx="7" cy="7" r="5.5" />
-      <circle cx="7" cy="7" r="5.5" class="fill" pathLength="100" stroke-dasharray="{pct(active)} 100" />
+      <circle cx="7" cy="7" r="5.5" class="fill" pathLength="100" stroke-dasharray="{ring} 100" />
     </svg>
   {:else}
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
@@ -131,8 +134,12 @@
 
   <div class="body">
     {#if exporting}
-      <p class="status">Exporting the video…</p>
-      <div class="bar indeterminate"><div></div></div>
+      <div class="row status">
+        <span>Exporting the video…</span>
+        <span class="num">{Math.floor(exporting.p * 100)}%</span>
+      </div>
+      <div class="bar"><div style:width="{exporting.p * 100}%"></div></div>
+      <div class="row actions"><button class="text" onclick={() => exporting?.stop.abort()}>Cancel</button></div>
     {:else if !job}
       <p class="lead">
         {kind === 'video'
@@ -142,7 +149,8 @@
       <button class="primary wide" onclick={share} disabled={kind === 'video' && !exportVideo}>Create link</button>
       {#if kind === 'video' && !exportVideo}<p class="hint">Video export is not available yet.</p>{/if}
     {:else}
-      {#if job.link}
+      <!-- A failed upload's link never plays: the server dropped the item or never got all of it. -->
+      {#if job.link && job.state !== 'failed'}
         <div class="link">
           <span class="url" title={job.link}>{job.link.replace(/^https?:\/\//, '')}</span>
           <button class="primary" onclick={copy}>Copy</button>
