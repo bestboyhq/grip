@@ -16,7 +16,8 @@
 //   projects:reveal(path)                     selects the bundle in Finder
 //   projects:presets:*                        see ./presets.ts
 // Event to all windows: projects:sources(path, sources) after a main-side updateProject().
-// Main-process event: projectEvents 'recovered' (path) for each bundle rebuilt at launch.
+// Main-process events: projectEvents 'recovered' (path) for each bundle rebuilt at launch,
+// 'opened' (path, project) when an editor opens a bundle.
 //
 // Other main-process domains import the helpers below; keep their signatures.
 import electron from 'electron'
@@ -104,7 +105,7 @@ export async function readProject(bundle: string): Promise<Project> {
   p.playhead = Math.min(Math.max(p.playhead, 0), p.sources.duration)
   const missing = (rel: string) => access(join(bundle, rel)).then(() => false, () => true)
   if (p.style.background.kind === 'image' && (await missing(p.style.background.file))) p.style.background = createProject('', p.sources).style.background
-  if (p.style.camera.lut && (await missing(p.style.camera.lut))) delete p.style.camera.lut
+  if (p.style.camera.lut && !p.style.camera.lut.startsWith('grade:') && (await missing(p.style.camera.lut))) delete p.style.camera.lut
   return p
 }
 
@@ -516,6 +517,7 @@ export function registerProjects() {
     const { project, notice } = await openBundle(bundle)
     if (!project) throw new Error(`${name} has no project file and no recording to recover.`)
     await opened(bundle)
+    projectEvents.emit('opened', bundle, project)
     return { project, path: bundle, notice }
   })
   ipcMain.handle('projects:save', (_e, path: unknown, project: unknown) => saveProject(bundleArg(path), project as Project))

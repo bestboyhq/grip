@@ -21,7 +21,18 @@
 <div class="row" class:disabled>
   {#if label}<label for={id}>{label}</label>{/if}
   <div class="box">
-    <select {id} {value} {disabled} aria-label={label ? undefined : 'Choose'} onchange={(e) => onchange(e.currentTarget.value as T)}>
+    <!-- Controlled: after the change the menu shows `value` again, so a choice the parent turns down
+         (or an action item like "Load…") never sticks in the menu. -->
+    <select
+      {id}
+      {value}
+      {disabled}
+      aria-label={label ? undefined : 'Choose'}
+      onchange={(e) => {
+        onchange(e.currentTarget.value as T)
+        e.currentTarget.value = value
+      }}
+    >
       {#each options as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
     </select>
     <Icon name="chevron" size={14} />

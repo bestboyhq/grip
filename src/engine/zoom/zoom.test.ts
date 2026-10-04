@@ -183,6 +183,37 @@ test('vertical output: the screen covers the frame and the camera follows the cu
   assert.ok(view(4.5).center.x > view(0).center.x + 500, 'follows the cursor across')
 })
 
+test('a device with big rounded corners on a screen as wide as the output does not zoom in', () => {
+  const project = createProject('t', { duration: 10, screen: SCREEN })
+  project.style.device = 'iphone' // a large display radius: the part clear of the corners is wider than the screen
+  const { view } = setup([], [], { project })
+  near(view(3).scale, 1, 1e-9)
+})
+
+test('split layouts zoom inside the screen panel and leave the stack in place', () => {
+  const W = 1080
+  const H = 1920
+  const project = createProject('t', { duration: 10, screen: SCREEN, camera: { file: 'c.mp4', width: 1280, height: 720, fps: 30, scale: 1 } })
+  project.layouts = [{ id: 'l', start: 0, end: 10, kind: 'split' }]
+  const { p, view } = setup([zoom({ start: 4, end: 8, target: point(0.8, 0.2) })], [], { width: W, height: H, duration: 10, project })
+  const panel = layoutAt(p.layout, 1).screen!.viewport
+  assert.ok(panel.h < H / 2, 'stacked: the panel is the screen frame, not the whole output')
+  near(view(1).scale, 1, 1e-9)
+  near(view(1).center.x, W / 2, 1e-6)
+  near(view(1).center.y, H / 2, 1e-6) // unzoomed: the screen stays in its panel
+  const v = view(7)
+  near(v.scale, 2, 0.02)
+  // The panel shows screen content only, around the zoom target.
+  const r = layoutAt(p.layout, 7).screen!.rect
+  const un = (x: number, y: number) => ({ x: (x - W / 2) / v.scale + v.center.x, y: (y - H / 2) / v.scale + v.center.y })
+  for (const [x, y] of [[panel.x, panel.y], [panel.x + panel.w, panel.y + panel.h]]) {
+    const u = un(x, y)
+    assert.ok(u.x >= r.x - 0.5 && u.x <= r.x + r.w + 0.5 && u.y >= r.y - 0.5 && u.y <= r.y + r.h + 0.5, `panel corner ${x},${y} shows ${u.x},${u.y}`)
+  }
+  const c = un(panel.x + panel.w / 2, panel.y + panel.h / 2)
+  assert.ok(c.x > r.x + r.w / 2 && c.y < r.y + r.h / 2, 'aimed at the target')
+})
+
 test('loupe fades in and out, magnifies, and follows its target', () => {
   const events = moves([[0, 1000, 800], [10, 1800, 800]])
   const { p, view } = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 2.5 })], events, { duration: 10 })

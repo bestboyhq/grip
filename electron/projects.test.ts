@@ -98,6 +98,9 @@ test('open clamps the playhead and drops assets that are gone', async () => {
   assert.equal(r.playhead, 4)
   assert.equal(r.style.background.kind, 'wallpaper')
   assert.equal(r.style.camera.lut, undefined)
+  p.style.camera.lut = 'grade:warm' // a built-in grade is not a file
+  await writeProject(bundle, p)
+  assert.equal((await readProject(bundle)).style.camera.lut, 'grade:warm')
 })
 
 test('rename handles collisions, case-only changes, and later saves to the old path', async () => {

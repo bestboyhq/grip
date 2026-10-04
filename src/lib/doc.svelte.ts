@@ -75,6 +75,7 @@ function swap(from: Snapshot[], to: Snapshot[]) {
   mergeKey = ''
   to.push({ json: JSON.stringify(doc.project) })
   const p: Project = JSON.parse(s.json)
+  p.sources = $state.snapshot(doc.project.sources) // main-side domains own sources (camera matte, transcript): undo never takes them back
   doc.project = p
   // Items the step removed leave the selection, so Delete or Copy never act on nothing.
   const live = new Set([...p.clips, ...p.zooms, ...p.layouts, ...p.masks].map((x) => x.id))

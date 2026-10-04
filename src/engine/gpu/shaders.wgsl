@@ -6,7 +6,7 @@
 
 struct Frame {
   a: vec4f,        // output w, h, unit (px per style unit), view samples
-  viewT: vec4f,    // view at t: center x, y, scale
+  viewT: vec4f,    // view at t: center x, y, scale; viewport corner radius
   scr: vec4f,      // recording rect (unzoomed px); the frame is this grown by dev.w
   scr2: vec4f,     // screen radius, has screen, mask count, shadow strength
   scr3: vec4f,     // screen source w, h (px), pixelate block (source px), blur mip level
@@ -30,6 +30,7 @@ struct Frame {
   lutMin: vec4f,
   lutMax: vec4f,
   fin: vec4f,      // has overlay
+  vp: vec4f,       // viewport (output px): the zoom view shows through it, everything outside is unzoomed
 }
 
 @group(0) @binding(0) var<uniform> F: Frame;
@@ -100,6 +101,13 @@ fn sdBox(p: vec2f, half: vec2f, r4: vec4f) -> f32 {
 
 // Antialiased coverage of a signed distance, aa = size of one output pixel in the same units.
 fn cover(sd: f32, aa: f32) -> f32 { return clamp(0.5 - sd / aa, 0.0, 1.0); }
+
+// How much of output pixel p is inside the zoom viewport: 1 everywhere unless a split layout gives
+// the screen its own panel, whose zoomed content must stay inside it.
+fn inView(p: vec2f) -> f32 {
+  let half = F.vp.zw * 0.5;
+  return cover(sdBox(p - F.vp.xy - half, half, vec4f(F.viewT.w)), 1.0);
+}
 
 // Gaussian-blurred rounded box: exact along x (erf), 4-tap integration along y.
 fn erf2(x: vec2f) -> vec2f {
@@ -241,7 +249,12 @@ fn zoomed(u: vec2f, aa: f32) -> vec4f {
 }
 
 @fragment fn fs_main(v: VO) -> @location(0) vec4f {
-  return zoomed(unview(v.pos.xy, F.viewT.xyz), 1.0 / F.viewT.z);
+  let p = v.pos.xy;
+  let k = inView(p);
+  var c = vec4f(0.0);
+  if (k > 0.0) { c = zoomed(unview(p, F.viewT.xyz), 1.0 / F.viewT.z); }
+  if (k < 1.0) { c = mix(zoomed(p, 1.0), c, k); }
+  return c;
 }
 
 // Motion blur of the zoomed layer, drawn from the frame rendered at t (zTex). Everything under the
@@ -252,6 +265,7 @@ fn zoomed(u: vec2f, aa: f32) -> vec4f {
 
 @fragment fn fs_viewblur(v: VO) -> @location(0) vec4f {
   let p = v.pos.xy;
+  if (inView(p) < 1.0) { return textureLoad(zTex, vec2i(p), 0); } // unzoomed there: nothing moves
   let n = i32(F.a.w);
   let vt = F.viewT.xyz;
   let d = length(unview(p, F.views[n - 1].xyz) - unview(p, F.views[0].xyz)) * vt.z;
@@ -262,7 +276,7 @@ fn zoomed(u: vec2f, aa: f32) -> vec4f {
   var w = 0.0;
   for (var i = 0; i < count; i++) {
     let q = toOut(unview(p, viewAt((f32(i) + j) / f32(count))), vt);
-    if (all(q >= vec2f(0.0)) && all(q <= F.a.xy)) { // outside the rendered frame: skip, never smear the edge
+    if (all(q >= vec2f(0.0)) && all(q <= F.a.xy) && inView(q) >= 1.0) { // outside the rendered zoomed layer: skip, never smear the edge
       acc += textureSampleLevel(zTex, samp, q / F.a.xy, 0.0);
       w += 1.0;
     }
@@ -288,7 +302,7 @@ fn cursorAt(u: vec2f, s: vec4f, vs: f32) -> vec4f {
 @fragment fn fs_cursor(v: VO) -> @location(0) vec4f {
   let p = v.pos.xy;
   let count = i32(F.cur.z);
-  if (count <= 1) { return cursorAt(unview(p, viewAt(0.5)), curAt(0.5), viewAt(0.5).z) * F.cur.y; }
+  if (count <= 1) { return cursorAt(unview(p, viewAt(0.5)), curAt(0.5), viewAt(0.5).z) * F.cur.y * inView(p); }
   let j = ign(p);
   var acc = vec4f(0.0);
   for (var i = 0; i < count; i++) {
@@ -296,7 +310,7 @@ fn cursorAt(u: vec2f, s: vec4f, vs: f32) -> vec4f {
     let w = viewAt(f);
     acc += cursorAt(unview(p, w), curAt(f), w.z);
   }
-  return acc / f32(count) * F.cur.y;
+  return acc / f32(count) * F.cur.y * inView(p);
 }
 
 // ---- Highlight masks: dim everything outside them ----
@@ -317,7 +331,12 @@ fn dimAt(u: vec2f, aa: f32) -> f32 {
 }
 
 @fragment fn fs_highlight(v: VO) -> @location(0) vec4f {
-  return vec4f(0.0, 0.0, 0.0, dimAt(unview(v.pos.xy, F.viewT.xyz), 1.0 / F.viewT.z));
+  let p = v.pos.xy;
+  let k = inView(p);
+  var d = 0.0;
+  if (k > 0.0) { d = dimAt(unview(p, F.viewT.xyz), 1.0 / F.viewT.z); }
+  if (k < 1.0) { d = mix(dimAt(p, 1.0), d, k); }
+  return vec4f(0.0, 0.0, 0.0, d);
 }
 
 // ---- Glass loupe: the zoomed layer magnified in place, masks and highlight included ----

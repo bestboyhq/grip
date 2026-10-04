@@ -2,6 +2,8 @@
 // the screen (padding, aspect fit, device mockup), the camera per CameraLayout item (pip,
 // fullscreen, hidden, split) with spring transitions in output time, face-follow crop, hide when
 // silent, and masks locked to the screen. Pure: prepareLayout precomputes, layoutAt evaluates.
+// The screen's viewport is where the zoom view shows it: the whole output, or in split layouts the
+// screen's own panel, so a zoom magnifies inside the panel and the split stays a split.
 
 import type { CameraLayoutKind, Rect, Style, Word } from '../shared/project.ts'
 import { mapRange, toSource, type TimeMap } from '../shared/timemap.ts'
@@ -17,6 +19,9 @@ const SILENCE = 2
 const SPEECH_LEAD = 0.6 // show the camera before the first word, so it is in place when speech starts
 const SPEECH_TAIL = 0.8
 const FACE_SIGMA = 0.5 // seconds; smooths face detections so the crop glides instead of jittering
+/** Picture-in-picture size while the view is zoomed in (2x or more): the camera steps back so it
+ *  covers less of the magnified content, and grows back as the view zooms out. */
+const ZOOMED_CAMERA = 0.7
 
 type Kind = CameraLayoutKind
 const KINDS: Kind[] = ['pip', 'fullscreen', 'hidden', 'split']
@@ -24,15 +29,19 @@ const KINDS: Kind[] = ['pip', 'fullscreen', 'hidden', 'split']
 interface State {
   screen: Rect
   screenRadius: number
+  viewport: Rect
+  viewportRadius: number
   camera: Rect
   cameraRadius: number
   cameraOpacity: number
   cameraShadow: number
+  pip: number // 1 = a corner camera (pip, hidden), 0 = fullscreen or split; mixed in transitions
 }
 
 export function prepareLayout(input: SceneInput, map: TimeMap, unit: number) {
   const targets = Object.fromEntries(KINDS.map((k) => [k, target(input, unit, k)])) as Record<Kind, State>
-  const changes = input.project.sources.camera ? kindChanges(input, map) : [{ t: -Infinity, kind: 'pip' as Kind }]
+  // No camera, or the camera turned off: no layout makes room for it.
+  const changes = input.project.sources.camera && input.project.style.camera.visible !== false ? kindChanges(input, map) : [{ t: -Infinity, kind: 'pip' as Kind }]
   const faces = (input.faces ?? []).filter((f) => f && [f.t, f.x, f.y, f.w, f.h].every(Number.isFinite)).sort((a, b) => a.t - b.t)
   const masks = input.project.masks.map((m) => ({ m, ranges: mapRange(map, m.start, m.end) }))
   return { input, map, unit, targets, changes, faces, masks }
@@ -40,23 +49,32 @@ export function prepareLayout(input: SceneInput, map: TimeMap, unit: number) {
 
 export type PreparedLayout = ReturnType<typeof prepareLayout>
 
-export function layoutAt(l: PreparedLayout, t: number): { screen: ScreenLayer | null; camera: CameraLayer | null; masks: MaskLayer[] } {
+/** `zoom`: how far the view is zoomed in past its rest framing at t (zoomAmount), 0..1. */
+export function layoutAt(l: PreparedLayout, t: number, zoom = 0): { screen: ScreenLayer | null; camera: CameraLayer | null; masks: MaskLayer[] } {
   const { project } = l.input
   const st = project.style
   const s = stateAt(l, t, lastChange(l.changes, t))
-  const screen: ScreenLayer | null = project.sources.screen ? { rect: s.screen, inset: insetPx(st, l.unit), radius: s.screenRadius, shadow: st.shadow, device: st.device } : null
+  const screen: ScreenLayer | null = project.sources.screen
+    ? { rect: s.screen, inset: insetPx(st, l.unit), radius: s.screenRadius, shadow: st.shadow, device: st.device, viewport: s.viewport, viewportRadius: s.viewportRadius }
+    : null
   const cs = project.sources.camera
   let camera: CameraLayer | null = null
   if (cs && st.camera.visible !== false && s.cameraOpacity > 1e-3) {
     const src = toSource(l.map, t)
+    // A corner camera shrinks toward its corner while zoomed in.
+    const k = 1 - (1 - ZOOMED_CAMERA) * Math.min(Math.max(zoom, 0), 1) * s.pip
+    const r = s.camera
+    const ax = st.camera.position.endsWith('left') ? r.x : r.x + r.w
+    const ay = st.camera.position.startsWith('top') ? r.y : r.y + r.h
+    const rect = k < 1 ? { x: ax + (r.x - ax) * k, y: ay + (r.y - ay) * k, w: r.w * k, h: r.h * k } : r
     camera = {
-      rect: s.camera,
-      radius: s.cameraRadius,
+      rect,
+      radius: s.cameraRadius * k,
       shadow: s.cameraShadow,
       mirror: st.camera.mirror,
       opacity: Math.min(s.cameraOpacity, 1),
       src,
-      crop: cameraCrop(s.camera, cs.width, cs.height, st.camera.followFace ? faceAt(l.faces, src) : null),
+      crop: cameraCrop(rect, cs.width, cs.height, st.camera.followFace ? faceAt(l.faces, src) : null),
       removeBackground: st.camera.removeBackground && !!cs.matte,
       lut: st.camera.lut,
     }
@@ -110,27 +128,26 @@ function target(input: SceneInput, unit: number, kind: Kind): State {
     return {
       screen,
       screenRadius: radius(screen),
+      viewport: grow(screen, inset), // the frame: zooms stay inside it
+      viewportRadius: radius(screen),
       camera: cam,
       cameraRadius: c.shape === 'square' ? 0 : Math.min(Math.max(st.radius, 12) * unit, cam.w / 2, cam.h / 2),
       cameraOpacity: 1,
       cameraShadow: c.shadow,
+      pip: 0,
     }
   }
 
   const screen = fitScreen(area, src.width, src.height, st.device, inset)
-  const base = { screen, screenRadius: radius(screen) }
+  const base = { screen, screenRadius: radius(screen), viewport: { x: 0, y: 0, w: W, h: H }, viewportRadius: 0 }
   const cw = Math.max(1, c.size * unit)
   const ch = cw / Math.max(c.aspect, 0.05)
   const edge = c.inset * unit
   const pip = { x: c.position.endsWith('left') ? edge : W - edge - cw, y: c.position.startsWith('top') ? edge : H - edge - ch, w: cw, h: ch }
   const pipRadius = c.shape === 'circle' ? Math.min(cw, ch) / 2 : c.shape === 'rounded' ? Math.min(c.radius * unit, cw / 2, ch / 2) : 0
-  if (kind === 'fullscreen') return { ...base, camera: { x: 0, y: 0, w: W, h: H }, cameraRadius: 0, cameraOpacity: 1, cameraShadow: 0 }
-  if (kind === 'hidden') {
-    const k = 0.6
-    const small = { x: pip.x + (cw * (1 - k)) / 2, y: pip.y + (ch * (1 - k)) / 2, w: cw * k, h: ch * k }
-    return { ...base, camera: small, cameraRadius: pipRadius * k, cameraOpacity: 0, cameraShadow: c.shadow }
-  }
-  return { ...base, camera: pip, cameraRadius: pipRadius, cameraOpacity: 1, cameraShadow: c.shadow }
+  if (kind === 'fullscreen') return { ...base, camera: { x: 0, y: 0, w: W, h: H }, cameraRadius: 0, cameraOpacity: 1, cameraShadow: 0, pip: 0 }
+  const corner: State = { ...base, camera: pip, cameraRadius: pipRadius, cameraOpacity: 1, cameraShadow: c.shadow, pip: 1 }
+  return kind === 'hidden' ? { ...corner, ...hiddenCamera(corner) } : corner
 }
 
 /** Largest recording rect whose frame (the recording plus `inset` px on every side) fits centered
@@ -156,9 +173,11 @@ export function fitScreen(box: Rect, srcW: number, srcH: number, device: Style['
 /** Change points in output time. The first is at -Infinity: the state at t = 0 is already settled. */
 // ponytail: O(boundaries x items) scan; an interval tree if projects reach thousands of layout items.
 function kindChanges(input: SceneInput, map: TimeMap): Array<{ t: number; kind: Kind }> {
-  const { project, transcript } = input
+  const { project, transcript, speech } = input
   const items = project.layouts.flatMap((l) => mapRange(map, l.start, l.end).map(([s, e]) => ({ s, e, kind: l.kind, order: l.start })))
-  const silent = project.style.camera.hideWhenSilent && transcript ? silentRanges(transcript.words, map) : []
+  // Words when the recording is transcribed, else speech heard in the mic's levels.
+  const spoken = transcript?.words ?? speech?.map(([start, end]) => ({ start, end }))
+  const silent = project.style.camera.hideWhenSilent && spoken ? silentRanges(spoken, map) : []
   const cuts = [...new Set([0, map.duration, ...items.flatMap((i) => [i.s, i.e]), ...silent.flat()])].sort((a, b) => a - b)
   const out: Array<{ t: number; kind: Kind }> = []
   for (let i = 0; i + 1 < cuts.length; i++) {
@@ -175,7 +194,7 @@ function kindChanges(input: SceneInput, map: TimeMap): Array<{ t: number; kind: 
 }
 
 /** Output ranges with no speech for at least SILENCE seconds (speech padded by lead and tail). */
-export function silentRanges(words: Word[], map: TimeMap): Array<[number, number]> {
+export function silentRanges(words: Array<Pick<Word, 'start' | 'end'>>, map: TimeMap): Array<[number, number]> {
   const speech = words.flatMap((w) => mapRange(map, w.start, w.end)).sort((a, b) => a[0] - b[0])
   const out: Array<[number, number]> = []
   let from = 0
@@ -184,6 +203,35 @@ export function silentRanges(words: Word[], map: TimeMap): Array<[number, number
     from = Math.max(from, e + SPEECH_TAIL)
   }
   if (map.duration - from >= SILENCE) out.push([from, map.duration])
+  return out
+}
+
+/** Speech in a mic track from its levels, for hide when silent without a transcript: source-second
+ *  runs where the peaks stand clear of the noise floor for at least 150 ms (a key click or a cough
+ *  is shorter). `peaks` are [min, max] pairs of equal buckets over [0, duration), about 50 ms each. */
+export function voiceRanges(peaks: Float32Array, duration: number): Array<[number, number]> {
+  const n = Math.floor(peaks.length / 2)
+  if (!n || !(duration > 0)) return []
+  const dt = duration / n
+  const db = Array.from({ length: n }, (_, i) => 20 * Math.log10(Math.max(Math.abs(peaks[2 * i]), Math.abs(peaks[2 * i + 1]), 1e-6)))
+  const sorted = [...db].sort((a, b) => a - b)
+  const floor = sorted[Math.floor(0.2 * (n - 1))]
+  const loud = sorted[Math.floor(0.95 * (n - 1))]
+  if (loud < -50) return [] // nothing but room tone
+  if (loud - floor < 10) return [[0, duration]] // talking all the way through
+  const threshold = Math.max(floor + 10, loud - 30)
+  const out: Array<[number, number]> = []
+  const MIN_RUN = Math.max(1, Math.round(0.15 / dt))
+  for (let i = 0; i < n; ) {
+    if (db[i] <= threshold) {
+      i++
+      continue
+    }
+    let j = i
+    while (j < n && db[j] > threshold) j++
+    if (j - i >= MIN_RUN) out.push([i * dt, j * dt])
+    i = j
+  }
   return out
 }
 
@@ -201,20 +249,40 @@ function lastChange(changes: Array<{ t: number }>, t: number): number {
  *  wherever it was, so rapid changes and cuts never jump. */
 function stateAt(l: PreparedLayout, t: number, i: number, depth = 0): State {
   const c = l.changes[i]
-  const to = l.targets[c.kind]
+  let to = l.targets[c.kind]
   const dt = t - c.t
   if (i === 0 || dt >= SETTLE || depth > 8) return to
-  const from = stateAt(l, c.t, i - 1, depth + 1)
+  let from = stateAt(l, c.t, i - 1, depth + 1)
+  // The camera hides and appears in place, whatever layout it leaves or enters: a fullscreen or split
+  // camera fades where it is instead of flying to the corner as a ghost.
+  if (c.kind === 'hidden') to = { ...to, ...hiddenCamera(from) }
+  else if (l.changes[i - 1].kind === 'hidden' && from.cameraOpacity < 1e-3) from = { ...from, ...hiddenCamera(to) }
   const p = springProgress(dt, SPRING)
   const mix = (a: number, b: number) => a + (b - a) * p
   const rect = (a: Rect, b: Rect) => ({ x: mix(a.x, b.x), y: mix(a.y, b.y), w: mix(a.w, b.w), h: mix(a.h, b.h) })
   return {
     screen: rect(from.screen, to.screen),
     screenRadius: mix(from.screenRadius, to.screenRadius),
+    viewport: rect(from.viewport, to.viewport),
+    viewportRadius: mix(from.viewportRadius, to.viewportRadius),
     camera: rect(from.camera, to.camera),
     cameraRadius: Math.max(0, mix(from.cameraRadius, to.cameraRadius)),
     cameraOpacity: Math.max(0, mix(from.cameraOpacity, to.cameraOpacity)),
     cameraShadow: Math.max(0, mix(from.cameraShadow, to.cameraShadow)),
+    pip: mix(from.pip, to.pip),
+  }
+}
+
+/** The camera of `s` stepped back to 60% around its center and faded out. */
+function hiddenCamera(s: State): Pick<State, 'camera' | 'cameraRadius' | 'cameraOpacity' | 'cameraShadow' | 'pip'> {
+  const k = 0.6
+  const r = s.camera
+  return {
+    camera: { x: r.x + (r.w * (1 - k)) / 2, y: r.y + (r.h * (1 - k)) / 2, w: r.w * k, h: r.h * k },
+    cameraRadius: s.cameraRadius * k,
+    cameraOpacity: 0,
+    cameraShadow: s.cameraShadow,
+    pip: s.pip,
   }
 }
 

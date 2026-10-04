@@ -10,7 +10,8 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { dirname, join, relative, resolve } from 'node:path'
 import { native } from './native.ts'
-import { bundleArg, readProject, updateProject } from './projects.ts'
+import type { Project } from '../src/shared/project.ts'
+import { bundleArg, projectEvents, readProject, updateProject } from './projects.ts'
 
 const running = new Map<string, Promise<void>>()
 const aborts = new Set<AbortController>()
@@ -23,6 +24,10 @@ export function registerCamera() {
   ipcMain.handle('camera:list', () => native.listCameras())
   ipcMain.handle('camera:analyze', (_e, bundle: unknown) => analyzeCamera(bundleArg(bundle)))
   native.watchCameras(() => broadcast('camera:devices', native.listCameras()))
+  // An analysis cut short (quit, crash) or a recording that never had one finishes on the next open.
+  projectEvents.on('opened', (bundle: string, p: Project) => {
+    if (p.sources.camera && !(p.sources.camera.matte && p.sources.camera.faces)) void analyzeCamera(bundle)
+  })
   app.on('before-quit', () => aborts.forEach((a) => a.abort()))
 }
 

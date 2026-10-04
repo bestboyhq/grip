@@ -5,14 +5,15 @@
 // Coordinates: output pixels, origin top-left, in UNZOOMED space. `view` is the zoom camera:
 // an unzoomed point p lands at (p - view.center) * view.scale + (width/2, height/2).
 // The view applies to background, screen, cursor, click effects, and masks (masks stay locked to
-// content). Camera, keystrokes, and captions are drawn after it, unzoomed.
+// content), inside the screen's viewport (the whole output except in split layouts). Camera,
+// keystrokes, and captions are drawn after it, unzoomed.
 
 import type { Background, Project, Rect, Style, Transcript } from '../shared/project.ts'
 import type { InputEvent } from '../shared/events.ts'
 import { timeMap, toSource, type TimeMap } from '../shared/timemap.ts'
 import { prepareLayout, layoutAt } from './layout.ts'
 import { prepareCursor, cursorAt } from './motion/index.ts'
-import { prepareZoom, viewAt, loupeAt } from './zoom/index.ts'
+import { prepareZoom, viewAt, loupeAt, zoomAmount } from './zoom/index.ts'
 import { prepareOverlays, clicksAt, keystrokesAt, captionAt } from './overlays/index.ts'
 
 export interface View {
@@ -26,6 +27,10 @@ export interface ScreenLayer {
   radius: number // px, corners of the frame (rect grown by inset)
   shadow: number // 0..1
   device: Style['device']
+  /** Output px the zoom view shows the screen through (rounded by viewportRadius): the whole output,
+   *  or in split layouts the screen's own frame. Outside it everything is drawn unzoomed. */
+  viewport: Rect
+  viewportRadius: number
 }
 
 export interface CameraLayer {
@@ -116,6 +121,9 @@ export interface SceneInput {
   height: number
   /** Parsed sources.camera.faces, for face-follow crop. */
   faces?: FaceSample[]
+  /** Source-second runs of speech in the mic (voiceRanges), for hide when silent when there is no
+   *  transcript. */
+  speech?: Array<[number, number]>
 }
 
 /** One face detection: camera source seconds, box normalized to the camera frame. */
@@ -150,7 +158,8 @@ export function prepare(input: SceneInput): Prepared {
 
 export function sceneAt(p: Prepared, t: number): Scene {
   const { project, width, height } = p.input
-  const { screen, camera, masks } = layoutAt(p.layout, t)
+  const view = viewAt(p.zoom, t)
+  const { screen, camera, masks } = layoutAt(p.layout, t, zoomAmount(p.zoom, t, view))
   return {
     t,
     src: toSource(p.map, t),
@@ -159,7 +168,7 @@ export function sceneAt(p: Prepared, t: number): Scene {
     unit: p.unit,
     background: project.style.background,
     backgroundBlur: project.style.backgroundBlur,
-    view: viewAt(p.zoom, t),
+    view,
     screen,
     camera,
     cursor: cursorAt(p.cursor, t),

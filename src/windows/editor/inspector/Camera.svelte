@@ -7,9 +7,12 @@
   import Segmented from '../../../ui/Segmented.svelte'
   import Slider from '../../../ui/Slider.svelte'
   import Toggle from '../../../ui/Toggle.svelte'
-  import Icon from '../../../ui/Icon.svelte'
+  import Select from '../../../ui/Select.svelte'
   import { tooltip } from '../../../ui/tooltip.ts'
   import { importFile } from '../files.ts'
+  import { on } from '../../../lib/ipc.ts'
+  import { fileUrl } from '../../../engine/media/index.ts'
+  import { GRADE, GRADES, parseCube } from '../../../engine/gpu/lut.ts'
 
   type C = Style['camera']
   const source = $derived(doc.project!.sources.camera)
@@ -26,6 +29,21 @@
   const name = $props.id()
   let error = $state('')
 
+  // Background removal and face follow need the post-recording camera analysis; show how far it is.
+  let analysis = $state<number | null>(null)
+  let analysisError = $state('')
+  $effect(() => on('camera:progress', ({ bundle, progress }: { bundle: string; progress: number }) => bundle === doc.path && (analysis = progress)))
+  $effect(() =>
+    on('camera:analyzed', ({ bundle, error }: { bundle: string; error?: string }) => {
+      if (bundle !== doc.path) return
+      analysis = null
+      analysisError = error ?? ''
+    }),
+  )
+  const pending = $derived(
+    analysisError ? `Camera analysis failed: ${analysisError}` : analysis === null ? 'Applies once the camera analysis finishes.' : `Analyzing the camera… ${Math.round(analysis * 100)}%`,
+  )
+
   function shape(v: C['shape']) {
     edit((p) => {
       p.style.camera.shape = v
@@ -33,11 +51,30 @@
     })
   }
 
+  // Color: none, a built-in grade, or a .cube in the bundle (shown by its file name).
+  const LOAD = 'load'
+  const colors = $derived([
+    { value: '', label: 'Natural' },
+    ...Object.entries(GRADES).map(([id, g]) => ({ value: GRADE + id, label: g.label })),
+    ...(c.lut && !c.lut.startsWith(GRADE) ? [{ value: c.lut, label: c.lut.split('/').pop()! }] : []),
+    { value: LOAD, label: 'Load .cube LUT…' },
+  ])
+
+  function color(v: string) {
+    error = ''
+    if (v === LOAD) void loadLut()
+    else set('lut')(v || undefined)
+  }
+
   async function loadLut() {
     error = ''
     try {
       const file = await importFile('lut', '.cube')
-      if (file) set('lut')(file)
+      if (!file) return
+      // Read it now, so a LUT the renderer cannot use says why instead of silently doing nothing.
+      const res = await fetch(fileUrl(`${doc.path}/${file}`))
+      parseCube(await res.text())
+      set('lut')(file)
     } catch (e) {
       error = String((e as Error).message)
     }
@@ -101,28 +138,20 @@
   <Section title="Effects">
     <Toggle
       label="Remove background"
-      hint={source.matte ? undefined : 'Applies once the camera analysis finishes.'}
+      hint={source.matte ? undefined : pending}
       checked={c.removeBackground}
       disabled={off}
       onchange={set('removeBackground')}
     />
     <Toggle
       label="Follow face"
-      hint={source.faces ? 'Keeps your face centered in the frame.' : 'Applies once the camera analysis finishes.'}
+      hint={source.faces ? 'Keeps your face centered in the frame.' : pending}
       checked={c.followFace}
       disabled={off}
       onchange={set('followFace')}
     />
     <Toggle label="Hide when silent" hint="Shows the camera only while you speak." checked={c.hideWhenSilent} disabled={off || !doc.project!.sources.mic} onchange={set('hideWhenSilent')} />
-    <div class="row lut" class:off>
-      <span class="label">Color (LUT)</span>
-      {#if c.lut}
-        <span class="file" title={c.lut}>{c.lut.split('/').pop()}</span>
-        <button class="icon-btn small" disabled={off} onclick={() => set('lut')(undefined)} {@attach tooltip('Remove LUT')}><Icon name="close" size={14} /></button>
-      {:else}
-        <button class="btn" disabled={off} onclick={loadLut}><Icon name="upload" size={14} />Load .cube…</button>
-      {/if}
-    </div>
+    <Select label="Color" value={c.lut ?? ''} options={colors} disabled={off} onchange={color} />
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   </Section>
 {/if}
@@ -143,8 +172,5 @@
   .top-right { right: 4px; top: 4px; }
   .bottom-left { left: 4px; bottom: 4px; }
   .bottom-right { right: 4px; bottom: 4px; }
-  .lut .file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-  .lut .btn { height: 24px; font-size: 12px; }
-  .small { width: 22px; height: 22px; }
   .error { margin: 0; font-size: 12px; color: var(--danger); }
 </style>

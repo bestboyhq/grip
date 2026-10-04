@@ -19,7 +19,7 @@ import { deviceGeometry } from '../layout.ts'
 import { drawOverlays } from '../overlays/index.ts'
 import { oklab, parseColor, wallpaper, DEFAULT_WALLPAPER } from '../backgrounds/index.ts'
 import { CURSORS, CURSOR_RES, type BuiltinName } from '../../assets/cursors.ts'
-import { parseCube, type Lut } from './lut.ts'
+import { GRADE, gradeLut, parseCube, type Lut } from './lut.ts'
 import code from './shaders.wgsl?raw'
 
 export interface Frames {
@@ -38,8 +38,8 @@ export interface Motion {
 // `struct Frame` in shaders.wgsl, in vec4 slots.
 const A = 0, VIEWT = 1, SCR = 2, SCR2 = 3, SCR3 = 4, DEV = 5, SH = 6, VIEWS = 10, PARTS = 26, MASKS = 74
 const CUR = 106, CURIMG = 107, CURTEX = 108, CURBOX = 109, CURS = 110, LOUPE = 126, LOUPE2 = 127
-const CAM = 128, CAM1 = 129, CAM2 = 130, CAM3 = 131, CAM4 = 132, LUTMIN = 133, LUTMAX = 134, FIN = 135
-const FRAME_SLOTS = 136
+const CAM = 128, CAM1 = 129, CAM2 = 130, CAM3 = 131, CAM4 = 132, LUTMIN = 133, LUTMAX = 134, FIN = 135, VP = 136
+const FRAME_SLOTS = 137
 const PASS_SLOTS = 27 // `struct Pass`
 const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12
 const MASK_KIND = { blur: 0, pixelate: 1, highlight: 2 } as const
@@ -338,7 +338,8 @@ export class Renderer {
     const views = motion && motion.views.length > 1 ? even(motion.views, MAX_SAMPLES) : [scene.view]
     const has = { moving: views.length > 1, cursor: false, highlight: false, loupe: false, camera: false, overlay: false }
     set(A, W, H, scene.unit, views.length)
-    set(VIEWT, scene.view.center.x, scene.view.center.y, scene.view.scale)
+    set(VIEWT, scene.view.center.x, scene.view.center.y, scene.view.scale, scene.screen?.viewportRadius ?? 0)
+    rect(VP, scene.screen?.viewport ?? { x: 0, y: 0, w: W, h: H })
     views.forEach((v, i) => set(VIEWS + i, v.center.x, v.center.y, v.scale))
 
     const s = scene.screen
@@ -640,6 +641,7 @@ export class Renderer {
 
   private lutFile(file: string): Promise<Lut | null> {
     let p = this.luts.get(file)
+    if (!p && file.startsWith(GRADE)) this.luts.set(file, (p = Promise.resolve(gradeLut(file))))
     if (!p) {
       p = fetch(this.assetUrl(file))
         .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`${r.status} ${r.statusText}`))))
