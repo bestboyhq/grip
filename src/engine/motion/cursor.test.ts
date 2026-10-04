@@ -1,12 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { createProject, type Project } from '../../shared/project.ts'
 import { removeSourceRange, setSpeed, timeMap } from '../../shared/timemap.ts'
 import type { InputEvent } from '../../shared/events.ts'
 import { layoutAt, prepareLayout } from '../layout.ts'
-import { CURSORS, cursorAt, cursorPoint, prepareCursor } from './index.ts'
+import { cursorAt, cursorPoint, prepareCursor } from './index.ts'
+import { CURSORS } from '../../assets/cursors.ts'
 
 // Deterministic PRNG (mulberry32).
 function rng(seed: number) {
@@ -198,6 +197,7 @@ test('cursor images: recorded, flicker removed, built-in and touch sets', () => 
   assert.deepEqual([1, 2.5, 6].map((t) => at(b, t)), ['arrow', 'pointer', 'x9'])
   const touch = setup(events, 10, (p) => (p.style.cursor.set = 'touch'))
   assert.equal(at(touch, 2.5), 'touch')
+  assert.deepEqual([cursorAt(touch.c, 2.5)!.hotX, cursorAt(touch.c, 2.5)!.hotY], [CURSORS.touch.hotX, CURSORS.touch.hotY])
   assert.equal(cursorAt(touch.c, 2.5)!.angle, 0)
   // State carries across a cut: the clip after it starts with the image set inside the cut.
   const cut = setup(events, 10, (p) => (p.clips = removeSourceRange(p.clips, 1.5, 2.5)))
@@ -269,10 +269,6 @@ test('a 2-hour stream with hundreds of cuts precomputes fast in bounded memory',
   for (let t = 0; t < s.map.duration; t += 7.77) assert.ok(Number.isFinite(cursorAt(s.c, t)?.x ?? 0))
 })
 
-test('built-in cursor metadata matches the SVG files', () => {
-  for (const [name, a] of Object.entries(CURSORS)) {
-    const svg = readFileSync(fileURLToPath(a.url), 'utf8')
-    assert.match(svg, new RegExp(`width="${a.w}" height="${a.h}" viewBox="0 0 ${a.w} ${a.h}"`), name)
-    assert.ok(a.hotX > 0 && a.hotX < a.w && a.hotY > 0 && a.hotY < a.h, name)
-  }
+test('built-in cursors: one set for motion and the renderer, hotspot inside each image', () => {
+  for (const [name, a] of Object.entries(CURSORS)) assert.ok(a.hotX > 0 && a.hotX < a.w && a.hotY > 0 && a.hotY < a.h, name)
 })

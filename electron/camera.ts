@@ -5,12 +5,12 @@
 //   camera:devices (CameraDevice[])                       a camera or iPhone/iPad was plugged in or out
 //   camera:progress ({ bundle, progress })                analysis progress, 0..1
 //   camera:analyzed ({ bundle, matte, faces } | { bundle, error })
-//     On success sources.camera.matte/.faces are already in project.json; an open editor must
-//     apply the same two fields to its in-memory project, or its next autosave drops them.
+//     On success sources.camera.matte/.faces are already in project.json, and open editors got
+//     them through projects:sources (updateProject).
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { dirname, join, relative, resolve } from 'node:path'
 import { native } from './native.ts'
-import { readProject, writeProject } from './projects.ts'
+import { readProject, updateProject } from './projects.ts'
 
 const running = new Map<string, Promise<void>>()
 const aborts = new Set<AbortController>()
@@ -50,13 +50,16 @@ async function analyze(bundle: string) {
       (progress) => broadcast('camera:progress', { bundle, progress }),
       abort.signal,
     )
-    // Re-read: the editor may have saved edits while we were analyzing.
-    const project = await readProject(bundle)
-    if (project.sources.camera?.file !== camera.file) return // the camera source changed meanwhile
+    // Read-modify-write under the project lock: the editor may have saved edits while we were
+    // analyzing, and it learns the new sources (matte, face track) from projects:sources.
     const result = { matte: relative(bundle, out.matte), faces: relative(bundle, out.faces) }
-    Object.assign(project.sources.camera, result)
-    await writeProject(bundle, project)
-    broadcast('camera:analyzed', { bundle, ...result })
+    let applied = false
+    await updateProject(bundle, (project) => {
+      if (project.sources.camera?.file !== camera.file) return // the camera source changed meanwhile
+      Object.assign(project.sources.camera, result)
+      applied = true
+    })
+    if (applied) broadcast('camera:analyzed', { bundle, ...result })
   } catch (e) {
     if (abort.signal.aborted) return
     const error = e instanceof Error ? e.message : String(e)

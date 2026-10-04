@@ -31,6 +31,21 @@ test('screen fits the padded frame, centered, aspect kept, with or without a dev
   }
 })
 
+test('inset: the recording keeps its aspect inside a frame grown by the inset, which fits the padding', () => {
+  for (const device of ['none', 'macbook', 'iphone'] as const) {
+    const box = { x: 80, y: 80, w: 1760, h: 920 }
+    const s = fitScreen(box, 2880, 1800, device, 40)
+    assert.ok(Math.abs(s.w / s.h - 1.6) < 1e-9, device)
+    const b = deviceBounds(device, { x: s.x - 40, y: s.y - 40, w: s.w + 80, h: s.h + 80 })
+    assert.ok(b.x >= box.x - 1e-6 && b.y >= box.y - 1e-6 && b.x + b.w <= box.x + box.w + 1e-6 && b.y + b.h <= box.y + box.h + 1e-6, device)
+    assert.ok(Math.max(b.w - box.w, b.h - box.h) > -1e-3, `${device}: as large as fits`)
+  }
+  const l = at(project((p) => Object.assign(p.style, { inset: 30, radius: 40 })), 1)
+  assert.equal(l.screen!.inset, 30)
+  assert.ok(Math.abs(l.screen!.rect.y - 30 - 80) < 1e-6, 'frame touches the padding')
+  assert.equal(l.screen!.radius, 40)
+})
+
 test('device mockups follow orientation: Dynamic Island on top in portrait, on the left in landscape', () => {
   const island = (s: Rect) => deviceGeometry('iphone', s)!.parts.find((p) => p.over)!.rect
   const portrait = { x: 0, y: 0, w: 390, h: 844 }

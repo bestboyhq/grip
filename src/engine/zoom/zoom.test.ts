@@ -7,7 +7,7 @@ import { parseEvents, type InputEvent } from '../../shared/events.ts'
 import { prepare, type View } from '../scene.ts'
 import { layoutAt } from '../layout.ts'
 import { cursorPoint as cursorAt } from '../motion/index.ts'
-import { generateAutoZooms, loupeAt, viewAt } from './index.ts'
+import { autoZoomOnce, generateAutoZooms, loupeAt, viewAt } from './index.ts'
 
 const SCREEN = { file: 'sources/screen.mp4', width: 2880, height: 1800, fps: 30, scale: 2 }
 const zoom = (z: Partial<Zoom>): Zoom => ({ id: Math.random().toString(36).slice(2), start: 0, end: 1, level: 2, target: { kind: 'cursor' }, enabled: true, ...z })
@@ -217,6 +217,20 @@ test('generateAutoZooms: merges, leads, holds, covers typing, skips the erratic'
   assert.deepEqual(spans, [[0, 6], [9.4, 12], [18.9, 25], [36.4, 40]])
   for (const z of zs) assert.ok(z.auto && z.enabled && z.level === 2 && z.target.kind === 'cursor' && z.id)
   assert.deepEqual(generateAutoZooms([], sources, on, [{ start: 5, end: 8 }]), [], 'typing with no known place is left out')
+})
+
+test('autoZoomOnce: auto zooms on the first open only, never again after the user deletes them', () => {
+  const events: InputEvent[] = [{ t: 3, type: 'down', x: 1400, y: 900, button: 'left' }]
+  const p = createProject('t', { duration: 20, screen: SCREEN, events: 'sources/events.jsonl' })
+  assert.equal(autoZoomOnce(p, events), true)
+  assert.ok(p.autoZoomed && p.zooms.length === 1 && p.zooms[0].auto)
+  p.zooms = []
+  assert.equal(autoZoomOnce(p, events), false)
+  assert.deepEqual(p.zooms, [], 'deleted zooms stay deleted')
+  const off = createProject('t', { duration: 20, screen: SCREEN })
+  off.style.autoZoom.enabled = false
+  assert.equal(autoZoomOnce(off, events), true)
+  assert.ok(off.autoZoomed && off.zooms.length === 0, 'auto zoom off: marked, nothing generated')
 })
 
 const FIXTURE = join(import.meta.dirname, '../../../.context/fixtures/Demo #1 ✨ café.studio')

@@ -41,6 +41,7 @@ test('fields added since the project was saved get their defaults; unknown field
   delete p.style.captions
   delete p.audio.system
   delete p.masks
+  delete p.autoZoomed
   p.style.background = { kind: 'color', color: '#123456' }
   p.futureField = { keep: true }
   const m = migrate(p) as any
@@ -48,6 +49,7 @@ test('fields added since the project was saved get their defaults; unknown field
   assert.deepEqual(m.style.captions, defaultStyle().captions)
   assert.deepEqual(m.audio.system, { volume: 1, muted: false })
   assert.deepEqual(m.masks, [])
+  assert.equal(m.autoZoomed, false, 'an older project gets its auto zooms on the next open')
   assert.deepEqual(m.style.background, { kind: 'color', color: '#123456' }) // unions are not merged
   assert.deepEqual(m.futureField, { keep: true })
 })

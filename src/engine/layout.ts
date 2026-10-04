@@ -33,7 +33,7 @@ interface State {
 export function prepareLayout(input: SceneInput, map: TimeMap, unit: number) {
   const targets = Object.fromEntries(KINDS.map((k) => [k, target(input, unit, k)])) as Record<Kind, State>
   const changes = input.project.sources.camera ? kindChanges(input, map) : [{ t: -Infinity, kind: 'pip' as Kind }]
-  const faces = (input.faces ?? []).filter((f) => Number.isFinite(f.t)).sort((a, b) => a.t - b.t)
+  const faces = (input.faces ?? []).filter((f) => f && [f.t, f.x, f.y, f.w, f.h].every(Number.isFinite)).sort((a, b) => a.t - b.t)
   const masks = input.project.masks.map((m) => ({ m, ranges: mapRange(map, m.start, m.end) }))
   return { input, map, unit, targets, changes, faces, masks }
 }
@@ -44,7 +44,7 @@ export function layoutAt(l: PreparedLayout, t: number): { screen: ScreenLayer | 
   const { project } = l.input
   const st = project.style
   const s = stateAt(l, t, lastChange(l.changes, t))
-  const screen: ScreenLayer | null = project.sources.screen ? { rect: s.screen, radius: s.screenRadius, shadow: st.shadow, device: st.device } : null
+  const screen: ScreenLayer | null = project.sources.screen ? { rect: s.screen, inset: insetPx(st, l.unit), radius: s.screenRadius, shadow: st.shadow, device: st.device } : null
   const cs = project.sources.camera
   let camera: CameraLayer | null = null
   if (cs && st.camera.visible !== false && s.cameraOpacity > 1e-3) {
@@ -66,6 +66,8 @@ export function layoutAt(l: PreparedLayout, t: number): { screen: ScreenLayer | 
 
 // ---- Layout targets: the settled state of each camera layout kind. ----
 
+const insetPx = (st: Style, unit: number) => Math.max(0, (st.inset ?? 0) * unit)
+
 function target(input: SceneInput, unit: number, kind: Kind): State {
   const { project, width: W, height: H } = input
   const st = project.style
@@ -73,7 +75,12 @@ function target(input: SceneInput, unit: number, kind: Kind): State {
   const src = project.sources.screen ?? { width: 16, height: 9 }
   const pad = Math.max(0, st.padding * unit)
   const area = { x: pad, y: pad, w: Math.max(1, W - 2 * pad), h: Math.max(1, H - 2 * pad) }
-  const radius = (r: Rect) => (st.device === 'none' ? Math.min(st.radius * unit, r.w / 2, r.h / 2) : deviceGeometry(st.device, r)!.displayRadius)
+  const inset = insetPx(st, unit)
+  // Corners belong to the frame around the recording.
+  const radius = (r: Rect) => {
+    const f = grow(r, inset)
+    return st.device === 'none' ? Math.min(st.radius * unit, f.w / 2, f.h / 2) : deviceGeometry(st.device, f)!.displayRadius
+  }
 
   if (kind === 'split' && project.sources.camera) {
     const b = deviceBounds(st.device, { x: 0, y: 0, w: src.width, h: src.height })
@@ -99,7 +106,7 @@ function target(input: SceneInput, unit: number, kind: Kind): State {
       screenBox = { x, y: first ? y + ch + gap : y, w, h: sh }
       cam = { x, y: first ? y : y + sh + gap, w, h: ch }
     }
-    const screen = fitScreen(screenBox, src.width, src.height, st.device)
+    const screen = fitScreen(screenBox, src.width, src.height, st.device, inset)
     return {
       screen,
       screenRadius: radius(screen),
@@ -110,12 +117,12 @@ function target(input: SceneInput, unit: number, kind: Kind): State {
     }
   }
 
-  const screen = fitScreen(area, src.width, src.height, st.device)
+  const screen = fitScreen(area, src.width, src.height, st.device, inset)
   const base = { screen, screenRadius: radius(screen) }
   const cw = Math.max(1, c.size * unit)
   const ch = cw / Math.max(c.aspect, 0.05)
-  const inset = c.inset * unit
-  const pip = { x: c.position.endsWith('left') ? inset : W - inset - cw, y: c.position.startsWith('top') ? inset : H - inset - ch, w: cw, h: ch }
+  const edge = c.inset * unit
+  const pip = { x: c.position.endsWith('left') ? edge : W - edge - cw, y: c.position.startsWith('top') ? edge : H - edge - ch, w: cw, h: ch }
   const pipRadius = c.shape === 'circle' ? Math.min(cw, ch) / 2 : c.shape === 'rounded' ? Math.min(c.radius * unit, cw / 2, ch / 2) : 0
   if (kind === 'fullscreen') return { ...base, camera: { x: 0, y: 0, w: W, h: H }, cameraRadius: 0, cameraOpacity: 1, cameraShadow: 0 }
   if (kind === 'hidden') {
@@ -126,11 +133,22 @@ function target(input: SceneInput, unit: number, kind: Kind): State {
   return { ...base, camera: pip, cameraRadius: pipRadius, cameraOpacity: 1, cameraShadow: c.shadow }
 }
 
-/** Largest screen rect whose device mockup (or the bare screen) fits centered in `box`. */
-export function fitScreen(box: Rect, srcW: number, srcH: number, device: Style['device']): Rect {
-  const b = deviceBounds(device, { x: 0, y: 0, w: srcW, h: srcH })
-  const k = Math.min(box.w / b.w, box.h / b.h)
-  return { x: box.x + (box.w - b.w * k) / 2 - b.x * k, y: box.y + (box.h - b.h * k) / 2 - b.y * k, w: srcW * k, h: srcH * k }
+/** Largest recording rect whose frame (the recording plus `inset` px on every side) fits centered
+ *  in `box` together with its device mockup. */
+export function fitScreen(box: Rect, srcW: number, srcH: number, device: Style['device'], inset = 0): Rect {
+  const bounds = (k: number) => deviceBounds(device, grow({ x: 0, y: 0, w: srcW * k, h: srcH * k }, inset))
+  const fits = (k: number) => {
+    const b = bounds(k)
+    return b.w <= box.w + 1e-9 && b.h <= box.h + 1e-9
+  }
+  // The bounds grow with the scale k: bisect for the largest k that fits (exact when nothing is
+  // around the recording).
+  let lo = 0
+  let hi = Math.min(box.w / srcW, box.h / srcH)
+  if (fits(hi)) lo = hi
+  else for (let i = 0; i < 48; i++) fits((lo + hi) / 2) ? (lo = (lo + hi) / 2) : (hi = (lo + hi) / 2)
+  const b = bounds(lo)
+  return { x: box.x + (box.w - b.w) / 2 - b.x, y: box.y + (box.h - b.h) / 2 - b.y, w: srcW * lo, h: srcH * lo }
 }
 
 // ---- Camera layout timeline: which kind is active, and spring transitions between kinds. ----

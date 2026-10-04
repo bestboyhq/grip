@@ -204,7 +204,7 @@ function rebuild(project: Project, width: number, height: number) {
     if (events.from !== doc.events) events = { from: doc.events, value: $state.snapshot(doc.events) as InputEvent[] }
     if (transcript.from !== doc.transcript) transcript = { from: doc.transcript, value: $state.snapshot(doc.transcript) as Transcript | null }
     const p = $state.snapshot(project) as Project
-    prepared = prepare({ project: p, events: events.value, transcript: transcript.value, width, height })
+    prepared = prepare({ project: p, events: events.value, transcript: transcript.value, faces: doc.faces, width, height })
     stats.prepares++
     stats.prepareMs = performance.now() - preparedAt
     player.duration = prepared.map.duration

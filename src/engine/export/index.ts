@@ -39,9 +39,11 @@ export async function exportProject(job: JobSpec, io: ExportIO): Promise<number>
     if (!res?.ok) throw new Error(`Could not read the ${what} (${rel}).`)
     return res
   }
-  const [events, transcript] = await Promise.all([
+  const [events, transcript, faces] = await Promise.all([
     s.events ? read(s.events, 'input events').then((r) => r.text()).then(parseEvents) : [],
     s.transcript ? read(s.transcript, 'transcript').then((r) => r.json() as Promise<Transcript>) : null,
+    // Face follow is optional: without a readable face track the camera stays centered, as in preview.
+    s.camera?.faces ? read(s.camera.faces, 'face track').then((r) => r.json()).then((f) => (Array.isArray(f) ? f : []), () => []) : [],
   ])
   const open = io.open ?? openVideo
   const video = (file: string, what: string) =>
@@ -53,7 +55,7 @@ export async function exportProject(job: JobSpec, io: ExportIO): Promise<number>
     if (s.screen) media.screen = await video(s.screen.file, 'screen recording')
     if (s.camera) media.camera = await video(s.camera.file, 'camera recording')
     if (s.camera?.matte && project.style.camera.removeBackground) media.matte = await video(s.camera.matte, 'camera matte')
-    const input: Input = { project, events, transcript }
+    const input: Input = { project, events, transcript, faces }
     return job.options.format === 'gif' ? await gif(job, input, media, io) : await mp4(job, input, media, io)
   } finally {
     media.screen?.close()

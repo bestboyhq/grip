@@ -1,4 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="30" viewBox="0 0 24 30">
-  <filter id="s" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dy="0.8" stdDeviation="0.9" flood-opacity="0.35"/></filter>
-  <path transform="translate(5 4)" filter="url(#s)" d="M0 0V16L3.8 12.4L6.2 18.2L8.9 17.1L6.6 11.5H11.5Z" fill="#000" stroke="#fff" stroke-width="2.2" stroke-linejoin="round" paint-order="stroke"/>
-</svg>

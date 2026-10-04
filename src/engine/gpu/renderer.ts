@@ -18,7 +18,7 @@ import type { CursorLayer, Scene, View } from '../scene.ts'
 import { deviceGeometry } from '../layout.ts'
 import { drawOverlays } from '../overlays/index.ts'
 import { oklab, parseColor, wallpaper, DEFAULT_WALLPAPER } from '../backgrounds/index.ts'
-import { CURSORS, CURSOR_RES } from '../../assets/cursors.ts'
+import { CURSORS, CURSOR_RES, type BuiltinName } from '../../assets/cursors.ts'
 import { parseCube, type Lut } from './lut.ts'
 import code from './shaders.wgsl?raw'
 
@@ -57,7 +57,7 @@ interface CursorTex {
   group: GPUBindGroup
   w: number // image px
   h: number
-  hot: [number, number] | null // built-ins carry their own hotspot
+  hot: [number, number] | null // only on the arrow standing in for a missing recorded image; else the layer's hotspot
   res: number // texture px per image px
 }
 
@@ -347,7 +347,9 @@ export class Renderer {
       const srcH = frames.screen?.displayHeight ?? s.rect.h
       const masks = scene.masks.slice(0, MAX_MASKS) // ponytail: 16 masks on screen at once; a storage buffer if anyone needs more
       const big = Math.max(srcW, srcH)
-      set(SCR2, Math.min(s.radius, s.rect.w / 2, s.rect.h / 2), 1, masks.length, s.shadow)
+      const inset = Math.max(0, s.inset)
+      const frame = { x: s.rect.x - inset, y: s.rect.y - inset, w: s.rect.w + 2 * inset, h: s.rect.h + 2 * inset }
+      set(SCR2, Math.min(s.radius, frame.w / 2, frame.h / 2), 1, masks.length, s.shadow)
       set(SCR3, srcW, srcH, Math.max(8, Math.round(big / 72)), Math.max(0, Math.log2(big / 400)))
       rect(SCR, s.rect)
       const kx = srcW / s.rect.w, ky = srcH / s.rect.h
@@ -356,7 +358,7 @@ export class Renderer {
         set(MASKS + i * 2 + 1, MASK_KIND[m.kind], m.opacity, big * 0.006)
         if (m.kind === 'highlight') has.highlight = true
       })
-      const dev = deviceGeometry(s.device, s.rect)
+      const dev = deviceGeometry(s.device, frame)
       const parts = dev ? [...dev.parts.filter((p) => !p.over), ...dev.parts.filter((p) => p.over)].slice(0, MAX_PARTS) : []
       parts.forEach((p, i) => {
         rect(PARTS + i * 4, p.rect)
@@ -364,12 +366,12 @@ export class Renderer {
         set(PARTS + i * 4 + 2, ...p.top)
         set(PARTS + i * 4 + 3, ...p.bottom)
       })
-      const casters = (dev ? dev.shadow : [{ rect: s.rect, radius: s.radius }]).slice(0, 2)
+      const casters = (dev ? dev.shadow : [{ rect: frame, radius: s.radius }]).slice(0, 2)
       casters.forEach((c, i) => {
         rect(SH + i * 2, c.rect)
         set(SH + i * 2 + 1, Math.min(c.radius, c.rect.w / 2, c.rect.h / 2))
       })
-      set(DEV, parts.length, parts.filter((p) => !p.over).length, casters.length)
+      set(DEV, parts.length, parts.filter((p) => !p.over).length, casters.length, inset)
     }
 
     const c0 = scene.cursor
@@ -658,24 +660,26 @@ export class Renderer {
   }
 
   private async loadCursor(image: string): Promise<CursorTex> {
-    const builtin = CURSORS[image as keyof typeof CURSORS]
+    const builtin = CURSORS[image as BuiltinName]
     if (!builtin) {
       try {
         const bmp = await this.bitmap(`sources/cursors/${image}.png`)
-        return this.cursorFrom(bmp, bmp.width, bmp.height, null, 1)
+        return this.cursorFrom(bmp, bmp.width, bmp.height, 1)
       } catch (e) {
         this.warn(`cursor ${image}`, e)
-        return this.cursorTex('arrow')
+        // ponytail: the arrow is drawn at the missing image's scale, so its size can be off by that
+        // image's pixel density; carry the recorded image size in CursorLayer if this path matters.
+        return { ...(await this.cursorTex('arrow')), hot: [CURSORS.arrow.hotX, CURSORS.arrow.hotY] }
       }
     }
     const canvas = new OffscreenCanvas(Math.ceil(builtin.w * CURSOR_RES), Math.ceil(builtin.h * CURSOR_RES))
     const ctx = canvas.getContext('2d')!
     ctx.scale(CURSOR_RES, CURSOR_RES)
     builtin.draw(ctx, CURSOR_RES)
-    return this.cursorFrom(canvas, builtin.w, builtin.h, [builtin.hotX, builtin.hotY], CURSOR_RES)
+    return this.cursorFrom(canvas, builtin.w, builtin.h, CURSOR_RES)
   }
 
-  private cursorFrom(source: ImageBitmap | OffscreenCanvas, w: number, h: number, hot: [number, number] | null, res: number): CursorTex {
+  private cursorFrom(source: ImageBitmap | OffscreenCanvas, w: number, h: number, res: number): CursorTex {
     this.check()
     const t = this.texture(source.width, source.height, LDR, mipCount(source.width, source.height))
     this.device.queue.copyExternalImageToTexture({ source }, { texture: t, premultipliedAlpha: true }, [source.width, source.height])
@@ -683,6 +687,6 @@ export class Renderer {
     this.mips(enc, t, this.pipes.mipLDR)
     this.device.queue.submit([enc.finish()])
     const group = this.device.createBindGroup({ layout: this.groups.g2, entries: [{ binding: 0, resource: t.createView() }] })
-    return { group, w, h, hot, res }
+    return { group, w, h, hot: null, res }
   }
 }

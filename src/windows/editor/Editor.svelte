@@ -9,6 +9,8 @@
   import { parseEvents } from '../../shared/events.ts'
   import type { Project, Sources, Transcript } from '../../shared/project.ts'
   import { timeMap, toSource } from '../../shared/timemap.ts'
+  import { autoZoomOnce } from '../../engine/zoom/index.ts'
+  import type { FaceSample } from '../../engine/scene.ts'
   import Icon from '../../ui/Icon.svelte'
   import { tooltip } from '../../ui/tooltip.ts'
   import Preview from './Preview.svelte'
@@ -37,22 +39,39 @@
     const { project } = opened
     const path = opened.path ?? requested // follows renames
     const url = (rel: string) => fileUrl(`${path}/${rel}`)
-    const [events, transcript] = await Promise.all([
+    const [events, transcript, faces] = await Promise.all([
       project.sources.events
         ? fetch(url(project.sources.events)).then((r) => (r.ok ? r.text() : '')).then(parseEvents, () => [])
         : [],
       project.sources.transcript
         ? fetch(url(project.sources.transcript)).then((r) => (r.ok ? r.json() : null)).catch(() => null)
         : null,
+      loadFaces(path, project.sources),
     ])
     doc.path = path
     const t = transcript as Transcript | null
     doc.events = raw(events)
     doc.transcript = t && Array.isArray(t.words) ? { ...t, words: raw(t.words) } : null
+    doc.faces = faces
+    // First open after recording or import: auto zooms are part of the starting document, not an edit.
+    const fresh = autoZoomOnce(project, events)
     doc.project = project
+    if (fresh) {
+      doc.dirty = true
+      void save()
+    }
     // seek() clamps to player.duration, which the player may only learn once it attaches.
     player.duration ||= timeMap(project.clips).duration
     seek(resumeAt(project.clips, project.playhead))
+  }
+
+  /** The camera's face track (written by camera analysis), or none. Face follow is optional, so a
+   *  missing or damaged file just means no follow, in preview and export alike. */
+  async function loadFaces(path: string, sources: Sources): Promise<FaceSample[]> {
+    const rel = sources.camera?.faces
+    if (!rel) return []
+    const faces = await fetch(fileUrl(`${path}/${rel}`)).then((r) => (r.ok ? r.json() : []), () => []).catch(() => [])
+    return raw(Array.isArray(faces) ? faces : [])
   }
 
   onMount(() => {
@@ -97,7 +116,9 @@
 
   // Main-process domains (camera analysis) add sources after recording; keep the open document current.
   $effect(() =>
-    on('projects:sources', (path: string, sources: Sources) => {
+    on('projects:sources', async (path: string, sources: Sources) => {
+      if (path !== doc.path || !doc.project) return
+      if (sources.camera?.faces !== doc.project.sources.camera?.faces) doc.faces = await loadFaces(path, sources)
       if (path !== doc.path || !doc.project) return
       doc.project.sources = sources
       doc.rev++

@@ -17,32 +17,15 @@
 // path passes exactly through every click position at its click time.
 //
 // Motion blur: cursorAt is pure, cheap, and continuous across cuts. The compositor samples it (and
-// the zoom view) at t and at t - 1/fps and smears the cursor between the two placements.
+// the zoom view) across the shutter (compose.ts motionAt) and smears the cursor along them.
+// Built-in images (src/assets/cursors.ts) are in screen points, so their scale is 1 / backing scale.
 
 import type { InputEvent } from '../../shared/events.ts'
 import type { TimeMap } from '../../shared/timemap.ts'
 import type { CursorLayer, SceneInput } from '../scene.ts'
 import { layoutAt, type prepareLayout } from '../layout.ts'
 import { springProgress } from './spring.ts'
-
-/** A built-in cursor drawn by us. Image px = SVG units = screen points; hotspot in image px. */
-export interface CursorAsset {
-  url: string
-  hotX: number
-  hotY: number
-  w: number
-  h: number
-}
-
-/** Built-in cursor set. CursorLayer.image is one of these keys or a recorded id
- *  (sources/cursors/<id>.png). SVG: rasterize at w * scale * view.scale for a sharp cursor. */
-export const CURSORS = {
-  arrow: { url: new URL('./cursors/arrow.svg', import.meta.url).href, hotX: 5, hotY: 4, w: 24, h: 30 },
-  pointer: { url: new URL('./cursors/pointer.svg', import.meta.url).href, hotX: 10, hotY: 4, w: 25, h: 28 },
-  ibeam: { url: new URL('./cursors/ibeam.svg', import.meta.url).href, hotX: 8, hotY: 12.5, w: 16, h: 25 },
-  touch: { url: new URL('./cursors/touch.svg', import.meta.url).href, hotX: 18, hotY: 18, w: 36, h: 36 },
-} satisfies Record<string, CursorAsset>
-export type BuiltinCursor = keyof typeof CURSORS
+import { CURSORS, type BuiltinName } from '../../assets/cursors.ts'
 
 // Time constants, all in OUTPUT seconds.
 const RATE = 120 // grid samples per second
@@ -97,7 +80,7 @@ export function prepareCursor(input: SceneInput, map: TimeMap, layout: ReturnTyp
   const x = new Float32Array(n)
   const y = new Float32Array(n)
 
-  const builtin = (k: BuiltinCursor): Img => ({ image: k, hotX: CURSORS[k].hotX, hotY: CURSORS[k].hotY, scale: 1 / pt })
+  const builtin = (k: BuiltinName): Img => ({ image: k, hotX: CURSORS[k].hotX, hotY: CURSORS[k].hotY, scale: 1 / pt })
   const imgOf = (e: CursorEvent | undefined): Img =>
     st.set === 'touch' ? builtin('touch')
     : !e ? builtin('arrow')

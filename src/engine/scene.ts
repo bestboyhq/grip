@@ -21,8 +21,9 @@ export interface View {
 }
 
 export interface ScreenLayer {
-  rect: Rect // where the whole screen frame sits
-  radius: number // px
+  rect: Rect // where the recording sits; recording px map linearly onto it
+  inset: number // px of frame around the recording on every side, filled with the recording's edge color
+  radius: number // px, corners of the frame (rect grown by inset)
   shadow: number // 0..1
   device: Style['device']
 }
@@ -42,10 +43,10 @@ export interface CameraLayer {
 export interface CursorLayer {
   x: number // hotspot position, unzoomed output px
   y: number
-  image: string // cursor id (sources/cursors/<id>.png) or a built-in name: 'arrow', 'pointer', 'ibeam'
-  hotX: number // image px
+  image: string // recorded cursor id (sources/cursors/<id>.png) or a BuiltinName from src/assets/cursors.ts
+  hotX: number // image px (a built-in's image px are screen points)
   hotY: number
-  scale: number // output px per cursor image px
+  scale: number // unzoomed output px per cursor image px
   angle: number // radians, tilt on fast moves
   opacity: number
 }

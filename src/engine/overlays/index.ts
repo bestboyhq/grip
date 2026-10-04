@@ -4,12 +4,13 @@
 // prepareOverlays maps every item through the one time map once per project revision and output
 // size; clicksAt / keystrokesAt / captionAt are pure lookups, so any frame renders alone, in any order.
 
-import { clipAt, mapRange, toOutput, type TimeMap } from '../../shared/timemap.ts'
+import { toOutput, type TimeMap } from '../../shared/timemap.ts'
 import type { InputEvent, Modifier } from '../../shared/events.ts'
 import type { Style } from '../../shared/project.ts'
 import { outputSize, type Caption, type Click, type Keystroke, type Scene, type SceneInput } from '../scene.ts'
 import { layoutAt, type prepareLayout } from '../layout.ts'
 import { springProgress } from '../motion/spring.ts'
+import { captionCues } from '../transcript/index.ts'
 
 type Ctx = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D
 type Prepared = ReturnType<typeof prepareOverlays>
@@ -44,9 +45,6 @@ const KEY_SLIDE = 0.22
 const TYPING_GAP = 1 // a bare special key (↩ ⇥ ⌫) this close to typing is part of the typing
 const REPEAT_GAP = 2.1 // longest macOS delay until key repeat, at its slowest setting
 
-const PAUSE = 0.9 // silence that starts a new caption
-const HOLD = 0.7 // a caption stays this long after its last word unless the next one starts
-const MIN_WORD = 0.04 // zero-length ASR words still get a frame
 const CAP_IN = 0.18
 const CAP_OUT = 0.16
 const WORD_IN = 0.14
@@ -234,18 +232,14 @@ export function keystrokesAt(o: Prepared, t: number): Keystroke[] {
 }
 
 // ---- Captions ----
+// Which words show when comes from the transcript engine (captionCues), the same cues SRT and VTT
+// export, so burned-in captions and subtitle files always agree. Here only layout: lines per cue.
 
-interface Span {
-  text: string
+interface Page {
   start: number // output seconds
   end: number
-  clip: number // clip it starts in
-}
-interface Page {
-  start: number
-  end: number
   fadeOut: boolean // false when the next caption replaces this one directly
-  words: Array<Span & { line: number }>
+  words: Array<{ text: string; start: number; line: number }>
 }
 
 const chars = (s: string) => [...s].length
@@ -262,28 +256,6 @@ export function breakLines(words: string[], maxChars: number): number[] {
   return words.map((_, i) => (i < best ? 0 : 1))
 }
 
-function fitsTwoLines(words: string[], maxChars: number): boolean {
-  const lines = breakLines(words, maxChars)
-  const len = [0, 0]
-  words.forEach((w, i) => (len[lines[i]] += chars(w) + 1))
-  return words.length === 1 || Math.max(...len) - 1 <= maxChars
-}
-
-/** Split one phrase (no pause, no sentence end inside) into captions of at most two lines. */
-function paginate(run: Span[], maxChars: number): Span[][] {
-  const fits = (ws: Span[]) => fitsTwoLines(ws.map((w) => w.text), maxChars)
-  const len = (ws: Span[]) => ws.reduce((n, w) => n + chars(w.text) + 1, -1)
-  const pages: Span[][] = [[]]
-  for (const w of run) {
-    if (pages.at(-1)!.length && !fits([...pages.at(-1)!, w])) pages.push([])
-    pages.at(-1)!.push(w)
-  }
-  // No orphans: move words onto the last caption while it stays the shorter of the last two.
-  const [a, b] = pages.slice(-2)
-  while (b && a.length > 1 && fits([a.at(-1)!, ...b]) && len([a.at(-1)!, ...b]) <= len(a.slice(0, -1))) b.unshift(a.pop()!)
-  return pages
-}
-
 /** Characters per caption line for an output size: narrower outputs get shorter lines. */
 export function maxLineChars(width: number, height: number, size: number): number {
   const em = (size * Math.min(width, height)) / 1080
@@ -295,38 +267,13 @@ function captionPages(input: SceneInput, map: TimeMap): Page[] {
   const { project, transcript } = input
   const st = project.style.captions
   if (!st.visible || !transcript) return []
-  const spans: Span[] = []
-  transcript.words.forEach((w, i) => {
-    const edit = project.captionEdits[i]
-    const text = (edit ?? w.text).trim()
-    if (!text || (w.filler && edit === undefined)) return // fillers stay out of captions unless edited back in
-    // A word that survives a cut in pieces shows from its first to its last surviving piece.
-    let cur: Span | undefined
-    for (const [start, end] of mapRange(map, w.start, Math.max(w.end, w.start + MIN_WORD))) {
-      if (cur && Math.abs(cur.end - start) < 1e-6) cur.end = end
-      else spans.push((cur = { text, start, end, clip: clipAt(map, start) }))
-    }
-  })
-  spans.sort((a, b) => a.start - b.start)
-
   // Canonical size, so preview and export (different pixel sizes) break lines identically.
   const canon = outputSize(project, 1080)
   const maxChars = maxLineChars(canon.width, canon.height, st.size)
-  // Phrases: a pause, a sentence end, or a cut between two words always starts a new caption.
-  const cut = (a: number, b: number) => map.clips.slice(a, b).some((c, i) => Math.abs(c.end - map.clips[a + i + 1].start) > 1e-6)
-  const runs: Span[][] = []
-  for (const w of spans) {
-    const prev = runs.at(-1)?.at(-1)
-    if (!prev || w.start - prev.end > PAUSE || /[.!?…。！？]["'”’)\]]*$/.test(prev.text) || cut(prev.clip, w.clip)) runs.push([w])
-    else runs.at(-1)!.push(w)
-  }
-  const groups = runs.flatMap((run) => paginate(run, maxChars))
-
-  return groups.map((ws, i) => {
-    const next = groups[i + 1]?.[0].start ?? Infinity
-    const end = Math.min(Math.max(...ws.map((w) => w.end)) + HOLD, next)
-    const lines = breakLines(ws.map((w) => w.text), maxChars)
-    return { start: ws[0].start, end, fadeOut: end < next, words: ws.map((w, j) => ({ ...w, line: lines[j] })) }
+  const cues = captionCues(transcript, map, project.captionEdits)
+  return cues.map((c, i) => {
+    const lines = breakLines(c.words.map((w) => w.text), maxChars)
+    return { start: c.start, end: c.end, fadeOut: c.end < (cues[i + 1]?.start ?? Infinity), words: c.words.map((w, j) => ({ text: w.text, start: w.start, line: lines[j] })) }
   })
 }
 
@@ -584,7 +531,8 @@ function drawCaption(ctx: Ctx, c: Caption, scene: Scene) {
       const w = c.words[i]
       const p = clamp01(w.progress)
       if (p > 0) {
-        ctx.globalAlpha = c.progress * p
+        // The word being spoken reads at full strength, the rest of the caption a step back.
+        ctx.globalAlpha = c.progress * p * (w.active ? 1 : 0.72)
         ctx.fillText(w.text, x, baseline + (st.animation === 'slide' ? (1 - p) * 0.3 * em : 0))
       }
       x += widths[i] + space

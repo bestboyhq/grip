@@ -7,10 +7,10 @@
 struct Frame {
   a: vec4f,        // output w, h, unit (px per style unit), view samples
   viewT: vec4f,    // view at t: center x, y, scale
-  scr: vec4f,      // screen rect (unzoomed px)
+  scr: vec4f,      // recording rect (unzoomed px); the frame is this grown by dev.w
   scr2: vec4f,     // screen radius, has screen, mask count, shadow strength
   scr3: vec4f,     // screen source w, h (px), pixelate block (source px), blur mip level
-  dev: vec4f,      // device parts, first part drawn over the screen, shadow casters
+  dev: vec4f,      // device parts, first part drawn over the screen, shadow casters, inset (px)
   sh: array<vec4f, 4>,      // shadow casters: rect, (radius)
   views: array<vec4f, 16>,  // shutter samples of the view: center x, y, scale
   parts: array<vec4f, 48>,  // device parts: rect, radii (tl tr br bl), top rgba, bottom rgba
@@ -228,9 +228,9 @@ fn zoomed(u: vec2f, aa: f32) -> vec4f {
   var mark = 1.0;
   let r = F.scr;
   let half = r.zw * 0.5;
-  let cv = cover(sdBox(u - r.xy - half, half, vec4f(F.scr2.x)), aa);
+  let cv = cover(sdBox(u - r.xy - half, half + F.dev.w, vec4f(F.scr2.x)), aa);
   if (cv > 0.0) {
-    let uv = (u - r.xy) / r.zw;
+    let uv = (u - r.xy) / r.zw; // outside 0..1 in the inset: the sampler clamps to the edge color
     let m = F.scr3.x / r.z * aa;
     let s = masked(screenSample(uv, m), uv, m);
     c = mix(c, s.rgb, cv);

@@ -2,7 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createProject, type Clip, type Transcript } from '../../shared/project.ts'
 import type { InputEvent, Modifier } from '../../shared/events.ts'
-import { mapRange, removeSourceRange, setSpeed, timeMap } from '../../shared/timemap.ts'
+import { removeSourceRange, setSpeed, timeMap } from '../../shared/timemap.ts'
+import { captionCues } from '../transcript/index.ts'
 import { prepare, sceneAt, type SceneInput } from '../scene.ts'
 import { breakLines, captionAt, classifyKey, clicksAt, keystrokesAt, maxLineChars } from './index.ts'
 
@@ -107,7 +108,7 @@ test('clicks: mapped through cuts, positioned on the screen rect, gone after the
   assert.equal(clicksAt(p.overlays, 2.1).length, 0)
 })
 
-test('captions: every surviving word shows at its mapped time, cut words never, after any cuts and speed changes', () => {
+test('captions: the video shows exactly the exported subtitle cues, each word active where it is spoken, after any cuts and speed changes', () => {
   let seed = 7
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
   for (let round = 0; round < 25; round++) {
@@ -120,24 +121,18 @@ test('captions: every surviving word shows at its mapped time, cut words never, 
       clips = setSpeed(clips, s, Math.min(m.duration, s + rnd() * 3), [0.5, 1.5, 2, 4][i])
     }
     const inp = input(clips)
+    inp.project.captionEdits = { 1: 'Um,' } // a filler brought back by a caption fix shows, like in the SRT
     const p = prepare(inp)
     const m = timeMap(clips)
-    const seen = new Set<string>()
-    for (let t = 0; t < m.duration; t += 1 / 60) for (const w of captionAt(p.overlays, t)?.words ?? []) if (w.progress > 0) seen.add(w.text)
-    for (const w of inp.transcript!.words) {
-      const ranges = mapRange(m, w.start, w.end)
-      if (w.filler) continue
-      if (!ranges.length) {
-        // cut away: never on screen (unless the same text is spoken elsewhere)
-        if (inp.transcript!.words.filter((x) => x.text === w.text).length === 1) assert.ok(!seen.has(w.text), `${w.text} is cut but shows`)
-        continue
-      }
-      for (const [s] of ranges) {
-        const cap = captionAt(p.overlays, s + 1e-4)
-        assert.ok(cap, `no caption at ${s} for ${w.text}`)
-        const shown = cap.words.find((x) => x.text === w.text && x.active)
-        assert.ok(shown, `${w.text} not active at ${s} (round ${round})`)
-      }
+    const cues = captionCues(inp.transcript!, m, inp.project.captionEdits)
+    for (let t = 0; t < m.duration; t += 1 / 60) {
+      const cue = cues.find((c) => c.start <= t && t < c.end)
+      const cap = captionAt(p.overlays, t)
+      assert.equal(cap?.words.map((w) => w.text).join(' ') ?? null, cue?.text ?? null, `round ${round} at ${t}`)
+    }
+    for (const w of cues.flatMap((c) => c.words)) {
+      const cap = captionAt(p.overlays, w.start + 1e-4)
+      assert.ok(cap?.words.some((x) => x.text === w.text && x.active), `${w.text} not active at ${w.start} (round ${round})`)
     }
   }
 })

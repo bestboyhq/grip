@@ -3,6 +3,7 @@
 
 import type { Project, Transcript } from '../shared/project.ts'
 import type { InputEvent } from '../shared/events.ts'
+import type { FaceSample } from '../engine/scene.ts'
 import { invoke } from './ipc.ts'
 
 export const doc = $state({
@@ -10,6 +11,7 @@ export const doc = $state({
   path: '', // absolute path of the .studio bundle
   events: [] as InputEvent[],
   transcript: null as Transcript | null,
+  faces: [] as FaceSample[], // sources.camera.faces, for face-follow crop
   rev: 0, // bumps on every change; derived data keys off it
   dirty: false,
 })
