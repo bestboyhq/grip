@@ -19,7 +19,7 @@ import { open, mkdir, readdir, readFile, rename, rm, stat, type FileHandle } fro
 import { existsSync, rmSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { openWindow } from './windows.ts'
+import { hidden, openWindow } from './windows.ts'
 import { projectsDir, readProject } from './projects.ts'
 import { shareFile } from './share.ts'
 import type { Project } from '../src/shared/project.ts'
@@ -119,7 +119,7 @@ function notifyIfIdle() {
   if ([...jobs.values()].some(active)) return
   const { done, failed, last } = batch
   batch = { done: 0, failed: 0, last: undefined }
-  if (done + failed === 0 || (done + failed === 1 && BrowserWindow.getFocusedWindow()) || !Notification.isSupported()) return
+  if (hidden || done + failed === 0 || (done + failed === 1 && BrowserWindow.getFocusedWindow()) || !Notification.isSupported()) return
   const j = last!
   const body =
     done + failed > 1 ? (failed ? `${done} finished, ${failed} failed.` : `${done} exports are ready.`)
