@@ -63,7 +63,7 @@
 
   let gesture = 0
   let aiming = false
-  let drag = $state<{ ox: number; oy: number; x: number; y: number; w: number; h: number; corner: CameraPosition } | null>(null)
+  let drag = $state<{ ox: number; oy: number; x: number; y: number; w: number; h: number; r: number; corner: CameraPosition } | null>(null)
   let hover = $state<'camera' | 'aim' | ''>('')
 
   function aim(e: PointerEvent) {
@@ -83,7 +83,7 @@
     const cam = s?.camera
     if (cam && cam.opacity > 0.01 && inside(p, cam.rect)) {
       const { x, y, w, h } = cam.rect
-      drag = { ox: p.x - x, oy: p.y - y, x, y, w, h, corner: project.style.camera.position }
+      drag = { ox: p.x - x, oy: p.y - y, x, y, w, h, r: cam.radius, corner: project.style.camera.position }
     } else if (zooms.length) {
       aiming = true
       gesture++
@@ -140,7 +140,7 @@
       {/if}
       {#if drag}
         <span class="quadrant {drag.corner}" aria-hidden="true"></span>
-        <span class="ghost" style:left={pct(drag.x, size.width)} style:top={pct(drag.y, size.height)} style:width={pct(drag.w, size.width)} style:height={pct(drag.h, size.height)} aria-hidden="true"></span>
+        <span class="ghost" style:left={pct(drag.x, size.width)} style:top={pct(drag.y, size.height)} style:width={pct(drag.w, size.width)} style:height={pct(drag.h, size.height)} style:border-radius="{pct(drag.r, drag.w)} / {pct(drag.r, drag.h)}" aria-hidden="true"></span>
       {/if}
       {#if failed}<p class="failed" role="alert">Preview unavailable: {failed}</p>
       {:else if player.error}<p class="failed" role="alert">{player.error}</p>{/if}
@@ -163,7 +163,7 @@
     position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; pointer-events: none;
     border: 2px solid #fff; background: var(--accent); box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 2px 8px rgb(0 0 0 / 0.5);
   }
-  .ghost { position: absolute; border-radius: 10px; border: 2px solid #fff; background: rgb(255 255 255 / 0.12); box-shadow: 0 6px 24px rgb(0 0 0 / 0.45); pointer-events: none; }
+  .ghost { position: absolute; border: 2px solid #fff; background: rgb(255 255 255 / 0.12); box-shadow: 0 6px 24px rgb(0 0 0 / 0.45); pointer-events: none; }
   .quadrant { position: absolute; width: 50%; height: 50%; background: var(--accent-soft); pointer-events: none; transition: inset 160ms var(--ease-out); }
   .quadrant.top-left { left: 0; top: 0; }
   .quadrant.top-right { left: 50%; top: 0; }

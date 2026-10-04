@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createProject, type Project, type Rect } from '../shared/project.ts'
 import { timeMap } from '../shared/timemap.ts'
-import { prepareLayout, layoutAt, fitScreen, deviceGeometry, deviceBounds, cameraCrop, faceAt, silentRanges } from './layout.ts'
+import { prepareLayout, layoutAt, fitScreen, deviceGeometry, deviceBounds, cameraCrop, faceAt, silentRanges, voiceRanges } from './layout.ts'
 
 const W = 1920, H = 1080
 const project = (edit: (p: Project) => void = () => {}) => {
@@ -69,8 +69,29 @@ test('camera layouts: pip in the corner, split side by side or stacked, fullscre
   const full = at(project((p) => (p.layouts = [{ id: 'a', start: 0, end: 30, kind: 'fullscreen' }])), 1)
   close(full.camera!.rect, { x: 0, y: 0, w: W, h: H })
   assert.equal(at(project((p) => (p.layouts = [{ id: 'a', start: 0, end: 30, kind: 'hidden' }])), 1).camera, null)
+  const off = at(project((p) => ((p.layouts = [{ id: 'a', start: 0, end: 30, kind: 'split' }]), (p.style.camera.visible = false))), 1)
+  assert.equal(off.camera, null)
+  close(off.screen!.rect, pip.screen!.rect) // a split with the camera off keeps the whole frame for the screen
   const circle = at(project((p) => Object.assign(p.style.camera, { shape: 'circle', aspect: 1.5 })), 1).camera!
   assert.equal(circle.radius, Math.min(circle.rect.w, circle.rect.h) / 2, 'non-square circle is a capsule')
+})
+
+test('a corner camera steps back toward its corner while zoomed in; split and fullscreen keep their size', () => {
+  const prep = (p: Project) => prepareLayout({ project: p, events: [], transcript: null, width: W, height: H }, timeMap(p.clips), H / 1080)
+  const pip = prep(project())
+  const rest = layoutAt(pip, 1).camera!.rect
+  const zoomed = layoutAt(pip, 1, 1).camera!.rect
+  assert.ok(Math.abs(zoomed.w - rest.w * 0.7) < 1e-6 && Math.abs(zoomed.h - rest.h * 0.7) < 1e-6)
+  assert.ok(Math.abs(zoomed.x + zoomed.w - (rest.x + rest.w)) < 1e-6 && Math.abs(zoomed.y + zoomed.h - (rest.y + rest.h)) < 1e-6, 'anchored at the bottom-right corner')
+  const half = layoutAt(pip, 1, 0.5).camera!.rect
+  assert.ok(half.w < rest.w && half.w > zoomed.w, 'in between while the zoom animates')
+  const tl = prep(project((p) => (p.style.camera.position = 'top-left')))
+  const a = layoutAt(tl, 1).camera!.rect, b = layoutAt(tl, 1, 1).camera!.rect
+  assert.ok(Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6, 'anchored at the top-left corner')
+  for (const kind of ['split', 'fullscreen'] as const) {
+    const l = prep(project((p) => (p.layouts = [{ id: 'a', start: 0, end: 30, kind }])))
+    close(layoutAt(l, 5, 1).camera!.rect, layoutAt(l, 5).camera!.rect)
+  }
 })
 
 test('layout changes animate in output time, and an interrupted transition blends without a jump', () => {
@@ -145,6 +166,23 @@ test('hide when silent: speech keeps the camera, long silences hide it', () => {
   assert.deepEqual(silentRanges(words, m).map(([a, b]) => [+a.toFixed(2), +b.toFixed(2)]), [[3.8, 11.4], [13.8, 30]])
   const p = project((p) => (p.style.camera.hideWhenSilent = true))
   const l = (t: number) => layoutAt(prepareLayout({ project: p, events: [], transcript: { language: 'en', words }, width: W, height: H }, m, 1), t)
+  assert.ok(l(2).camera && l(2).camera!.opacity === 1)
+  assert.equal(l(8).camera, null)
+})
+
+test('hide when silent without a transcript: speech comes from the mic levels, clicks and room tone do not count', () => {
+  const d = 30
+  const n = d * 20
+  const level = (t: number) => (t >= 1 && t < 3) || (t >= 12 && t < 13) ? 0.3 : Math.abs(t - 7) < 0.03 ? 0.6 : 0.003 // speech, a key click, room tone
+  const peaks = new Float32Array(2 * n)
+  for (let i = 0; i < n; i++) peaks.set([-level((i + 0.5) / 20), level((i + 0.5) / 20) * 0.9], 2 * i)
+  const speech = voiceRanges(peaks, d)
+  assert.deepEqual(speech.map(([a, b]) => [+a.toFixed(2), +b.toFixed(2)]), [[1, 3], [12, 13]])
+  assert.deepEqual(voiceRanges(new Float32Array(2 * n).fill(0.002), d), [], 'room tone only: no speech')
+  assert.deepEqual(voiceRanges(new Float32Array(2 * n).fill(0.3), d), [[0, d]], 'talking throughout')
+  const m = timeMap([{ id: 'a', start: 0, end: d, speed: 1, volume: 1 }])
+  const p = project((p) => (p.style.camera.hideWhenSilent = true))
+  const l = (t: number) => layoutAt(prepareLayout({ project: p, events: [], transcript: null, speech, width: W, height: H }, m, 1), t)
   assert.ok(l(2).camera && l(2).camera!.opacity === 1)
   assert.equal(l(8).camera, null)
 })

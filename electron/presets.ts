@@ -134,7 +134,7 @@ async function relink(s: Style, map: (path: string) => Promise<string | undefine
     const file = await map(s.background.file)
     s.background = file ? { kind: 'image', file } : defaultStyle().background
   }
-  if (s.camera.lut) {
+  if (s.camera.lut && !s.camera.lut.startsWith('grade:')) { // built-in grades are not files
     const lut = await map(s.camera.lut)
     if (lut) s.camera.lut = lut
     else delete s.camera.lut

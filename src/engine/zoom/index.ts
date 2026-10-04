@@ -16,6 +16,9 @@
 // A zoom level is magnification of the whole screen (2 = the screen twice as big as when it is shown
 // whole), so on those narrow outputs a zoom only adds what the base view does not already give:
 // scale = max(base, level). Multiplying instead would put a 2x zoom on a 9:16 output at ~6.7x.
+// All of this happens in the screen's viewport (layoutAt(...).screen.viewport): the whole output, or
+// the screen's own panel in split layouts. The camera is stepped in viewport space (the center is the
+// content point at the viewport's center) and viewAt turns that into the output-wide View.
 
 import { uid, type Project, type Rect, type Sources, type Style, type Zoom } from '../../shared/project.ts'
 import type { InputEvent } from '../../shared/events.ts'
@@ -112,9 +115,11 @@ function spans(zooms: Zoom[], map: TimeMap): Span[] {
   return out
 }
 
-/** Scale at which the screen covers an output narrower than it; 1 otherwise. */
-function baseScale(W: number, H: number, r: Rect): number {
-  return W / H < (r.w / r.h) * 0.98 ? Math.max(1, H / r.h) : 1
+/** Scale at which the screen covers a viewport narrower than it (cut to `b`, the part clear of the
+ *  rounded corners); 1 otherwise. The aspect test uses the screen itself: a large corner radius
+ *  must not make a screen as wide as the output look wider. */
+function baseScale(vp: Rect, r: Rect, b: Rect): number {
+  return vp.w / vp.h < (r.w / r.h) * 0.98 ? Math.max(1, vp.h / b.h) : 1
 }
 
 /** The part of the screen a zoomed view may show: inset so its corners stay clear of the rounded ones
@@ -124,11 +129,11 @@ function inner(r: Rect, radius: number): Rect {
   return { x: r.x + i, y: r.y + i, w: r.w - 2 * i, h: r.h - 2 * i }
 }
 
-/** Nearest center at scale s whose view stays inside rect r (and always inside the output). */
-function clampCenter(c: Pt, r: Rect, s: number, W: number, H: number): Pt {
-  const axis = (v: number, lo: number, size: number, view: number, full: number) =>
-    view <= size ? clamp(v, lo + view / 2, lo + size - view / 2) : clamp(lo + size / 2, view / 2, full - view / 2)
-  return { x: axis(c.x, r.x, r.w, W / s, W), y: axis(c.y, r.y, r.h, H / s, H) }
+/** Nearest center at scale s whose view of viewport vp stays inside rect r (and always inside vp). */
+function clampCenter(c: Pt, r: Rect, s: number, vp: Rect): Pt {
+  const axis = (v: number, lo: number, size: number, view: number, from: number, full: number) =>
+    view <= size ? clamp(v, lo + view / 2, lo + size - view / 2) : clamp(lo + size / 2, from + view / 2, from + full - view / 2)
+  return { x: axis(c.x, r.x, r.w, vp.w / s, vp.x, vp.w), y: axis(c.y, r.y, r.h, vp.h / s, vp.y, vp.h) }
 }
 
 /** Move center c the least so that p lies within (rx, ry) of it. */
@@ -156,7 +161,7 @@ export function prepareZoom(input: SceneInput, map: TimeMap, layout: ReturnType<
   if (!screen) return base
 
   // The screen layer at t; where the layout hides the screen, the last one seen.
-  let layer = layoutAt(layout, 0).screen ?? { rect: { x: 0, y: 0, w: W, h: H }, radius: 0 }
+  let layer = layoutAt(layout, 0).screen ?? { rect: { x: 0, y: 0, w: W, h: H }, radius: 0, viewport: { x: 0, y: 0, w: W, h: H } }
   const layerAt = (t: number) => (layer = layoutAt(layout, t).screen ?? layer)
   const toPx = (r: Rect, x: number, y: number): Pt => ({ x: r.x + (x * r.w) / screen.width, y: r.y + (y * r.h) / screen.height })
   const cursorPt = (t: number, r: Rect): Pt | null => {
@@ -185,15 +190,15 @@ export function prepareZoom(input: SceneInput, map: TimeMap, layout: ReturnType<
   let fi = 0
   for (let k = 0; k <= n; k++) {
     const t = k * DT
-    const { rect: r, radius } = layerAt(t)
+    const { rect: r, radius, viewport: vp } = layerAt(t)
     const bounds = inner(r, radius)
     const ts = clamp(t, AT_START, map.duration - 1e-6) // a zoom starting at 0 or running to the end covers that frame
     while (si < cam.length && cam[si].b <= ts) si++
     const span = si < cam.length && cam[si].a <= ts ? cam[si] : null
     const zoom = span?.zoom
-    const s = Math.max(baseScale(W, H, bounds), zoom ? zoom.level : 1)
+    const s = Math.max(baseScale(vp, r, bounds), zoom ? zoom.level : 1)
 
-    let c: Pt = { x: W / 2, y: H / 2 }
+    let c: Pt = { x: vp.x + vp.w / 2, y: vp.y + vp.h / 2 }
     if (zoom?.target.kind === 'point') c = aim = { x: r.x + zoom.target.x * r.w, y: r.y + zoom.target.y * r.h }
     else if (zoom || s > 1) {
       // Follow: the cursor roams a dead zone, focus places stay central, the cursor stays in frame.
@@ -205,15 +210,15 @@ export function prepareZoom(input: SceneInput, map: TimeMap, layout: ReturnType<
         // Entering a zoom: aim at its first click or typing place, else at the cursor.
         aim = frames.find((f) => f.b >= span.a && f.a <= span.a + LEAD + 0.4)?.p ?? cp ?? aim
       }
-      const hw = W / (2 * s)
-      const hh = H / (2 * s)
+      const hw = vp.w / (2 * s)
+      const hh = vp.h / (2 * s)
       c = aim ?? { x: r.x + r.w / 2, y: r.y + r.h / 2 }
       if (cp) c = keep(c, cp, DEAD_ZONE * hw, DEAD_ZONE * hh)
       for (let i = fi; i < frames.length && frames[i].a <= tl; i++) if (frames[i].b >= tl) c = keep(c, frames[i].p, FOCUS_ZONE * hw, FOCUS_ZONE * hh)
       if (cp) c = keep(c, cp, EDGE_ZONE * hw, EDGE_ZONE * hh)
-      c = aim = clampCenter(c, bounds, s, W, H)
+      c = aim = clampCenter(c, bounds, s, vp)
     }
-    c = clampCenter(c, bounds, s, W, H)
+    c = clampCenter(c, bounds, s, vp)
     const target = [c.x, c.y, Math.log(s)]
 
     const leaving = k > 0 && span !== prev
@@ -244,10 +249,20 @@ export function viewAt(z: ReturnType<typeof prepareZoom>, t: number): View {
   const [i, j, w] = jump === undefined ? [k, k1, tc / DT - k] : tc < jump ? [k, k, 0] : [k1, k1, 0]
   const at = (o: number) => mix(data[3 * i + o], data[3 * j + o], w)
   const scale = Math.exp(at(2))
-  // Never show past the output edge, even mid-animation.
-  const x = clamp(at(0), W / (2 * scale), W - W / (2 * scale))
-  const y = clamp(at(1), H / (2 * scale), H - H / (2 * scale))
-  return { center: { x, y }, scale }
+  const vp = layoutAt(z.layout, tc).screen?.viewport ?? { x: 0, y: 0, w: W, h: H }
+  // Never show past the viewport's edge, even mid-animation.
+  const x = clamp(at(0), vp.x + vp.w / (2 * scale), vp.x + vp.w - vp.w / (2 * scale))
+  const y = clamp(at(1), vp.y + vp.h / (2 * scale), vp.y + vp.h - vp.h / (2 * scale))
+  // Viewport space -> output: the content at the viewport's center lands there, not at the output's.
+  return { center: { x: x - (vp.x + vp.w / 2 - W / 2) / scale, y: y - (vp.y + vp.h / 2 - H / 2) / scale }, scale }
+}
+
+/** How far view v (the view at t) is zoomed in past the rest framing at t: 0 at rest, 1 at twice
+ *  that or more. Layout uses it to step a corner camera back while the content is magnified. */
+export function zoomAmount(z: ReturnType<typeof prepareZoom>, t: number, v: View): number {
+  const s = layoutAt(z.layout, t).screen
+  if (!s) return 0
+  return clamp(Math.log2(v.scale / baseScale(s.viewport, s.rect, inner(s.rect, s.radius))), 0, 1)
 }
 
 export function loupeAt(z: ReturnType<typeof prepareZoom>, t: number): Loupe | null {

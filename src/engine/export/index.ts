@@ -14,7 +14,8 @@ import { outputSize, prepare, type SceneInput } from '../scene.ts'
 import { renderFrame, type Media } from '../compose.ts'
 import { Renderer } from '../gpu/renderer.ts'
 import { fileUrl, openVideo } from '../media/index.ts'
-import { renderAudio } from '../audio/index.ts'
+import { peaks, renderAudio } from '../audio/index.ts'
+import { voiceRanges } from '../layout.ts'
 import { parseEvents } from '../../shared/events.ts'
 import type { Transcript } from '../../shared/project.ts'
 import { AUDIO_BITRATE, SAMPLE_RATE, Stall, frameCount, passes, videoBitrate, watch, type ExportIO, type ExportOptions, type JobSpec } from './options.ts'
@@ -47,7 +48,9 @@ export async function exportProject(job: JobSpec, io: ExportIO): Promise<number>
     if (s.screen) media.screen = await video(s.screen.file, 'screen recording')
     if (s.camera) media.camera = await video(s.camera.file, 'camera recording')
     if (s.camera?.matte && project.style.camera.removeBackground) media.matte = await video(s.camera.matte, 'camera matte')
-    const input: Input = { project, events, transcript, faces }
+    // Hide when silent without a transcript: speech from the mic's levels, as in preview.
+    const speech = s.camera && s.mic && project.style.camera.hideWhenSilent ? voiceRanges(await peaks(url(s.mic.file), 0, s.duration, Math.ceil(s.duration * 20)), s.duration) : undefined
+    const input: Input = { project, events, transcript, faces, speech }
     return job.options.format === 'gif' ? await gif(job, input, media, io) : await mp4(job, input, media, io)
   } finally {
     media.screen?.close()

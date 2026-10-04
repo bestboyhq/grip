@@ -1,5 +1,5 @@
-// .cube 3D LUT parser (Adobe/Resolve format) for camera color grading. Pure; the renderer uploads
-// the result as a 3D texture and samples it with hardware trilinear filtering.
+// .cube 3D LUT parser (Adobe/Resolve format) and built-in grades for camera color grading. Pure; the
+// renderer uploads the result as a 3D texture and samples it with hardware trilinear filtering.
 
 export interface Lut {
   size: number
@@ -34,4 +34,40 @@ export function parseCube(text: string): Lut {
     data.set([rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2], 1], i * 4)
   }
   return { size, min: min as Lut['min'], max: max as Lut['max'], data }
+}
+
+// ---- Built-in grades: style.camera.lut = 'grade:<id>' instead of a .cube in the bundle. ----
+
+type RGB = [number, number, number]
+const luma = ([r, g, b]: RGB) => 0.2126 * r + 0.7152 * g + 0.0722 * b
+const saturate = (c: RGB, k: number): RGB => c.map((v) => luma(c) + (v - luma(c)) * k) as RGB
+/** S-curve around mid gray that keeps black and white in place: k > 1 adds contrast. */
+const contrast = (v: number, k: number) => 0.5 + (v - 0.5) * k - (k - 1) * 4 * (v - 0.5) ** 3
+
+/** Looks for the camera, on sRGB-encoded color. Gentle, so skin stays skin. */
+export const GRADES: Record<string, { label: string; fn: (c: RGB) => RGB }> = {
+  warm: { label: 'Warm', fn: ([r, g, b]) => [r * 1.05 + 0.015, g * 1.01, b * 0.9] },
+  cool: { label: 'Cool', fn: ([r, g, b]) => [r * 0.93, g + 0.005, b * 1.06 + 0.02] },
+  vivid: { label: 'Vivid', fn: (c) => saturate(c.map((v) => contrast(v, 1.12)) as RGB, 1.3) },
+  film: { label: 'Film', fn: (c) => saturate(c.map((v) => 0.05 + 0.9 * contrast(v, 1.08)) as RGB, 0.85).map((v, i) => v + [0.012, 0, -0.012][i]) as RGB },
+  mono: { label: 'Black & white', fn: (c) => [0, 0, 0].map(() => contrast(luma(c), 1.1)) as RGB },
+}
+
+export const GRADE = 'grade:'
+
+/** The LUT of a built-in grade ('grade:<id>'), or null for anything else. */
+export function gradeLut(lut: string): Lut | null {
+  const g = lut.startsWith(GRADE) ? GRADES[lut.slice(GRADE.length)] : undefined
+  if (!g) return null
+  const size = 33
+  const data = new Float32Array(size ** 3 * 4)
+  for (let b = 0, i = 0; b < size; b++) {
+    for (let gr = 0; gr < size; gr++) {
+      for (let r = 0; r < size; r++, i += 4) {
+        const out = g.fn([r / (size - 1), gr / (size - 1), b / (size - 1)]).map((v) => Math.min(Math.max(v, 0), 1))
+        data.set([...out, 1], i)
+      }
+    }
+  }
+  return { size, min: [0, 0, 0], max: [1, 1, 1], data }
 }

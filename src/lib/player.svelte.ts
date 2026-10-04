@@ -18,7 +18,8 @@ import { outputSize, prepare, type FaceSample, type Prepared } from '../engine/s
 import { renderFrame, type Media } from '../engine/compose.ts'
 import { Renderer } from '../engine/gpu/renderer.ts'
 import { fileUrl, openVideo } from '../engine/media/index.ts'
-import { SR, mix, planOf, voiceGain, type Plan } from '../engine/audio/index.ts'
+import { SR, mix, peaks, planOf, voiceGain, type Plan } from '../engine/audio/index.ts'
+import { voiceRanges } from '../engine/layout.ts'
 import type { PlaybackMessage } from '../engine/audio/playback.worklet.ts'
 import workletUrl from '../engine/audio/playback.worklet.ts?worker&url'
 
@@ -48,6 +49,7 @@ let size = ''
 let events: { from: unknown; value: InputEvent[] } = { from: null, value: [] }
 let transcript: { from: unknown; value: Transcript | null } = { from: null, value: null }
 let faces: { url: string | undefined; value: FaceSample[] | undefined } = { url: undefined, value: undefined }
+let speech: { url: string | undefined; value: Array<[number, number]> | undefined } = { url: undefined, value: undefined }
 let restore = false // seek to the saved playhead on the next prepare
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 let detachCurrent: (() => void) | null = null
@@ -232,7 +234,8 @@ function rebuild(project: Project, width: number, height: number) {
     if (transcript.from !== doc.transcript) transcript = { from: doc.transcript, value: doc.transcript }
     const p = $state.snapshot(project) as Project
     syncFaces(p)
-    prepared = prepare({ project: p, events: events.value, transcript: transcript.value, width, height, faces: faces.value })
+    syncSpeech(p)
+    prepared = prepare({ project: p, events: events.value, transcript: transcript.value, width, height, faces: faces.value, speech: speech.value })
     stats.prepares++
     stats.prepareMs = performance.now() - preparedAt
     player.duration = prepared.map.duration
@@ -282,6 +285,23 @@ function syncFaces(p: Project) {
       stale = true
     })
     .catch(() => fail(new Error(`Face follow is unavailable: ${f} could not be read.`)))
+}
+
+/** Speech in the mic, for hide when silent without a transcript; re-prepares when it arrives. */
+function syncSpeech(p: Project) {
+  const mic = p.sources.mic
+  const url = p.sources.camera && mic && p.style.camera.hideWhenSilent ? fileUrl(mic.file.startsWith('/') ? mic.file : `${doc.path}/${mic.file}`) : undefined
+  if (url === speech.url) return
+  speech = { url, value: undefined }
+  if (!url) return
+  const d = p.sources.duration
+  peaks(url, 0, d, Math.ceil(d * 20))
+    .then((v) => {
+      if (speech.url !== url) return
+      speech.value = voiceRanges(v, d)
+      stale = true
+    })
+    .catch(fail)
 }
 
 function closeMedia(k: keyof Media) {

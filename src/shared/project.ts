@@ -142,7 +142,7 @@ export interface Style {
     removeBackground: boolean
     followFace: boolean
     hideWhenSilent: boolean
-    lut?: string // relative path to a .cube
+    lut?: string // relative path to a .cube, or a built-in grade 'grade:<id>' (src/engine/gpu/lut.ts)
   }
   keystrokes: { visible: boolean; size: number }
   captions: {
