@@ -1,7 +1,7 @@
 {
   "name": "grip",
   "productName": "Grip",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "license": "AGPL-3.0-only",
   "private": true,
   "type": "module",
@@ -13,9 +13,8 @@
     "start": "electron .",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "server": "node server/server.ts",
-    "test": "node --test 'src/**/*.test.ts' 'electron/**/*.test.ts' 'server/**/*.test.ts'",
-    "package": "npm run build && electron-builder --mac --publish never && if [ -n \"$APPLE_KEYCHAIN_PROFILE\" ]; then dmg=release/Grip-$npm_package_version-arm64.dmg && xcrun notarytool submit \"$dmg\" --keychain-profile \"$APPLE_KEYCHAIN_PROFILE\" --wait && xcrun stapler staple \"$dmg\"; fi",
-    "release": "test -n \"$APPLE_KEYCHAIN_PROFILE\" || { echo 'A release must be notarized: set APPLE_KEYCHAIN_PROFILE.' >&2; exit 1; }; npm run package && gh release create v$npm_package_version --draft --generate-notes --target \"$(git rev-parse HEAD)\" release/Grip-$npm_package_version-arm64* release/latest-mac.yml"
+    "test": "node --test 'src/**/*.test.ts' 'electron/**/*.test.ts' 'server/**/*.test.ts' 'scripts/**/*.test.ts'",
+    "package": "npm run build && electron-builder --mac --publish never && if [ -n \"$APPLE_KEYCHAIN_PROFILE\" ]; then dmg=release/Grip-$npm_package_version-arm64.dmg && xcrun notarytool submit \"$dmg\" --keychain-profile \"$APPLE_KEYCHAIN_PROFILE\" --wait && xcrun stapler staple \"$dmg\"; fi"
   },
   "build": {
     "appId": "com.bestboyhq.grip",
