@@ -24,6 +24,20 @@ jobs:
           workspaces: native
       - run: brew install ffmpeg
       - run: npm ci
+      - name: Import the Developer ID certificate
+        run: |
+          kc="$RUNNER_TEMP/signing.keychain-db" pw=$(openssl rand -base64 24)
+          security create-keychain -p "$pw" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$pw" "$kc"
+          printf '%s' "$CSC_LINK" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CSC_KEY_PASSWORD" -A -t cert -f pkcs12 -k "$kc"
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "$pw" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
       - run: npm run build:native
       - run: npx electron scripts/fixture/make.ts
       - run: npm run check
@@ -58,8 +72,6 @@ jobs:
       contents: write
     env:
       V: ${{ needs.version.outputs.next }}
-      CSC_LINK: ${{ secrets.CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
