@@ -18,6 +18,7 @@
   },
   "build": {
     "appId": "com.bestboyhq.grip",
+    "forceCodeSigning": true,
     "productName": "Grip",
     "copyright": "Copyright © 2026 Grip",
     "directories": {
