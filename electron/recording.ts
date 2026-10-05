@@ -2,7 +2,7 @@
 // Invoke (renderer -> main):
 //   recording:state -> RecState
 //   recording:permissions -> Record<Permission, PermissionStatus>
-//   recording:requestPermission(kind) -> PermissionStatus   (prompts the first time only)
+//   recording:requestPermission(kind) -> PermissionStatus   the system prompt, or System Settings once asked
 //   recording:openPermissionSettings(kind)
 //   recording:displays -> Display[]        (needs no permission)
 //   recording:windows -> Window[]          (rejects with a one-line reason without Screen Recording)
@@ -25,9 +25,10 @@ import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Permission, RecordingEvent, RecordingSources, StartOptions } from '../native/index.d.ts'
+import type { Permission, PermissionStatus, RecordingEvent, RecordingSources, StartOptions } from '../native/index.d.ts'
 import { analyzeCamera } from './camera.ts'
 import { native } from './native.ts'
+import { setSettings, settings } from './shell/settings.ts'
 import { createBundle, projectEvents, projectsDir, readProject, writeNewRecording } from './projects.ts'
 
 /** Main-process listeners (dock, quit prompt): 'state' (RecState), 'finished' (bundle path,
@@ -35,6 +36,25 @@ import { createBundle, projectEvents, projectsDir, readProject, writeNewRecordin
 export const recordingEvents = new EventEmitter()
 
 const PERMISSIONS: Permission[] = ['screen', 'accessibility', 'inputMonitoring', 'microphone', 'camera']
+// macOS reports these as denied before Grip ever asked; Grip remembers asking instead.
+const UNTOLD: Permission[] = ['screen', 'accessibility']
+
+function permissionStatus(kind: Permission): PermissionStatus {
+  const s = native.permissionStatus(kind)
+  return s === 'denied' && UNTOLD.includes(kind) && !settings().prompted.includes(kind) ? 'notDetermined' : s
+}
+
+/** One thing on screen per ask: the system prompt the first time, System Settings after that.
+ *  Every system prompt has its own Open System Settings button, so opening Settings too doubles it. */
+async function requestPermission(kind: Permission): Promise<PermissionStatus> {
+  const s = permissionStatus(kind)
+  if (s === 'notDetermined') {
+    if (UNTOLD.includes(kind)) setSettings({ prompted: [...settings().prompted, kind] })
+    return native.requestPermission(kind)
+  }
+  if (s !== 'granted' && s !== 'restricted') native.openPermissionSettings(kind)
+  return s
+}
 
 /** Bundle of the running recording. Set before any await, so a second start sees it. */
 let bundle: string | null = null
@@ -132,8 +152,8 @@ export function registerRecording() {
   projectEvents.on('recovered', (dir: string) => recovered(dir).catch((err) => console.error('recovered', dir, err)))
 
   ipcMain.handle('recording:state', () => native.recordingState())
-  ipcMain.handle('recording:permissions', () => Object.fromEntries(PERMISSIONS.map((k) => [k, native.permissionStatus(k)])))
-  ipcMain.handle('recording:requestPermission', (_e, kind: Permission) => native.requestPermission(kind))
+  ipcMain.handle('recording:permissions', () => Object.fromEntries(PERMISSIONS.map((k) => [k, permissionStatus(k)])))
+  ipcMain.handle('recording:requestPermission', (_e, kind: Permission) => requestPermission(kind))
   ipcMain.handle('recording:openPermissionSettings', (_e, kind: Permission) => native.openPermissionSettings(kind))
   ipcMain.handle('recording:displays', () => native.listDisplays())
   ipcMain.handle('recording:windows', () => native.listWindows())

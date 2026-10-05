@@ -118,10 +118,7 @@ export function popup(items: MenuItem[], anchor: Element): Promise<string | null
 /** Request a permission just in time: the system prompt the first time, System Settings after
  *  that. True when granted. */
 export async function ensurePermission(p: Permission): Promise<boolean> {
-  const status: PermissionStatus = await invoke('recording:requestPermission', p).catch(() => 'denied')
-  if (status === 'granted') return true
-  invoke('recording:openPermissionSettings', p).catch(() => {})
-  return false
+  return (await invoke('recording:requestPermission', p).catch(() => 'denied')) === 'granted'
 }
 
 /** Mic meter value 0..1 from the engine's linear peak, on a -60..0 dB scale (how loudness feels). */
