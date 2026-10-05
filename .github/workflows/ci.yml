@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  app:
+  test:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
@@ -18,21 +18,14 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: brew install ffmpeg
-      - run: npm ci
-      - run: npm run check
-      - run: npm test
-      - run: npx vite build
-
-  native:
-    runs-on: macos-15
-    defaults:
-      run:
-        working-directory: native
-    steps:
-      - uses: actions/checkout@v5
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
       - run: brew install ffmpeg
+      - run: npm ci
+      - run: npm run build:native
+      - run: npm run check
+      - run: npm test
+      - run: npx vite build
       - run: cargo test
+        working-directory: native
