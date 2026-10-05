@@ -18,6 +18,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - run: brew install ffmpeg
       - run: npm ci
       - run: npm run check
       - run: npm test
@@ -33,4 +34,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+      - run: brew install ffmpeg
       - run: cargo test
