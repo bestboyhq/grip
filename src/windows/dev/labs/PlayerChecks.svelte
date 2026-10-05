@@ -300,8 +300,10 @@
         const edits = [(p: Project) => (p.zooms[10].level = 3), (p: Project) => (p.clips = splitAt(p.clips, timeMap(p.clips).duration / 3)), (p: Project) => (p.style.padding = 40)]
         for (const fn of edits) {
           const n = player.prepared
-          edit(fn)
-          await prepared(n)
+          let gap = 0, last = performance.now(); const iv = setInterval(() => { const now = performance.now(); gap = Math.max(gap, now - last); last = now }, 1)
+          const e0 = performance.now(); edit(fn); const e1 = performance.now()
+          await prepared(n); clearInterval(iv)
+          ;(globalThis as any).__m = ((globalThis as any).__m ?? '') + ` edit ${(e1 - e0).toFixed(1)} gap ${gap.toFixed(1)};`
         }
         observer.disconnect()
         const worst = Math.max(0, ...tasks)
@@ -312,7 +314,7 @@
         const inline = prepare(input)
         const ts = Array.from({ length: 40 }, (_, i) => (i * inline.map.duration) / 40)
         assert(ts.every((t) => JSON.stringify(sceneAt(viaWorker, t)) === JSON.stringify(sceneAt(inline, t))), 'a frame prepared through the worker differs from export')
-        return `longest main-thread task across ${edits.length} edits ${worst.toFixed(0)} ms; ${ts.length} frames identical to export's`
+        return `longest main-thread task across ${edits.length} edits ${worst.toFixed(0)} ms ${(globalThis as any).__m}; ${ts.length} frames identical to export's`
       } finally {
         observer.disconnect()
         detach()

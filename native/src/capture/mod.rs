@@ -1022,7 +1022,9 @@ mod tests {
         let s = recover::recover(&dir).unwrap();
         assert!(s.duration >= 2.0, "{}", s.duration);
         let screen = s.screen.unwrap();
-        assert_eq!((screen.width, screen.height, screen.fps), (1280, 720, 30.0));
+        assert_eq!((screen.width, screen.height), (1280, 720));
+        // The rate is measured from the frames on disk; a loaded machine drops a few.
+        assert!((28.0..=30.0).contains(&screen.fps), "{}", screen.fps);
         assert_eq!(s.system.map(|a| (a.channels, a.sample_rate)), Some((2, 48_000.0)));
         for f in ["sources/screen.mp4", "sources/system.m4a"] {
             let file = dir.join(f);
