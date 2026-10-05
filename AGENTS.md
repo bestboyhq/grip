@@ -61,8 +61,10 @@ Every domain obeys these invariants:
 - `npx electron scripts/fixture/make.ts [out.grip]` generates a synthetic 24 s recording with events, camera, mic speech, and system audio, by default at `.context/fixtures/Demo #1 ✨ café.grip`.
 - `APPLE_KEYCHAIN_PROFILE=<notarytool profile> npm run package` builds, signs with the Developer ID, and notarizes `release/Grip-*.dmg`.
   Without the variable it signs and skips notarization.
-- `APPLE_KEYCHAIN_PROFILE=<notarytool profile> npm run release` packages and uploads a draft GitHub release; publishing the draft ships it as an in-app update.
-  Run `node scripts/update-e2e.ts` first: it proves a signed build still updates itself (the terminal needs Accessibility).
+- Releases are automatic: every merge to `main` whose commits include a `feat`, `fix`, `perf`, or breaking change ships as an in-app update (`.github/workflows/ci.yml`).
+  PR titles must be Conventional Commits, since the squash commit takes the title and `scripts/version.ts` picks the next version from it.
+  Versions live in `v*` tags; `package.json`'s `0.0.0` is a placeholder CI overwrites.
+- `node scripts/update-e2e.ts` proves a signed build still updates itself; CI runs it before every release (locally the terminal needs Accessibility).
 - `npx electron build/icons.ts` renders `build/icon.png` from `build/Grip.icon` (needs Xcode 26+) and the menu bar icons from SVG.
   `build/Grip.icon` (Icon Composer) is the one source of the app icon; electron-builder compiles it, legacy `.icns` included.
 - `npm test` runs node:test on pure modules, `npm run check` type-checks, `cd native && cargo test` tests the addon.

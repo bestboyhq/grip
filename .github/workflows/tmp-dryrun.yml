@@ -4,7 +4,7 @@ on:
     branches: [szymeo/github-actions-automation-v2]
 jobs:
   dry:
-    runs-on: macos-15
+    runs-on: macos-26
     env:
       CSC_LINK: ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -23,9 +23,9 @@ jobs:
       - run: codesign -dv --verbose=2 release/mac-arm64/Grip.app 2>&1 | grep -E "Authority|TeamIdentifier"
       - run: node scripts/update-e2e.ts
       - if: failure()
+        run: screencapture -x /tmp/screen.png || true
+      - if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: screen
           path: /tmp/screen.png
-      - if: failure()
-        run: screencapture -x /tmp/screen.png || true
