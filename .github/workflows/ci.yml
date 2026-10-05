@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - run: brew install ffmpeg
+      - run: npm ci
+      - run: npm run build:native
+      - run: npx electron scripts/fixture/make.ts
+      - run: npm run check
+      - run: npm test
+      - run: npx vite build
+      - run: cargo test
+        working-directory: native

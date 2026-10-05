@@ -73,7 +73,7 @@ if (process.versions.electron) {
       await server.listen()
       const fixture = join(root, '.context/fixtures/Demo #1 ✨ café.grip')
       if (!existsSync(fixture)) t.diagnostic(`no fixture at ${fixture}: run npx electron scripts/fixture/make.ts to include its checks`)
-      const route = `dev?lab=PlayerChecks&dir=${encodeURIComponent(dir)}${existsSync(fixture) ? `&fixture=${encodeURIComponent(fixture)}` : ''}`
+      const route = `dev?lab=PlayerChecks&dir=${encodeURIComponent(dir)}${existsSync(fixture) ? `&fixture=${encodeURIComponent(fixture)}` : ''}${process.env.CI ? '&slow=1' : ''}`
       const electron = (await import('electron')).default as unknown as string
       const { stdout } = await promisify(execFile)(electron, [import.meta.filename], {
         env: { ...process.env, VITE_DEV_SERVER_URL: server.resolvedUrls!.local[0], STUDIO_HIDDEN: '1', STUDIO_CHECK_ROUTE: route },
