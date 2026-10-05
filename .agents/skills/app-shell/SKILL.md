@@ -1,0 +1,16 @@
+---
+name: app-shell
+description: The native macOS app shell. Use when changing the menu bar, dock icon, window positions, global shortcuts, URL scheme, quit prompts, updates, crash reporting, or onboarding.
+---
+
+# App shell
+
+The native macOS app around everything else.
+
+- Menu bar app; the dock icon hides during recording and shows whenever a window is open.
+- Windows remember positions per display and return on-screen after a display disconnects.
+- Global shortcuts, a URL scheme for automation (Raycast), and drag-and-drop of project files onto the app or menu bar icon.
+- Ask before quitting during a recording or export, and Cancel on any prompt really cancels.
+- Universal binary, in-app auto-update, crash reports with diagnostics, and plain-language messages for system error codes (disk full, permission denied).
+
+Done when a new user goes from install, through permissions, to a first exported video without reading docs.

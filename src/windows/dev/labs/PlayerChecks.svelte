@@ -1,0 +1,362 @@
+<!-- Automated decode, mix, and preview checks, run by src/engine/media/media.test.ts in a hidden window:
+     #/dev?lab=PlayerChecks&dir=<generated media dir>&fixture=<optional .grip bundle>.
+     Results land in window.__checks as [{ name, ok, detail }]. -->
+<script lang="ts">
+  import { onMount } from 'svelte'
+  import { createProject, type Project } from '../../../shared/project.ts'
+  import { prepare, sceneAt } from '../../../engine/scene.ts'
+  import { fileUrl, openVideo } from '../../../engine/media/index.ts'
+  import { mix, peaks, planOf, renderAudio } from '../../../engine/audio/index.ts'
+  import { parseEvents } from '../../../shared/events.ts'
+  import { splitAt, timeMap } from '../../../shared/timemap.ts'
+  import { doc, edit } from '../../../lib/doc.svelte.ts'
+  import { attach, pathsOffThread, player } from '../../../lib/player.svelte.ts'
+  import { stressProject } from '../../editor/timeline/stress.ts'
+
+  let { params }: { params: URLSearchParams } = $props()
+  type Check = { name: string; ok: boolean; detail: string }
+  let checks = $state<Check[]>([])
+  let done = $state(false)
+
+  const dir = $derived(params.get('dir') ?? '')
+  const fixture = $derived(params.get('fixture') ?? '')
+
+  async function check(name: string, fn: () => Promise<string | void>) {
+    try {
+      checks.push({ name, ok: true, detail: (await fn()) ?? '' })
+    } catch (e) {
+      checks.push({ name, ok: false, detail: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  const assert = (cond: unknown, msg: string) => {
+    if (!cond) throw new Error(msg)
+  }
+
+  /** Red channel at the frame center: the generated clips encode their frame index as gray level. */
+  function gray(f: VideoFrame) {
+    const c = new OffscreenCanvas(8, 8)
+    const g = c.getContext('2d')!
+    g.drawImage(f, 0, 0, 8, 8)
+    return g.getImageData(4, 4, 1, 1).data[0]
+  }
+
+  /** frameAt must return frame i for every t in [ts[i], ts[i+1]), in any access order. */
+  async function frames(file: string, ts: number[], lum: (i: number) => number) {
+    const src = await openVideo(fileUrl(`${dir}/${file}`))
+    const expect = (t: number) => {
+      let i = 0
+      while (i + 1 < ts.length && ts[i + 1] <= t + 1e-9) i++
+      return i
+    }
+    const probes: number[] = []
+    ts.forEach((t, i) => probes.push(t, (t + (ts[i + 1] ?? src.duration)) / 2, (ts[i + 1] ?? src.duration) - 0.0005))
+    const orders = [probes, [...probes].reverse(), probes.map((_, k) => probes[(k * 7) % probes.length])]
+    let n = 0
+    for (const order of orders) {
+      for (const t of order) {
+        const f = await src.frameAt(t)
+        assert(f, `null at ${t}`)
+        const i = expect(t)
+        const got = Math.round(f!.timestamp / 1e3) / 1e3
+        const g = gray(f!)
+        f!.close()
+        assert(Math.abs(got - ts[i]) < 1e-3, `t=${t.toFixed(4)}: frame ${got}, want ${ts[i]}`)
+        assert(Math.abs(g - lum(i)) <= 4, `t=${t.toFixed(4)}: gray ${g}, want ${lum(i)} (frame ${i})`)
+        n++
+      }
+    }
+    const past = await src.frameAt(src.duration + 0.01)
+    assert(past === null, 'a frame past the end')
+    src.close()
+    return `${n} lookups exact, null past ${src.duration.toFixed(3)} s`
+  }
+
+  /** Energy centroid (seconds) of the click in [a, b): its center, robust to codec smearing. */
+  function peakAt(buf: AudioBuffer, a: number, b: number) {
+    const x = buf.getChannelData(0)
+    let e = 0
+    let m = 0
+    for (let i = Math.round(a * buf.sampleRate); i < Math.min(x.length, b * buf.sampleRate); i++) {
+      e += x[i] * x[i]
+      m += i * x[i] * x[i]
+    }
+    return m / e / buf.sampleRate
+  }
+  const prepared = (p: Project) => prepare({ project: p, events: [], transcript: null, width: 640, height: 400 })
+  const audioOnly = (file: string, duration: number) => {
+    const p = createProject('t', { duration, mic: { file, channels: 1, sampleRate: 48000 } })
+    p.audio.mic.enhance = false
+    return p
+  }
+
+  onMount(async () => {
+    // VFR H.264 with B-frames: t_i = 0.04 i + 0.002 i^2, gray 16 + 8 i (see media.test.ts).
+    const vfr = Array.from({ length: 24 }, (_, i) => Math.trunc((0.04 * i + 0.002 * i * i) / 0.001) / 1000) // as ffmpeg's setpts rounds
+    await check('frameAt is exact on variable frame rate H.264 with B-frames', () => frames('vfr.mp4', vfr, (i) => Math.round(1.164 * 8 * i)))
+    const cfr = Array.from({ length: 60 }, (_, i) => i / 30)
+    await check('frameAt is exact on HEVC', () => frames('hevc.mp4', cfr, (i) => Math.round(1.164 * 3 * i)))
+    await check('a portrait phone video (landscape frames plus a rotation) comes out upright', async () => {
+      // 128x64 frames, left half white, displayed turned 90 degrees: 64x128, white at the bottom.
+      const src = await openVideo(fileUrl(`${dir}/rotated.mov`))
+      const f = (await src.frameAt(0.5))!
+      const c = new OffscreenCanvas(f.displayWidth, f.displayHeight)
+      const g = c.getContext('2d')!
+      g.drawImage(f, 0, 0)
+      const at = (y: number) => g.getImageData(f.displayWidth / 2, y, 1, 1).data[0]
+      const [w, h, top, bottom] = [f.displayWidth, f.displayHeight, at(16), at(f.displayHeight - 16)]
+      f.close()
+      src.close()
+      assert(src.width === 64 && src.height === 128 && w === 64 && h === 128, `size ${src.width}x${src.height}, frame ${w}x${h}; want 64x128`)
+      assert(top < 60 && bottom > 200, `gray ${top} at the top, ${bottom} at the bottom: the frame is not upright`)
+      return `${w}x${h}, upright`
+    })
+    await check('scrubbing backward frame by frame does not decode from the keyframe at every step', async () => {
+      const src = await openVideo(fileUrl(`${dir}/hevc.mp4`))
+      const walk = async (ts: number[]) => {
+        const t0 = performance.now()
+        for (const t of ts) (await src.frameAt(t))?.close()
+        return performance.now() - t0
+      }
+      const steps = cfr.map((t) => t + 0.01)
+      const fwd = await walk(steps)
+      const back = await walk([...steps].reverse())
+      src.close()
+      // Kept frames: a restart per keyframe interval (4 here). Without them: one per step, about 25x forward.
+      assert(back < 10 * fwd, `backward ${back.toFixed(0)} ms vs forward ${fwd.toFixed(0)} ms for ${steps.length} frames`)
+      return `backward ${back.toFixed(0)} ms, forward ${fwd.toFixed(0)} ms`
+    })
+    await check('across a cut, the next clip decoded ahead (prefetch) shows without waiting, exact', async () => {
+      // Play 0.2 s, then jump 4 s ahead to 14 frames past a keyframe (1 s keyframe interval, like recordings).
+      const jump = async (ahead: boolean) => {
+        const src = await openVideo(fileUrl(`${dir}/gop.mp4`))
+        for (let t = 0; t < 0.2; t += 1 / 30) (await src.frameAt(t))?.close()
+        if (ahead) {
+          src.prefetch(4.47, 0.2)
+          await new Promise((r) => setTimeout(r, 300))
+        }
+        const t0 = performance.now()
+        const f = await src.frameAt(4.47)
+        const ms = performance.now() - t0
+        const at = f!.timestamp / 1e6
+        f!.close()
+        src.close()
+        assert(Math.abs(at - 134 / 30) < 1e-3, `frame at ${at} for 4.47`)
+        return ms
+      }
+      const cold = await jump(false)
+      const warm = await jump(true)
+      assert(warm < cold / 2, `prefetched jump ${warm.toFixed(1)} ms vs cold ${cold.toFixed(1)} ms`)
+      return `prefetched jump ${warm.toFixed(1)} ms, cold ${cold.toFixed(1)} ms`
+    })
+    await check('decoding a long file through keeps memory flat (bounded read cache)', async () => {
+      // 56 MB of noise: a read cache that keeps what it read grows by the file, as an export of an
+      // hour-long recording did. gc() and precise memory info come from media.test.ts's switches.
+      const heap = async () => {
+        for (let i = 0; i < 3; i++) (globalThis as any).gc(), await new Promise((r) => setTimeout(r, 50)) // buffers are freed after the collection
+        return (performance as any).memory.usedJSHeapSize / 2 ** 20
+      }
+      const src = await openVideo(fileUrl(`${dir}/big.mp4`))
+      for (let i = 0; i < 180; i++) (await src.frameAt(i / 30 + 0.001))?.close()
+      const open = await heap()
+      src.close()
+      await new Promise((r) => setTimeout(r, 200))
+      const held = open - (await heap()) // what the open file kept after reading it all
+      assert(held < 24, `the open file held ${held.toFixed(1)} MB after decoding 56 MB`)
+      return `the open file held ${held.toFixed(1)} MB after decoding 56 MB`
+    })
+
+    await check('AAC audio stays aligned through encoder priming', async () => {
+      const buf = await renderAudio(prepared(audioOnly(`${dir}/click.m4a`, 4)), '/', 0, 4)
+      const a = peakAt(buf, 0.5, 1.5)
+      const b = peakAt(buf, 2, 3)
+      assert(Math.abs(a - 1.001) < 0.0005 && Math.abs(b - 2.501) < 0.0005, `click centers at ${a}, ${b}; want 1.001, 2.501`)
+      return `clicks at ${a.toFixed(4)} s and ${b.toFixed(4)} s`
+    })
+    await check('an imported .mp4 is its own audio source', async () => {
+      const buf = await renderAudio(prepared(audioOnly(`${dir}/av.mp4`, 3)), '/', 0, 3)
+      const a = peakAt(buf, 0.5, 1.5)
+      assert(Math.abs(a - 1.001) < 0.0005, `click center at ${a}, want 1.001`)
+      const pk = await peaks(fileUrl(`${dir}/av.mp4`), 0, 3, 300)
+      assert(pk.length === 600 && Math.max(...pk) > 0.3, 'peaks of the mp4 audio')
+      return `click at ${a.toFixed(4)} s`
+    })
+    await check('AAC music starts at full level and loops without a dip at the seams', async () => {
+      const p = createProject('t', { duration: 6 })
+      p.audio.music = { file: `${dir}/tone44.m4a`, volume: 1 } // 2 s of 44.1 kHz sine: loops at 2 s and 4 s
+      const x = (await renderAudio(prepared(p), '/', 0, 6)).getChannelData(0)
+      const rms = (a: number, b: number) => Math.sqrt(x.subarray(a, b).reduce((s, v) => s + v * v, 0) / (b - a))
+      const head = rms(240, 480) / rms(24000, 48000) // after the 5 ms edge fade at the start
+      // The 10 ms across each seam against the same 10 ms mid-loop, 1 s (440 whole periods) earlier.
+      const seams = [96000, 192000].map((s) => rms(s - 240, s + 240) / rms(s - 48240, s - 47760))
+      const dB = (r: number) => `${(20 * Math.log10(r)).toFixed(2)} dB`
+      assert(head > 0.9 && seams.every((r) => r > 0.97), `head ${head.toFixed(2)} of the steady level, seams ${seams.map(dB)} against mid-loop`)
+      return `head ${head.toFixed(2)}, seams ${seams.map(dB)}`
+    })
+    await check('renderAudio length is exact; a 2x clip renders half the duration; chunks join exactly', async () => {
+      const p = audioOnly(`${dir}/click.m4a`, 4)
+      const whole = await renderAudio(prepared(p), '/', 1.2345, 3.21)
+      assert(whole.length === Math.round(3.21 * 48000) - Math.round(1.2345 * 48000) && whole.numberOfChannels === 2, `length ${whole.length}`)
+      p.clips[0].speed = 2
+      const fast = prepared(p)
+      assert(fast.map.duration === 2, `2x duration ${fast.map.duration}`)
+      const all = await renderAudio(fast, '/', 0, 2)
+      assert(all.length === 96000, `2x length ${all.length}`)
+      const at = peakAt(all, 0.25, 0.75)
+      assert(Math.abs(at - 0.5005) < 0.002, `2x click center at ${at}, want 0.5005`)
+      const fast2 = prepared(p)
+      const parts = [await renderAudio(fast2, '/', 0, 0.7), await renderAudio(fast2, '/', 0.7, 1.31), await renderAudio(fast2, '/', 1.31, 2)]
+      const joined = parts.flatMap((b) => [...b.getChannelData(0)])
+      const ref = all.getChannelData(0)
+      assert(joined.length === ref.length && joined.every((v, i) => v === ref[i]), 'chunked export differs from one pass')
+      return `${whole.length} frames; 2x: ${all.length} frames, click at ${at.toFixed(4)} s; 3 chunks bit-identical`
+    })
+
+    if (fixture) {
+      const project: Project = await (await fetch(fileUrl(`${fixture}/project.json`))).json()
+      await check('frameAt picks the right frame on the fixture (30 fps)', async () => {
+        const src = await openVideo(fileUrl(`${fixture}/${project.sources.screen!.file}`))
+        for (const t of [0, 0.0333, 1 / 30, 5.99, 6, 12.345, 23.95, 23.999, 24]) {
+          const f = await src.frameAt(t)
+          assert(f, `null at ${t}`)
+          const want = Math.min(Math.floor(t * 30 + 1e-6), 719) / 30
+          const got = f!.timestamp / 1e6
+          f!.close()
+          assert(Math.abs(got - want) < 1e-4, `t=${t}: frame at ${got}, want ${want}`)
+        }
+        assert((await src.frameAt(24.05)) === null, 'a frame past the end')
+        // Sequential playback speed (the export path): 4 s of 4K-class frames.
+        const t0 = performance.now()
+        for (let i = 0; i < 120; i++) (await src.frameAt(8 + i / 30))?.close()
+        const ms = (performance.now() - t0) / 120
+        // Random access (scrubbing).
+        const t1 = performance.now()
+        for (const t of [20, 3, 15.5, 1, 22]) (await src.frameAt(t))?.close()
+        const seekMs = (performance.now() - t1) / 5
+        src.close()
+        return `${src.width}x${src.height}, sequential ${ms.toFixed(1)} ms/frame, random ${seekMs.toFixed(0)} ms/seek`
+      })
+      await check('fixture mix: exact length, voice chain, peaks cached in the bundle', async () => {
+        const p = prepared(project)
+        const t0 = performance.now()
+        let n = 0
+        let peak = 0
+        for (let t = 0; t < 24; t += 4) {
+          const b = await renderAudio(p, fixture, t, Math.min(24, t + 4))
+          n += b.length
+          for (const ch of [b.getChannelData(0), b.getChannelData(1)]) for (const v of ch) peak = Math.max(peak, Math.abs(v))
+        }
+        const ms = performance.now() - t0
+        assert(n === 24 * 48000, `length ${n}`)
+        assert(peak > 0.1 && peak <= 0.892, `peak ${peak}`)
+        const mic = fileUrl(`${fixture}/${project.sources.mic!.file}`)
+        const pk = await peaks(mic, 0, 24, 1000)
+        assert(pk.length === 2000, 'peaks shape')
+        const zoomed = await peaks(mic, 2, 2.1, 1000) // finer than the cache: decoded on the spot
+        assert(zoomed.length === 2000, 'zoomed peaks shape')
+        const cached = await fetch(fileUrl(`${fixture}/cache/sources_mic.m4a.${(await fetch(mic, { method: 'HEAD' })).headers.get('content-length')}.analysis`), { method: 'HEAD' })
+        assert(cached.ok, 'analysis cache file in the bundle')
+        return `24 s rendered in ${ms.toFixed(0)} ms (${((24000 / ms) | 0)}x realtime), peak ${peak.toFixed(3)}, cache written`
+      })
+      await check('preview and export mix are bit-identical through 200 cuts and speed changes', async () => {
+        const p: Project = structuredClone(project)
+        p.style.cursor.clickSound = true
+        p.clips = Array.from({ length: 200 }, (_, i) => ({ id: `${i}`, start: i * 0.12, end: i * 0.12 + 0.1, speed: [1, 1.2, 2, 2.5][i % 4], volume: 1 }))
+        const events = parseEvents(await (await fetch(fileUrl(`${fixture}/${p.sources.events}`))).text())
+        // Preview: what the player sends, 200 ms at a time from the start.
+        const plan = planOf(p, events, fixture)
+        const total = Math.round(plan.duration * 48000)
+        const preview: number[] = []
+        for (let s = 0; s < total; s += 9600) preview.push(...(await mix('parity', plan, s, Math.min(9600, total - s)))[0])
+        // Export: renderAudio in 1 s chunks.
+        const pe = prepare({ project: p, events, transcript: null, width: 640, height: 400 })
+        const exported: number[] = []
+        for (let t = 0; t < pe.map.duration; t += 1) exported.push(...(await renderAudio(pe, fixture, t, Math.min(pe.map.duration, t + 1))).getChannelData(0))
+        assert(preview.length === exported.length, `lengths ${preview.length} vs ${exported.length}`)
+        const diff = preview.findIndex((v, i) => v !== exported[i])
+        assert(diff < 0, `first difference at sample ${diff}`)
+        return `${plan.duration.toFixed(2)} s, ${preview.length} samples identical, ${plan.clicks.length} click sounds`
+      })
+    }
+
+    await check('editing a 2-hour project never stalls the editor, and the preview prepares the frames export does', async () => {
+      // The 2-hour stress project (500 clips, 300 zooms) in the real player; its media do not exist, the
+      // preparation after each edit is what counts.
+      const s = stressProject()
+      Object.assign(doc, { path: dir, events: s.events, transcript: s.transcript, project: s.project })
+      const canvas = document.createElement('canvas')
+      canvas.style.cssText = 'position: fixed; left: 0; top: 0; width: 640px; height: 360px'
+      document.body.append(canvas)
+      const detach = attach(canvas)
+      const tasks: number[] = []
+      const observer = new PerformanceObserver((l) => l.getEntries().forEach((e) => tasks.push(e.duration)))
+      const prepared = async (n: number) => {
+        for (const t0 = performance.now(); player.prepared <= n; await new Promise((r) => setTimeout(r, 10))) {
+          if (performance.now() - t0 > 30_000) throw new Error('no preparation within 30 s')
+        }
+      }
+      try {
+        await prepared(0)
+        observer.observe({ type: 'longtask' })
+        const edits = [(p: Project) => (p.zooms[10].level = 3), (p: Project) => (p.clips = splitAt(p.clips, timeMap(p.clips).duration / 3)), (p: Project) => (p.style.padding = 40)]
+        for (const fn of edits) {
+          const n = player.prepared
+          edit(fn)
+          await prepared(n)
+        }
+        observer.disconnect()
+        const worst = Math.max(0, ...tasks)
+        assert(worst < 50, `the main thread was blocked for ${worst.toFixed(0)} ms after an edit`)
+        // The worker's paths give the frames export computes inline.
+        const input = { project: $state.snapshot(doc.project!) as Project, events: s.events, transcript: s.transcript, width: 640, height: 360 }
+        const viaWorker = prepare(input, await pathsOffThread(input))
+        const inline = prepare(input)
+        const ts = Array.from({ length: 40 }, (_, i) => (i * inline.map.duration) / 40)
+        assert(ts.every((t) => JSON.stringify(sceneAt(viaWorker, t)) === JSON.stringify(sceneAt(inline, t))), 'a frame prepared through the worker differs from export')
+        return `longest main-thread task across ${edits.length} edits ${worst.toFixed(0)} ms; ${ts.length} frames identical to export's`
+      } finally {
+        observer.disconnect()
+        detach()
+        canvas.remove()
+        doc.project = null
+      }
+    })
+
+    done = true
+    ;(window as any).__checks = $state.snapshot(checks)
+  })
+</script>
+
+<main>
+  <h1>Player checks {done ? '' : '…'}</h1>
+  <ul>
+    {#each checks as c (c.name)}
+      <li class:fail={!c.ok}><b>{c.ok ? 'PASS' : 'FAIL'}</b> {c.name}<br /><small>{c.detail}</small></li>
+    {/each}
+  </ul>
+</main>
+
+<style>
+  main {
+    padding: 20px 24px;
+    background: var(--bg);
+    height: 100vh;
+    overflow: auto;
+    font: 12px var(--mono);
+  }
+  h1 {
+    font: 600 15px var(--font);
+  }
+  li {
+    margin-bottom: 8px;
+    list-style: none;
+  }
+  b {
+    color: #5fd38d;
+  }
+  .fail b {
+    color: var(--danger);
+  }
+  small {
+    color: var(--text-dim);
+  }
+</style>
