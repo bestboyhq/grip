@@ -148,12 +148,12 @@
     padding: 0 10px 0 8px;
     border-radius: 7px;
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-ink);
     font-size: 12px;
     font-weight: 600;
   }
   .start:hover:not(:disabled) {
-    background: #8b7dff;
+    background: var(--accent-hover);
   }
   .start:disabled {
     opacity: 0.4;

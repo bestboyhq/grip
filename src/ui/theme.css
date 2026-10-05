@@ -18,12 +18,14 @@
   --text-dim: #a0a0a8;
   --text-faint: #6c6c75;
 
-  --accent: #7466ff;
-  --accent-strong: #5f4ff2; /* filled buttons */
-  --accent-text: #aaa2ff; /* accent on dark surfaces */
-  --accent-soft: rgb(116 102 255 / 0.18);
+  /* Grayscale UI: the logo's orange record dot is the only color. */
+  --accent: #e8e8ec; /* primary buttons, toggles, sliders, progress, selection */
+  --accent-hover: #f6f6f8;
+  --accent-ink: #111113; /* text and knobs on --accent */
+  --accent-text: #fff; /* accent text on dark surfaces */
+  --accent-soft: rgb(255 255 255 / 0.1);
   --danger: #ff5f57;
-  --focus-ring: rgb(140 128 255 / 0.75);
+  --focus-ring: rgb(255 255 255 / 0.55);
 
   --radius-sm: 5px;
   --radius: 8px;
@@ -37,6 +39,9 @@
 html, body { margin: 0; height: 100%; font: 13px/1.4 var(--font); color: var(--text); background: transparent; -webkit-font-smoothing: antialiased; user-select: none; overflow: hidden; }
 button, input, select, textarea { font: inherit; color: inherit; }
 input, textarea { user-select: text; }
+/* Everything that acts on a click shows the pointing hand; disabled controls don't. */
+button, select, [role='option'], input:is([type='checkbox'], [type='radio'], [type='color']), label:has(> input:is([type='checkbox'], [type='radio'])) { cursor: pointer; }
+button:disabled, select:disabled, input:disabled, label:has(> input:disabled), [aria-disabled='true'] { cursor: default; }
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 
@@ -54,8 +59,8 @@ input, textarea { user-select: text; }
 }
 .btn:hover, .icon-btn:hover { background: var(--bg-hover); }
 .btn:active, .icon-btn:active { background: var(--bg-active); }
-.btn.primary { background: var(--accent-strong); color: #fff; }
-.btn.primary:hover { background: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { background: var(--accent-hover); }
 .btn.ghost, .icon-btn { background: transparent; }
 .btn.ghost:hover, .icon-btn:hover { background: rgb(255 255 255 / 0.07); }
 .icon-btn { width: 28px; height: 28px; padding: 0; color: var(--text-dim); }

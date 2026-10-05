@@ -32,7 +32,7 @@ test('older versions step through every migration in order', () => {
 
 test('a newer project is refused with a clear message', () => {
   const p = { ...roundTrip(project()), version: PROJECT_VERSION + 1 }
-  assert.throws(() => migrate(p), (e: any) => e.code === 'ENEWER' && /“Demo #1 ✨ café” was saved by a newer version of Studio\. Update Studio/.test(e.message))
+  assert.throws(() => migrate(p), (e: any) => e.code === 'ENEWER' && /“Demo #1 ✨ café” was saved by a newer version of Grip\. Update Grip/.test(e.message))
 })
 
 test('fields added since the project was saved get their defaults; unknown fields survive', () => {
@@ -56,7 +56,7 @@ test('fields added since the project was saved get their defaults; unknown field
 
 test('malformed projects are rejected', () => {
   const bad: Array<[string, (p: any) => void]> = [
-    ['not a Studio project', (p) => delete p.version],
+    ['not a Grip project', (p) => delete p.version],
     ['clips[0]', (p) => (p.clips[0].speed = 0)],
     ['clips[0]', (p) => (p.clips[0].end = p.clips[0].start)],
     ['sources.screen', (p) => (p.sources.screen.file = '../../../etc/passwd')],
@@ -74,7 +74,7 @@ test('malformed projects are rejected', () => {
     breakIt(p)
     assert.throws(() => migrate(p), (e: Error) => e.message.includes(what), what)
   }
-  assert.throws(() => migrate(null), /not a Studio project/)
+  assert.throws(() => migrate(null), /not a Grip project/)
   assert.throws(() => validateProject({ ...project(), playhead: NaN }), /playhead/)
   const sources = roundTrip(project())
   delete sources.sources

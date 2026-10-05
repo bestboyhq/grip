@@ -7,7 +7,7 @@ import type { Project } from '../../shared/project.ts'
 export type Format = 'mp4' | 'gif'
 export type Codec = 'h264' | 'hevc'
 export type Quality = 'studio' | 'social' | 'web' | 'small'
-// temp: an MP4 in Studio's temp folder for another feature to take (the Share button uploads it).
+// temp: an MP4 in Grip's temp folder for another feature to take (the Share button uploads it).
 export type Destination = 'file' | 'clipboard' | 'share' | 'temp'
 export const DESTINATIONS: Destination[] = ['file', 'clipboard', 'share', 'temp']
 
@@ -53,7 +53,7 @@ export function jobOptions(dest: Destination, o: Partial<ExportOptions> | null |
 }
 
 export interface ExportRequest {
-  bundle: string // absolute path of the .studio bundle
+  bundle: string // absolute path of the .grip bundle
   project?: Project // snapshot to export; read from the bundle when absent
   options: ExportOptions
   dest: Destination

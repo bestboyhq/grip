@@ -282,7 +282,7 @@ pub fn place_window(id: u32, frame: Rect) -> Result<CGRect, String> {
     }
     let (pid, now) = window_info(id).ok_or("That window is no longer open.")?;
     let app = retained(unsafe { AXUIElementCreateApplication(pid) }).ok_or("That app cannot be controlled.")?;
-    let windows = ax_get(&app, "AXWindows").ok_or("Studio could not move that window.")?;
+    let windows = ax_get(&app, "AXWindows").ok_or("Grip could not move that window.")?;
     // SAFETY: AXWindows is a CFArray of AXUIElements.
     let windows: &CFArray<CFType> = unsafe { &*(&*windows as *const CFType).cast() };
     // ponytail: the public API has no window id, so the window is found by its frame; two windows
@@ -290,14 +290,14 @@ pub fn place_window(id: u32, frame: Rect) -> Result<CGRect, String> {
     let window = (0..windows.len())
         .filter_map(|i| windows.get(i))
         .find(|w| ax_frame(w).is_some_and(|f| near(f, now)))
-        .ok_or("Studio could not move that window.")?;
+        .ok_or("Grip could not move that window.")?;
     let target = CGRect::new(CGPoint::new(frame.x, frame.y), CGSize::new(frame.w, frame.h));
     // Size, move, size again: a move can clamp the size and a resize can push the window.
     let moved = ax_set(&window, "AXSize", AX_SIZE, &target.size)
         & ax_set(&window, "AXPosition", AX_POINT, &target.origin)
         & ax_set(&window, "AXSize", AX_SIZE, &target.size);
     if !moved {
-        return Err("Studio could not move that window.".into());
+        return Err("Grip could not move that window.".into());
     }
     // The window server shows the new frame a moment later; record from there.
     let deadline = std::time::Instant::now() + Duration::from_secs(1);

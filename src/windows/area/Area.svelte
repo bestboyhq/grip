@@ -265,8 +265,8 @@
     place-items: center;
   }
   .display:has(.card) {
-    background: rgb(124 108 255 / 0.12);
-    box-shadow: inset 0 0 0 3px rgb(124 108 255 / 0.9);
+    background: color-mix(in oklab, var(--accent) 12%, transparent);
+    box-shadow: inset 0 0 0 3px color-mix(in oklab, var(--accent) 90%, transparent);
   }
   .card {
     display: flex;
@@ -315,16 +315,13 @@
     border: 0;
     border-radius: 10px;
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-ink);
     font-size: 13px;
     font-weight: 600;
     white-space: nowrap;
   }
   .start:hover {
-    background: #8b7dff;
-  }
-  .start:active {
-    background: #6c5cf0;
+    background: var(--accent-hover);
   }
   .start:focus-visible,
   .segmented button:focus-visible {
@@ -340,8 +337,8 @@
   .frame {
     position: absolute;
     border-radius: 10px;
-    background: rgb(124 108 255 / 0.12);
-    box-shadow: inset 0 0 0 3px rgb(124 108 255 / 0.9);
+    background: color-mix(in oklab, var(--accent) 12%, transparent);
+    box-shadow: inset 0 0 0 3px color-mix(in oklab, var(--accent) 90%, transparent);
     transition:
       left 120ms ease-out,
       top 120ms ease-out,

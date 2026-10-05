@@ -93,7 +93,7 @@ pub enum Target {
 #[napi(object)]
 #[derive(Clone, Debug)]
 pub struct StartOptions {
-    /// The `.studio` bundle; files go to `<bundleDir>/sources/`.
+    /// The `.grip` bundle; files go to `<bundleDir>/sources/`.
     pub bundle_dir: String,
     pub target: Target,
     pub camera_id: Option<String>,
@@ -829,7 +829,7 @@ mod tests {
 
     /// A fresh bundle with a hostile name.
     fn bundle(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("studio-capture-tests/{tag} #1 ✨ café.studio"));
+        let dir = std::env::temp_dir().join(format!("studio-capture-tests/{tag} #1 ✨ café.grip"));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -1044,7 +1044,7 @@ mod tests {
                     for i in 0..25usize {
                         match (k * 7 + i * 13) % 6 {
                             0 | 1 => {
-                                let dir = root.join(format!("{}.studio", n.fetch_add(1, Ordering::SeqCst)));
+                                let dir = root.join(format!("{}.grip", n.fetch_add(1, Ordering::SeqCst)));
                                 fs::create_dir_all(&dir).unwrap();
                                 let _ = start(synthetic(&dir, k % 2 == 0), emit.clone());
                             }
@@ -1204,7 +1204,7 @@ mod tests {
             attached.then_some(mnt)
         };
         let Some(small) = mount("200m", "small") else { return }; // no hdiutil here: skip
-        let dir = small.join("Tiny #1.studio");
+        let dir = small.join("Tiny #1.grip");
         fs::create_dir_all(&dir).unwrap();
         let (emit, _) = events();
         let err = start(synthetic(&dir, false), emit).unwrap_err();
@@ -1213,7 +1213,7 @@ mod tests {
         assert_eq!(state(), RecState::Idle);
 
         let big = mount("1500m", "big").expect("mount");
-        let dir = big.join("Full #1.studio");
+        let dir = big.join("Full #1.grip");
         fs::create_dir_all(&dir).unwrap();
         let (emit, log) = events();
         start(synthetic(&dir, true), emit).unwrap();

@@ -274,7 +274,7 @@ test('autoZoomOnce: auto zooms on the first open only, never again after the use
   assert.ok(off.autoZoomed && off.zooms.length === 0, 'auto zoom off: marked, nothing generated')
 })
 
-const FIXTURE = join(import.meta.dirname, '../../../.context/fixtures/Demo #1 ✨ café.studio')
+const FIXTURE = join(import.meta.dirname, '../../../.context/fixtures/Demo #1 ✨ café.grip')
 test('fixture: auto zooms cover every click, keep the cursor in frame and clicked elements whole', { skip: !existsSync(FIXTURE) && 'no fixture: npx electron scripts/fixture/make.ts' }, (t) => {
   const project: Project = JSON.parse(readFileSync(join(FIXTURE, 'project.json'), 'utf8'))
   const events = parseEvents(readFileSync(join(FIXTURE, 'sources/events.jsonl'), 'utf8'))

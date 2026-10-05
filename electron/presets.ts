@@ -1,5 +1,5 @@
-// Owner: projects. Style presets: one portable `.studiopreset` file each (JSON, assets embedded as
-// base64), stored in <userData>/presets/<id>.studiopreset. Export copies the file; import validates
+// Owner: projects. Style presets: one portable `.grippreset` file each (JSON, assets embedded as
+// base64), stored in <userData>/presets/<id>.grippreset. Export copies the file; import validates
 // it. Applying writes the assets into the bundle under content-addressed names and returns the style
 // for the editor to apply as an undoable edit. A missing asset falls back to the default.
 //
@@ -17,10 +17,10 @@ import { defaultStyle, type Style } from '../src/shared/project.ts'
 import { normalizeStyle } from '../src/shared/migrate.ts'
 import { bundleArg, locked, writeFileAtomic } from './projects.ts'
 
-const FORMAT = 'studio-preset'
+const FORMAT = 'grip-preset'
 const VERSION = 1
 const MAX_BYTES = 100 << 20
-const EXT = '.studiopreset'
+const EXT = '.grippreset'
 
 export interface Preset {
   id: string
@@ -114,10 +114,10 @@ async function readPreset(file: string): Promise<PresetFile> {
   try {
     p = JSON.parse(await readFile(file, 'utf8'))
   } catch {
-    throw new Error('This is not a Studio preset file.')
+    throw new Error('This is not a Grip preset file.')
   }
-  if (p?.format !== FORMAT || !Number.isInteger(p.version)) throw new Error('This is not a Studio preset file.')
-  if (p.version > VERSION) throw new Error('This preset was made by a newer version of Studio. Update Studio to use it.')
+  if (p?.format !== FORMAT || !Number.isInteger(p.version)) throw new Error('This is not a Grip preset file.')
+  if (p.version > VERSION) throw new Error('This preset was made by a newer version of Grip. Update Grip to use it.')
   const assets = p.assets ?? {}
   if (typeof assets !== 'object' || Array.isArray(assets) || !Object.values(assets).every((v) => typeof v === 'string')) throw new Error('This preset is damaged.')
   try {
@@ -163,7 +163,7 @@ export function registerPresets() {
   ipcMain.handle('projects:presets:import', async (e, file?: unknown) => {
     if (file === undefined) {
       const win = BrowserWindow.fromWebContents(e.sender)
-      const opts = { properties: ['openFile' as const], filters: [{ name: 'Studio Preset', extensions: [EXT.slice(1)] }] }
+      const opts = { properties: ['openFile' as const], filters: [{ name: 'Grip Preset', extensions: [EXT.slice(1)] }] }
       const r = await (win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts))
       if (r.canceled || !r.filePaths[0]) return null
       file = r.filePaths[0]
@@ -175,7 +175,7 @@ export function registerPresets() {
     if (file === undefined) {
       const name = (await listPresets()).find((p) => p.id === id)?.name ?? 'Preset'
       const win = BrowserWindow.fromWebContents(e.sender)
-      const opts = { defaultPath: join(electron.app.getPath('documents'), name.replace(/[/:]/g, '-') + EXT), filters: [{ name: 'Studio Preset', extensions: [EXT.slice(1)] }] }
+      const opts = { defaultPath: join(electron.app.getPath('documents'), name.replace(/[/:]/g, '-') + EXT), filters: [{ name: 'Grip Preset', extensions: [EXT.slice(1)] }] }
       const r = await (win ? dialog.showSaveDialog(win, opts) : dialog.showSaveDialog(opts))
       if (r.canceled || !r.filePath) return null
       file = r.filePath

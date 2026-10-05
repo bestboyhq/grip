@@ -333,8 +333,8 @@ export function decodeAnalysis(buf: ArrayBuffer): Analysis | null {
   return { base: new Int16Array(buf.slice(8)), ready: async () => {} }
 }
 
-/** Where the analysis of `path` (absolute) is cached, or null when it is not inside a .studio bundle. */
+/** Where the analysis of `path` (absolute) is cached, or null when it is not inside a .grip bundle. */
 export function cachePath(path: string, size: number): string | null {
-  const m = /^(.*\.studio)\/(.+)$/.exec(path)
+  const m = /^(.*\.grip)\/(.+)$/.exec(path)
   return m ? `${m[1]}/cache/${m[2].replaceAll('/', '_')}.${size}.analysis` : null
 }

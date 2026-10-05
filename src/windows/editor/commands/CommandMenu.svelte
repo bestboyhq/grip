@@ -179,7 +179,6 @@
     height: 34px;
     padding: 0 12px;
     border-radius: 7px;
-    cursor: default;
   }
   .item[aria-selected='true'] {
     background: rgb(255 255 255 / 0.08);

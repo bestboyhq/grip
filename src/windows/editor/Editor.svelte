@@ -55,7 +55,7 @@
       save().catch(() => {}) // a failure shows as doc.saveError
     }
     if (opened.notice) notice = opened.notice
-    else if (params.has('recovered')) notice = 'This recording was recovered after Studio quit unexpectedly.'
+    else if (params.has('recovered')) notice = 'This recording was recovered after Grip quit unexpectedly.'
     afterFirstFrame(thumbnail)
   }
 
@@ -84,7 +84,7 @@
   const undoable = $derived.by(() => (doc.rev, { undo: canUndo(), redo: canRedo() }))
 
   $effect(() => {
-    document.title = doc.project?.name || 'Studio'
+    document.title = doc.project?.name || 'Grip'
   })
 
   $effect(() =>

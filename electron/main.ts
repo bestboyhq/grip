@@ -17,8 +17,8 @@ import { registerSettings, settings } from './shell/settings.ts'
 import { command, editorsDone, isQuitting, openFilesOrAlert, openOnboarding, openProject, recordingStatus, registerRecorder, setQuitting, showPicker, stopAndWait, warmUp } from './shell/recorder.ts'
 import { setAppMenu } from './shell/menu.ts'
 import { createTray } from './shell/tray.ts'
-import { checkForUpdates } from './shell/update.ts'
-import { inTurn, parseLaunch, parseStudioUrl } from './shell/url.ts'
+import { startUpdates } from './shell/update.ts'
+import { inTurn, parseLaunch, parseGripUrl } from './shell/url.ts'
 import { plainError } from './shell/errors.ts'
 import { registerFakeRecording } from './shell/fake-recording.ts'
 
@@ -29,13 +29,13 @@ if (process.env.STUDIO_HIDDEN) app.commandLine.appendSwitch('mute-audio') // hid
 // Dev stand-in engine: Chromium's fake camera too, so the preview runs without a camera prompt.
 if (!app.isPackaged && process.env.STUDIO_FAKE_RECORDING) app.commandLine.appendSwitch('use-fake-device-for-media-stream')
 
-// One Studio per user: a second launch (Finder, `open`, URL, CLI) hands its arguments to this one.
+// One Grip per user: a second launch (Finder, `open`, URL, CLI) hands its arguments to this one.
 // Chromium's handoff breaks when two launches reach it at the same moment (both get the lock, or one
 // exits without handing over its arguments), so launches take turns at it.
 const primary = inTurn(join(app.getPath('userData'), 'launch.lock'), () => app.requestSingleInstanceLock())
 if (!primary) app.exit(0)
 
-// Crash reports stay on this Mac (~/Library/Application Support/Studio/Crashpad) until a server exists.
+// Crash reports stay on this Mac (~/Library/Application Support/Grip/Crashpad) until a server exists.
 crashReporter.start({ uploadToServer: false, globalExtra: { macOS: release(), arch: process.arch } })
 function logError(err: unknown) {
   const dir = app.getPath('logs')
@@ -45,11 +45,11 @@ function logError(err: unknown) {
 process.on('uncaughtException', (err) => {
   logError(err)
   if (hidden) console.error(err) // agents and tests: never block on a modal
-  else dialog.showErrorBox('Studio ran into a problem', plainError(err).message)
+  else dialog.showErrorBox('Grip ran into a problem', plainError(err).message)
 })
 process.on('unhandledRejection', logError)
 
-// Files and URLs can arrive before ready (Finder double-click, dock drop, `open studio://...`).
+// Files and URLs can arrive before ready (Finder double-click, dock drop, `open grip://...`).
 let ready = false
 const early: string[] = []
 app.on('open-file', (e, path) => {
@@ -67,7 +67,7 @@ app.on('second-instance', (_e, argv, cwd) => {
 })
 
 function openUrl(url: string) {
-  const a = parseStudioUrl(url)
+  const a = parseGripUrl(url)
   if (a?.kind === 'record') showPicker(a.mode)
   else if (a?.kind === 'stop' && recordingStatus() !== 'idle') command('stop')
   else if (a?.kind === 'open') openProject(a.path)
@@ -105,12 +105,12 @@ app.whenReady().then(() => {
 
   const queued = early.splice(0)
   const acted = launch(process.argv)
-  for (const item of queued) /^studio:/i.test(item) ? openUrl(item) : openFilesOrAlert([item])
-  if (!acted && !queued.length) settings().onboarded ? showPicker() : openOnboarding()
-  checkForUpdates()
+  for (const item of queued) /^grip:/i.test(item) ? openUrl(item) : openFilesOrAlert([item])
+  if (!acted && !queued.length) settings().onboarded ? showPicker() : openOnboarding(settings().welcomed ? 'page=permissions' : '')
+  startUpdates(logError)
 })
 
-// Menu bar app: closing the last window keeps Studio running.
+// Menu bar app: closing the last window keeps Grip running.
 app.on('window-all-closed', () => {})
 // Dock icon click with nothing open: new recording.
 app.on('activate', () => {
@@ -134,7 +134,7 @@ app.on('before-quit', async (e) => {
         : dialog.showMessageBox({
             type: 'warning',
             message: recording ? 'A recording is in progress.' : exports === 1 ? 'An export is in progress.' : `${exports} exports are in progress.`,
-            detail: recording ? 'Studio can save it and then quit.' : 'Quitting now stops it. Your project is safe.',
+            detail: recording ? 'Grip can save it and then quit.' : 'Quitting now stops it. Your project is safe.',
             buttons: ['Cancel', recording ? 'Save Recording and Quit' : 'Stop and Quit'],
             defaultId: 0,
             cancelId: 0,

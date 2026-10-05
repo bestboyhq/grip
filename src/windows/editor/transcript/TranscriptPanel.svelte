@@ -205,7 +205,7 @@
   {#if t && !t.words.length}
     <div class="state">
       <p class="title">No speech found</p>
-      <p class="dim">Studio heard no words in this recording, so there is nothing to caption or cut by text.</p>
+      <p class="dim">Grip heard no words in this recording, so there is nothing to caption or cut by text.</p>
     </div>
   {:else if t}
     {#if confirming}
@@ -363,7 +363,6 @@
     border-radius: 6px;
     background: var(--bg-raised);
     font-size: 12px;
-    cursor: default;
     white-space: nowrap;
   }
   button:hover:not(:disabled) {
@@ -380,11 +379,11 @@
   .primary {
     background: var(--accent);
     border-color: transparent;
-    color: #fff;
+    color: var(--accent-ink);
     font-weight: 500;
   }
   .primary:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent) 88%, white);
+    background: var(--accent-hover);
   }
   .ghost {
     background: transparent;
@@ -421,7 +420,7 @@
     cursor: text;
   }
   .text:focus-visible {
-    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent);
+    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--accent) 60%, transparent);
   }
   .text p {
     margin: 12px 0 0;
@@ -429,7 +428,7 @@
     contain-intrinsic-size: auto 120px;
   }
   .text ::selection {
-    background: color-mix(in srgb, var(--accent) 45%, transparent);
+    background: color-mix(in oklab, var(--accent) 30%, transparent);
   }
   .w {
     border-radius: 3px;
@@ -441,15 +440,15 @@
     background: rgb(255 255 255 / 0.07);
   }
   .w:global([data-on]) {
-    background: color-mix(in srgb, var(--accent) 55%, transparent);
-    color: #fff;
+    background: var(--accent);
+    color: var(--accent-ink);
   }
   .filler {
     text-decoration: underline dotted rgb(255 189 89 / 0.75);
     text-underline-offset: 3px;
   }
   .fixed {
-    text-decoration: underline dashed color-mix(in srgb, var(--accent) 80%, white);
+    text-decoration: underline dashed color-mix(in oklab, var(--accent) 80%, white);
     text-underline-offset: 3px;
   }
   .cut {
@@ -505,7 +504,7 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
-    padding: 10px 0;
+    padding: 14px 0; /* the title lines up with the other tabs' headings */
   }
   .state p {
     margin: 0;

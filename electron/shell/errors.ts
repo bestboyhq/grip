@@ -13,8 +13,9 @@ export interface PlainError {
 }
 
 const FULL = 'Your disk is full. Free up some space, then try again.'
-const DENIED = 'Studio is not allowed to use this file or folder. Check its permissions in Finder.'
-const SCREEN = 'Screen recording is turned off for Studio. Turn it on in System Settings to record.'
+const DENIED = 'Grip is not allowed to use this file or folder. Check its permissions in Finder.'
+const SCREEN = 'Screen recording is turned off for Grip. Turn it on in System Settings to record.'
+const HTTP = { message: 'The server didn’t answer as expected. Try again later.' }
 
 // errno names (Node), POSIX codes inside NSError, and macOS OSStatus / framework codes.
 const CODES: Record<string, PlainError> = {
@@ -54,16 +55,22 @@ const PHRASES: Array<[RegExp, PlainError]> = [
   [/read-only file system/i, CODES.EROFS],
   // "The user declined TCCs for application, window, display capture" is ScreenCaptureKit's -3801 text.
   [/declined TCC|screen ?(capture|recording)[^.]*(denied|not (allowed|authori[sz]ed|permitted)|permission)/i, { message: SCREEN, permission: 'screen' }],
-  [/microphone[^.]*(denied|not (allowed|authori[sz]ed)|permission)/i, { message: 'Microphone access is turned off for Studio. Turn it on in System Settings.', permission: 'microphone' }],
-  [/camera[^.]*(denied|not (allowed|authori[sz]ed)|permission)/i, { message: 'Camera access is turned off for Studio. Turn it on in System Settings.', permission: 'camera' }],
-  [/accessibility[^.]*(denied|not (allowed|trusted|authori[sz]ed)|permission)/i, { message: 'Accessibility is turned off for Studio. Turn it on in System Settings.', permission: 'accessibility' }],
+  [/microphone[^.]*(denied|not (allowed|authori[sz]ed)|permission)/i, { message: 'Microphone access is turned off for Grip. Turn it on in System Settings.', permission: 'microphone' }],
+  [/camera[^.]*(denied|not (allowed|authori[sz]ed)|permission)/i, { message: 'Camera access is turned off for Grip. Turn it on in System Settings.', permission: 'camera' }],
+  [/accessibility[^.]*(denied|not (allowed|trusted|authori[sz]ed)|permission)/i, { message: 'Accessibility is turned off for Grip. Turn it on in System Settings.', permission: 'accessibility' }],
   [/operation not permitted|permission denied/i, { message: DENIED }],
   [/no such file or directory/i, CODES.ENOENT],
+  // Chromium's network errors (Electron's net module) and HTTP failures (updates, sharing).
+  [/net::ERR_(INTERNET_DISCONNECTED|NAME_NOT_RESOLVED|NAME_RESOLUTION_FAILED|ADDRESS_UNREACHABLE|NETWORK_CHANGED)\b/, CODES.ENOTFOUND],
+  [/net::ERR_(CONNECTION_TIMED_OUT|TIMED_OUT)\b/, CODES.ETIMEDOUT],
+  [/net::ERR_(CONNECTION_REFUSED|CONNECTION_RESET|CONNECTION_CLOSED|EMPTY_RESPONSE)\b/, CODES.ECONNREFUSED],
+  [/\bHttpError: [45]\d\d\b/, HTTP],
 ]
 
 export function plainError(err: unknown): PlainError {
   const code = (err as { code?: unknown } | null)?.code
   if ((typeof code === 'string' || typeof code === 'number') && CODES[String(code)]) return CODES[String(code)]
+  if (Number((err as { statusCode?: unknown } | null)?.statusCode) >= 400) return HTTP // an HTTP error response, never its raw dump
   const raw = err instanceof Error ? err.message : String(err ?? '')
   for (const [re, plain] of PHRASES) if (re.test(raw)) return plain
   for (const m of raw.matchAll(/\b(E[A-Z]{2,})\b|(?<![\w.])(-\d{2,5})\b/g)) {

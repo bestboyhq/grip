@@ -1,5 +1,5 @@
 // Owner: projects. Bundle lifecycle and the "projects:*" IPC channels. A bundle is a folder
-// `<name>.studio/` holding sources/ (immutable raw recordings), project.json (the edit document),
+// `<name>.grip/` holding sources/ (immutable raw recordings), project.json (the edit document),
 // project.json.bak (the previous save), thumbnail.png, and assets/ (preset images, LUTs).
 //
 //   projects:open(path) -> { project, path, notice? }  migrated + validated; path follows in-app
@@ -49,14 +49,14 @@ export interface RecentProject {
   thumbnail: string | null // absolute path to thumbnail.png
 }
 
-/** Folder where new recordings and imports land: ~/Movies/Studio, per worktree in dev (main.ts). */
+/** Folder where new recordings and imports land: ~/Movies/Grip, per worktree in dev (main.ts). */
 export function projectsDir(): string {
   const { app } = electron
-  return app.isPackaged ? join(app.getPath('videos'), 'Studio') : join(app.getPath('userData'), 'Projects')
+  return app.isPackaged ? join(app.getPath('videos'), 'Grip') : join(app.getPath('userData'), 'Projects')
 }
 
-/** Create `<dir>/<unique name>.studio/sources/` and return the bundle path. The name is sanitized
- *  for the file system; read it back with `basename(path, '.studio')`. */
+/** Create `<dir>/<unique name>.grip/sources/` and return the bundle path. The name is sanitized
+ *  for the file system; read it back with `basename(path, '.grip')`. */
 export async function createBundle(name: string, dir = projectsDir()): Promise<string> {
   await mkdir(dir, { recursive: true })
   const [path] = await claim(dir, sanitizeName(name))
@@ -67,7 +67,7 @@ export async function createBundle(name: string, dir = projectsDir()): Promise<s
 /** project.json for a recording that just finished (or was recovered): defaults plus auto zooms
  *  from its clicks and typing, so it opens already directed. */
 export async function writeNewRecording(bundle: string, sources: Sources, created = new Date()): Promise<Project> {
-  const p = createProject(basename(bundle, '.studio'), sources)
+  const p = createProject(basename(bundle, '.grip'), sources)
   p.createdAt = created.toISOString()
   if (sources.events) {
     const events = parseEvents(await readFile(join(bundle, sources.events), 'utf8').catch(() => ''))
@@ -93,15 +93,15 @@ export async function readProject(bundle: string): Promise<Project> {
   try {
     p = migrate(JSON.parse(await readFile(file, 'utf8')))
   } catch (e) {
-    if ((e as { code?: string }).code === 'ENEWER') throw newerError(basename(bundle, '.studio')) // never fall back to an older version
+    if ((e as { code?: string }).code === 'ENEWER') throw newerError(basename(bundle, '.grip')) // never fall back to an older version
     try {
       p = migrate(JSON.parse(await readFile(file + '.bak', 'utf8')))
       console.warn(`[projects] ${file} unreadable (${(e as Error).message}), opened the backup`)
     } catch {
-      throw (e as { code?: string }).code === 'ENOENT' ? new Error(`“${basename(bundle, '.studio')}” has no project file.`) : e
+      throw (e as { code?: string }).code === 'ENOENT' ? new Error(`“${basename(bundle, '.grip')}” has no project file.`) : e
     }
   }
-  p.name = basename(bundle, '.studio')
+  p.name = basename(bundle, '.grip')
   p.playhead = Math.min(Math.max(p.playhead, 0), p.sources.duration)
   const missing = (rel: string) => access(join(bundle, rel)).then(() => false, () => true)
   if (p.style.background.kind === 'image' && (await missing(p.style.background.file))) p.style.background = createProject('', p.sources).style.background
@@ -152,7 +152,7 @@ export async function writeFileAtomic(file: string, data: string | Uint8Array): 
 }
 
 /** A name safe for a folder: no path separators, control characters, or leading dots, NFC, and at
- *  most 200 UTF-8 bytes (APFS allows 255, leaving room for " 2.studio"). */
+ *  most 200 UTF-8 bytes (APFS allows 255, leaving room for " 2.grip"). */
 export function sanitizeName(name: string): string {
   const s = name.normalize('NFC').replace(/[/:]/g, '-').replace(/[\u0000-\u001f\u007f]/g, '').trim().replace(/^[.\s]+/, '')
   let out = ''
@@ -188,7 +188,7 @@ export function renameBundle(bundle: string, name: string): Promise<string> {
 export async function recoverBundles(dir = projectsDir()): Promise<Recovered[]> {
   const out: Recovered[] = []
   for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
-    if (!e.isDirectory() || !e.name.endsWith('.studio')) continue
+    if (!e.isDirectory() || !e.name.endsWith('.grip')) continue
     const bundle = join(dir, e.name)
     if (await exists(join(bundle, 'project.json'))) continue
     try {
@@ -215,19 +215,19 @@ export async function openBundle(bundle: string): Promise<{ project: Project | n
       console.warn(`[projects] ${file} is damaged (${(e as Error).message}), rebuilding from the recording`)
       await rename(file, file + '.damaged')
       const project = await rebuildProject(bundle)
-      return { project, notice: 'This project’s edits were damaged, so Studio rebuilt it from the recording.' }
+      return { project, notice: 'This project’s edits were damaged, so Grip rebuilt it from the recording.' }
     }
   }
-  return { project: await rebuildProject(bundle), notice: 'This recording was recovered after Studio quit unexpectedly.' }
+  return { project: await rebuildProject(bundle), notice: 'This recording was recovered after Grip quit unexpectedly.' }
 }
 
 /** project.json from what is on disk: the backup if it is readable, else probed sources. Null when
- *  there is nothing playable. A backup from a newer Studio is refused, never rebuilt over. */
+ *  there is nothing playable. A backup from a newer Grip is refused, never rebuilt over. */
 export async function rebuildProject(bundle: string): Promise<Project | null> {
   const bak = await readFile(join(bundle, 'project.json.bak'), 'utf8')
     .then((j) => migrate(JSON.parse(j)))
     .catch((e) => {
-      if (e.code === 'ENEWER') throw newerError(basename(bundle, '.studio'))
+      if (e.code === 'ENEWER') throw newerError(basename(bundle, '.grip'))
       return null
     })
   if (bak) {
@@ -266,7 +266,7 @@ export async function rebuildProject(bundle: string): Promise<Project | null> {
 export async function importVideo(file: string, dir = projectsDir()): Promise<string> {
   const ext = extname(file).toLowerCase()
   const label = `“${basename(file)}”`
-  if (ext !== '.mp4' && ext !== '.mov') throw new Error(`Studio imports .mp4 and .mov videos, not ${label}.`)
+  if (ext !== '.mp4' && ext !== '.mov') throw new Error(`Grip imports .mp4 and .mov videos, not ${label}.`)
   const info = await probe(file).catch((e) => {
     if (e.code === 'ENOENT') throw new Error(`${label} was not found.`)
     return null // mediabunny can't read it; macOS may (convert below)
@@ -279,12 +279,12 @@ export async function importVideo(file: string, dir = projectsDir()): Promise<st
     // Via a temporary name, so a crash mid-copy never looks like a recording to recover.
     const part = join(bundle, 'sources/screen.part.mov')
     if (playable) await copyFile(file, part, constants.COPYFILE_FICLONE)
-    else await convert(file, part).catch(() => { throw new Error(`Studio can't read ${label}. It may be damaged or in an unsupported format.`) })
+    else await convert(file, part).catch(() => { throw new Error(`Grip can't read ${label}. It may be damaged or in an unsupported format.`) })
     await rename(part, join(bundle, rel))
     const media = playable ? info : await probe(join(bundle, rel))
     if (!media?.video) throw new Error(`${label} has no video track.`)
     const { width, height, fps } = media.video
-    const p = createProject(basename(bundle, '.studio'), {
+    const p = createProject(basename(bundle, '.grip'), {
       duration: media.duration,
       screen: { file: rel, width, height, fps, scale: 1 },
       ...(media.audio && { mic: { file: rel, channels: media.audio.channels, sampleRate: media.audio.sampleRate } }),
@@ -388,7 +388,7 @@ export async function recentProjects(file = recentFile()): Promise<RecentProject
     try {
       const json = join(path, 'project.json')
       const [p, s, thumb] = await Promise.all([readFile(json, 'utf8').then(JSON.parse), stat(json), exists(join(path, 'thumbnail.png'))])
-      out.push({ path, name: basename(path, '.studio'), duration: p.sources.duration, modified: s.mtimeMs, thumbnail: thumb ? join(path, 'thumbnail.png') : null })
+      out.push({ path, name: basename(path, '.grip'), duration: p.sources.duration, modified: s.mtimeMs, thumbnail: thumb ? join(path, 'thumbnail.png') : null })
     } catch {}
   }
   return out
@@ -405,7 +405,7 @@ async function write(bundle: string, project: Project) {
     if (old && parses(old)) await writeFileAtomic(file + '.bak', old)
     await writeFileAtomic(file, JSON.stringify(project, null, 2))
   } catch (e) {
-    const name = `“${basename(bundle, '.studio')}”`
+    const name = `“${basename(bundle, '.grip')}”`
     if ((e as { code?: string }).code === 'ENOENT') throw new Error(`${name} was moved or deleted, so its edits can't be saved.`)
     throw Object.assign(new Error(`${name} couldn't be saved. ${plainError(e).message}`), { code: (e as { code?: string }).code })
   }
@@ -430,16 +430,16 @@ function follow(path: string): string {
 /** A file inside a bundle renamed in this session, at the bundle's new place. Readers that hold
  *  the old path (an export started before the rename, a waveform cache write) keep working. */
 export function followFile(path: string): string {
-  const i = path.lastIndexOf('.studio/') + '.studio'.length
+  const i = path.lastIndexOf('.grip/') + '.grip'.length
   return i < 7 || !moved.size ? path : follow(path.slice(0, i)) + path.slice(i)
 }
 
-/** mkdir `<dir>/<base>.studio`, or `<base> 2.studio`, `<base> 3.studio`... when taken. mkdir is
+/** mkdir `<dir>/<base>.grip`, or `<base> 2.grip`, `<base> 3.grip`... when taken. mkdir is
  *  atomic, so concurrent callers never share a name. `self` (a rename) may keep its own name,
  *  including a case- or normalization-only change. */
 async function claim(dir: string, base: string, self?: string): Promise<[path: string, made: boolean]> {
   for (let i = 1; ; i++) {
-    const path = join(dir, `${i === 1 ? base : `${base} ${i}`}.studio`)
+    const path = join(dir, `${i === 1 ? base : `${base} ${i}`}.grip`)
     if (path === self) return [path, false]
     try {
       await mkdir(path)
@@ -490,10 +490,10 @@ const parses = (json: string) => {
   }
 }
 
-/** A bundle path from IPC: absolute, ends in .studio, following in-app renames. */
+/** A bundle path from IPC: absolute, ends in .grip, following in-app renames. */
 export function bundleArg(path: unknown): string {
   const p = typeof path === 'string' && isAbsolute(path) ? resolve(path) : ''
-  if (!p.endsWith('.studio')) throw new Error(`Not a Studio project: ${String(path)}`)
+  if (!p.endsWith('.grip')) throw new Error(`Not a Grip project: ${String(path)}`)
   return follow(p)
 }
 
@@ -512,7 +512,7 @@ export function registerProjects() {
 
   ipcMain.handle('projects:open', async (_e, path: unknown) => {
     const bundle = bundleArg(path)
-    const name = `“${basename(bundle, '.studio')}”`
+    const name = `“${basename(bundle, '.grip')}”`
     if (!(await exists(bundle))) throw new Error(`${name} was not found. It may have been moved or deleted.`)
     const { project, notice } = await openBundle(bundle)
     if (!project) throw new Error(`${name} has no project file and no recording to recover.`)
@@ -542,12 +542,12 @@ export function registerProjects() {
     const from = bundleArg(path)
     const to = await renameBundle(from, name)
     if (to !== from) await updateRecent((l) => l.map((p) => (p === from ? to : p)))
-    return { path: to, name: basename(to, '.studio') }
+    return { path: to, name: basename(to, '.grip') }
   })
   ipcMain.handle('projects:reveal', (_e, path: unknown) => shell.showItemInFolder(bundleArg(path)))
   ipcMain.handle('projects:remove', async (_e, path: unknown) => {
     const bundle = bundleArg(path)
-    if (!(await stat(bundle).catch(() => null))?.isDirectory()) throw new Error(`“${basename(bundle, '.studio')}” was not found.`)
+    if (!(await stat(bundle).catch(() => null))?.isDirectory()) throw new Error(`“${basename(bundle, '.grip')}” was not found.`)
     await locked(() => shell.trashItem(bundle))
     await updateRecent((l) => l.filter((p) => p !== bundle))
   })

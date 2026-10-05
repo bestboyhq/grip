@@ -1,4 +1,4 @@
-// The project document: `<name>.studio/project.json`.
+// The project document: `<name>.grip/project.json`.
 // Sources are immutable raw recordings; everything else is edit data on top of them.
 // Every timed item is stored in SOURCE time (seconds) and mapped to output time via ./timemap.ts.
 // Lengths in Style are in "units": 1 unit = min(outputWidth, outputHeight) / 1080 px,

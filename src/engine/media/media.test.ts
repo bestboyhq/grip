@@ -71,7 +71,7 @@ if (process.versions.electron) {
     try {
       makeMedia(dir)
       await server.listen()
-      const fixture = join(root, '.context/fixtures/Demo #1 ✨ café.studio')
+      const fixture = join(root, '.context/fixtures/Demo #1 ✨ café.grip')
       if (!existsSync(fixture)) t.diagnostic(`no fixture at ${fixture}: run npx electron scripts/fixture/make.ts to include its checks`)
       const route = `dev?lab=PlayerChecks&dir=${encodeURIComponent(dir)}${existsSync(fixture) ? `&fixture=${encodeURIComponent(fixture)}` : ''}`
       const electron = (await import('electron')).default as unknown as string

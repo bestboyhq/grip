@@ -17,7 +17,7 @@ export interface Io<W> {
   stay(): void // cancel the quit
 }
 
-export const NO_ANSWER = 'The window didn’t respond, so Studio can’t tell whether they were saved.'
+export const NO_ANSWER = 'The window didn’t respond, so Grip can’t tell whether they were saved.'
 
 export function editorCloser<W extends object>(io: Io<W>, timeout = 5000) {
   let closable = new WeakSet<W>() // saved or discarded: its next close goes through

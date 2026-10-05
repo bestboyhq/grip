@@ -20,6 +20,8 @@ export interface Settings {
   prompter: { speed: number; size: number }
   /** Last recording area: display id and rect in points relative to that display. */
   area: { display: number; rect: Rect; aspect: string } | null
+  /** Past the welcome page: granting a permission can relaunch Grip, and onboarding resumes at permissions. */
+  welcomed: boolean
   onboarded: boolean
   /** Remembered window bounds, keyed `<kind>@<display id>`. */
   windows: Record<string, Rect>
@@ -37,6 +39,7 @@ const defaults: Settings = {
   notes: '',
   prompter: { speed: 20, size: 24 }, // about 150 words a minute
   area: null,
+  welcomed: false,
   onboarded: false,
   windows: {},
 }

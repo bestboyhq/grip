@@ -7,23 +7,23 @@
   import { invoke } from '../../lib/ipc.ts'
   import Icon, { type IconName } from '../recorder/Icon.svelte'
   import { ensurePermission, setSettings, shell, type Permission, type PermissionStatus, type Settings } from '../recorder/shell.svelte.ts'
-  import appIcon from '../../../build/icon.svg'
+  import appIcon from '../../../build/icon.png'
 
   let { params }: { params: URLSearchParams } = $props()
 
   const ROWS: Array<{ id: Permission; title: string; reason: string; icon: IconName; required?: boolean }> = [
     { id: 'screen', title: 'Screen Recording', reason: 'Records your screen and the sound your Mac plays.', icon: 'screen', required: true },
     { id: 'accessibility', title: 'Accessibility', reason: 'Shows your keystrokes, and fits the window you record to size.', icon: 'accessibility' },
-    { id: 'inputMonitoring', title: 'Input Monitoring', reason: 'Lets Studio read the keys you press while you record.', icon: 'keyboard' },
+    { id: 'inputMonitoring', title: 'Input Monitoring', reason: 'Lets Grip read the keys you press while you record.', icon: 'keyboard' },
     { id: 'microphone', title: 'Microphone', reason: 'Records your voice.', icon: 'mic' },
     { id: 'camera', title: 'Camera', reason: 'Records you in a bubble next to your screen.', icon: 'camera' },
   ]
   const NEED: Record<Permission, string> = {
-    screen: 'Screen recording is turned off for Studio, so it can’t record. Turn it back on below.',
-    accessibility: 'Accessibility is turned off for Studio, so your keystrokes won’t show. Turn it back on below.',
-    inputMonitoring: 'Input Monitoring is turned off for Studio, so your keystrokes won’t show. Turn it back on below.',
-    microphone: 'The microphone is turned off for Studio. Turn it back on below.',
-    camera: 'The camera is turned off for Studio. Turn it back on below.',
+    screen: 'Screen recording is turned off for Grip, so it can’t record. Turn it back on below.',
+    accessibility: 'Accessibility is turned off for Grip, so your keystrokes won’t show. Turn it back on below.',
+    inputMonitoring: 'Input Monitoring is turned off for Grip, so your keystrokes won’t show. Turn it back on below.',
+    microphone: 'The microphone is turned off for Grip. Turn it back on below.',
+    camera: 'The camera is turned off for Grip. Turn it back on below.',
   }
   const TOGGLES: Array<[keyof Settings, string, string]> = [
     ['countdown', 'Countdown', '3, 2, 1 before the recording starts.'],
@@ -77,8 +77,8 @@
       <!-- Allowed, yet recording was refused: macOS applies a new grant only after a relaunch, and
            can keep a stale one after an update. -->
       <div class="banner" role="alert">
-        Screen Recording is on for Studio, but macOS refused to record. <button class="link" onclick={() => invoke('shell:relaunch')}>Restart Studio</button>
-        to apply it. Still refused? Turn Studio off and on again in
+        Screen Recording is on for Grip, but macOS refused to record. <button class="link" onclick={() => invoke('shell:relaunch')}>Restart Grip</button>
+        to apply it. Still refused? Turn Grip off and on again in
         <button class="link" onclick={() => invoke('recording:openPermissionSettings', 'screen')}>System Settings</button>.
       </div>
     {/if}
@@ -97,7 +97,7 @@
           {#if row.id === 'screen' && (screenNew || (s !== 'granted' && asked.includes('screen')))}
             <div class="reason">
               {screenNew ? 'macOS applies it after a restart.' : 'Turned it on? macOS applies it after a restart.'}
-              <button class="link" onclick={() => invoke('shell:relaunch')}>Restart Studio</button>
+              <button class="link" onclick={() => invoke('shell:relaunch')}>Restart Grip</button>
             </div>
           {/if}
         </div>
@@ -119,14 +119,14 @@
   {#if page === 'welcome'}
     <section class="welcome">
       <img src={appIcon} alt="" width="128" height="128" />
-      <h1>Welcome to Studio</h1>
+      <h1>Welcome to Grip</h1>
       <p>Record your screen and get a polished video, with zooms, a smooth cursor, and captions done for you.</p>
-      <button class="button primary" onclick={() => (page = 'permissions')}>Get Started</button>
+      <button class="button primary" onclick={() => ((page = 'permissions'), setSettings({ welcomed: true }))}>Get Started</button>
     </section>
   {:else if page === 'permissions'}
     <section class="body">
       <h2>Allow access</h2>
-      <p class="lead">Studio needs to see your screen to record it. The rest is up to you.</p>
+      <p class="lead">Grip needs to see your screen to record it. The rest is up to you.</p>
       {@render needBanner()}
       {@render permissionList()}
     </section>
@@ -253,7 +253,7 @@
     text-underline-offset: 2px;
   }
   .rows {
-    margin: 0;
+    margin: 0 -16px; /* bleeds by the row padding: icons and text line up with the heading */
     padding: 0;
     list-style: none;
     border-radius: 12px;
@@ -300,8 +300,8 @@
   .tag {
     padding: 1px 6px;
     border-radius: 5px;
-    background: rgb(124 108 255 / 0.2);
-    color: #b9b0ff;
+    background: var(--accent-soft);
+    color: var(--accent-text);
     font-size: 10.5px;
     font-weight: 600;
   }
@@ -335,10 +335,10 @@
     height: 32px;
     padding: 0 20px;
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-ink);
   }
   .button.primary:hover:not(:disabled) {
-    background: #8b7dff;
+    background: var(--accent-hover);
   }
   .button:disabled {
     opacity: 0.4;
@@ -353,11 +353,10 @@
     border: 0;
     padding: 0;
     background: none;
-    color: #a99fff;
+    color: var(--accent-text);
     font-size: 12px;
-  }
-  .link:hover {
-    text-decoration: underline;
+    text-decoration: underline; /* same color as the text around it: the underline marks it */
+    text-underline-offset: 2px;
   }
   footer {
     display: flex;
@@ -397,6 +396,7 @@
   }
   input[role='switch']:checked::after {
     transform: translateX(13px);
+    background: var(--accent-ink);
   }
   kbd {
     padding: 3px 8px;

@@ -13,7 +13,7 @@
   const clean = (e: unknown) => String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
   /** For the Share button: export the open project as MP4 with the user's export settings into
-   *  Studio's temp folder, and resolve to the file once it is complete. The file stays on disk while
+   *  Grip's temp folder, and resolve to the file once it is complete. The file stays on disk while
    *  a share upload reads it, across restarts. `progress` hears 0..1 while it exports; aborting
    *  `signal` cancels the export. */
   export async function exportVideo(progress?: (p: number) => void, signal?: AbortSignal): Promise<string> {
@@ -356,11 +356,11 @@
   }
   .primary {
     margin-left: auto;
-    background: var(--accent-strong);
-    color: #fff;
+    background: var(--accent);
+    color: var(--accent-ink);
   }
   .primary:hover:not(:disabled) {
-    filter: brightness(1.08);
+    background: var(--accent-hover);
   }
   footer button:disabled {
     opacity: 0.4;

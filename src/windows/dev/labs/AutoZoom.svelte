@@ -33,7 +33,7 @@
   async function load() {
     const bundle = params.get('project') ?? ''
     t = Number(params.get('t') ?? 0)
-    if (!bundle) throw new Error('Pass &project=<encoded path of a .studio bundle>')
+    if (!bundle) throw new Error('Pass &project=<encoded path of a .grip bundle>')
     const get = async (rel: string) => {
       const r = await fetch(fileUrl(`${bundle}/${rel}`))
       if (!r.ok) throw new Error(`Cannot read ${rel} (${r.status})`)
@@ -104,7 +104,7 @@
       c.beginPath()
       c.arc(r.x + (e.x * r.w) / sw.width, r.y + (e.y * r.h) / sw.height, 14 * s.unit, 0, Math.PI * 2)
       c.lineWidth = 3 * s.unit
-      c.strokeStyle = `rgba(108,92,231,${1 - Math.abs(e.t - s.src) * 2})`
+      c.strokeStyle = `rgb(255 255 255 / ${1 - Math.abs(e.t - s.src) * 2})`
       c.stroke()
     }
     if (s.loupe) {
@@ -165,7 +165,7 @@
     const h = (canvas.height = canvas.clientHeight * devicePixelRatio)
     const c = canvas.getContext('2d')!
     const x = (t: number) => (t / p.map.duration) * w
-    c.fillStyle = 'rgba(108,92,231,0.35)'
+    c.fillStyle = 'rgb(255 255 255 / 0.35)'
     for (const z of p.input.project.zooms) for (const [a, b] of mapRange(p.map, z.start, z.end)) c.fillRect(x(a), h * 0.7, x(b) - x(a), h * 0.25)
     const scales = Array.from({ length: Math.ceil(w) + 1 }, (_, i) => Math.log(sceneAt(p, (i / w) * p.map.duration).view.scale))
     const lo = Math.min(...scales)

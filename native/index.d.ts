@@ -149,7 +149,7 @@ export interface Rotation {
 export declare function startMicMonitor(micId: string | undefined | null, onLevel: ((arg: MicLevel) => void)): Promise<void>
 
 export interface StartOptions {
-  /** The `.studio` bundle; files go to `<bundleDir>/sources/`. */
+  /** The `.grip` bundle; files go to `<bundleDir>/sources/`. */
   bundleDir: string
   target: Target
   cameraId?: string

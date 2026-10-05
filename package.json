@@ -1,7 +1,8 @@
 {
-  "name": "studio",
-  "productName": "Studio",
+  "name": "grip",
+  "productName": "Grip",
   "version": "0.1.0",
+  "license": "AGPL-3.0-only",
   "private": true,
   "type": "module",
   "main": "electron/main.ts",
@@ -13,12 +14,13 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "server": "node server/server.ts",
     "test": "node --test 'src/**/*.test.ts' 'electron/**/*.test.ts' 'server/**/*.test.ts'",
-    "package": "npm run build && electron-builder --mac"
+    "package": "npm run build && electron-builder --mac --publish never && if [ -n \"$APPLE_KEYCHAIN_PROFILE\" ]; then dmg=release/Grip-$npm_package_version-arm64.dmg && xcrun notarytool submit \"$dmg\" --keychain-profile \"$APPLE_KEYCHAIN_PROFILE\" --wait && xcrun stapler staple \"$dmg\"; fi",
+    "release": "test -n \"$APPLE_KEYCHAIN_PROFILE\" || { echo 'A release must be notarized: set APPLE_KEYCHAIN_PROFILE.' >&2; exit 1; }; npm run package && gh release create v$npm_package_version --draft --generate-notes --target \"$(git rev-parse HEAD)\" release/Grip-$npm_package_version-arm64* release/latest-mac.yml"
   },
   "build": {
-    "appId": "com.szymeo.studio",
-    "productName": "Studio",
-    "copyright": "Copyright © 2026 Studio",
+    "appId": "com.bestboyhq.grip",
+    "productName": "Grip",
+    "copyright": "Copyright © 2026 Grip",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -40,9 +42,9 @@
     ],
     "protocols": [
       {
-        "name": "Studio",
+        "name": "Grip",
         "schemes": [
-          "studio"
+          "grip"
         ]
       }
     ],
@@ -69,22 +71,23 @@
         }
       ],
       "category": "public.app-category.video",
-      "icon": "build/icon.png",
-      "identity": null,
+      "icon": "build/Grip.icon",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
       "minimumSystemVersion": "15.0",
       "extendInfo": {
-        "NSCameraUsageDescription": "Studio records your camera next to your screen when you pick a camera.",
-        "NSMicrophoneUsageDescription": "Studio records your voice when you pick a microphone.",
-        "NSAudioCaptureUsageDescription": "Studio records the sound your Mac plays when system audio is on.",
-        "NSBluetoothAlwaysUsageDescription": "Studio uses Bluetooth only for devices you connect, like headphones or a microphone.",
-        "NSBluetoothPeripheralUsageDescription": "Studio uses Bluetooth only for devices you connect, like headphones or a microphone.",
+        "NSCameraUsageDescription": "Grip records your camera next to your screen when you pick a camera.",
+        "NSMicrophoneUsageDescription": "Grip records your voice when you pick a microphone.",
+        "NSAudioCaptureUsageDescription": "Grip records the sound your Mac plays when system audio is on.",
+        "NSBluetoothAlwaysUsageDescription": "Grip uses Bluetooth only for devices you connect, like headphones or a microphone.",
+        "NSBluetoothPeripheralUsageDescription": "Grip uses Bluetooth only for devices you connect, like headphones or a microphone.",
         "CFBundleDocumentTypes": [
           {
-            "CFBundleTypeName": "Studio Project",
+            "CFBundleTypeName": "Grip Project",
             "CFBundleTypeRole": "Editor",
             "LSHandlerRank": "Owner",
             "LSItemContentTypes": [
-              "com.szymeo.studio.project"
+              "com.bestboyhq.grip.project"
             ],
             "LSTypeIsPackage": true,
             "CFBundleTypeIconFile": "icon.icns"
@@ -92,15 +95,15 @@
         ],
         "UTExportedTypeDeclarations": [
           {
-            "UTTypeIdentifier": "com.szymeo.studio.project",
-            "UTTypeDescription": "Studio Project",
+            "UTTypeIdentifier": "com.bestboyhq.grip.project",
+            "UTTypeDescription": "Grip Project",
             "UTTypeConformsTo": [
               "com.apple.package",
               "public.composite-content"
             ],
             "UTTypeTagSpecification": {
               "public.filename-extension": [
-                "studio"
+                "grip"
               ]
             }
           }
@@ -108,9 +111,21 @@
       }
     },
     "dmg": {
-      "title": "Studio"
+      "title": "Grip",
+      "sign": true
     },
-    "publish": null
+    "publish": {
+      "provider": "github",
+      "owner": "bestboyhq",
+      "repo": "grip"
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    }
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.10.6",

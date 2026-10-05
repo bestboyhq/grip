@@ -1,5 +1,5 @@
 <!-- Export lab: the export dialog over an editor-like backdrop, for a project given as
-     #/dev?lab=Export&project=<absolute .studio path>. -->
+     #/dev?lab=Export&project=<absolute .grip path>. -->
 <script lang="ts">
   import { doc } from '../../../lib/doc.svelte.ts'
   import { invoke } from '../../../lib/ipc.ts'

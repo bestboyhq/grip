@@ -28,7 +28,7 @@ const json = async (path: string) => JSON.parse(await readFile(path, 'utf8'))
 test('new bundles get unique names, even when created concurrently', async () => {
   const dir = join(root, 'unique')
   const names = []
-  for (let i = 0; i < 3; i++) names.push(basename(await createBundle('Recording', dir), '.studio'))
+  for (let i = 0; i < 3; i++) names.push(basename(await createBundle('Recording', dir), '.grip'))
   assert.deepEqual(names, ['Recording', 'Recording 2', 'Recording 3'])
   const many = await Promise.all(Array.from({ length: 12 }, () => createBundle('Same', dir)))
   assert.equal(new Set(many).size, 12)
@@ -39,7 +39,7 @@ test('hostile names round-trip; separators and hidden-file dots are sanitized', 
   const dir = join(root, 'hostile')
   const name = 'Demo #1 ✨ café & 50% "quotes" 👩‍👩‍👧'
   const bundle = await createBundle(name, dir)
-  assert.equal(basename(bundle), `${name}.studio`)
+  assert.equal(basename(bundle), `${name}.grip`)
   await writeProject(bundle, createProject(name, sources))
   assert.equal((await readProject(bundle)).name, name)
   assert.equal(sanitizeName('Q4/plan: v2'), 'Q4-plan- v2')
@@ -50,7 +50,7 @@ test('hostile names round-trip; separators and hidden-file dots are sanitized', 
   assert.equal(sanitizeName('café'), 'café') // NFD in, NFC out
   const long = sanitizeName('👩‍👩‍👧'.repeat(100))
   assert.ok(Buffer.byteLength(long) <= 200 && /^(👩‍👩‍👧)+$/u.test(long), 'truncated on a grapheme boundary')
-  assert.equal(basename(await createBundle(long, dir)), `${long}.studio`)
+  assert.equal(basename(await createBundle(long, dir)), `${long}.grip`)
 })
 
 test('save keeps the previous version; a damaged project.json opens from the backup', async () => {
@@ -84,7 +84,7 @@ test('a project from a newer app is refused, never replaced by its older backup'
   await writeProject(bundle, createProject('Newer', sources))
   await writeFile(join(bundle, 'project.json'), JSON.stringify({ ...createProject('Name inside the file', sources), version: PROJECT_VERSION + 1 }))
   await writeFile(join(bundle, 'project.json.bak'), JSON.stringify(createProject('Newer', sources)))
-  await assert.rejects(readProject(bundle), /“Newer” was saved by a newer version of Studio\. Update Studio to open it\./)
+  await assert.rejects(readProject(bundle), /“Newer” was saved by a newer version of Grip\. Update Grip to open it\./)
 })
 
 test('open clamps the playhead and drops assets that are gone', async () => {
@@ -109,22 +109,22 @@ test('rename handles collisions, case-only changes, and later saves to the old p
   await createBundle('Beta ✨', dir)
   await writeProject(a, createProject('Alpha', sources))
   const b = await renameBundle(a, 'Beta ✨')
-  assert.equal(basename(b), 'Beta ✨ 2.studio')
+  assert.equal(basename(b), 'Beta ✨ 2.grip')
   assert.equal((await readProject(b)).name, 'Beta ✨ 2')
   await writeProject(a, { ...createProject('x', sources), playhead: 1 }) // stale path follows the move
   assert.equal((await readProject(b)).playhead, 1)
   // Media read by a stale path (an export started before the rename) follows it too.
   assert.equal(followFile(join(a, 'sources/screen.mp4')), join(b, 'sources/screen.mp4'))
-  assert.equal(followFile('/elsewhere/x.studio/sources/screen.mp4'), '/elsewhere/x.studio/sources/screen.mp4')
+  assert.equal(followFile('/elsewhere/x.grip/sources/screen.mp4'), '/elsewhere/x.grip/sources/screen.mp4')
   const c = await renameBundle(b, 'beta ✨ 2')
-  assert.equal(basename(c), 'beta ✨ 2.studio')
-  assert.ok((await readdir(dir)).includes('beta ✨ 2.studio'))
+  assert.equal(basename(c), 'beta ✨ 2.grip')
+  assert.ok((await readdir(dir)).includes('beta ✨ 2.grip'))
   assert.equal(await renameBundle(c, 'beta ✨ 2'), c)
   const again = await createBundle('Alpha', dir) // the old name is free again and must not follow the move
   assert.equal(again, a)
   await writeProject(again, { ...createProject('Alpha', sources), playhead: 2 })
   assert.equal((await readProject(c)).playhead, 1)
-  assert.deepEqual((await readdir(dir)).sort(), ['Alpha.studio', 'Beta ✨.studio', 'beta ✨ 2.studio'])
+  assert.deepEqual((await readdir(dir)).sort(), ['Alpha.grip', 'Beta ✨.grip', 'beta ✨ 2.grip'])
 })
 
 test('an interrupted recording is rebuilt from the files on disk', async () => {
@@ -186,10 +186,10 @@ test('open rebuilds a damaged project from its recording, keeping the damaged fi
   assert.ok((await openBundle(bundle)).project, 'invalid edits and a damaged backup: rebuilt too')
 
   await writeFile(join(bundle, 'project.json'), JSON.stringify({ ...createProject('x', sources), version: PROJECT_VERSION + 1 }))
-  await assert.rejects(openBundle(bundle), /newer version of Studio/) // never rebuilt over
+  await assert.rejects(openBundle(bundle), /newer version of Grip/) // never rebuilt over
   await rm(join(bundle, 'project.json'))
   await writeFile(join(bundle, 'project.json.bak'), JSON.stringify({ ...createProject('x', sources), version: PROJECT_VERSION + 1 }))
-  await assert.rejects(openBundle(bundle), /newer version of Studio/)
+  await assert.rejects(openBundle(bundle), /newer version of Grip/)
 })
 
 test('a finished recording opens already directed: auto zooms from its clicks', async () => {
@@ -208,7 +208,7 @@ test('import clones an .mp4/.mov into a new bundle', async () => {
   const dir = join(root, 'import')
   const file = join(media, 'Clip #2 ✨ é.mov')
   const bundle = await importVideo(file, dir)
-  assert.equal(basename(bundle), 'Clip #2 ✨ é.studio')
+  assert.equal(basename(bundle), 'Clip #2 ✨ é.grip')
   const p = await readProject(bundle)
   assert.equal(p.sources.imported, true)
   assert.deepEqual(p.sources.screen, { file: 'sources/screen.mov', width: 320, height: 200, fps: 30, scale: 1 })
@@ -216,14 +216,14 @@ test('import clones an .mp4/.mov into a new bundle', async () => {
   assert.equal(p.sources.events, undefined)
   assert.ok(Math.abs(p.sources.duration - 2) < 0.1)
   assert.ok((await readFile(join(bundle, 'sources/screen.mov'))).equals(await readFile(file)))
-  assert.equal(basename(await importVideo(file, dir)), 'Clip #2 ✨ é 2.studio')
+  assert.equal(basename(await importVideo(file, dir)), 'Clip #2 ✨ é 2.grip')
   await assert.rejects(importVideo(join(media, 'mic.m4a'), dir), /imports \.mp4 and \.mov/)
   await assert.rejects(importVideo(join(media, 'missing.mp4'), dir), /was not found/)
   await writeFile(join(media, 'junk.mp4'), 'not a video')
   await assert.rejects(importVideo(join(media, 'junk.mp4'), dir), /can't read “junk\.mp4”/)
   await writeFile(join(media, 'cut.mp4'), (await readFile(join(media, 'screen.mp4'))).subarray(0, 300)) // header only
   await assert.rejects(importVideo(join(media, 'cut.mp4'), dir), /can't read “cut\.mp4”. It may be damaged/)
-  assert.deepEqual((await readdir(dir)).sort(), ['Clip #2 ✨ é 2.studio', 'Clip #2 ✨ é.studio']) // failures leave nothing behind
+  assert.deepEqual((await readdir(dir)).sort(), ['Clip #2 ✨ é 2.grip', 'Clip #2 ✨ é.grip']) // failures leave nothing behind
 })
 
 test('import converts what the editor cannot decode; a rotated video keeps its upright size', async () => {
@@ -234,17 +234,17 @@ test('import converts what the editor cannot decode; a rotated video keeps its u
 
   const prores = await readProject(await importVideo(join(media, 'prores.mov'), dir))
   assert.deepEqual(prores.sources.screen, { file: 'sources/screen.mov', width: 320, height: 200, fps: 30, scale: 1 })
-  assert.deepEqual(codecs(join(dir, 'prores.studio', 'sources/screen.mov')), ['hevc'])
+  assert.deepEqual(codecs(join(dir, 'prores.grip', 'sources/screen.mov')), ['hevc'])
 
   const alac = await readProject(await importVideo(join(media, 'alac.mov'), dir))
   assert.equal(alac.sources.mic?.file, 'sources/screen.mov')
-  assert.deepEqual(codecs(join(dir, 'alac.studio', 'sources/screen.mov')), ['aac', 'hevc'])
+  assert.deepEqual(codecs(join(dir, 'alac.grip', 'sources/screen.mov')), ['aac', 'hevc'])
 
   // Decodable: cloned as is; the editor turns its frames upright (src/engine/media).
   const portrait = await readProject(await importVideo(join(media, 'portrait.mov'), dir))
   assert.deepEqual([portrait.sources.screen?.width, portrait.sources.screen?.height], [200, 320])
-  assert.ok((await readFile(join(dir, 'portrait.studio', 'sources/screen.mov'))).equals(await readFile(join(media, 'portrait.mov'))))
-  assert.deepEqual((await readdir(join(dir, 'prores.studio', 'sources'))), ['screen.mov']) // no temporary file left
+  assert.ok((await readFile(join(dir, 'portrait.grip', 'sources/screen.mov'))).equals(await readFile(join(media, 'portrait.mov'))))
+  assert.deepEqual((await readdir(join(dir, 'prores.grip', 'sources'))), ['screen.mov']) // no temporary file left
 })
 
 test('thumbnail is saved and becomes the Finder icon of a package', async () => {
@@ -265,7 +265,7 @@ test('recent projects: most recent first, deduplicated, missing ones skipped', a
   await writeProject(a, createProject('A', sources))
   await writeProject(b, createProject('B ✨', { ...sources, duration: 7 }))
   await saveThumbnail(b, await readFile(join(media, 'thumb.png')))
-  for (const p of [a, b, a, join(dir, 'Gone.studio')]) await updateRecent((l) => [p, ...l.filter((x) => x !== p)], file)
+  for (const p of [a, b, a, join(dir, 'Gone.grip')]) await updateRecent((l) => [p, ...l.filter((x) => x !== p)], file)
   const list = await recentProjects(file)
   assert.deepEqual(list.map((r) => [r.name, r.duration, r.thumbnail && basename(r.thumbnail)]), [['A', 4, null], ['B ✨', 7, 'thumbnail.png']])
   assert.equal((await json(file)).length, 3) // the missing one is kept (unplugged drive), just not listed
@@ -291,7 +291,7 @@ test('presets bundle their assets, apply anywhere, and fall back to defaults for
   assert.equal(await readFile(join(to, (applied.background as { file: string }).file), 'utf8'), 'image bytes')
   assert.equal(await readFile(join(to, applied.camera.lut!), 'utf8'), 'LUT_3D_SIZE 2')
 
-  const exported = join(root, 'Warm.studiopreset')
+  const exported = join(root, 'Warm.grippreset')
   await exportPreset(saved.id, exported, dir)
   await deletePreset(saved.id, dir)
   assert.deepEqual(await listPresets(dir), [])
@@ -303,16 +303,16 @@ test('presets bundle their assets, apply anywhere, and fall back to defaults for
   assert.deepEqual(partial.style.background, createProject('', sources).style.background)
 
   // Hostile preset: traversal in asset names and style paths never escapes the bundle.
-  const hostile = join(root, 'hostile.studiopreset')
-  await writeFile(hostile, JSON.stringify({ format: 'studio-preset', version: 1, name: 'Evil', style: { background: { kind: 'image', file: 'x/../../../evil.jpg' } }, assets: {} }))
+  const hostile = join(root, 'hostile.grippreset')
+  await writeFile(hostile, JSON.stringify({ format: 'grip-preset', version: 1, name: 'Evil', style: { background: { kind: 'image', file: 'x/../../../evil.jpg' } }, assets: {} }))
   await assert.rejects(importPreset(hostile, dir), /damaged/)
-  await writeFile(hostile, JSON.stringify({ format: 'studio-preset', version: 1, name: 'Sneaky', style: { background: { kind: 'image', file: 'assets/../x.jpg' } }, assets: { 'assets/../x.jpg': 'aGk=' } }))
+  await writeFile(hostile, JSON.stringify({ format: 'grip-preset', version: 1, name: 'Sneaky', style: { background: { kind: 'image', file: 'assets/../x.jpg' } }, assets: { 'assets/../x.jpg': 'aGk=' } }))
   await assert.rejects(importPreset(hostile, dir), /damaged/)
-  await writeFile(hostile, JSON.stringify({ format: 'studio-preset', version: 1, name: 'Proto', style: { background: { kind: 'image', file: '__proto__' } }, assets: {} }))
+  await writeFile(hostile, JSON.stringify({ format: 'grip-preset', version: 1, name: 'Proto', style: { background: { kind: 'image', file: '__proto__' } }, assets: {} }))
   const proto = await importPreset(hostile, dir)
   assert.equal((await applyPreset(proto.id, to, dir)).background.kind, 'wallpaper')
-  await writeFile(hostile, JSON.stringify({ format: 'studio-preset', version: 99, name: 'Future', style: {}, assets: {} }))
-  await assert.rejects(importPreset(hostile, dir), /newer version of Studio/)
+  await writeFile(hostile, JSON.stringify({ format: 'grip-preset', version: 99, name: 'Future', style: {}, assets: {} }))
+  await assert.rejects(importPreset(hostile, dir), /newer version of Grip/)
   await assert.rejects(applyPreset('../../etc/passwd', to, dir), /Unknown preset/)
 })
 

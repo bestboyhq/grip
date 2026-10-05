@@ -1,35 +1,57 @@
-// Renders the app icon and the menu bar icons from SVG, with Electron only (no image tools):
+// Renders the app icon and the menu bar icons:
 //   npx electron build/icons.ts
-// Outputs: build/icon.png (1024 px; electron-builder makes the .icns from it) and
+// Outputs: build/icon.png (1024 px, the dev dock icon and the onboarding logo) and
 // electron/shell/assets/tray{,Recording}Template{,@2x}.png (macOS template images, black + alpha).
-import { app, BrowserWindow } from 'electron'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+// The packaged app's icon is build/Grip.icon itself; electron-builder compiles it.
+import { app, BrowserWindow, nativeImage } from 'electron'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, copyFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const here = import.meta.dirname
 const assets = join(here, '../electron/shell/assets')
 
-// Menu bar icon, 18 pt: a screen with a record dot. While recording the screen fills in and the
-// dot is cut out of it, so the state reads at a glance in a monochrome menu bar.
+// Menu bar icon, 18 pt: the app mark, two crop corners around a record dot. While recording it
+// inverts to a filled tile with the mark cut out, so the state reads at a glance in a monochrome menu bar.
+// Two crop corners (top right, bottom left) on the square lo..hi: arm length a, corner radius r.
+const mark = (lo: number, hi: number, a: number, r: number) =>
+  `M${hi - a} ${lo}H${hi - r}A${r} ${r} 0 0 1 ${hi} ${lo + r}V${lo + a}M${lo + a} ${hi}H${lo + r}A${r} ${r} 0 0 1 ${lo} ${hi - r}V${hi - a}`
 const tray = (recording: boolean) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
-  <defs><mask id="m"><rect width="18" height="18" fill="#fff"/><circle cx="9" cy="8.25" r="2.6" fill="#000"/></mask></defs>
   ${
     recording
-      ? '<rect x="1.5" y="2.5" width="15" height="11.5" rx="2.6" fill="#000" mask="url(#m)"/>'
-      : '<rect x="2.2" y="3.2" width="13.6" height="10.1" rx="2" fill="none" stroke="#000" stroke-width="1.4"/><circle cx="9" cy="8.25" r="2.3" fill="#000"/>'
+      ? `<defs><mask id="m"><rect width="18" height="18" fill="#fff"/><path d="${mark(3.6, 14.4, 4.4, 2.2)}" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round"/><circle cx="9" cy="9" r="2.2" fill="#000"/></mask></defs><rect x="0.5" y="0.5" width="17" height="17" rx="4.2" fill="#000" mask="url(#m)"/>`
+      : `<path d="${mark(1.8, 16.2, 5.8, 2.9)}" fill="none" stroke="#000" stroke-width="1.7" stroke-linecap="round"/><circle cx="9" cy="9" r="2.6" fill="#000"/>`
   }
-  <path d="M6.5 16.2h5" stroke="#000" stroke-width="1.4" stroke-linecap="round"/>
 </svg>`
 
 const jobs: Array<[svg: string, px: number, out: string]> = [
-  [readFileSync(join(here, 'icon.svg'), 'utf8'), 1024, join(here, 'icon.png')],
   [tray(false), 18, join(assets, 'trayTemplate.png')],
   [tray(false), 36, join(assets, 'trayTemplate@2x.png')],
   [tray(true), 18, join(assets, 'trayRecordingTemplate.png')],
   [tray(true), 36, join(assets, 'trayRecordingTemplate@2x.png')],
 ]
 
+// build/icon.png as macOS draws Grip.icon (Liquid Glass, Display P3): compile it with actool into a
+// stub app and take the app's Quick Look thumbnail. The stub needs a signed executable, or macOS
+// badges the icon as unopenable; a fresh name per run dodges the icon cache.
+async function appIcon() {
+  const dir = mkdtempSync(join(tmpdir(), 'grip-icon-'))
+  const contents = join(dir, `Grip${Date.now()}.app/Contents`)
+  mkdirSync(join(contents, 'Resources'), { recursive: true })
+  mkdirSync(join(contents, 'MacOS'))
+  execFileSync('xcrun', ['actool', join(here, 'Grip.icon'), '--compile', join(contents, 'Resources'), '--output-partial-info-plist', join(dir, 'partial.plist'), '--app-icon', 'Grip', '--enable-on-demand-resources', 'NO', '--development-region', 'en', '--target-device', 'mac', '--minimum-deployment-target', '26.0', '--platform', 'macosx'])
+  copyFileSync('/usr/bin/true', join(contents, 'MacOS/stub'))
+  writeFileSync(join(contents, 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.bestboyhq.grip.icon${Date.now()}</string><key>CFBundleExecutable</key><string>stub</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleIconName</key><string>Grip</string></dict></plist>`)
+  execFileSync('codesign', ['-fs', '-', join(contents, '..')])
+  const img = await nativeImage.createThumbnailFromPath(join(contents, '..'), { width: 1024, height: 1024 })
+  writeFileSync(join(here, 'icon.png'), img.toPNG())
+  rmSync(dir, { recursive: true })
+  console.log(join(here, 'icon.png'))
+}
+
 app.whenReady().then(async () => {
+  await appIcon()
   mkdirSync(assets, { recursive: true })
   // Render big and downsample: crisp edges at every size, whatever the display's scale.
   const size = 512

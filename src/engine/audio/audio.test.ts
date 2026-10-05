@@ -293,10 +293,10 @@ test('planOf maps clicks through cuts and leaves muted tracks out', () => {
   p.clips = [clip(0, 2), clip(4, 10)]
   p.style.cursor.clickSound = true
   p.audio.system.muted = true
-  const plan = planOf(p, [{ t: 1, type: 'down', x: 0, y: 0, button: 'left' }, { t: 3, type: 'down', x: 0, y: 0, button: 'left' }, { t: 5, type: 'down', x: 0, y: 0, button: 'left' }], '/x/A #1.studio')
+  const plan = planOf(p, [{ t: 1, type: 'down', x: 0, y: 0, button: 'left' }, { t: 3, type: 'down', x: 0, y: 0, button: 'left' }, { t: 5, type: 'down', x: 0, y: 0, button: 'left' }], '/x/A #1.grip')
   assert.deepEqual(plan.clicks, [1, 3]) // 3 s is cut; 5 s plays at 2 + 1
   assert.equal(plan.tracks.length, 1)
-  assert.equal(plan.tracks[0].url, 'media://local/' + encodeURIComponent('/x/A #1.studio/sources/mic.m4a'))
+  assert.equal(plan.tracks[0].url, 'media://local/' + encodeURIComponent('/x/A #1.grip/sources/mic.m4a'))
   assert.equal(plan.tracks[0].voice, true)
 })
 

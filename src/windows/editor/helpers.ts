@@ -66,8 +66,8 @@ export function formatTime(t: number, digits = 2, hours = false): string {
 
 const CODES: Record<string, string> = {
   ENOENT: 'It was moved, renamed, or deleted.',
-  EACCES: 'Studio does not have permission to open it.',
-  EPERM: 'Studio does not have permission to open it.',
+  EACCES: 'Grip does not have permission to open it.',
+  EPERM: 'Grip does not have permission to open it.',
   ENOSPC: 'The disk is full.',
   EROFS: 'The disk is read-only.',
 }

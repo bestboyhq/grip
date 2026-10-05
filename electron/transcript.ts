@@ -89,11 +89,11 @@ async function ensureModel(signal: AbortSignal, progress: (received: number) => 
   return dir
 }
 
-/** The bundle a renderer names must be an absolute .studio folder path; files stay inside it. */
+/** The bundle a renderer names must be an absolute .grip folder path; files stay inside it. */
 function inBundle(bundle: unknown, file: string): string {
-  if (typeof bundle !== 'string' || !isAbsolute(bundle) || !bundle.endsWith('.studio')) throw new Error('Not a Studio project.')
+  if (typeof bundle !== 'string' || !isAbsolute(bundle) || !bundle.endsWith('.grip')) throw new Error('Not a Grip project.')
   const path = resolve(bundle, file)
-  if (!path.startsWith(resolve(bundle) + sep)) throw new Error('Not a Studio project file.')
+  if (!path.startsWith(resolve(bundle) + sep)) throw new Error('Not a Grip project file.')
   return path
 }
 
@@ -188,7 +188,7 @@ export function registerTranscript() {
   ipcMain.handle('transcript:export', async (e, bundle: string, format: 'srt' | 'vtt', text: string) => {
     inBundle(bundle, 'project.json')
     if ((format !== 'srt' && format !== 'vtt') || typeof text !== 'string') throw new Error('Unknown subtitle format.')
-    const name = basename(bundle, '.studio').replace(/[/:]/g, '-')
+    const name = basename(bundle, '.grip').replace(/[/:]/g, '-')
     const options = {
       defaultPath: join(dirname(bundle), `${name}.${format}`),
       filters: [{ name: format === 'srt' ? 'SubRip subtitles' : 'WebVTT subtitles', extensions: [format] }],

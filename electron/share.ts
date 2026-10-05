@@ -3,7 +3,7 @@
 // the item: long before the bytes are up, the link page shows the upload's progress.
 //
 //   share:upload(path, {title?, private?, project?}) -> link, or null when canceled before the link existed.
-//                                         path: an exported video, or a .studio bundle (sent as an archive).
+//                                         path: an exported video, or a .grip bundle (sent as an archive).
 //                                         project: the bundle a video share belongs to (the Share button finds it).
 //   share:jobs() -> Job[]                 share:progress (event to every window) -> Job, on every change
 //   share:status(jobId) -> Job            refresh views, comments, and privacy from the server
@@ -11,7 +11,7 @@
 //   share:cancel(jobId)                   stop the upload and delete the link
 //   share:copy(text)                      share:open(jobId): the link in the browser, as the owner (own views not counted)
 //   share:config(patch?) -> {url}         the share server, http://localhost:7433 unless STUDIO_SHARE_URL says otherwise
-//   share:import(url) -> bundle path      open a shared project link in the editor; studio://open?url=<link> does the same
+//   share:import(url) -> bundle path      open a shared project link in the editor; grip://open?url=<link> does the same
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { execFile } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
@@ -31,7 +31,7 @@ const exec = promisify(execFile)
 export interface Job extends Upload {
   id: string
   server: string // the share server this job talks to
-  path: string // what the user shared: a video file or a .studio bundle
+  path: string // what the user shared: a video file or a .grip bundle
   project?: string // the bundle this share belongs to
   state: 'preparing' | 'uploading' | 'waiting' | 'processing' | 'done' | 'failed' | 'canceled'
   sent: number // bytes up
@@ -75,7 +75,7 @@ function find(id: string): Job {
   return job
 }
 
-/** Upload a video or .studio bundle in the background; resolves to the link (also used by export). */
+/** Upload a video or .grip bundle in the background; resolves to the link (also used by export). */
 export async function shareFile(path: string, o: { title?: string; private?: boolean; project?: string } = {}): Promise<string | null> {
   const s = await stat(path).catch(() => null)
   if (!s) throw new Error('The file to share is gone.')
@@ -185,10 +185,10 @@ async function poster(path: string): Promise<Buffer | null> {
   }
 }
 
-/** Download a shared project (its link page, its archive URL, or studio://open?url=<either>) into the projects
+/** Download a shared project (its link page, its archive URL, or grip://open?url=<either>) into the projects
  *  folder under a free name, and open it in the editor. */
 export async function importProject(link: string, ask: boolean): Promise<string | null> {
-  const raw = link.startsWith('studio:') ? (new URL(link).searchParams.get('url') ?? '') : link
+  const raw = link.startsWith('grip:') ? (new URL(link).searchParams.get('url') ?? '') : link
   const u = URL.canParse(raw) ? new URL(raw) : null
   if (!u || !/^https?:$/.test(u.protocol)) throw new Error('That is not a project link.')
   if (/^\/v\/[\w-]{22}$/.test(u.pathname)) u.pathname += '/project.tar'
@@ -196,7 +196,7 @@ export async function importProject(link: string, ask: boolean): Promise<string 
     const { response } = await dialog.showMessageBox({
       type: 'question',
       message: 'Open the shared project?',
-      detail: `Studio downloads it from ${u.host} into your projects folder.`,
+      detail: `Grip downloads it from ${u.host} into your projects folder.`,
       buttons: ['Open', 'Cancel'],
       defaultId: 0,
       cancelId: 1,
@@ -214,20 +214,20 @@ export async function importProject(link: string, ask: boolean): Promise<string 
     }
     const tar = join(tmp, 'project.tar')
     await pipeline(Readable.fromWeb(r.body as any), createWriteStream(tar))
-    // Accept one .studio bundle of plain files and folders: no links, nothing outside it.
+    // Accept one .grip bundle of plain files and folders: no links, nothing outside it.
     const list = async (flag: string) => (await exec('tar', [flag, tar], { maxBuffer: 256 * 2 ** 20 })).stdout.split('\n').filter(Boolean)
     const names = await list('-tf').catch(() => [])
     const kinds = (await list('-tvf').catch(() => [])).map((l) => l[0])
     const top = names[0]?.split('/')[0] ?? ''
-    const ok = top.endsWith('.studio') && names.every((n) => n.split('/')[0] === top && !n.split('/').includes('..')) && kinds.every((k) => k === '-' || k === 'd')
-    if (!ok) throw new Error('That link is not a Studio project.')
+    const ok = top.endsWith('.grip') && names.every((n) => n.split('/')[0] === top && !n.split('/').includes('..')) && kinds.every((k) => k === '-' || k === 'd')
+    if (!ok) throw new Error('That link is not a Grip project.')
     await exec('tar', ['-xf', tar, '-C', tmp])
     await readFile(join(tmp, top, 'project.json'), 'utf8').then(JSON.parse).catch(() => {
       throw new Error('That project is damaged: its project.json is missing or unreadable.')
     })
-    const name = top.slice(0, -'.studio'.length).normalize('NFC') // tar may hand back decomposed accents
+    const name = top.slice(0, -'.grip'.length).normalize('NFC') // tar may hand back decomposed accents
     for (let i = 1; ; i++) {
-      const dest = join(root, `${name}${i > 1 ? ` ${i}` : ''}.studio`)
+      const dest = join(root, `${name}${i > 1 ? ` ${i}` : ''}.grip`)
       try {
         await rename(join(tmp, top), dest) // fails on a taken name (an empty folder is the only thing it replaces)
       } catch (e) {
@@ -242,7 +242,7 @@ export async function importProject(link: string, ask: boolean): Promise<string 
   }
 }
 
-/** studio://open?url=<project link>, routed here by the app shell (electron/main.ts) once the app is ready. */
+/** grip://open?url=<project link>, routed here by the app shell (electron/main.ts) once the app is ready. */
 export function openSharedLink(url: string) {
   importProject(url, true).catch((e) => dialog.showErrorBox('Could not open the shared project', plain(e)))
 }

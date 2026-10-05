@@ -667,7 +667,6 @@
   button {
     border: 0;
     background: none;
-    cursor: default;
   }
   .icon {
     display: grid;

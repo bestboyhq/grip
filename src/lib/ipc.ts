@@ -30,7 +30,7 @@ export function listen(channel: string, cb: (...args: any[]) => void) {
   live.set(channel, on(channel, cb))
 }
 
-/** A window's drop handler: .studio bundles open, .mp4/.mov videos import as new projects. Rejects
+/** A window's drop handler: .grip bundles open, .mp4/.mov videos import as new projects. Rejects
  *  with a plain-language reason. */
 export function dropFiles(e: DragEvent): Promise<void> {
   e.preventDefault()

@@ -1,9 +1,9 @@
-// `studio://` automation URLs (Raycast, Shortcuts, scripts):
-//   studio://record[?mode=display|window|area|device]   open the recording picker
-//   studio://stop                                         finish the recording in progress
-//   studio://open?path=<absolute path to a .studio bundle>
-//   studio://open?url=<shared project link>               download it and open it (electron/share.ts)
-// Launch arguments: `[--open] <bundle.studio | video.mp4>`, `studio://` URLs, `--lab <Name>` (dev).
+// `grip://` automation URLs (Raycast, Shortcuts, scripts):
+//   grip://record[?mode=display|window|area|device]   open the recording picker
+//   grip://stop                                         finish the recording in progress
+//   grip://open?path=<absolute path to a .grip bundle>
+//   grip://open?url=<shared project link>               download it and open it (electron/share.ts)
+// Launch arguments: `[--open] <bundle.grip | video.mp4>`, `grip://` URLs, `--lab <Name>` (dev).
 // Pure: no electron imports, so node:test can run it.
 import { closeSync, constants, mkdirSync, openSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -13,11 +13,11 @@ export type UrlAction = { kind: 'record'; mode?: Mode } | { kind: 'stop' } | { k
 
 const MODES = ['display', 'window', 'area', 'device']
 
-export function parseStudioUrl(url: string): UrlAction | null {
-  const m = /^studio:\/*([a-z]+)\/?(?:\?(.*))?$/is.exec(url.trim())
+export function parseGripUrl(url: string): UrlAction | null {
+  const m = /^grip:\/*([a-z]+)\/?(?:\?(.*))?$/is.exec(url.trim())
   if (!m) return null
   // Read the query by hand: URLSearchParams turns a raw "+" into a space, and a raw "#" would end
-  // the query in `new URL`. Both are legal in file names ("C++ #1.studio").
+  // the query in `new URL`. Both are legal in file names ("C++ #1.grip").
   const query = new Map<string, string>()
   for (const pair of (m[2] ?? '').split('&')) {
     const i = pair.indexOf('=')
@@ -33,7 +33,7 @@ export function parseStudioUrl(url: string): UrlAction | null {
     const url = query.get('url')
     if (url) return /^https?:\/\//i.test(url) ? { kind: 'import', url } : null
     const path = query.get('path')?.replace(/\/+$/, '')
-    return path && path.startsWith('/') && path.endsWith('.studio') ? { kind: 'open', path } : null
+    return path && path.startsWith('/') && path.endsWith('.grip') ? { kind: 'open', path } : null
   }
   return null
 }
@@ -45,8 +45,8 @@ export function parseLaunch(argv: string[], cwd: string): { lab?: string; urls: 
   const args = argv.slice(1)
   const lab = args.indexOf('--lab')
   if (lab >= 0) return { lab: args.slice(lab + 1).find((a) => /^[a-z]/i.test(a)) ?? '', urls: [], files: [] }
-  const urls = args.filter((a) => /^studio:/i.test(a))
-  const files = args.filter((a) => !urls.includes(a) && !a.startsWith('-') && /\.(studio\/?|mp4|mov)$/i.test(a))
+  const urls = args.filter((a) => /^grip:/i.test(a))
+  const files = args.filter((a) => !urls.includes(a) && !a.startsWith('-') && /\.(grip\/?|mp4|mov)$/i.test(a))
   return { urls, files: files.map((a) => resolve(cwd, a)) }
 }
 

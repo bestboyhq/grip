@@ -139,5 +139,5 @@
     flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding: 0 6px 8px 16px; --label-w: 88px;
     mask-image: linear-gradient(transparent, #000 10px);
   }
-  .content.bare { display: flex; flex-direction: column; overflow: hidden; padding: 0; mask-image: none; }
+  .content.bare { display: flex; flex-direction: column; overflow: hidden; padding: 0 16px; mask-image: none; }
 </style>

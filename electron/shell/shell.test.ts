@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { inTurn, parseLaunch, parseStudioUrl } from './url.ts'
+import { inTurn, parseLaunch, parseGripUrl } from './url.ts'
 import { plainError } from './errors.ts'
 import { areaOf, arrangement, fit, place, reachable } from './bounds.ts'
 import { hold, release } from './session.ts'
@@ -10,37 +10,37 @@ import { tmpdir } from 'node:os'
 import { dirname, join, matchesGlob } from 'node:path'
 import { promisify } from 'node:util'
 
-test('studio:// urls', () => {
-  assert.deepEqual(parseStudioUrl('studio://record'), { kind: 'record' })
-  assert.deepEqual(parseStudioUrl('studio://record/?mode=area'), { kind: 'record', mode: 'area' })
-  assert.deepEqual(parseStudioUrl('studio://record?mode=evil'), { kind: 'record' })
-  assert.deepEqual(parseStudioUrl('STUDIO://Stop'), { kind: 'stop' })
+test('grip:// urls', () => {
+  assert.deepEqual(parseGripUrl('grip://record'), { kind: 'record' })
+  assert.deepEqual(parseGripUrl('grip://record/?mode=area'), { kind: 'record', mode: 'area' })
+  assert.deepEqual(parseGripUrl('grip://record?mode=evil'), { kind: 'record' })
+  assert.deepEqual(parseGripUrl('GRIP://Stop'), { kind: 'stop' })
   // Hostile names round-trip, encoded or raw.
-  const path = '/Users/me/Movies/Demo #1 ✨ café + C++.studio'
-  assert.deepEqual(parseStudioUrl(`studio://open?path=${encodeURIComponent(path)}`), { kind: 'open', path })
-  assert.deepEqual(parseStudioUrl(`studio://open?path=${path}`), { kind: 'open', path })
-  assert.deepEqual(parseStudioUrl(`studio://open?path=${encodeURIComponent(path)}/`), { kind: 'open', path })
-  assert.deepEqual(parseStudioUrl('studio://open?path=/a/100%.studio'), { kind: 'open', path: '/a/100%.studio' })
-  // Shared project links (the link page's "Open in Studio") import; only http(s) links do.
+  const path = '/Users/me/Movies/Demo #1 ✨ café + C++.grip'
+  assert.deepEqual(parseGripUrl(`grip://open?path=${encodeURIComponent(path)}`), { kind: 'open', path })
+  assert.deepEqual(parseGripUrl(`grip://open?path=${path}`), { kind: 'open', path })
+  assert.deepEqual(parseGripUrl(`grip://open?path=${encodeURIComponent(path)}/`), { kind: 'open', path })
+  assert.deepEqual(parseGripUrl('grip://open?path=/a/100%.grip'), { kind: 'open', path: '/a/100%.grip' })
+  // Shared project links (the link page's "Open in Grip") import; only http(s) links do.
   const link = 'https://share.example/v/abcdefghijklmnopqrstuv/project.tar?k=key'
-  assert.deepEqual(parseStudioUrl(`studio://open?url=${encodeURIComponent(link)}`), { kind: 'import', url: link })
-  assert.equal(parseStudioUrl(`studio://open?url=${encodeURIComponent('file:///etc/passwd')}`), null)
+  assert.deepEqual(parseGripUrl(`grip://open?url=${encodeURIComponent(link)}`), { kind: 'import', url: link })
+  assert.equal(parseGripUrl(`grip://open?url=${encodeURIComponent('file:///etc/passwd')}`), null)
   // Only absolute bundle paths open.
-  assert.equal(parseStudioUrl('studio://open?path=relative.studio'), null)
-  assert.equal(parseStudioUrl('studio://open?path=/etc/passwd'), null)
-  assert.equal(parseStudioUrl('studio://delete'), null)
-  assert.equal(parseStudioUrl('https://record'), null)
+  assert.equal(parseGripUrl('grip://open?path=relative.grip'), null)
+  assert.equal(parseGripUrl('grip://open?path=/etc/passwd'), null)
+  assert.equal(parseGripUrl('grip://delete'), null)
+  assert.equal(parseGripUrl('https://record'), null)
 })
 
 test('launch arguments', () => {
-  const exe = '/Applications/Studio.app/Contents/MacOS/Studio'
+  const exe = '/Applications/Grip.app/Contents/MacOS/Grip'
   // A second instance from another directory: its relative paths are its own.
-  assert.deepEqual(parseLaunch([exe, '--allow-file-access-from-files', 'Demo #1 ✨.studio', 'clip.mov', 'studio://stop'], '/Users/me/Movies'), {
-    urls: ['studio://stop'],
-    files: ['/Users/me/Movies/Demo #1 ✨.studio', '/Users/me/Movies/clip.mov'],
+  assert.deepEqual(parseLaunch([exe, '--allow-file-access-from-files', 'Demo #1 ✨.grip', 'clip.mov', 'grip://stop'], '/Users/me/Movies'), {
+    urls: ['grip://stop'],
+    files: ['/Users/me/Movies/Demo #1 ✨.grip', '/Users/me/Movies/clip.mov'],
   })
-  // A studio://open URL is a URL, not a file, though it ends in .studio.
-  assert.deepEqual(parseLaunch([exe, 'studio://open?path=/a/b.studio'], '/'), { urls: ['studio://open?path=/a/b.studio'], files: [] })
+  // A grip://open URL is a URL, not a file, though it ends in .grip.
+  assert.deepEqual(parseLaunch([exe, 'grip://open?path=/a/b.grip'], '/'), { urls: ['grip://open?path=/a/b.grip'], files: [] })
   // Dev labs: first launch keeps the order; a second instance gets switches first, then ".".
   assert.equal(parseLaunch(['electron', '.', '--lab', 'RecorderShell'], '/').lab, 'RecorderShell')
   assert.equal(parseLaunch(['electron', '--lab', '--enable-logging', '.', 'RecorderShell&ref=/x.png'], '/').lab, 'RecorderShell&ref=/x.png')
@@ -57,6 +57,9 @@ test('plain-language errors', () => {
   assert.equal(plainError(new Error('Microphone access denied')).permission, 'microphone')
   assert.match(plainError(Object.assign(new Error('x'), { code: 'EACCES' })).message, /not allowed/)
   assert.match(plainError('EROFS: read-only file system').message, /read-only/)
+  assert.match(plainError(new Error('net::ERR_INTERNET_DISCONNECTED')).message, /offline/)
+  assert.match(plainError(Object.assign(new Error('404 \n"method: GET"\nHeaders: {}'), { statusCode: 404 })).message, /Try again later/)
+  assert.match(plainError('Unable to find latest version on GitHub, please ensure a production release exists: HttpError: 404 \n"method: GET"').message, /Try again later/)
   // Unknown errors keep their text without the IPC wrapper; nothing becomes empty.
   assert.equal(plainError("Error invoking remote method 'recording:start': Error: camera busy").message, 'camera busy.')
   assert.equal(plainError(undefined).message, 'Something went wrong. Try again.')
@@ -100,16 +103,16 @@ test('the packaged app ships every file the main process imports', () => {
   assert.deepEqual([...seen].filter((f) => !has(f, false) || has(f, true)), [])
 })
 
-test('the packaged app opens .studio bundles by their type, declared once', () => {
+test('the packaged app opens .grip bundles by their type, declared once', () => {
   // electron-builder appends a document type per fileAssociation to mac.extendInfo's own list.
   const build = JSON.parse(readFileSync(join(import.meta.dirname, '../../package.json'), 'utf8')).build
-  const uti = build.mac.extendInfo.UTExportedTypeDeclarations.find((t: any) => t.UTTypeTagSpecification['public.filename-extension'].includes('studio')).UTTypeIdentifier
+  const uti = build.mac.extendInfo.UTExportedTypeDeclarations.find((t: any) => t.UTTypeTagSpecification['public.filename-extension'].includes('grip')).UTTypeIdentifier
   const fromAssociations = build.fileAssociations.map((f: any) => ({ CFBundleTypeExtensions: [f.ext].flat() }))
   const types = [...(build.mac.extendInfo.CFBundleDocumentTypes ?? []), ...fromAssociations]
-  const studio = types.filter((t) => t.LSItemContentTypes?.includes(uti) || t.CFBundleTypeExtensions?.includes('studio'))
-  assert.equal(studio.length, 1)
-  assert.deepEqual(studio[0].LSItemContentTypes, [uti])
-  assert.equal(studio[0].LSHandlerRank, 'Owner')
+  const grip = types.filter((t) => t.LSItemContentTypes?.includes(uti) || t.CFBundleTypeExtensions?.includes('grip'))
+  assert.equal(grip.length, 1)
+  assert.deepEqual(grip[0].LSItemContentTypes, [uti])
+  assert.equal(grip[0].LSHandlerRank, 'Owner')
 })
 
 test('finish or delete while the engine starts runs once it records', () => {

@@ -9,7 +9,7 @@ Read the skill for the domain you are touching before changing code there.
 
 ## Product
 
-We are building a screen recorder and editor that turns a raw recording into a polished video with little or no manual editing: auto-zoom, smooth cursor, camera, captions, one-click export and share.
+We are building Grip, a screen recorder and editor that turns a raw recording into a polished video with little or no manual editing: auto-zoom, smooth cursor, camera, captions, one-click export and share.
 The domain skills in `.agents/skills/` collect what screen recorders in this category get wrong.
 Their gotchas are bugs and limits that shipped in real products; design each one out from the first commit.
 
@@ -55,10 +55,16 @@ Every domain obeys these invariants:
 
 ## Commands
 
-- `npm run dev -- --open <bundle.studio>` runs the app.
+- `npm run dev -- --open <bundle.grip>` runs the app.
   `STUDIO_CDP_PORT=<port>` exposes its windows to `agent-browser --cdp <port>`, and `STUDIO_HIDDEN=1` keeps them off screen.
 - `npm run build:native` builds the Rust addon.
-- `npx electron scripts/fixture/make.ts [out.studio]` generates a synthetic 24 s recording with events, camera, mic speech, and system audio, by default at `.context/fixtures/Demo #1 ✨ café.studio`.
+- `npx electron scripts/fixture/make.ts [out.grip]` generates a synthetic 24 s recording with events, camera, mic speech, and system audio, by default at `.context/fixtures/Demo #1 ✨ café.grip`.
+- `APPLE_KEYCHAIN_PROFILE=<notarytool profile> npm run package` builds, signs with the Developer ID, and notarizes `release/Grip-*.dmg`.
+  Without the variable it signs and skips notarization.
+- `APPLE_KEYCHAIN_PROFILE=<notarytool profile> npm run release` packages and uploads a draft GitHub release; publishing the draft ships it as an in-app update.
+  Run `node scripts/update-e2e.ts` first: it proves a signed build still updates itself (the terminal needs Accessibility).
+- `npx electron build/icons.ts` renders `build/icon.png` from `build/Grip.icon` (needs Xcode 26+) and the menu bar icons from SVG.
+  `build/Grip.icon` (Icon Composer) is the one source of the app icon; electron-builder compiles it, legacy `.icns` included.
 - `npm test` runs node:test on pure modules, `npm run check` type-checks, `cd native && cargo test` tests the addon.
 
 ## Code: lazy senior developer

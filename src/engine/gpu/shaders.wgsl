@@ -1,4 +1,4 @@
-// Studio compositor. One module, one entry point per pass; renderer.ts drives them.
+// Grip compositor. One module, one entry point per pass; renderer.ts drives them.
 // Colors are sRGB-encoded. Blended passes output premultiplied alpha. Coordinates are output px,
 // origin top-left; "u" is unzoomed px (scene space), mapped to output by the zoom view.
 // The frame target's alpha is not coverage: it is the dither mark (1 = smooth synthetic content

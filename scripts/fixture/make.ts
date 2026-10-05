@@ -1,6 +1,6 @@
 // Synthetic recording fixture: a project bundle that looks like a real recording, for tests and
-// agents without Screen Recording permission. Run: `npx electron scripts/fixture/make.ts [out.studio]`
-// Default: .context/fixtures/Demo #1 ✨ café.studio (hostile name on purpose).
+// agents without Screen Recording permission. Run: `npx electron scripts/fixture/make.ts [out.grip]`
+// Default: .context/fixtures/Demo #1 ✨ café.grip (hostile name on purpose).
 // Produces: screen.mp4 (2880x1800@30, no cursor), camera.mp4, mic.m4a (spoken, with fillers),
 // system.m4a (click blips), events.jsonl (moves, clicks, keys, scroll), project.json.
 import { app, BrowserWindow } from 'electron'
@@ -11,7 +11,7 @@ import { createProject } from '../../src/shared/project.ts'
 import type { InputEvent } from '../../src/shared/events.ts'
 
 const W = 1440, H = 900, SCALE = 2, FPS = 30, DURATION = 24
-const out = resolve(process.argv.find((a) => a.endsWith('.studio')) ?? join(import.meta.dirname, '../../.context/fixtures/Demo #1 ✨ café.studio'))
+const out = resolve(process.argv.find((a) => a.endsWith('.grip')) ?? join(import.meta.dirname, '../../.context/fixtures/Demo #1 ✨ café.grip'))
 const src = join(out, 'sources')
 
 // Timeline (seconds). Points in CSS px of the 1440x900 page; events are written in video px (x2).
@@ -102,7 +102,7 @@ app.whenReady().then(async () => {
   audio()
   camera()
   await screen()
-  const name = out.split('/').pop()!.replace(/\.studio$/, '')
+  const name = out.split('/').pop()!.replace(/\.grip$/, '')
   const project = createProject(name, {
     duration: DURATION,
     screen: { file: 'sources/screen.mp4', width: W * SCALE, height: H * SCALE, fps: FPS, scale: SCALE },

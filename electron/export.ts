@@ -37,7 +37,7 @@ const jobs = new Map<string, Job>()
 let running: Job | undefined
 let batch = { done: 0, failed: 0, last: undefined as Job | undefined }
 let lastDir = ''
-const tmpRoot = () => join(app.getPath('temp'), 'Studio Exports')
+const tmpRoot = () => join(app.getPath('temp'), 'Grip Exports')
 const active = (j: Job) => j.state === 'queued' || j.state === 'running' || j.state === 'uploading'
 /** Exports still running or queued (the quit prompt asks before dropping them). Uploads are not
  *  counted: they carry on after a restart (electron/share.ts). */
@@ -62,7 +62,7 @@ function own(e: IpcMainInvokeEvent, id: string): Job {
 function fsMessage(err: unknown, path: string): string {
   const code = (err as NodeJS.ErrnoException)?.code
   if (code === 'ENOSPC') return 'The disk is full. Free up some space and export again.'
-  if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') return `Studio cannot write to “${dirname(path)}”. Choose another folder.`
+  if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') return `Grip cannot write to “${dirname(path)}”. Choose another folder.`
   if (code === 'ENOENT') return `The folder “${dirname(path)}” no longer exists.`
   return err instanceof Error ? err.message : String(err)
 }
@@ -116,7 +116,7 @@ async function pump() {
 }
 
 /** Unattended exports end with a notification once nothing is left to do; a single export with
- *  Studio in front does not. */
+ *  Grip in front does not. */
 function notifyIfIdle() {
   if ([...jobs.values()].some(active)) return
   const { done, failed, last } = batch
@@ -171,7 +171,7 @@ async function enqueue(parent: BrowserWindow | null, reqs: ExportRequest[]): Pro
       const project = r.project ?? (await readProject(r.bundle))
       const dest = DESTINATIONS.includes(r.dest) ? r.dest : 'file'
       const options = jobOptions(dest, r.options)
-      return { project, options, dest, bundle: r.bundle, name: project.name || basename(r.bundle, '.studio'), ext: options.format, path: r.path }
+      return { project, options, dest, bundle: r.bundle, name: project.name || basename(r.bundle, '.grip'), ext: options.format, path: r.path }
     }),
   )
   if (!(await chooseFiles(parent, items.filter((it) => it.dest === 'file' && !it.path)))) return null
@@ -188,7 +188,7 @@ async function enqueue(parent: BrowserWindow | null, reqs: ExportRequest[]): Pro
   return out
 }
 
-/** The partial file of the running export, so the next launch deletes it if Studio dies mid-export
+/** The partial file of the running export, so the next launch deletes it if Grip dies mid-export
  *  (will-quit never runs on a crash, kill, or power loss) instead of leaving a hidden file beside the
  *  user's videos. One line: exports run one at a time. */
 const partialLog = () => join(app.getPath('userData'), 'export-partial.txt')
@@ -228,12 +228,12 @@ export function registerExport() {
       buttonLabel: 'Choose',
       defaultPath: projectsDir(),
       properties: ['openFile', 'openDirectory', 'multiSelections'] as Array<'openFile' | 'openDirectory' | 'multiSelections'>,
-      filters: [{ name: 'Studio Projects', extensions: ['studio'] }],
+      filters: [{ name: 'Grip Projects', extensions: ['grip'] }],
     }
     const res = await (parent ? dialog.showOpenDialog(parent, opts) : dialog.showOpenDialog(opts))
     if (res.canceled) return null
-    const bundles = res.filePaths.filter((p) => /\.studio\/?$/i.test(p))
-    if (!bundles.length) throw new Error('Choose one or more Studio projects.')
+    const bundles = res.filePaths.filter((p) => /\.grip\/?$/i.test(p))
+    if (!bundles.length) throw new Error('Choose one or more Grip projects.')
     return enqueue(parent, bundles.map((bundle) => ({ bundle, options, dest: 'file' as const })))
   })
 

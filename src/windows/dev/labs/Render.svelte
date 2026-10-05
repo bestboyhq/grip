@@ -1,5 +1,5 @@
 <!-- Compositor lab: renders a real project through the GPU compositor with style overrides.
-     #/dev?lab=Render&project=<absolute .studio path>
+     #/dev?lab=Render&project=<absolute .grip path>
      Frames come from <video> elements (new VideoFrame(video)); the media engine replaces this in the app.
      Driven over CDP through window.lab: set(patch), render(), capture(), png(patch), bench(), offscreen(). -->
 <script lang="ts">
@@ -231,7 +231,7 @@
   onMount(() => {
     ;(window as any).lab = { s, render, capture, hash, offscreen, bench, png, set: (patch: Partial<typeof s>) => (Object.assign(s, patch), render()) }
     ;(async () => {
-      if (!bundle) return (status = 'Open with #/dev?lab=Render&project=<absolute path of a .studio bundle>')
+      if (!bundle) return (status = 'Open with #/dev?lab=Render&project=<absolute path of a .grip bundle>')
       base = (await invoke('projects:open', bundle)).project as Project
       if (base.sources.events) events = parseEvents(await (await fetch(url(base.sources.events))).text())
       if (base.sources.screen) screenVideo.src = url(base.sources.screen.file)

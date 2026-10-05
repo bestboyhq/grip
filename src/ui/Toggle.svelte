@@ -32,6 +32,6 @@
     content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
     background: #f5f5f7; box-shadow: 0 1px 2px rgb(0 0 0 / 0.35); transition: transform 180ms var(--ease-out);
   }
-  input:checked { background: var(--accent-strong); }
-  input:checked::before { transform: translateX(12px); }
+  input:checked { background: var(--accent); }
+  input:checked::before { transform: translateX(12px); background: var(--accent-ink); }
 </style>

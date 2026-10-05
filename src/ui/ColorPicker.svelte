@@ -69,7 +69,7 @@
   label { flex: none; width: var(--label-w, 92px); color: var(--text-dim); font-size: 12px; }
   .well { position: relative; flex: none; width: 26px; height: 26px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14); }
   .well:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
-  .well input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+  .well input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; }
   .hex { flex: 1; min-width: 0; display: flex; align-items: center; height: var(--control-h); padding-left: 8px; border-radius: 6px; background: var(--bg-raised); color: var(--text-faint); font: 12.5px var(--mono); }
   .hex:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: -1px; }
   .hex input { flex: 1; min-width: 0; height: 100%; padding: 0 8px 0 2px; border: 0; background: none; color: var(--text); font: inherit; text-transform: lowercase; }

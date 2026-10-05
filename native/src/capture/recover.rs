@@ -448,7 +448,7 @@ mod tests {
             files.push((name, file, moof_last, packets, boxes, cuts));
         }
         for k in 0..files.iter().map(|f| f.5.len()).max().unwrap() {
-            let bundle = root.join(format!("Torn {k} #1 ✨ café.studio"));
+            let bundle = root.join(format!("Torn {k} #1 ✨ café.grip"));
             let sources = bundle.join("sources");
             fs::create_dir_all(&sources).unwrap();
             let mut expect = vec![];

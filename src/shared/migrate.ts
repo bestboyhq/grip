@@ -9,11 +9,11 @@ import { PROJECT_VERSION, createProject, defaultStyle, type Project, type Style 
 export const MIGRATIONS: Record<number, (p: any) => any> = {}
 
 export function migrate(json: unknown, steps = MIGRATIONS, latest = PROJECT_VERSION): Project {
-  if (!isObj(json) || !Number.isInteger(json.version) || json.version < 1) throw new Error('This is not a Studio project file.')
+  if (!isObj(json) || !Number.isInteger(json.version) || json.version < 1) throw new Error('This is not a Grip project file.')
   if (json.version > latest) throw newerError(typeof json.name === 'string' ? json.name : '')
   let p: any = json
   for (let v = p.version; v < latest; v++) {
-    if (!steps[v]) throw new Error(`Studio can't upgrade projects from format ${v}.`)
+    if (!steps[v]) throw new Error(`Grip can't upgrade projects from format ${v}.`)
     p = { ...steps[v](p), version: v + 1 }
   }
   if (isObj(p.sources)) fill(p, createProject('', p.sources as Project['sources']))
@@ -23,7 +23,7 @@ export function migrate(json: unknown, steps = MIGRATIONS, latest = PROJECT_VERS
 /** The refusal an older app gives a project saved by a newer one (code ENEWER). */
 export function newerError(name: string) {
   const what = name ? `“${name}”` : 'This project'
-  return Object.assign(new Error(`${what} was saved by a newer version of Studio. Update Studio to open it.`), { code: 'ENEWER' })
+  return Object.assign(new Error(`${what} was saved by a newer version of Grip. Update Grip to open it.`), { code: 'ENEWER' })
 }
 
 /** A preset or older style: missing fields get their defaults, then the whole style is checked. */

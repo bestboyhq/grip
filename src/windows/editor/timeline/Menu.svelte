@@ -149,11 +149,10 @@
     border-radius: 6px;
     background: none;
     text-align: left;
-    cursor: default;
   }
   button[role='menuitem']:hover:not(:disabled),
   button[role='menuitem']:focus-visible {
-    background: var(--accent);
+    background: rgb(255 255 255 / 0.1);
     outline: none;
   }
   button:disabled {
@@ -197,7 +196,6 @@
     background: rgb(255 255 255 / 0.06);
     font-size: 12px;
     font-variant-numeric: tabular-nums;
-    cursor: default;
   }
   .row button:hover,
   .row button:focus-visible {
@@ -206,5 +204,6 @@
   }
   .row button.on {
     background: var(--accent);
+    color: var(--accent-ink);
   }
 </style>

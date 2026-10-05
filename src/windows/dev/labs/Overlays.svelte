@@ -2,7 +2,7 @@
      #/dev?lab=Overlays&t=7                     one 16:9 canvas at output time 7 s
      &grid=1                                    16:9, 9:16, and 1:1 side by side
      &w=1280&h=720&aspect=16:9                  output size and aspect (default 1920x1080, auto)
-     &bundle=<abs path .studio>                 the recording's screen, events, and transcript (else a mock)
+     &bundle=<abs path .grip>                 the recording's screen, events, and transcript (else a mock)
      &cut=8.8-11.2                              cut a source range out; &zoom=2 zooms on the latest click
      &click=ripple|circle|shockwave  &mode=line|word  &anim=appear|fade|slide  &pos=bottom|top
      &dark=1 (dark mock screen)  &color=%23ffd60a  &font=Georgia  &size=44  &keys=1.5  &play=1  &px=1 (one canvas px per device px)

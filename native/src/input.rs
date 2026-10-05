@@ -686,8 +686,8 @@ impl InputRecorder {
         let tap = if use_tap { spawn_tap(shared.clone()) } else { None };
         let warning = match (tap.is_some(), keys_allowed()) {
             (true, true) => None,
-            (true, false) => Some("Keystrokes are not recorded: allow Studio in System Settings > Privacy & Security > Input Monitoring."),
-            (false, _) => Some("Keystrokes and scrolling are not recorded: allow Studio in System Settings > Privacy & Security > Input Monitoring."),
+            (true, false) => Some("Keystrokes are not recorded: allow Grip in System Settings > Privacy & Security > Input Monitoring."),
+            (false, _) => Some("Keystrokes and scrolling are not recorded: allow Grip in System Settings > Privacy & Security > Input Monitoring."),
         };
         let cursors = Cursors { dir: cursors, saved: HashSet::new(), last: None, size: cursor_size(), standard: standard_cursors() };
         let s = shared.clone();
@@ -962,7 +962,7 @@ mod tests {
     #[test]
     #[ignore]
     fn live_polling_demo() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../.context/input-live/Live #1 ✨ café.studio/sources");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../.context/input-live/Live #1 ✨ café.grip/sources");
         let _ = std::fs::remove_dir_all(&dir);
         let home = CGEvent::location(CGEvent::new(None).as_deref());
         let geometry = Arc::new(Mutex::new(CaptureGeometry { x: 0.0, y: 0.0, w: 1440.0, h: 900.0, scale: 2.0 }));

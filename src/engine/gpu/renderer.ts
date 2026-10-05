@@ -151,7 +151,7 @@ export class Renderer {
     ctx.configure({ device, format, alphaMode: 'opaque' })
     const r = new Renderer(canvas, device, ctx, assetUrl)
     device.lost.then((info) => (r.lost = info.message || info.reason))
-    device.addEventListener('uncapturederror', (e) => console.error('Studio GPU error:', (e as GPUUncapturedErrorEvent).error.message))
+    device.addEventListener('uncapturederror', (e) => console.error('Grip GPU error:', (e as GPUUncapturedErrorEvent).error.message))
     await r.init(format)
     return r
   }
@@ -616,7 +616,7 @@ export class Renderer {
   private warn(what: string, e: unknown) {
     if (this.warned.has(what)) return
     this.warned.add(what)
-    console.warn(`Studio could not load ${what}: ${e instanceof Error ? e.message : e}`)
+    console.warn(`Grip could not load ${what}: ${e instanceof Error ? e.message : e}`)
   }
 
   private async bitmap(rel: string): Promise<ImageBitmap> {

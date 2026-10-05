@@ -1,4 +1,4 @@
-<!-- Preview playback lab: #/dev?lab=Player&project=<absolute .studio path>.
+<!-- Preview playback lab: #/dev?lab=Player&project=<absolute .grip path>.
      Plays the project through the real player (renderFrame + audio worker), with a mic waveform
      under the scrubber and live timing stats. window.__player exposes the player for automation. -->
 <script lang="ts">
@@ -59,7 +59,7 @@
     const g = wave.getContext('2d')!
     const m = timeMap(p.clips)
     const url = fileUrl(`${path}/${p.sources.mic.file}`)
-    g.fillStyle = 'rgb(124 108 255 / 0.55)'
+    g.fillStyle = 'rgb(255 255 255 / 0.55)'
     for (let i = 0; i < p.clips.length; i++) {
       const c = p.clips[i]
       const x0 = Math.round((m.outStarts[i] / m.duration) * w)
@@ -81,7 +81,7 @@
 
 <main>
   {#if !path}
-    <p class="hint">Open with <code>#/dev?lab=Player&amp;project=&lt;absolute path to a .studio bundle&gt;</code></p>
+    <p class="hint">Open with <code>#/dev?lab=Player&amp;project=&lt;absolute path to a .grip bundle&gt;</code></p>
   {:else}
     <div class="stage"><canvas bind:this={canvas}></canvas></div>
     <footer>

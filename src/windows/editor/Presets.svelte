@@ -143,7 +143,7 @@
     flex: 1; min-width: 0; display: block; height: 28px; padding: 0 8px; border: 0; border-radius: 6px;
     background: none; font-size: 12.5px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .item:hover { background: var(--accent-strong); color: #fff; }
+  .item:hover { background: var(--bg-hover); }
   .item:disabled { opacity: 0.5; }
   .small { width: 26px; height: 26px; }
   .ask { flex: 1; min-width: 0; padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }

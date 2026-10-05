@@ -1,9 +1,10 @@
-// Menu bar icon: new recording, recent projects, open, import, settings, quit. While recording a
-// click finishes, and the menu (right-click) has finish, pause, delete. Dropped .studio bundles
+// Menu bar icon: new recording, recent projects, open, import, settings, updates, quit. While
+// recording a click finishes, and the menu (right-click) has finish, pause, delete. Dropped .grip bundles
 // open; dropped videos import as new projects.
 import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { recentProjects } from '../projects.ts'
+import { updateMenuItems } from './update.ts'
 import { cancelRecording, command, importDialog, openFilesOrAlert, openOnboarding, openProject, openProjectDialog, recordingStatus, SHORTCUTS, showPicker, statusListeners } from './recorder.ts'
 
 let tray: Tray | null = null // module scope: a collected Tray disappears from the menu bar
@@ -27,8 +28,9 @@ async function template(): Promise<MenuItemConstructorOptions[]> {
     { label: 'Import Video…', click: importDialog },
     { type: 'separator' },
     { label: 'Settings…', click: () => openOnboarding('page=settings') },
+    ...updateMenuItems(),
     { type: 'separator' },
-    { label: 'Quit Studio', accelerator: 'Command+Q', registerAccelerator: false, click: () => app.quit() },
+    { label: 'Quit Grip', accelerator: 'Command+Q', registerAccelerator: false, click: () => app.quit() },
   ]
   if (s === 'idle') return [{ label: 'New Recording', accelerator: SHORTCUTS.record, registerAccelerator: false, click: () => showPicker() }, ...common]
   return [
@@ -43,7 +45,7 @@ async function template(): Promise<MenuItemConstructorOptions[]> {
 
 export function createTray() {
   tray = new Tray(icon('trayTemplate.png'))
-  tray.setToolTip('Studio')
+  tray.setToolTip('Grip')
   const pop = async () => tray?.popUpContextMenu(Menu.buildFromTemplate(await template()))
   const running = () => ['recording', 'paused'].includes(recordingStatus())
   // While recording the icon is a stop button: one click finishes, with no menu to land in the
@@ -53,6 +55,6 @@ export function createTray() {
   tray.on('drop-files', (_e, files) => openFilesOrAlert(files))
   statusListeners.push((s) => {
     tray?.setImage(icon(s === 'idle' ? 'trayTemplate.png' : 'trayRecordingTemplate.png'))
-    tray?.setToolTip(s === 'idle' ? 'Studio' : 'Finish recording')
+    tray?.setToolTip(s === 'idle' ? 'Grip' : 'Finish recording')
   })
 }

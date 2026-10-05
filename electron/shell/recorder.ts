@@ -342,7 +342,7 @@ function setStatus(next: Status) {
 /** A system notification; clicking it runs `then`. Never in hidden runs (agents, tests). */
 function notify(body: string, then?: () => void) {
   if (hidden || !Notification.isSupported()) return
-  const n = new Notification({ title: 'Studio', body })
+  const n = new Notification({ title: 'Grip', body })
   if (then) n.on('click', then)
   n.show()
 }
@@ -360,8 +360,8 @@ function editorFor(path: string): BrowserWindow | undefined {
 /** Open a bundle in the editor, or bring its editor forward. `recovered`: the editor says so. */
 export function openProject(path: string, recovered = false) {
   path = resolve(path).replace(/\/+$/, '')
-  if (!path.endsWith('.studio') || !existsSync(path) || !statSync(path).isDirectory()) {
-    alert(`“${basename(path)}” can’t be opened.`, 'It is not a Studio project, or it was moved or deleted.')
+  if (!path.endsWith('.grip') || !existsSync(path) || !statSync(path).isDirectory()) {
+    alert(`“${basename(path)}” can’t be opened.`, 'It is not a Grip project, or it was moved or deleted.')
     return
   }
   const open = editorFor(path)
@@ -379,7 +379,7 @@ export async function openFiles(paths: string[]): Promise<void> {
   let failure: unknown
   for (const p of paths) {
     try {
-      openProject(/\.studio\/?$/i.test(p) ? p : await importVideo(p))
+      openProject(/\.grip\/?$/i.test(p) ? p : await importVideo(p))
     } catch (e) {
       failure ??= e
     }
@@ -389,15 +389,15 @@ export async function openFiles(paths: string[]): Promise<void> {
 
 /** openFiles for callers with no window to report to: failures become an alert. */
 export function openFilesOrAlert(paths: string[]) {
-  openFiles(paths).catch((e: Error) => void alert('Studio couldn’t open that.', e.message))
+  openFiles(paths).catch((e: Error) => void alert('Grip couldn’t open that.', e.message))
 }
 
 export async function openProjectDialog() {
   const r = await dialog.showOpenDialog({
     title: 'Open Project',
-    // openDirectory too: where the .studio package type is not registered (dev), a bundle is a folder.
+    // openDirectory too: where the .grip package type is not registered (dev), a bundle is a folder.
     properties: ['openFile', 'openDirectory'],
-    filters: [{ name: 'Studio Project', extensions: ['studio'] }],
+    filters: [{ name: 'Grip Project', extensions: ['grip'] }],
   })
   for (const p of r.filePaths) openProject(p)
 }
@@ -504,7 +504,7 @@ export function registerRecorder() {
     }
     if (picking) showPicker()
     broadcast()
-    await alert('Studio couldn’t record.', plain.message)
+    await alert('Grip couldn’t record.', plain.message)
   })
   ipcMain.handle('shell:display', (_e, id: number) => {
     const d = screen.getAllDisplays().find((d) => d.id === Number(id)) ?? screen.getPrimaryDisplay()
@@ -552,7 +552,7 @@ export function registerRecorder() {
     if (quitting) return
     openProject(bundle)
     // It stopped on its own (disk full, display unplugged, a write failed): say why, over the editor.
-    if (end?.reason && end.reason !== 'user') void alert('Studio stopped recording.', end.message ?? 'The recording was saved.')
+    if (end?.reason && end.reason !== 'user') void alert('Grip stopped recording.', end.message ?? 'The recording was saved.')
   })
   // Recordings cut off by a crash or power loss, made whole at launch (capture repairs its own
   // files, projects rebuilds the rest): each opens in the editor, which says it was recovered.

@@ -7,7 +7,7 @@ import { invoke } from './ipc.ts'
 
 class Doc {
   project = $state<Project | null>(null)
-  path = $state('') // absolute path of the .studio bundle
+  path = $state('') // absolute path of the .grip bundle
   // Raw: a 2-hour recording has ~1M events and ~20k words. They are never edited in place, only
   // replaced, so they stay plain arrays the engine reads at full speed (no deep proxies, no snapshots).
   events = $state.raw<InputEvent[]>([])

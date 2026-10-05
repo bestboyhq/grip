@@ -160,17 +160,17 @@ test('private links, comments, and owner-free view counts', async () => {
 
 test('project archives download with their hostile name; junk is refused', async () => {
   const server = await startServer({ port: 0, dir: join(dir, 'data3') })
-  const bundle = join(dir, 'Demo #1 ✨ café.studio')
+  const bundle = join(dir, 'Demo #1 ✨ café.grip')
   mkdirSync(join(bundle, 'sources'), { recursive: true })
   writeFileSync(join(bundle, 'project.json'), '{}')
-  const tar = join(dir, 'Demo #1 ✨ café.studio.tar')
-  execFileSync('tar', ['-cf', tar, '-C', dir, 'Demo #1 ✨ café.studio'])
+  const tar = join(dir, 'Demo #1 ✨ café.grip.tar')
+  execFileSync('tar', ['-cf', tar, '-C', dir, 'Demo #1 ✨ café.grip'])
   const item = await upload(server.url, OWNER, job(tar, { kind: 'project' }), quiet)
   const r = await get(`${server.url}/v/${item.id}/project.tar`)
   assert.equal(r.status, 200)
-  assert.equal(r.headers.get('content-disposition'), `attachment; filename="Demo #1 _ caf_.studio.tar"; filename*=UTF-8''${encodeURIComponent('Demo #1 ✨ café.studio.tar')}`)
+  assert.equal(r.headers.get('content-disposition'), `attachment; filename="Demo #1 _ caf_.grip.tar"; filename*=UTF-8''${encodeURIComponent('Demo #1 ✨ café.grip.tar')}`)
   assert.deepEqual(Buffer.from(await r.arrayBuffer()), readFileSync(tar))
-  assert.match(await (await get(`${server.url}/v/${item.id}`)).text(), /href="studio:\/\/open\?url=http%3A%2F%2Flocalhost/)
+  assert.match(await (await get(`${server.url}/v/${item.id}`)).text(), /href="grip:\/\/open\?url=http%3A%2F%2Flocalhost/)
 
   const junk = join(dir, 'junk.mp4')
   writeFileSync(junk, Buffer.alloc(4096, 7))

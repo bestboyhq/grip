@@ -4,6 +4,7 @@
 import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron'
 import { kindOf } from '../windows.ts'
 import { importDialog, openOnboarding, openProjectDialog, SHORTCUTS, showPicker } from './recorder.ts'
+import { updateMenuItems } from './update.ts'
 
 /** The bundle shown by the focused editor window. */
 function focusedProject(): string | null {
@@ -33,6 +34,7 @@ export function setAppMenu() {
       label: app.name,
       submenu: [
         { role: 'about' },
+        ...updateMenuItems(),
         { type: 'separator' },
         { label: 'Settings…', accelerator: 'Command+,', click: () => openOnboarding('page=settings') },
         { type: 'separator' },

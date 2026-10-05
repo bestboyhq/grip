@@ -26,7 +26,7 @@ const clock = (s: number) => {
 const bytes = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.max(0.1, n / 1e6).toFixed(1)} MB`) // decimal, like Finder
 const plural = (n: number, w: string) => `${n.toLocaleString('en-US')} ${w}${n === 1 ? '' : 's'}`
 
-const LOGO = `<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9d8cff"/><stop offset="1" stop-color="#6a4dff"/></linearGradient></defs><rect width="22" height="22" rx="6.5" fill="url(#lg)"/><circle cx="11" cy="11" r="4.2" fill="#fff"/></svg>`
+const LOGO = `<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><defs><linearGradient id="grip-corners" x1="0" y1="4" x2="0" y2="18" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#858585"/><stop offset="1" stop-color="#5e5e5e"/></linearGradient><linearGradient id="grip-dot" x1="0" y1="0.2" x2="1" y2="0.9"><stop offset="0" stop-color="#1857fa"/><stop offset="0.3" stop-color="#8067b2"/><stop offset="0.55" stop-color="#d05556"/><stop offset="0.8" stop-color="#f56100"/><stop offset="1" stop-color="#fc9300"/></linearGradient></defs><rect width="22" height="22" rx="5.5" fill="#1c1c1f"/><rect x=".5" y=".5" width="21" height="21" rx="5" fill="none" stroke="#fff" stroke-opacity=".12"/><path d="M12.1 4.6H14.7A2.7 2.7 0 0 1 17.4 7.3V9.9M9.9 17.4H7.3A2.7 2.7 0 0 1 4.6 14.7V12.1" fill="none" stroke="url(#grip-corners)" stroke-width="1.9" stroke-linecap="round"/><circle cx="11" cy="11" r="2.8" fill="url(#grip-dot)"/></svg>`
 
 export function itemPage(p: PageInput): string {
   const { item } = p
@@ -35,7 +35,7 @@ export function itemPage(p: PageInput): string {
   const self = `${p.base}/v/${item.id}${q}`
   const date = new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   const title = esc(item.title)
-  let head = `<meta property="og:site_name" content="Studio"><meta property="og:title" content="${title}"><meta property="og:url" content="${esc(self)}"><meta name="twitter:title" content="${title}">`
+  let head = `<meta property="og:site_name" content="Grip"><meta property="og:title" content="${title}"><meta property="og:url" content="${esc(self)}"><meta name="twitter:title" content="${title}">`
   const data = { id: item.id, kind: item.kind, state: item.state, key: p.key, owner: p.owner, size: item.size, offset: p.offset, duration: item.duration ?? 0, comments: p.comments }
 
   if (item.state !== 'ready') {
@@ -57,7 +57,7 @@ export function itemPage(p: PageInput): string {
 
   if (item.kind === 'project') {
     const download = media('project.tar')
-    head += `<meta property="og:type" content="website"><meta property="og:description" content="Studio project, ${bytes(item.size)}">`
+    head += `<meta property="og:type" content="website"><meta property="og:description" content="Grip project, ${bytes(item.size)}">`
     return doc({
       title: item.title,
       head,
@@ -66,12 +66,12 @@ export function itemPage(p: PageInput): string {
       body: `<main class="center"><div class="card">
 <div class="glyph" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 21 8l-9 4.5L3 8z"/><path d="m3 12 9 4.5 9-4.5"/><path d="m3 16 9 4.5 9-4.5"/></svg></div>
 <h1>${title}</h1>
-<p class="dim">Studio project · ${bytes(item.size)} · ${date}</p>
+<p class="dim">Grip project · ${bytes(item.size)} · ${date}</p>
 <div class="actions">
-<a class="btn primary" href="studio://open?url=${encodeURIComponent(download)}">Open in Studio</a>
+<a class="btn primary" href="grip://open?url=${encodeURIComponent(download)}">Open in Grip</a>
 <a class="btn" href="${esc(download)}" download>Download</a>
 </div>
-<p class="small dim">Opens in Studio on a Mac with every edit intact.</p>
+<p class="small dim">Opens in Grip on a Mac with every edit intact.</p>
 </div></main>`,
     })
   }
@@ -129,7 +129,7 @@ ${o.head ?? ''}
 <style nonce="${o.nonce}">${CSS}${o.css ?? ''}</style>
 </head>
 <body>
-<header class="top"><span class="brand">${LOGO}Studio</span></header>
+<header class="top"><span class="brand">${LOGO}Grip</span></header>
 ${o.body}
 ${o.data === undefined ? '' : `<script type="application/json" id="data">${json(o.data)}</script><script nonce="${o.nonce}">${SCRIPT}</script>`}
 </body>
@@ -137,7 +137,7 @@ ${o.data === undefined ? '' : `<script type="application/json" id="data">${json(
 }
 
 const CSS = String.raw`
-:root{--bg:#0e0e10;--panel:#161619;--raised:#1f1f23;--hover:#29292e;--line:rgb(255 255 255/.08);--text:#f2f2f3;--dim:#9a9aa1;--accent:#7c6cff;--danger:#ff6b63;color-scheme:dark}
+:root{--bg:#0e0e10;--panel:#161619;--raised:#1f1f23;--hover:#29292e;--line:rgb(255 255 255/.08);--text:#f2f2f3;--dim:#9a9aa1;--accent:#e8e8ec;--accent-hover:#f6f6f8;--danger:#ff6b63;color-scheme:dark}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;min-height:100svh;background:var(--bg);color:var(--text);font:15px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
@@ -151,8 +151,8 @@ p{margin:0}
 .brand{display:inline-flex;align-items:center;gap:9px;font-weight:650;font-size:15px;letter-spacing:-.01em}
 .btn{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 14px;border-radius:9px;border:1px solid var(--line);background:var(--raised);color:var(--text);font-size:14px;font-weight:550;text-decoration:none;cursor:pointer;white-space:nowrap}
 .btn:hover{background:var(--hover)}
-.btn.primary{background:var(--accent);border-color:transparent;color:#fff}
-.btn.primary:hover{background:#8d7fff}
+.btn.primary{background:var(--accent);border-color:transparent;color:#111113}
+.btn.primary:hover{background:var(--accent-hover)}
 .btn:disabled{opacity:.5;cursor:default}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .center{display:grid;place-items:center;min-height:calc(100svh - 112px);padding:24px}
@@ -168,7 +168,7 @@ video{display:block;width:100%;height:100%;background:#000}
 .rail{position:relative;height:30px;margin:8px 10px 0}
 .track{position:absolute;inset:13px 0 auto;height:4px;border-radius:2px;background:var(--raised);cursor:pointer}
 .track::before{content:"";position:absolute;inset:-10px 0}
-.played{width:0;height:100%;border-radius:2px;background:rgb(124 108 255/.55)}
+.played{width:0;height:100%;border-radius:2px;background:rgb(255 255 255/.55)}
 .pins{position:absolute;inset:0;pointer-events:none}
 .pin{position:absolute;top:4px;width:22px;height:22px;margin-left:-11px;padding:0;border-radius:50%;border:2px solid var(--bg);background:hsl(var(--h) 55% 52%);color:#fff;font-size:11px;font-weight:700;line-height:18px;cursor:pointer;pointer-events:auto;transition:transform .15s ease-out}
 .pin:hover,.pin:focus-visible{transform:scale(1.15);z-index:2}
@@ -186,8 +186,8 @@ video{display:block;width:100%;height:100%;background:#000}
 .avatar{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:hsl(var(--h) 55% 52%);color:#fff;font-size:12px;font-weight:700}
 .head{display:flex;align-items:center;gap:7px;min-width:0;font-size:13px}
 .head b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ts{flex:none;height:20px;padding:0 6px;border:0;border-radius:5px;background:rgb(124 108 255/.16);color:#b2a8ff;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;cursor:pointer}
-.ts:hover{background:rgb(124 108 255/.28)}
+.ts{flex:none;height:20px;padding:0 6px;border:0;border-radius:5px;background:rgb(255 255 255/.1);color:#f2f2f3;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;cursor:pointer}
+.ts:hover{background:rgb(255 255 255/.18)}
 .badge{flex:none;padding:0 5px;border-radius:4px;background:var(--hover);color:var(--dim);font-size:11px;font-weight:600;line-height:17px}
 .ago{flex:none;color:var(--dim);font-size:12px}
 .del{margin-left:auto;flex:none;width:22px;height:22px;padding:0;border:0;border-radius:6px;background:none;color:var(--dim);font-size:16px;line-height:1;cursor:pointer;opacity:0}
@@ -199,7 +199,7 @@ video{display:block;width:100%;height:100%;background:#000}
 .empty[hidden]{display:none}
 .compose{display:grid;gap:8px;padding:12px;border-top:1px solid var(--line)}
 .compose input,.compose textarea{width:100%;padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--bg);font-size:14px;resize:none}
-.compose input:focus,.compose textarea:focus{outline:none;border-color:rgb(124 108 255/.7)}
+.compose input:focus,.compose textarea:focus{outline:none;border-color:rgb(255 255 255/.5)}
 .compose ::placeholder{color:#6e6e76}
 .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
 @media (hover:none){.hint{visibility:hidden}}

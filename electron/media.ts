@@ -25,8 +25,8 @@ const CORS = {
   'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
 }
 
-/** A file inside `<something>.studio/cache/`, after normalization (no `..` escapes). */
-const isCacheFile = (path: string) => path === normalize(path) && /\.studio\/cache\/[^/]+$/.test(path)
+/** A file inside `<something>.grip/cache/`, after normalization (no `..` escapes). */
+const isCacheFile = (path: string) => path === normalize(path) && /\.grip\/cache\/[^/]+$/.test(path)
 
 export function registerMediaProtocol() {
   protocol.handle('media', async (req) => {

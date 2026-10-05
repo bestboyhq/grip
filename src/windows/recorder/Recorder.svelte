@@ -239,7 +239,6 @@
     background: none;
     border: 0;
     padding: 0;
-    cursor: default;
     display: flex;
     align-items: center;
     border-radius: 9px;

@@ -1,5 +1,5 @@
 <!-- Automated decode, mix, and preview checks, run by src/engine/media/media.test.ts in a hidden window:
-     #/dev?lab=PlayerChecks&dir=<generated media dir>&fixture=<optional .studio bundle>.
+     #/dev?lab=PlayerChecks&dir=<generated media dir>&fixture=<optional .grip bundle>.
      Results land in window.__checks as [{ name, ok, detail }]. -->
 <script lang="ts">
   import { onMount } from 'svelte'

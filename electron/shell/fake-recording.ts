@@ -1,4 +1,4 @@
-// Dev only: `STUDIO_FAKE_RECORDING=<bundle.studio>` swaps in a stand-in for the capture engine
+// Dev only: `STUDIO_FAKE_RECORDING=<bundle.grip>` swaps in a stand-in for the capture engine
 // (electron/recording.ts) and the camera list (electron/camera.ts), so the whole recording flow
 // (picker, countdown, widget, editor) runs without screen, camera, or mic access, and never
 // shows a system prompt. Each take becomes a new project with the stand-in bundle's sources.
@@ -54,7 +54,7 @@ export function registerFakeRecording(bundle: string) {
     const { x, y } = screen.getPrimaryDisplay().workArea
     return [
       { id: 11, app: 'Safari', bundleId: 'com.apple.Safari', title: 'Grip - Release Notes', frame: { x: x + 80, y: y + 60, w: 980, h: 680 } },
-      { id: 12, app: 'Xcode', bundleId: 'com.apple.dt.Xcode', title: 'Studio — Recorder.swift', frame: { x: x + 520, y: y + 200, w: 860, h: 600 } },
+      { id: 12, app: 'Xcode', bundleId: 'com.apple.dt.Xcode', title: 'Grip — Recorder.swift', frame: { x: x + 520, y: y + 200, w: 860, h: 600 } },
     ]
   })
   handle('recording:microphones', () => [
@@ -97,7 +97,7 @@ export function registerFakeRecording(bundle: string) {
     if (!inputs.cameraId) delete sources.camera
     if (!inputs.micId) delete sources.mic
     if (!inputs.systemAudio) delete sources.system
-    const dir = await createBundle(recordingName(new Date(), (n) => existsSync(join(projectsDir(), `${n}.studio`))))
+    const dir = await createBundle(recordingName(new Date(), (n) => existsSync(join(projectsDir(), `${n}.grip`))))
     await cp(join(bundle, 'sources'), join(dir, 'sources'), { recursive: true, mode: constants.COPYFILE_FICLONE })
     await writeNewRecording(dir, sources)
     set('idle')

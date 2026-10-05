@@ -95,7 +95,7 @@ async function start(req: StartRequest) {
   if (bundle !== null || native.recordingState() !== 'idle') return native.recordingState()
   bundle = ''
   try {
-    bundle = await createBundle(recordingName(new Date(), (n) => existsSync(join(projectsDir(), `${n}.studio`))))
+    bundle = await createBundle(recordingName(new Date(), (n) => existsSync(join(projectsDir(), `${n}.grip`))))
     const options: StartOptions = {
       bundleDir: bundle,
       target: req.target,

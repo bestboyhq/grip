@@ -52,7 +52,7 @@
       <p class="note">This recording has no voice to caption.</p>
     {/if}
   {:else if !doc.transcript.words.length}
-    <p class="note">Studio heard no words in this recording, so there is nothing to caption.</p>
+    <p class="note">Grip heard no words in this recording, so there is nothing to caption.</p>
   {/if}
 </Section>
 

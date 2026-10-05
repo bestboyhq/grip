@@ -1,4 +1,4 @@
-// `npm run dev [-- --open <bundle.studio>]`: Vite dev server + Electron.
+// `npm run dev [-- --open <bundle.grip>]`: Vite dev server + Electron.
 // Env: VITE_PORT (default: any free port), STUDIO_CDP_PORT (exposes renderers over CDP for agent-browser).
 import { createServer } from 'vite'
 import { spawn } from 'node:child_process'

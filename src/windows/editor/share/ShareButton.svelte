@@ -144,7 +144,7 @@
       <p class="lead">
         {kind === 'video'
           ? 'Upload the video and get a link that plays in any browser, phones included.'
-          : 'Send the editable project. It opens in Studio with every edit intact.'}
+          : 'Send the editable project. It opens in Grip with every edit intact.'}
       </p>
       <button class="primary wide" onclick={share} disabled={kind === 'video' && !exportVideo}>Create link</button>
       {#if kind === 'video' && !exportVideo}<p class="hint">Video export is not available yet.</p>{/if}
@@ -220,7 +220,6 @@
     border-radius: 7px;
     background: var(--bg-raised);
     font-weight: 500;
-    cursor: default;
   }
   .trigger:hover {
     background: var(--bg-hover);
@@ -333,11 +332,11 @@
     border: 0;
     border-radius: 7px;
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-ink);
     font-weight: 500;
   }
   button.primary:hover:not(:disabled) {
-    background: #8d7fff;
+    background: var(--accent-hover);
   }
   button.wide {
     width: 100%;
@@ -352,11 +351,11 @@
     border: 0;
     border-radius: 5px;
     background: none;
-    color: var(--accent);
+    color: var(--accent-text);
     font-weight: 500;
   }
   button.text:hover:not(:disabled) {
-    background: rgb(124 108 255 / 0.12);
+    background: var(--accent-soft);
   }
   button.text.danger {
     color: var(--danger);
@@ -469,6 +468,7 @@
   }
   input[role='switch']:checked::after {
     transform: translateX(12px);
+    background: var(--accent-ink);
   }
   :focus-visible {
     outline: 2px solid var(--accent);

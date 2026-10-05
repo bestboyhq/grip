@@ -1,6 +1,6 @@
 <!-- Motion lab: the built-in cursor set (src/assets/cursors.ts) at 1x/2x/4x (red dot = hotspot), the recorded path (grey)
      against the smoothed one (accent) with clicks, and the cursor itself in motion.
-     #/dev?lab=Cursor[&bundle=<abs .studio path>][&t=<output s, freezes playback>][&set=builtin|touch]
+     #/dev?lab=Cursor[&bundle=<abs .grip path>][&t=<output s, freezes playback>][&set=builtin|touch]
      [&cut=<source a>-<source b>][&loop=1][&smooth=0][&zoom=<view scale around the cursor>] -->
 <script lang="ts">
   import { createProject, type Project } from '../../../shared/project.ts'
@@ -95,7 +95,7 @@
       p.beginPath()
       for (const e of events) if (e.type === 'move') p.lineTo(screen.rect.x + e.x * k, screen.rect.y + e.y * k)
       p.stroke()
-      p.strokeStyle = '#7c6cff'
+      p.strokeStyle = '#ffffff'
       p.lineWidth = 2 / zoom
       p.beginPath()
       for (let t = 0; t <= map.duration; t += 1 / 240) {
@@ -129,7 +129,7 @@
         for (let i = 24; i > 0; i--) {
           const q = cursorPoint(c, t - i / 60)
           if (!q) continue
-          g.fillStyle = `rgb(124 108 255 / ${0.5 * (1 - i / 25)})`
+          g.fillStyle = `rgb(255 255 255 / ${0.5 * (1 - i / 25)})`
           g.beginPath()
           g.arc(q.x, q.y, 2, 0, Math.PI * 2)
           g.fill()
