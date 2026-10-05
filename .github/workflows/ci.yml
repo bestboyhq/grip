@@ -7,7 +7,8 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A release in progress must finish; a newer merge waits and releases after it.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -30,3 +31,54 @@ jobs:
       - run: npx vite build
       - run: cargo test
         working-directory: native
+
+  # The version the merged commits call for; empty when none of them is a feat, fix, perf, or breaking change.
+  version:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      next: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # the tags and commits since the last release
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - id: next
+        run: echo "version=$(node scripts/version.ts)" >> "$GITHUB_OUTPUT"
+
+  # Ships the merge as an in-app update: users get it on their next update check.
+  release:
+    needs: version
+    if: needs.version.outputs.next != ''
+    runs-on: macos-15
+    permissions:
+      contents: write
+    env:
+      V: ${{ needs.version.outputs.next }}
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - run: npm ci
+      - run: npm version "$V" --no-git-tag-version
+      - run: xcrun notarytool store-credentials grip --apple-id "$APPLE_ID" --team-id 59F3NS99CS --password "$APPLE_APP_SPECIFIC_PASSWORD"
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      - run: npm run package
+        env:
+          APPLE_KEYCHAIN_PROFILE: grip
+      - run: node scripts/update-e2e.ts
+      - run: gh release create "v$V" --generate-notes --target "$GITHUB_SHA" release/Grip-$V-arm64* release/latest-mac.yml
+        env:
+          GH_TOKEN: ${{ github.token }}

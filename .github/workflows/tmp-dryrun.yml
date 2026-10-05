@@ -1,0 +1,31 @@
+name: tmp release dry run
+on:
+  push:
+    branches: [szymeo/github-actions-automation-v2]
+jobs:
+  dry:
+    runs-on: macos-15
+    env:
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - run: npm ci
+      - run: npm version 0.1.0 --no-git-tag-version
+      - run: npm run package
+      - run: codesign -dv --verbose=2 release/mac-arm64/Grip.app 2>&1 | grep -E "Authority|TeamIdentifier"
+      - run: node scripts/update-e2e.ts
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screen
+          path: /tmp/screen.png
+      - if: failure()
+        run: screencapture -x /tmp/screen.png || true
