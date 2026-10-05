@@ -22,6 +22,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          key: macos-26 # build scripts cache Xcode paths: a new runner image needs a new cache
       - run: brew install ffmpeg
       - run: npm ci
       - name: Import the Developer ID certificate
@@ -81,6 +82,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          key: macos-26 # build scripts cache Xcode paths: a new runner image needs a new cache
       - run: npm ci
       - run: npm version "$V" --no-git-tag-version
       - run: xcrun notarytool store-credentials grip --apple-id "$APPLE_ID" --team-id 59F3NS99CS --password "$APPLE_APP_SPECIFIC_PASSWORD"
