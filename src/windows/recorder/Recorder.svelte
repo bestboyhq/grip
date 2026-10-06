@@ -1,9 +1,11 @@
 <!-- Recording toolbar, bottom center of the active display: close, Display / Window / Area / Device,
-     camera, microphone with a live level, system audio, settings.
+     camera, microphone with a live level, system audio, settings. A downloaded update veils it until
+     the user restarts or puts it off (Later, Esc) for that version.
      It is also the session controller (electron/shell/recorder.ts): it runs the shell's commands
      against the capture engine and reports the engine's errors and warnings to the shell. -->
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { fade } from 'svelte/transition'
   import { dropFiles, invoke, on } from '../../lib/ipc.ts'
   import Icon from './Icon.svelte'
   import {
@@ -36,6 +38,8 @@
   let lists = $state<{ cameras: Device[]; mics: Device[]; devices: Device[] }>({ cameras: [], mics: [], devices: [] })
   let level = $state(0)
   let countdown = $state<{ n: number; name: string } | null>(null)
+  let later = $state('') // the update version put off: the toolbar is back until a newer one
+  const update = $derived(shell.update !== later ? shell.update : '')
 
   const s = $derived(shell.settings)
   const camera = $derived(lists.cameras.find((c) => c.id === s?.camera))
@@ -170,18 +174,19 @@
   onkeydown={(e) => {
     if (e.key !== 'Escape') return
     if (countdown) countdown = null
+    else if (update) later = update
     else invoke(shell.mode ? 'shell:pick' : 'shell:close-picker', null)
   }}
   ondragover={(e) => e.preventDefault()}
   ondrop={(e) => dropFiles(e).catch((err: Error) => invoke('shell:warn', err.message))}
 />
 
-<main class="bar hud">
+<main class="bar hud" inert={!!update}>
   {#if countdown}
     <div class="countdown" role="status">
       <span class="n">{countdown.n}</span>
       <span>Recording {countdown.name}…</span>
-      <button class="cancel" onclick={() => (countdown = null)}>Cancel</button>
+      <button class="action" onclick={() => (countdown = null)}>Cancel</button>
     </div>
   {:else}
     <button class="close" aria-label="Close" onclick={() => invoke('shell:close-picker')}><Icon name="close" size={22} stroke={2.4} /></button>
@@ -219,6 +224,13 @@
     </button>
   {/if}
 </main>
+{#if update}
+  <div class="update hud" role="status" transition:fade={{ duration: 150 }}>
+    <span class="note">Grip {update} is ready to install.</span>
+    <button class="action" onclick={() => (later = update)}>Later</button>
+    <button class="action primary" onclick={() => invoke('update:restart')}>Restart to Update</button>
+  </div>
+{/if}
 
 <style>
   .bar {
@@ -381,7 +393,25 @@
     width: 24px;
     text-align: center;
   }
-  .cancel {
+  /* Over the toolbar, which shows through dimmed. */
+  .update {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: var(--radius-lg);
+    background: rgb(20 20 22 / 0.78);
+    box-shadow: var(--hairline);
+    backdrop-filter: blur(2px);
+    -webkit-app-region: drag;
+  }
+  .note {
+    margin-right: 6px;
+    font-size: 13px;
+  }
+  .action {
     -webkit-app-region: no-drag;
     height: 26px;
     padding: 0 12px;
@@ -390,7 +420,15 @@
     box-shadow: var(--hairline);
     font-size: 13px;
   }
-  .cancel:hover {
+  .action:hover {
     background: var(--surface-100-hover);
+  }
+  .action.primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 500;
+  }
+  .action.primary:hover {
+    background: var(--accent-hover);
   }
 </style>
