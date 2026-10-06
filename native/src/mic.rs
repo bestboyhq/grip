@@ -8,7 +8,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use dispatch2::{DispatchQueue, DispatchRetained};
-use napi::bindgen_prelude::spawn_blocking;
+use napi::Env;
+use napi::bindgen_prelude::{PromiseRaw, spawn_blocking};
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use objc2::rc::Retained;
@@ -248,45 +249,66 @@ pub struct MicLevel {
 }
 
 static MONITOR: Mutex<Option<Capture>> = Mutex::new(None);
+/// Taken on the JS thread by every start and stop. Opening a mic takes a while, so a start keeps
+/// its meter only if no later start or stop came meanwhile: otherwise the mic stays on for good.
+static MONITOR_GEN: AtomicU64 = AtomicU64::new(0);
 
 /// Meter `micId` (default mic when absent) at ~30 Hz until `stopMicMonitor`. Replaces a running meter.
-#[napi]
-pub async fn start_mic_monitor(
+#[napi(ts_return_type = "Promise<void>")]
+pub fn start_mic_monitor<'env>(
+    env: &'env Env,
     mic_id: Option<String>,
     on_level: ThreadsafeFunction<MicLevel, (), MicLevel, napi::Status, false>,
-) -> napi::Result<()> {
-    spawn_blocking(move || -> Result<(), String> {
-        stop_mic_monitor();
-        let device = device(mic_id.as_deref())?;
-        let ch = channels(&device);
-        let acc = Mutex::new((0f32, 0f64, 0usize, 0u64)); // peak, sum of squares, samples, window start
-        let on_pcm: OnPcm = Box::new(move |host_ns, samples| {
-            let mut a = acc.lock().unwrap();
-            if a.3 == 0 {
-                a.3 = host_ns;
-            }
-            for s in samples {
-                a.0 = a.0.max(s.abs());
-                a.1 += (*s as f64) * (*s as f64);
-            }
-            a.2 += samples.len();
-            if host_ns.saturating_sub(a.3) >= 33_000_000 {
-                let level = MicLevel { peak: a.0.min(1.0) as f64, rms: (a.1 / a.2.max(1) as f64).sqrt().min(1.0) };
-                on_level.call(level, ThreadsafeFunctionCallMode::NonBlocking);
-                *a = (0.0, 0.0, 0, host_ns);
-            }
-        });
-        *MONITOR.lock().unwrap() = Some(Capture::start(device, ch, on_pcm)?);
-        Ok(())
+) -> napi::Result<PromiseRaw<'env, ()>> {
+    let generation = MONITOR_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let acc = Mutex::new((0f32, 0f64, 0usize, 0u64)); // peak, sum of squares, samples, window start
+    let on_pcm: OnPcm = Box::new(move |host_ns, samples| {
+        let mut a = acc.lock().unwrap();
+        if a.3 == 0 {
+            a.3 = host_ns;
+        }
+        for s in samples {
+            a.0 = a.0.max(s.abs());
+            a.1 += (*s as f64) * (*s as f64);
+        }
+        a.2 += samples.len();
+        if host_ns.saturating_sub(a.3) >= 33_000_000 {
+            let level = MicLevel { peak: a.0.min(1.0) as f64, rms: (a.1 / a.2.max(1) as f64).sqrt().min(1.0) };
+            on_level.call(level, ThreadsafeFunctionCallMode::NonBlocking);
+            *a = (0.0, 0.0, 0, host_ns);
+        }
+    });
+    env.spawn_future(async move {
+        spawn_blocking(move || open_monitor(generation, mic_id.as_deref(), on_pcm))
+            .await
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?
+            .map_err(napi::Error::from_reason)
     })
-    .await
-    .map_err(|e| napi::Error::from_reason(e.to_string()))?
-    .map_err(napi::Error::from_reason)
+}
+
+/// The meter for start `generation`, unless a later start or stop superseded it.
+fn open_monitor(generation: u64, id: Option<&str>, on_pcm: OnPcm) -> Result<(), String> {
+    let current = || MONITOR_GEN.load(Ordering::SeqCst) == generation;
+    if !current() {
+        return Ok(());
+    }
+    let device = device(id)?;
+    let ch = channels(&device);
+    let capture = Capture::start(device, ch, on_pcm)?;
+    let mut slot = MONITOR.lock().unwrap();
+    let old = if current() { slot.replace(capture) } else { Some(capture) };
+    drop(slot);
+    drop(old); // stops the session outside the lock
+    Ok(())
 }
 
 #[napi]
 pub fn stop_mic_monitor() {
-    let old = MONITOR.lock().unwrap().take();
+    let old = {
+        let mut slot = MONITOR.lock().unwrap();
+        MONITOR_GEN.fetch_add(1, Ordering::SeqCst);
+        slot.take()
+    };
     drop(old); // stops the session outside the lock
 }
 
@@ -303,5 +325,13 @@ mod tests {
         assert!(err == missing(Permission::Microphone) || err == "The selected microphone is not connected.", "{err}");
         assert!(!err.contains('\n'));
         assert!(!Path::new("/tmp/studio-mic-test.m4a").exists());
+    }
+
+    #[test]
+    fn a_stop_while_the_meter_opens_keeps_the_mic_off() {
+        let generation = MONITOR_GEN.fetch_add(1, Ordering::SeqCst) + 1; // start_mic_monitor on the JS thread
+        stop_mic_monitor();
+        open_monitor(generation, None, Box::new(|_, _| {})).unwrap();
+        assert!(MONITOR.lock().unwrap().is_none());
     }
 }

@@ -52,11 +52,13 @@
   $effect(() => {
     if (shell.picking || params.has('preview')) refresh()
   })
-  // Live level of the chosen microphone while the picker is on screen.
+  // Live level of the chosen microphone while the picker is on screen. Keyed by id: a list refresh
+  // yields a new but equal mic, which must not reopen it.
+  const micId = $derived(mic?.id)
   $effect(() => {
     level = 0
-    if (!(shell.picking || params.has('preview')) || !mic) return
-    invoke('recording:micMonitor', mic.id).catch(() => {})
+    if (!(shell.picking || params.has('preview')) || !micId) return
+    invoke('recording:micMonitor', micId).catch(() => {})
     return () => invoke('recording:micMonitorStop').catch(() => {})
   })
 
