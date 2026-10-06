@@ -251,7 +251,8 @@ test('a 2-hour stream with hundreds of cuts precomputes fast in bounded memory',
   const hours = 2
   const events = stream(hours * 3600, 21, false)
   assert.ok(events.length > 700_000)
-  const s0 = Date.now()
+  // CPU time, not wall time: test files run in parallel, and a busy CI runner triples wall time.
+  const cpu = process.cpuUsage()
   const s = setup(events, hours * 3600, (p) => {
     const r = rng(5)
     for (let i = 0; i < 300; i++) {
@@ -260,7 +261,8 @@ test('a 2-hour stream with hundreds of cuts precomputes fast in bounded memory',
     }
     for (let i = 0; i < 20; i++) p.clips = setSpeed(p.clips, i * 300, i * 300 + 20, 2 + (i % 3))
   })
-  const ms = Date.now() - s0
+  const { user, system } = process.cpuUsage(cpu)
+  const ms = Math.round((user + system) / 1000)
   console.log(`2 h, ${events.length} events, ${s.map.clips.length} clips: prepared in ${ms} ms`)
   assert.ok(s.map.clips.length > 250)
   assert.ok(ms < 1000, `${ms} ms`)

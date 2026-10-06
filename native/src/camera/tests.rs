@@ -152,6 +152,7 @@ const MS: u64 = 1_000_000;
 /// and pauses along the way cause no drift. One hour of tiny frames, timestamps checked exactly.
 #[test]
 fn an_hour_with_pauses_has_no_drift() {
+    let _g = crate::clock::serial(); // one encoder at a time
     static CLOCK: SessionClock = SessionClock::new();
     let dir = Dir::new("hour");
     let path = dir.file("camera.mp4");
@@ -203,6 +204,7 @@ fn picks_30fps_then_exact_height() {
 
 #[test]
 fn camera_frames_follow_the_session_clock_and_pauses() {
+    let _g = crate::clock::serial(); // one encoder at a time
     static CLOCK: SessionClock = SessionClock::new();
     let dir = Dir::new("camera");
     let path = dir.file("camera.mp4");
@@ -249,6 +251,7 @@ fn camera_frames_follow_the_session_clock_and_pauses() {
 
 #[test]
 fn device_rotation_is_undone_and_recorded_with_gapless_audio() {
+    let _g = crate::clock::serial(); // one encoder at a time
     static CLOCK: SessionClock = SessionClock::new();
     let dir = Dir::new("device");
     let (video, audio) = (dir.file("screen.mp4"), dir.file("system.m4a"));
@@ -299,6 +302,7 @@ fn device_rotation_is_undone_and_recorded_with_gapless_audio() {
 
 #[test]
 fn a_crash_leaves_a_playable_file() {
+    let _g = crate::clock::serial(); // one encoder at a time
     let dir = Dir::new("crash");
     let path = dir.file("crash.mp4");
     let spec = VideoSpec { width: 320, height: 180, fps: 30.0, bits_per_pixel: 0.15, realtime: false };
@@ -314,6 +318,7 @@ fn a_crash_leaves_a_playable_file() {
 
 #[test]
 fn analysis_matches_camera_timing_and_cleans_up_on_cancel() {
+    let _g = crate::clock::serial(); // one encoder at a time
     let dir = Dir::new("analysis");
     let input = dir.file("camera.mp4");
     let spec = VideoSpec { width: 640, height: 360, fps: 30.0, bits_per_pixel: 0.15, realtime: false };
@@ -345,6 +350,7 @@ fn analysis_matches_camera_timing_and_cleans_up_on_cancel() {
 /// Skipped without it (no such clip ships with the repo).
 #[test]
 fn analysis_of_a_real_person_finds_the_face_and_the_body() {
+    let _g = crate::clock::serial(); // one encoder at a time
     let Ok(input) = std::env::var("STUDIO_PERSON_VIDEO") else { return eprintln!("STUDIO_PERSON_VIDEO not set: skipped") };
     let dir = Dir::new("person");
     let r = analyze::analyze(Path::new(&input), &dir.0, &AtomicBool::new(false), |_| {}).unwrap();
@@ -416,6 +422,7 @@ fn lists_devices() {
 
 #[test]
 fn capture_outputs_accept_our_settings_and_route_samples_to_the_sink() {
+    let _g = crate::clock::serial(); // one encoder at a time
     static CLOCK: SessionClock = SessionClock::new();
     let dir = Dir::new("wiring");
     let sink = Arc::new(Sink::new(&CLOCK, &dir.file("camera.mp4"), 30.0, 0.15, Some((320, 180)), false));
