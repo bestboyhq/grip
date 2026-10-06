@@ -111,10 +111,10 @@ export function openFile(env: Env, url: string, label: string): Promise<AudioFil
 const gains = new WeakMap<AudioFile, Promise<number>>()
 /** The static loudness gain of a voice (see loudness()), measured once per file in this thread and
  *  awaited before the first sample is mixed, so it never changes while playing. */
-function voiceGainOf(f: AudioFile): Promise<number> {
+function voiceGainOf(env: Env, f: AudioFile): Promise<number> {
   let g = gains.get(f)
   if (!g) {
-    gains.set(f, (g = loudness(f).then(voiceGain)))
+    gains.set(f, (g = env.rnnoise().then((m) => loudness(f, m)).then(voiceGain)))
     g.catch(() => gains.delete(f)) // a later attempt may succeed
   }
   return g
@@ -374,7 +374,7 @@ export class Mixer {
       plan.tracks.map(async (p) => {
         const t = new Track(await openFile(this.env, p.url, p.label), segs)
         const voice = p.voice ? new Voice(t, await this.denoiser(t.ch)) : null
-        return { t, voice, gain: p.volume * (p.voice ? await voiceGainOf(t.file) : 1) }
+        return { t, voice, gain: p.volume * (p.voice ? await voiceGainOf(this.env, t.file) : 1) }
       }),
     )
     if (plan.music) {

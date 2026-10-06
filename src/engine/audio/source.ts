@@ -3,7 +3,7 @@
 // of a source: waveform peaks (computed once and cached) and the voice loudness.
 
 import { ALL_FORMATS, AudioSampleSink, Input, type AudioSample, type Source } from 'mediabunny'
-import { LoudnessMeter, SR, integratedLoudness, interpolate, sincTable } from './dsp.ts'
+import { DENOISE_FRAME, Denoiser, LoudnessMeter, SR, integratedLoudness, interpolate, sincTable } from './dsp.ts'
 import { readError } from '../media/index.ts'
 
 export interface AudioFile {
@@ -227,39 +227,53 @@ async function segment(f: AudioFile, a: number, b: number, base: Int16Array) {
 
 const q16 = (v: number) => Math.max(-32767, Math.min(32767, Math.round(v * 32767)))
 
-// ---- Voice loudness: BS.1770 integrated loudness of up to WINDOWS 3 s windows spread evenly ----
-// Bounded work at any length (2 hours: 64 windows, about 0.2 s), so the mixer knows the voice gain
+// ---- Voice loudness: BS.1770 integrated loudness of the speech in up to WINDOWS 3 s windows ----
+// Bounded work at any length (2 hours: 64 windows, about 1.5 s), so the mixer knows the voice gain
 // before it mixes the first sample and never changes it: preview and export always match. A file up
 // to 3.2 min is measured whole. ponytail: longer files are sampled (3% of 2 hours), so sparse speech
 // gives a rougher estimate; add windows until enough blocks pass the gates if that ever shows.
+// Only speech counts (RNNoise's voice probability): a mic that caught only room tone and trackpad
+// clicks would otherwise measure as a very quiet voice and get the full +24 dB, clicks included.
 
 const WINDOW = 3 * SR // output samples: 30 loudness blocks
 const WINDOWS = 64
 
-/** Integrated loudness (LUFS) as heard (mono counts on both channels), or null for silence. */
-export async function loudness(f: AudioFile, windows = WINDOWS): Promise<number | null> {
+/** Integrated loudness (LUFS) of the speech as heard (mono counts on both channels), or null when
+ *  there is none. `rnnoise` is the RNNoise module, which tells speech from everything else. */
+export async function loudness(f: AudioFile, rnnoise: WebAssembly.Module, windows = WINDOWS): Promise<number | null> {
   const total = Math.ceil(f.duration * SR)
   const n = Math.min(windows, Math.ceil(total / WINDOW))
   // Window starts on the 100 ms block grid; a short file is tiled, so its blocks join seamlessly.
   const step = n > 1 ? Math.max(WINDOW, Math.floor((total - WINDOW) / (n - 1) / (SR / 10)) * (SR / 10)) : 0
   const blocks: number[][] = []
+  const speech: number[][] = []
   let next = 0
   const lane = async () => {
-    for (let i = next++; i < n; i = next++) blocks[i] = await windowBlocks(f, i * step, Math.min(WINDOW, total - i * step))
+    const den = await Denoiser.create(rnnoise, 1)
+    for (let i = next++; i < n; i = next++) [blocks[i], speech[i]] = await windowBlocks(f, den, i * step, Math.min(WINDOW, total - i * step))
   }
   await Promise.all(Array.from({ length: LANES }, lane))
-  return integratedLoudness(blocks.flat())
+  return integratedLoudness(blocks.flat(), speech.flat())
 }
 
-/** The 100 ms loudness blocks of output samples [a, a+n), after a 200 ms filter warm-up. */
-async function windowBlocks(f: AudioFile, a: number, n: number): Promise<number[]> {
-  const pre = SR / 5
+/** The 100 ms loudness blocks of output samples [a, a+n) and the mean speech probability of each,
+ *  after a 1 s warm-up: the filters settle in 200 ms, but a fresh RNNoise takes clicks for speech
+ *  until it has heard the room for about a second. */
+async function windowBlocks(f: AudioFile, den: Denoiser, a: number, n: number): Promise<[number[], number[]]> {
+  const pre = SR
   const r = new Reader(f)
   try {
     const chs = await r.read(a - pre, pre + n)
     const meter = new LoudnessMeter()
     meter.push(chs.slice(0, 2), pre + n, chs.length === 1 ? 2 : 1)
-    return meter.blocks.slice(2)
+    const mono = chs[0] // denoised in place below, after metering
+    if (chs.length > 1) for (let i = 0; i < mono.length; i++) mono[i] = (mono[i] + chs[1][i]) / 2
+    den.reset()
+    const frames: number[] = []
+    for (let i = 0; i + DENOISE_FRAME <= pre + n; i += DENOISE_FRAME) frames.push(den.frame([mono.subarray(i, i + DENOISE_FRAME)]))
+    const per = SR / 10 / DENOISE_FRAME // RNNoise frames per 100 ms block
+    const speech = meter.blocks.map((_, k) => frames.slice(k * per, (k + 1) * per).reduce((s, v) => s + v, 0) / per)
+    return [meter.blocks.slice(10), speech.slice(10)]
   } finally {
     r.close()
   }

@@ -163,17 +163,20 @@ export class Denoiser {
     this.states = this.states.map((s) => (this.x.rnnoise_destroy(s), this.x.rnnoise_create(0)))
   }
 
-  /** Denoise one frame per channel in place (floats in -1..1). */
-  frame(chs: Float32Array[]) {
+  /** Denoise one frame per channel in place (floats in -1..1). Returns the probability (0..1) that
+   *  the frame holds speech, the highest over the channels. */
+  frame(chs: Float32Array[]): number {
     const pi = this.inp >> 2
     const po = this.out >> 2
+    let speech = 0
     chs.forEach((ch, c) => {
       const h = new Float32Array(this.x.memory.buffer)
       for (let i = 0; i < DENOISE_FRAME; i++) h[pi + i] = ch[i] * 32768 // RNNoise expects 16-bit scale
-      this.x.rnnoise_process_frame(this.states[c], this.out, this.inp)
+      speech = Math.max(speech, this.x.rnnoise_process_frame(this.states[c], this.out, this.inp))
       const o = new Float32Array(this.x.memory.buffer)
       for (let i = 0; i < DENOISE_FRAME; i++) ch[i] = o[po + i] / 32768
     })
+    return speech
   }
 }
 
@@ -354,10 +357,16 @@ export class LoudnessMeter {
   }
 }
 
-/** BS.1770 gated loudness of 100 ms mean-square blocks (400 ms windows, 75% overlap). */
-export function integratedLoudness(sub: number[]): number | null {
+/** BS.1770 gated loudness of 100 ms mean-square blocks (400 ms windows, 75% overlap). With `speech`
+ *  (each block's mean speech probability), only windows that are mostly speech count, and under
+ *  about a second of them is no speech at all: RNNoise takes the odd click for a word. */
+export function integratedLoudness(sub: number[], speech?: number[]): number | null {
   const blocks: number[] = []
-  for (let i = 3; i < sub.length; i++) blocks.push((sub[i - 3] + sub[i - 2] + sub[i - 1] + sub[i]) / 4)
+  for (let i = 3; i < sub.length; i++) {
+    if (speech && speech[i - 3] + speech[i - 2] + speech[i - 1] + speech[i] < 2) continue
+    blocks.push((sub[i - 3] + sub[i - 2] + sub[i - 1] + sub[i]) / 4)
+  }
+  if (speech && blocks.length < 10) return null
   const lufs = (p: number) => -0.691 + 10 * Math.log10(p)
   const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length
   const abs = blocks.filter((p) => lufs(p) > -70)
