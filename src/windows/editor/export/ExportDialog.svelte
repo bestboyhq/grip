@@ -259,10 +259,8 @@
     overflow-y: auto;
     padding: 16px 20px 20px;
     border-radius: var(--radius-lg);
-    background: var(--bg-panel);
-    box-shadow:
-      0 0 0 0.5px rgb(255 255 255 / 0.14),
-      0 24px 64px rgb(0 0 0 / 0.55);
+    background: var(--surface-50);
+    box-shadow: var(--shadow-modal);
   }
   header {
     display: flex;
@@ -292,12 +290,12 @@
     padding: 0;
     border: 0;
     border-radius: 50%;
-    background: var(--bg-raised);
+    background: var(--surface-100);
     color: var(--text-dim);
   }
   .icon:hover {
     color: var(--text);
-    background: var(--bg-hover);
+    background: var(--surface-100-hover);
   }
   .rows {
     --label-w: 112px; /* fixed, so switching MP4/GIF never shifts the controls */
@@ -315,7 +313,7 @@
     gap: 6px;
     margin: 0;
     padding: 10px 0 0;
-    border-top: 1px solid var(--border);
+    box-shadow: var(--hairline-t);
     color: var(--text-dim);
     font-variant-numeric: tabular-nums;
   }
@@ -343,16 +341,16 @@
     height: 30px;
     padding: 0 12px;
     border: 0;
-    border-radius: 7px;
+    border-radius: var(--radius-sm);
     font-weight: 500;
     white-space: nowrap;
   }
   .secondary {
-    background: var(--bg-raised);
-    box-shadow: inset 0 0 0 1px var(--border);
+    background: var(--surface-100);
+    box-shadow: var(--hairline);
   }
   .secondary:hover:not(:disabled) {
-    background: var(--bg-hover);
+    background: var(--surface-100-hover);
   }
   .primary {
     margin-left: auto;
@@ -366,13 +364,13 @@
     opacity: 0.4;
   }
   button:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
   .queue {
     margin-top: 18px;
     padding-top: 12px;
-    border-top: 1px solid var(--border);
+    box-shadow: var(--hairline-t);
   }
   .qhead {
     display: flex;
@@ -410,7 +408,7 @@
     padding: 8px 0;
   }
   li + li {
-    border-top: 1px solid var(--border);
+    box-shadow: var(--hairline-t);
   }
   .line {
     display: flex;
@@ -429,13 +427,13 @@
     height: 22px;
     padding: 0 9px;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     font-size: 12px;
-    background: var(--bg-raised);
-    box-shadow: inset 0 0 0 1px var(--border);
+    background: var(--surface-100);
+    box-shadow: var(--hairline);
   }
   .small:hover {
-    background: var(--bg-hover);
+    background: var(--surface-100-hover);
   }
   progress {
     width: 100%;
@@ -444,10 +442,10 @@
     border: 0;
     border-radius: 2px;
     overflow: hidden;
-    background: var(--bg-raised);
+    background: var(--surface-200);
   }
   progress::-webkit-progress-bar {
-    background: var(--bg-raised);
+    background: var(--surface-200);
   }
   progress::-webkit-progress-value {
     background: var(--accent);

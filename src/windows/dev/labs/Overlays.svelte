@@ -210,7 +210,7 @@
 
 <main>
   <header>
-    <button onclick={() => (playing = !playing)}>{playing ? 'Pause' : 'Play'}</button>
+    <button class="btn" onclick={() => (playing = !playing)}>{playing ? 'Pause' : 'Play'}</button>
     <input type="range" min="0" max={duration} step={1 / 30} bind:value={t} aria-label="Output time" />
     <span class="time">{t.toFixed(2)} s</span>
     {#if error}<span class="error">{error}</span>{/if}
@@ -233,7 +233,7 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: var(--bg);
+    background: var(--surface-root);
   }
   header {
     display: flex;
@@ -241,7 +241,7 @@
     gap: 10px;
     height: 36px;
     padding: 0 10px;
-    border-bottom: 1px solid var(--border);
+    box-shadow: var(--hairline-b);
   }
   input[type='range'] {
     flex: 1;

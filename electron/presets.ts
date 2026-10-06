@@ -18,7 +18,7 @@ import { normalizeStyle } from '../src/shared/migrate.ts'
 import { bundleArg, locked, writeFileAtomic } from './projects.ts'
 
 const FORMAT = 'grip-preset'
-const VERSION = 1
+const VERSION = 2 // 2: motion blur amount, cursor and screen animation presets
 const MAX_BYTES = 100 << 20
 const EXT = '.grippreset'
 

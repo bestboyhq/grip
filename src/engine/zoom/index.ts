@@ -33,15 +33,20 @@ import { springDuration, springProgress, mix, type SpringConfig } from '../motio
 import { typingSegments, type Segment } from '../input/index.ts'
 
 const DT = 1 / 120 // s between camera samples
-const SPRING: SpringConfig = { stiffness: 100, damping: 20, mass: 1 } // critical: no overshoot, settles in ~0.9 s
-const LAG = 0.2 // s a critical spring trails a moving target (2 / omega); following aims this far ahead
+/** Camera springs per screen animation style, all critical (no overshoot): focused settles in ~0.9 s,
+ *  smooth glides in ~1.3 s. A critical spring trails a moving target by 2 / omega s, so following
+ *  aims that far ahead, and is ~98% there after 6 / omega s, so framing starts that early. */
+const SPRINGS: Record<Style['screenAnimation'], SpringConfig> = {
+  focused: { stiffness: 100, damping: 20, mass: 1 },
+  smooth: { stiffness: 49, damping: 14, mass: 1 },
+}
 const BRIDGE = 1 // s: a shorter gap between zooms pans across instead of zooming out and back in
 const DEAD_ZONE = 0.5 // the cursor roams this fraction of the half view before the camera pans
 const FOCUS_ZONE = 0.4 // clicked elements and typing stay this close to the center, so they show whole
 const EDGE_ZONE = 0.85 // the cursor never gets closer to the frame edge than this
 const CAMERA_CLEAR = 28 // screen points x cursor size (about a cursor's height, magnified with it by the
 // zoom) the cursor and clicked elements keep from a picture-in-picture camera
-const LEAD = 0.6 // s: zooms and framing start this long before a click or typing (spring is ~98% there)
+const LEAD = 0.6 // s: auto zooms start this long before a click or typing (the focused spring is ~98% there)
 const KEEP = 1 // s: a clicked element stays framed this long after the click
 const HOLD = 2 // s: an auto zoom holds this long after its last click or keystroke
 const MERGE_GAP = 2 // s: auto zooms closer than this merge; zooming out and back in that fast looks erratic
@@ -194,10 +199,10 @@ function clear(c: Pt, p: Pt, hold: Pt | null, cam: Rect, m: number, s: number, v
 
 /** Exact one-step update of the spring over dt: [h, g, h', g'] where displacement after dt is
  *  d * h + v * g and velocity d * h' + v * g' (linear in the initial state, closed form). */
-function springStep(dt: number): [number, number, number, number] {
+function springStep(dt: number, spring: SpringConfig): [number, number, number, number] {
   const e = 1e-5
-  const h = (t: number) => 1 - springProgress(t, SPRING)
-  const g = (t: number) => springProgress(t, SPRING, 1) - springProgress(t, SPRING)
+  const h = (t: number) => 1 - springProgress(t, spring)
+  const g = (t: number) => springProgress(t, spring, 1) - springProgress(t, spring)
   return [h(dt), g(dt), (h(dt + e) - h(dt - e)) / (2 * e), (g(dt + e) - g(dt - e)) / (2 * e)]
 }
 
@@ -219,7 +224,7 @@ export function zoomPath(input: SceneInput, map: TimeMap, layout: ReturnType<typ
   const { project, events, width, height } = input
   const screens = Object.values(layout.targets).map((s) => [s.screen, s.screenRadius, s.viewport, s.camera, s.pip, s.cameraOpacity])
   const camera = !!project.sources.camera && [project.style.camera.position, project.style.camera.visible]
-  const key = JSON.stringify([width, height, project.sources.screen ?? null, project.zooms, map.clips.map((c) => [c.start, c.end, c.speed]), layout.changes, screens, camera])
+  const key = JSON.stringify([width, height, project.sources.screen ?? null, project.style.screenAnimation, project.zooms, map.clips.map((c) => [c.start, c.end, c.speed]), layout.changes, screens, camera])
   if (last?.events !== events || last.cursor !== cursor.x || last.key !== key) last = { events, cursor: cursor.x, key, path: simulate(input, map, layout, cursor) }
   return last.path
 }
@@ -234,6 +239,10 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   const cur = cursor
   const enabled = project.zooms.filter((z) => z.enabled)
   const n = Math.ceil(map.duration / DT)
+  const spring = SPRINGS[project.style.screenAnimation] ?? SPRINGS.focused
+  const omega = Math.sqrt(spring.stiffness / spring.mass)
+  const lag = 2 / omega
+  const lead = 6 / omega
   if (!screen) return { n, data: new Float32Array(0), jumps: new Map<number, number>() }
 
   // The screen layer at t; where the layout hides the screen, the last one seen.
@@ -250,14 +259,18 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   const frames: Array<{ a: number; b: number; p: Pt }> = []
   for (const f of focusesOf(events, screen)) {
     const outs = f.t1 > f.t0 ? mapRange(map, f.t0, f.t1) : ((o) => (o === null ? [] : [[o, o]]))(toOutput(map, f.t0))
-    for (const [a, b] of outs) frames.push({ a: a - LEAD, b: b + KEEP, p: toPx(screenAt(layout, a)?.screen ?? layer.screen, f.x, f.y) })
+    for (const [a, b] of outs) frames.push({ a: a - lead, b: b + KEEP, p: toPx(screenAt(layout, a)?.screen ?? layer.screen, f.x, f.y) })
   }
   frames.sort((p, q) => p.a - q.a)
 
   const cam = spans(enabled.filter((z) => z.mode !== 'loupe'), map)
+  // A slower spring starts zooming in that much earlier, so every style is in by LEAD after the start.
+  cam.forEach((s, i) => {
+    if (!s.zoom.instant && s.a > AT_START) s.a = Math.max(s.a - (lead - LEAD), i ? cam[i - 1].b : 0)
+  })
   const data = new Float32Array(3 * (n + 1))
   const jumps = new Map<number, number>()
-  const [h, g, dh, dg] = springStep(DT)
+  const [h, g, dh, dg] = springStep(DT, spring)
   const pos = [0, 0, 0] // x, y, log scale
   const vel = [0, 0, 0]
   let aim: Pt | null = null // where the follow camera wants its center
@@ -280,13 +293,13 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
     else if (zoom || s > 1) {
       // Follow: the cursor roams a dead zone, focus places stay central, both stay out from under a
       // picture-in-picture camera, and the cursor stays in frame above all.
-      // Everything is read LAG ahead so the trailing spring lands on time.
-      const tl = t + LAG
+      // Everything is read lag ahead so the trailing spring lands on time.
+      const tl = t + lag
       const cp = cursorPt(tl, r)
       while (fi < frames.length && frames[fi].b < tl) fi++
       if (span && span !== prev) {
         // Entering a zoom: aim at its first click or typing place, else at the cursor.
-        aim = frames.find((f) => f.b >= span.a && f.a <= span.a + LEAD + 0.4)?.p ?? cp ?? aim
+        aim = frames.find((f) => f.b >= span.a && f.a <= span.a + lead + 0.4)?.p ?? cp ?? aim
       }
       const hw = vp.w / (2 * s)
       const hh = vp.h / (2 * s)

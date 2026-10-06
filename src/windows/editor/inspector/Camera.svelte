@@ -179,14 +179,14 @@
 {/if}
 
 <style>
-  .note { margin: 14px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--bg-raised); color: var(--text-dim); font-size: 12px; }
+  .note { margin: 14px 0 0; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-25); box-shadow: var(--hairline); color: var(--text-dim); font-size: 12px; }
   .row { display: flex; align-items: center; gap: 6px; min-height: 30px; }
   .row.off { opacity: 0.4; pointer-events: none; }
   .label { flex: none; width: var(--label-w, 92px); color: var(--text-dim); font-size: 12px; }
   .tip { color: var(--text-faint); font-size: 11.5px; }
-  .corners { position: relative; flex: none; width: 64px; height: 40px; border-radius: 6px; background: var(--bg-raised); box-shadow: inset 0 0 0 1px var(--border); }
-  .corner { position: absolute; width: 18px; height: 12px; border-radius: 3px; background: var(--bg-active); transition: background-color 120ms; }
-  .corner:hover { background: #50505a; }
+  .corners { position: relative; flex: none; width: 64px; height: 40px; border-radius: var(--radius); background: var(--surface-25); box-shadow: var(--hairline); }
+  .corner { position: absolute; width: 18px; height: 12px; border-radius: var(--radius-xs); background: var(--surface-150); transition: background-color 120ms; }
+  .corner:hover { background: var(--surface-200); }
   .corner.on { background: var(--accent); }
   .corner:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
   .corner input { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }

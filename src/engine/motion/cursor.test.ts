@@ -98,11 +98,11 @@ test('a frame evaluated alone equals the frame evaluated in sequence', () => {
 test('passes through every click within 0.5 px, with cuts, speed changes, and loop', () => {
   const events = stream(60, 11)
   for (const loop of [false, true]) {
-    for (const smooth of [true, false]) {
+    for (const animation of ['smooth', 'medium', 'rapid', 'none'] as const) {
       const s = setup(events, 60, (p) => {
         edits(p)
         p.style.cursor.loop = loop
-        p.style.cursor.smooth = smooth
+        p.style.cursor.animation = animation
       })
       const cs = clicks(s, events)
       assert.ok(cs.length > 10)
@@ -271,4 +271,16 @@ test('a 2-hour stream with hundreds of cuts precomputes fast in bounded memory',
 
 test('built-in cursors: one set for motion and the renderer, hotspot inside each image', () => {
   for (const [name, a] of Object.entries(CURSORS)) assert.ok(a.hotX > 0 && a.hotX < a.w && a.hotY > 0 && a.hotY < a.h, name)
+})
+
+test('cursor animation styles smooth progressively less: smooth > medium > rapid > none (raw)', () => {
+  const events = stream(30, 7)
+  const path = (animation: 'smooth' | 'medium' | 'rapid' | 'none') => {
+    const s = setup(events, 30, (p) => (p.style.cursor.animation = animation))
+    return Array.from({ length: 2400 }, (_, i) => cursorPoint(s.c, i / 80)!)
+  }
+  const raw = path('none')
+  const off = (a: string) => path(a as 'smooth').reduce((m, p, i) => m + Math.hypot(p.x - raw[i].x, p.y - raw[i].y), 0)
+  const [s, m, r] = ['smooth', 'medium', 'rapid'].map(off)
+  assert.ok(s > m && m > r && r > 0, `deviation from raw: smooth ${s}, medium ${m}, rapid ${r}`)
 })

@@ -67,10 +67,10 @@
   .picker.disabled { opacity: 0.4; }
   .row { display: flex; align-items: center; gap: 6px; min-height: 30px; }
   label { flex: none; width: var(--label-w, 92px); color: var(--text-dim); font-size: 12px; }
-  .well { position: relative; flex: none; width: 26px; height: 26px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14); }
+  .well { position: relative; flex: none; width: 26px; height: 26px; border-radius: var(--radius-sm); box-shadow: inset 0 0 0 0.5px var(--edge-strong); }
   .well:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
   .well input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; }
-  .hex { flex: 1; min-width: 0; display: flex; align-items: center; height: var(--control-h); padding-left: 8px; border-radius: 6px; background: var(--bg-raised); color: var(--text-faint); font: 12.5px var(--mono); }
+  .hex { flex: 1; min-width: 0; display: flex; align-items: center; height: var(--control-h); padding-left: 8px; border-radius: var(--radius-sm); background: var(--surface-100); box-shadow: var(--hairline); color: var(--text-faint); font: 12.5px var(--mono); }
   .hex:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: -1px; }
   .hex input { flex: 1; min-width: 0; height: 100%; padding: 0 8px 0 2px; border: 0; background: none; color: var(--text); font: inherit; text-transform: lowercase; }
   .hex input:focus-visible { outline: none; }
@@ -80,10 +80,10 @@
   .swatches input {
     --selected: 0 0 transparent; --focused: 0 0 transparent;
     appearance: none; width: 20px; height: 20px; margin: 0; border-radius: 50%;
-    box-shadow: var(--focused), inset 0 0 0 1px rgb(255 255 255 / 0.14), var(--selected);
+    box-shadow: var(--focused), inset 0 0 0 0.5px var(--edge-strong), var(--selected);
     transition: transform 120ms var(--ease-out), box-shadow 120ms;
   }
   .swatches input:hover { transform: scale(1.12); }
-  .swatches input:checked { --selected: 0 0 0 2px var(--bg-panel), 0 0 0 3.5px var(--text); }
+  .swatches input:checked { --selected: 0 0 0 2px var(--surface-50), 0 0 0 3.5px var(--text); }
   .swatches input:focus-visible { outline: none; --focused: inset 0 0 0 2px var(--text), inset 0 0 0 3.5px rgb(0 0 0 / 0.5); }
 </style>

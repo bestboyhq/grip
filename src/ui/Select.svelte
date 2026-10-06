@@ -46,8 +46,8 @@
   .box { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
   .box :global(.icon) { position: absolute; right: 7px; color: var(--text-dim); pointer-events: none; }
   select {
-    width: 100%; height: var(--control-h); padding: 0 26px 0 9px; border: 0; border-radius: 6px; appearance: none;
-    background: var(--bg-raised); font-size: 12.5px; text-overflow: ellipsis;
+    width: 100%; height: var(--control-h); padding: 0 26px 0 9px; border: 0; border-radius: var(--radius-sm); appearance: none;
+    background: var(--surface-100); box-shadow: var(--hairline); font-size: 12.5px; text-overflow: ellipsis;
   }
-  select:hover { background: var(--bg-hover); }
+  select:hover { background: var(--surface-100-hover); }
 </style>

@@ -340,7 +340,7 @@
 <style>
   main {
     padding: 20px 24px;
-    background: var(--bg);
+    background: var(--surface-root);
     height: 100vh;
     overflow: auto;
     font: 12px var(--mono);
@@ -353,7 +353,7 @@
     list-style: none;
   }
   b {
-    color: #5fd38d;
+    color: var(--success);
   }
   .fail b {
     color: var(--danger);

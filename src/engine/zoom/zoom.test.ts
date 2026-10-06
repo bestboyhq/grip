@@ -285,20 +285,23 @@ test('fixture: auto zooms cover every click, keep the cursor in frame and clicke
   for (const c of clicks) assert.ok(zooms.some((z) => z.start <= c.t - 0.5 && z.end >= c.t + 1.5), `click at ${c.t} is not covered`)
   zooms.forEach((z, i) => assert.ok(z.start >= 0 && z.end <= project.sources.duration && (i === 0 || zooms[i - 1].end <= z.start)))
 
-  const { p, view } = setup(zooms, events, { project })
-  for (const t of frames(0, project.sources.duration)) {
-    const v = visible(view(t))
-    const c = cursorAt(p.cursor, t)!
-    assert.ok(c.x >= v.x0 && c.x <= v.x1 && c.y >= v.y0 && c.y <= v.y1, `cursor out of frame at t=${t}`)
-  }
-  const r = layoutAt(p.layout, 0).screen!.rect
-  for (const c of clicks) {
-    const v = visible(view(c.t))
-    assert.ok(view(c.t).scale > 1.9, `not zoomed in at the click at ${c.t}`)
-    const x = r.x + (c.x * r.w) / project.sources.screen!.width
-    const y = r.y + (c.y * r.h) / project.sources.screen!.height
-    // Within the focus zone (plus spring slack), so the element around the click is in frame.
-    assert.ok(Math.abs(x - view(c.t).center.x) <= 0.45 * v.hw && Math.abs(y - view(c.t).center.y) <= 0.45 * v.hh, `click at ${c.t} is off center`)
+  for (const style of ['focused', 'smooth'] as const) {
+    project.style.screenAnimation = style
+    const { p, view } = setup(zooms, events, { project })
+    for (const t of frames(0, project.sources.duration)) {
+      const v = visible(view(t))
+      const c = cursorAt(p.cursor, t)!
+      assert.ok(c.x >= v.x0 && c.x <= v.x1 && c.y >= v.y0 && c.y <= v.y1, `cursor out of frame at t=${t}`)
+    }
+    const r = layoutAt(p.layout, 0).screen!.rect
+    for (const c of clicks) {
+      const v = visible(view(c.t))
+      assert.ok(view(c.t).scale > 1.9, `not zoomed in at the click at ${c.t}`)
+      const x = r.x + (c.x * r.w) / project.sources.screen!.width
+      const y = r.y + (c.y * r.h) / project.sources.screen!.height
+      // Within the focus zone (plus spring slack), so the element around the click is in frame.
+      assert.ok(Math.abs(x - view(c.t).center.x) <= 0.45 * v.hw && Math.abs(y - view(c.t).center.y) <= 0.45 * v.hh, `click at ${c.t} is off center`)
+    }
   }
 })
 

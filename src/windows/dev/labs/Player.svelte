@@ -117,7 +117,7 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
-    background: var(--bg);
+    background: var(--surface-root);
     color: var(--text);
   }
   .hint {
@@ -140,21 +140,21 @@
     align-items: center;
     gap: 12px;
     padding: 10px 16px 4px;
-    border-top: 1px solid var(--border);
+    box-shadow: var(--hairline-t);
   }
   .play {
     width: 32px;
     height: 32px;
     border-radius: 50%;
     border: none;
-    background: var(--bg-raised);
+    background: var(--surface-100);
     display: grid;
     place-items: center;
     cursor: pointer;
     fill: var(--text);
   }
   .play:hover {
-    background: var(--bg-hover);
+    background: var(--surface-100-hover);
   }
   .time {
     font: 12px var(--mono);
@@ -168,8 +168,9 @@
     position: relative;
     flex: 1;
     height: 40px;
-    border-radius: 6px;
-    background: var(--bg-raised);
+    border-radius: var(--radius-sm);
+    background: var(--surface-25);
+    box-shadow: var(--hairline);
     overflow: hidden;
   }
   .wave {

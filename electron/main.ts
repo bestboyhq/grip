@@ -13,6 +13,7 @@ import { openSharedLink, registerShare } from './share.ts'
 import { registerTranscript } from './transcript.ts'
 import { registerCamera } from './camera.ts'
 import { registerEditor } from './editor.ts'
+import { registerWallpapers } from './wallpapers.ts'
 import { registerSettings, settings } from './shell/settings.ts'
 import { command, editorsDone, isQuitting, openFilesOrAlert, openOnboarding, openProject, recordingStatus, registerRecorder, setQuitting, showPicker, stopAndWait, warmUp } from './shell/recorder.ts'
 import { setAppMenu } from './shell/menu.ts'
@@ -94,6 +95,7 @@ app.whenReady().then(() => {
   registerTranscript()
   registerCamera()
   registerEditor()
+  registerWallpapers()
   if (!app.isPackaged && process.env.STUDIO_FAKE_RECORDING) registerFakeRecording(process.env.STUDIO_FAKE_RECORDING)
   registerSettings()
   registerRecorder()

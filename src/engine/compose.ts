@@ -58,20 +58,20 @@ export function prefetchCut(p: Prepared, media: Media, t: number): void {
 
 /** Shutter sample times around output time t, clamped to the clip playing at t so motion blur
  *  never smears across a cut. */
-export function shutter(map: TimeMap, t: number): number[] {
+export function shutter(map: TimeMap, t: number, amount = 1): number[] {
   const i = clipAt(map, t)
   const c = map.clips[i]
   const a = map.outStarts[i]
   const b = a + (c.end - c.start) / c.speed
-  return Array.from({ length: SAMPLES }, (_, k) => Math.min(Math.max(t + SHUTTER * (k / (SAMPLES - 1) - 0.5), a), b))
+  return Array.from({ length: SAMPLES }, (_, k) => Math.min(Math.max(t + amount * SHUTTER * (k / (SAMPLES - 1) - 0.5), a), b))
 }
 
 /** Shutter samples of the zoom view and the cursor around t, or undefined when neither moves (the
  *  renderer then draws one sample, so static frames cost nothing extra). Pure in (project, t). */
 export function motionAt(p: Prepared, t: number): Motion | undefined {
   const { project, width: W, height: H } = p.input
-  if (!project.style.motionBlur || !p.map.clips.length) return
-  const ts = shutter(p.map, t)
+  if (!(project.style.motionBlur > 0) || !p.map.clips.length) return
+  const ts = shutter(p.map, t, Math.min(project.style.motionBlur, 1))
   const views = ts.map((x) => viewAt(p.zoom, x))
   // Cursor samples ride on the screen as it sits at t: a layout transition moves the screen without
   // blurring it, so it must not blur the cursor on it either.

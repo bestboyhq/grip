@@ -1,9 +1,11 @@
 <!-- Picking overlay, one transparent window per display (#/area?display=<id>).
      Display mode: highlight the hovered display. Window mode: highlight the window under the mouse,
      with preset sizes. Area mode: drag out a rectangle, resize it by its handles, type its size, lock
-     an aspect; the last area is remembered. Then a 3-2-1 countdown over the recorded region. -->
+     an aspect; the last area is remembered. Then a 3-2-1 countdown over the recorded region. While an
+     area records, the overlays stay as a click-through backdrop that dims everything around it. -->
 <script lang="ts">
   import { onMount } from 'svelte'
+  import logoDot from '../../../build/Grip.icon/Assets/dot.svg'
   import { invoke, on } from '../../lib/ipc.ts'
   import Icon from '../recorder/Icon.svelte'
   import { fromEngine, setSettings, shell, startRequest, toEngine, windowList, type Rect, type StartRequest, type WindowSource } from '../recorder/shell.svelte.ts'
@@ -152,16 +154,24 @@
 <svelte:body onpointermove={move} onpointerup={up} onpointerleave={() => drag || (mouse = null)} />
 
 {#snippet startButton(onclick: () => void)}
-  <button class="start" {onclick}><span class="dot"></span>Start recording</button>
+  <button class="start" {onclick}><span class="dot" style:background-image="url({logoDot})"></span>Start recording</button>
 {/snippet}
 
 <main class:area={shell.mode === 'area' && !target} onpointerdown={(e) => down(e, 'new')}>
-  {#if target}
-    {#if count > 0}
-      <div class="target" style:left="{target.x}px" style:top="{target.y}px" style:width="{target.width}px" style:height="{target.height}px">
-        {#key count}<div class="count" role="status" aria-live="assertive">{count}</div>{/key}
-      </div>
+  {#if shell.area && display}
+    <!-- Recording an area: everything else stays dim, every display (click-through, main process). -->
+    {@const r = shell.area.display === display.id ? fromEngine(shell.area.rect) : null}
+    {#if r}
+      <div class="target" style:left="{r.x}px" style:top="{r.y}px" style:width="{r.width}px" style:height="{r.height}px"></div>
+    {:else}
+      <div class="dim"></div>
     {/if}
+  {:else if target}
+    <div class="target" style:left="{target.x}px" style:top="{target.y}px" style:width="{target.width}px" style:height="{target.height}px">
+      {#if count > 0}
+        {#key count}<div class="count" role="status" aria-live="assertive">{count}</div>{/key}
+      {/if}
+    </div>
   {:else if shell.counting}
     <!-- Another display is counting down. -->
   {:else if shell.mode === 'display'}
@@ -275,14 +285,10 @@
     gap: 6px;
     min-width: 220px;
     padding: 20px 22px 18px;
-    border-radius: 16px;
-    background: rgb(28 28 30 / 0.92);
-    box-shadow:
-      0 0 0 0.5px rgb(255 255 255 / 0.14) inset,
-      0 18px 50px rgb(0 0 0 / 0.45);
-    color: #f4f4f5;
-    -webkit-backdrop-filter: blur(20px);
-    backdrop-filter: blur(20px);
+    border-radius: var(--radius-xl);
+    background: var(--surface-50);
+    box-shadow: var(--shadow-pop);
+    color: var(--text);
   }
   .window-card {
     position: absolute;
@@ -296,7 +302,7 @@
   }
   .sub {
     font-size: 12px;
-    color: rgb(255 255 255 / 0.6);
+    color: var(--text-dim);
     font-variant-numeric: tabular-nums;
   }
   .ellipsis {
@@ -313,7 +319,7 @@
     height: 34px;
     padding: 0 16px 0 13px;
     border: 0;
-    border-radius: 10px;
+    border-radius: var(--radius);
     background: var(--accent);
     color: var(--accent-ink);
     font-size: 13px;
@@ -325,14 +331,14 @@
   }
   .start:focus-visible,
   .segmented button:focus-visible {
-    outline: 2px solid #fff;
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
+  /* The logo's record dot, cropped out of its 1024 icon canvas (r 129 around the center). */
   .dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: #fff;
+    width: 12px;
+    height: 12px;
+    background: center / 397% no-repeat;
   }
   .frame {
     position: absolute;
@@ -349,23 +355,35 @@
   .segmented {
     display: flex;
     margin-top: 8px;
+    gap: 2px;
     padding: 2px;
-    border-radius: 8px;
-    background: rgb(255 255 255 / 0.08);
+    border-radius: var(--radius);
+    background: var(--surface-25);
+    box-shadow: var(--hairline);
   }
   .segmented button {
     height: 24px;
     padding: 0 9px;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     background: none;
-    color: rgb(255 255 255 / 0.75);
+    color: var(--text-dim);
     font-size: 12px;
+    font-weight: 500;
     white-space: nowrap;
+    transition: background-color 120ms, color 120ms;
+  }
+  .segmented button:hover:not(:disabled) {
+    background: var(--surface-25-hover);
+    color: var(--text);
+  }
+  .segmented button:disabled {
+    opacity: 0.35;
   }
   .segmented button.on {
-    background: rgb(255 255 255 / 0.18);
-    color: #fff;
+    background: var(--surface-150);
+    color: var(--text);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), var(--hairline);
   }
   .hint {
     position: absolute;
@@ -373,18 +391,28 @@
     top: 50%;
     transform: translate(-50%, -50%);
     padding: 9px 16px;
-    border-radius: 10px;
-    background: rgb(28 28 30 / 0.88);
-    color: rgb(255 255 255 / 0.85);
+    border-radius: var(--radius-lg);
+    background: var(--surface-50);
+    box-shadow: var(--shadow-pop);
+    color: var(--text-dim);
     font-size: 13px;
     pointer-events: none;
   }
-  .sel {
+  /* The region to record: clear, with a hairline, and everything around it dim. */
+  .sel,
+  .target {
     position: absolute;
     box-shadow:
       0 0 0 1px rgb(255 255 255 / 0.95),
       0 0 0 100vmax rgb(0 0 0 / 0.42);
+  }
+  .sel {
     cursor: move;
+  }
+  .dim {
+    position: absolute;
+    inset: 0;
+    background: rgb(0 0 0 / 0.42);
   }
   .grid {
     position: absolute;
@@ -426,12 +454,10 @@
     align-items: center;
     gap: 10px;
     padding: 8px 8px 8px 12px;
-    border-radius: 12px;
-    background: rgb(28 28 30 / 0.92);
-    box-shadow:
-      0 0 0 0.5px rgb(255 255 255 / 0.14) inset,
-      0 12px 36px rgb(0 0 0 / 0.4);
-    color: #f4f4f5;
+    border-radius: var(--radius-xl); /* concentric: 8 px controls inside 8 px padding */
+    background: var(--surface-50);
+    box-shadow: var(--shadow-pop);
+    color: var(--text);
     cursor: default;
   }
   .form .segmented,
@@ -442,7 +468,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    color: rgb(255 255 255 / 0.5);
+    color: var(--text-faint);
     font-size: 12px;
   }
   .size input {
@@ -450,24 +476,23 @@
     height: 26px;
     padding: 0 7px;
     border: 0;
-    border-radius: 7px;
-    background: rgb(255 255 255 / 0.1);
-    color: #fff;
+    border-radius: var(--radius-sm);
+    background: var(--surface-100);
+    box-shadow: var(--hairline);
+    color: var(--text);
     font: 13px var(--font);
     font-variant-numeric: tabular-nums;
     text-align: center;
   }
   .size input:focus {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
   }
   .size input::-webkit-inner-spin-button {
     display: none;
   }
   .target {
-    position: absolute;
     display: grid;
     place-items: center;
-    box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.35);
   }
   .count {
     display: grid;

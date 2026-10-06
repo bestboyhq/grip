@@ -4,7 +4,7 @@
 // Lengths in Style are in "units": 1 unit = min(outputWidth, outputHeight) / 1080 px,
 // so preview (small canvas) and export (full size) lay out identically.
 
-export const PROJECT_VERSION = 1
+export const PROJECT_VERSION = 2
 
 export type Rect = { x: number; y: number; w: number; h: number }
 /** Normalized rect, 0..1 relative to the screen source frame. */
@@ -116,11 +116,14 @@ export interface Style {
   inset?: number
   shadow: number // 0..1
   device: 'none' | 'macbook' | 'iphone' | 'ipad'
-  motionBlur: boolean
+  /** How the zoom camera moves: focused settles fast so content is readable sooner, smooth glides. */
+  screenAnimation: 'focused' | 'smooth'
+  motionBlur: number // 0..1, shutter length as a fraction of compose.ts SHUTTER (180° at 30 fps)
   cursor: {
     visible: boolean
     size: number // 1 = native size
-    smooth: boolean
+    /** How much the path is smoothed: smooth glides, rapid only removes jitter, none is raw. */
+    animation: 'smooth' | 'medium' | 'rapid' | 'none'
     hideIdle: boolean
     loop: boolean // return to start position at the end
     click: 'none' | 'ripple' | 'circle' | 'shockwave'
@@ -192,8 +195,9 @@ export const defaultStyle = (): Style => ({
   inset: 0,
   shadow: 0.6,
   device: 'none',
-  motionBlur: true,
-  cursor: { visible: true, size: 1.6, smooth: true, hideIdle: true, loop: false, click: 'ripple', clickSound: false, set: 'system' },
+  screenAnimation: 'focused',
+  motionBlur: 1,
+  cursor: { visible: true, size: 1.6, animation: 'smooth', hideIdle: true, loop: false, click: 'ripple', clickSound: false, set: 'system' },
   camera: {
     visible: true,
     size: 300,

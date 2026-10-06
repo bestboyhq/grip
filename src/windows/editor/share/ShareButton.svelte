@@ -216,19 +216,20 @@
     gap: 6px;
     height: 28px;
     padding: 0 11px 0 9px;
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    background: var(--bg-raised);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--surface-100);
+    box-shadow: var(--hairline);
     font-weight: 500;
   }
   .trigger:hover {
-    background: var(--bg-hover);
+    background: var(--surface-100-hover);
   }
   .ring {
     transform: rotate(-90deg);
     fill: none;
     stroke-width: 2;
-    stroke: rgb(255 255 255 / 0.15);
+    stroke: var(--surface-200);
   }
   .ring .fill {
     stroke: var(--accent);
@@ -244,13 +245,11 @@
     margin: 8px 0 0;
     width: 320px;
     padding: 0;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--bg-raised);
+    border: 0;
+    border-radius: var(--radius-lg);
+    background: var(--surface-50);
     color: var(--text);
-    box-shadow:
-      0 12px 40px rgb(0 0 0 / 0.45),
-      0 0 0 0.5px rgb(0 0 0 / 0.6);
+    box-shadow: var(--shadow-pop);
     overflow: hidden;
   }
   .head {
@@ -266,7 +265,7 @@
   }
   .toast {
     font-size: 12px;
-    color: #9be3a7;
+    color: var(--success);
   }
 
   .seg {
@@ -275,21 +274,26 @@
     gap: 2px;
     margin: 0 14px;
     padding: 2px;
-    border-radius: 8px;
-    background: rgb(0 0 0 / 0.25);
+    border-radius: var(--radius);
+    background: var(--surface-25);
+    box-shadow: var(--hairline);
   }
   .seg button {
     height: 24px;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     background: none;
     color: var(--text-dim);
     font-weight: 500;
   }
-  .seg button[aria-selected='true'] {
-    background: var(--bg-hover);
+  .seg button:hover {
+    background: var(--surface-25-hover);
     color: var(--text);
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  }
+  .seg button[aria-selected='true'] {
+    background: var(--surface-150);
+    color: var(--text);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), var(--hairline);
   }
 
   .body {
@@ -330,7 +334,7 @@
     height: 28px;
     padding: 0 12px;
     border: 0;
-    border-radius: 7px;
+    border-radius: var(--radius-sm);
     background: var(--accent);
     color: var(--accent-ink);
     font-weight: 500;
@@ -349,13 +353,13 @@
     padding: 0 4px;
     margin: 0 -4px;
     border: 0;
-    border-radius: 5px;
+    border-radius: var(--radius-xs);
     background: none;
     color: var(--accent-text);
     font-weight: 500;
   }
   button.text:hover:not(:disabled) {
-    background: var(--accent-soft);
+    background: var(--surface-50-hover);
   }
   button.text.danger {
     color: var(--danger);
@@ -373,9 +377,9 @@
     align-items: center;
     gap: 6px;
     padding: 3px 3px 3px 10px;
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    background: var(--bg);
+    border-radius: calc(var(--radius-sm) + 3px); /* concentric around the Copy button, 3 px in */
+    background: var(--surface-25);
+    box-shadow: var(--hairline);
   }
   .url {
     flex: 1;
@@ -391,7 +395,7 @@
   .bar {
     height: 4px;
     border-radius: 2px;
-    background: rgb(255 255 255 / 0.08);
+    background: var(--surface-200);
     overflow: hidden;
   }
   .bar > div {
@@ -401,7 +405,7 @@
     transition: width 0.2s linear;
   }
   .bar.paused > div {
-    background: #d9a440;
+    background: var(--warning);
   }
   .bar.indeterminate > div {
     width: 35%;
@@ -429,8 +433,8 @@
     align-items: center;
     gap: 10px;
     padding: 11px 14px;
-    border-top: 1px solid var(--border);
-    background: rgb(0 0 0 / 0.12);
+    background: var(--surface-25);
+    box-shadow: var(--hairline-t);
     color: var(--text-dim);
   }
   .private b {
@@ -448,7 +452,8 @@
     height: 18px;
     margin: 0;
     border-radius: 9px;
-    background: rgb(255 255 255 / 0.16);
+    background: var(--surface-200);
+    box-shadow: var(--hairline);
     transition: background 0.15s;
   }
   input[role='switch']::after {
@@ -459,8 +464,8 @@
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+    background: var(--knob);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
     transition: transform 0.15s;
   }
   input[role='switch']:checked {
@@ -471,7 +476,7 @@
     background: var(--accent-ink);
   }
   :focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 </style>

@@ -20,7 +20,24 @@ import { drawOverlays } from '../overlays/index.ts'
 import { oklab, parseColor, wallpaper, DEFAULT_WALLPAPER } from '../backgrounds/index.ts'
 import { CURSORS, CURSOR_RES, type BuiltinName } from '../../assets/cursors.ts'
 import { GRADE, gradeLut, parseCube, type Lut } from './lut.ts'
-import code from './shaders.wgsl?raw'
+import shaders from './shaders.wgsl?raw'
+
+// Wallpaper styles: one file per style defining wp_<style>(uv, wh) -> encoded sRGB, joined to the
+// main module behind a generated dispatch, so adding a style is adding a file.
+const styleCode = import.meta.glob<string>('./wallpapers/*.wgsl', { query: '?raw', import: 'default', eager: true })
+const STYLES = Object.keys(styleCode).sort().map((k) => k.slice('./wallpapers/'.length, -'.wgsl'.length))
+const shaderCode = (styles: string[]) => [
+  shaders,
+  ...styles.map((s) => styleCode[`./wallpapers/${s}.wgsl`]),
+  `fn wallpaper(uv: vec2f, wh: vec2f, style: i32) -> vec3f {
+  var c = vec3f(0.0);
+  switch style {
+${styles.map((s) => `    case ${STYLES.indexOf(s)}: { c = wp_${s}(uv, wh); }`).join('\n')}
+    default: {}
+  }
+  return c;
+}`,
+].join('\n')
 
 export interface Frames {
   screen: VideoFrame | null
@@ -167,7 +184,18 @@ export class Renderer {
 
   private async init(canvasFormat: GPUTextureFormat) {
     const d = this.device
-    const module = d.createShaderModule({ code })
+    let styles = STYLES
+    if (import.meta.env.DEV) {
+      // A style that does not compile renders black instead of taking the whole compositor down
+      // while someone works on it.
+      const ok = await Promise.all(STYLES.map(async (s) => {
+        const errors = (await d.createShaderModule({ code: shaderCode([s]) }).getCompilationInfo()).messages.filter((m) => m.type === 'error')
+        if (errors.length) console.error(`Wallpaper style ${s}.wgsl: ` + errors.map((m) => `${m.lineNum}:${m.linePos} ${m.message}`).join('; '))
+        return !errors.length
+      }))
+      styles = STYLES.filter((_, i) => ok[i])
+    }
+    const module = d.createShaderModule({ code: shaderCode(styles) })
     const info = await module.getCompilationInfo()
     const errors = info.messages.filter((m) => m.type === 'error')
     if (errors.length) throw new Error('Compositor shader: ' + errors.map((m) => `${m.lineNum}:${m.linePos} ${m.message}`).join('; '))
@@ -543,12 +571,11 @@ export class Renderer {
       p.set([1, stops.length, ((bg.angle ?? 180) * Math.PI) / 180], 0)
       stops.forEach((c, i) => lab(COLS + i, c))
     } else if (bg.kind === 'wallpaper') {
-      const w = wallpaper(bg.id)
-      p.set([2, w.points.length, 0, w.warp, w.seed], 0)
-      w.points.forEach(([x, y, r, c], i) => {
-        p.set([x, y, r], (3 + i) * 4)
-        lab(COLS + i, parseColor(c)!)
-      })
+      let w = wallpaper(bg.id)
+      if (!STYLES.includes(w.style)) w = wallpaper(DEFAULT_WALLPAPER)
+      p.set([2, w.colors.length, STYLES.indexOf(w.style)], 0)
+      p.set(w.params.slice(0, 48), 3 * 4)
+      w.colors.slice(0, 12).forEach((c, i) => lab(COLS + i, parseColor(c) ?? [0, 0, 0]))
     } else if (image) {
       img = this.texture(image.width, image.height, LDR, mipCount(image.width, image.height))
       d.queue.copyExternalImageToTexture({ source: image }, { texture: img, premultipliedAlpha: true }, [image.width, image.height])

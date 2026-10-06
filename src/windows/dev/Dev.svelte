@@ -19,3 +19,8 @@
     {/each}
   </ul>
 {/if}
+
+<style>
+  :global(html[data-window='dev']) { background: var(--surface-root); }
+  a { color: var(--text); }
+</style>

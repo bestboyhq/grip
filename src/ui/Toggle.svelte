@@ -26,11 +26,11 @@
   small { font-size: 11.5px; line-height: 1.35; color: var(--text-faint); }
   input {
     flex: none; position: relative; width: 28px; height: 16px; margin: 0; border-radius: 8px; appearance: none;
-    background: var(--bg-active); box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.06); transition: background-color 160ms;
+    background: var(--surface-200); box-shadow: var(--hairline); transition: background-color 160ms;
   }
   input::before {
     content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
-    background: #f5f5f7; box-shadow: 0 1px 2px rgb(0 0 0 / 0.35); transition: transform 180ms var(--ease-out);
+    background: var(--knob); box-shadow: 0 1px 2px rgb(0 0 0 / 0.35); transition: transform 180ms var(--ease-out);
   }
   input:checked { background: var(--accent); }
   input:checked::before { transform: translateX(12px); background: var(--accent-ink); }

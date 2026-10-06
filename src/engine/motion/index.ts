@@ -29,7 +29,8 @@ import { CURSORS, type BuiltinName } from '../../assets/cursors.ts'
 
 // Time constants, all in OUTPUT seconds.
 const RATE = 120 // grid samples per second
-const SIGMA = 0.08 // smoothing (Gaussian sigma)
+/** Smoothing (Gaussian sigma) per cursor animation style; none keeps the raw path. */
+const SIGMA = { smooth: 0.08, medium: 0.045, rapid: 0.02, none: 0 }
 const HOLD = 0.12 // ease onto the raw path around a drag
 const PIN = 0.3 // reach of a click's correction on each side
 const LOOP = 1 // glide back to the start over the last second
@@ -65,8 +66,8 @@ let last: { events: InputEvent[]; key: string; path: CursorPath } | null = null
  *  those). Edits that leave all of that alone reuse the last path. Events are replaced, never edited
  *  in place, so the same array means the same events. */
 export function cursorPath(input: SceneInput, map: TimeMap) {
-  const { set, smooth, loop } = input.project.style.cursor
-  const key = JSON.stringify([input.project.sources.screen ?? null, set, smooth, loop, map.clips.map((c) => [c.start, c.end, c.speed])])
+  const { set, animation, loop } = input.project.style.cursor
+  const key = JSON.stringify([input.project.sources.screen ?? null, set, animation, loop, map.clips.map((c) => [c.start, c.end, c.speed])])
   if (last?.events !== input.events || last.key !== key) last = { events: input.events, key, path: bakePath(input, map) }
   return last.path
 }
@@ -203,10 +204,11 @@ function bakePath(input: SceneInput, map: TimeMap) {
   if (ok && st.loop) activity(map.duration)
 
   // 2-3. Smooth each run of contiguous clips, then ease onto the raw path while a button is held.
-  if (ok && st.smooth) {
+  const sigma = SIGMA[st.animation] ?? SIGMA.smooth
+  if (ok && sigma) {
     const rx = holds.length ? x.slice() : x
     const ry = holds.length ? y.slice() : y
-    const r = Math.round((Math.sqrt(4 * (SIGMA * RATE) ** 2 + 1) - 1) / 2) // 3 boxes of 2r+1 ~ Gaussian SIGMA
+    const r = Math.round((Math.sqrt(4 * (sigma * RATE) ** 2 + 1) - 1) / 2) // 3 boxes of 2r+1 ~ Gaussian SIGMA
     const tmp = new Float32Array(n)
     for (let j = 0; j < segI.length; j++) {
       for (let pass = 0; pass < 3; pass++) {
@@ -257,7 +259,7 @@ function bakePath(input: SceneInput, map: TimeMap) {
 
   // 6. Tilt: an underdamped spring chases a clamped target from the horizontal velocity.
   let angle: Float32Array | null = null
-  if (ok && st.smooth && st.set !== 'touch') {
+  if (ok && sigma && st.set !== 'touch') {
     angle = new Float32Array(n)
     let th = 0
     let w = 0

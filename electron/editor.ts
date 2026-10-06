@@ -5,7 +5,7 @@
 // Main -> page: "editor:edit"(action), an Edit menu item for the focused editor (electron/shell/menu.ts).
 // Copies a user-picked file (background image, LUT, music) into the bundle, so projects stay portable
 // and sources stay immutable. The renderer is untrusted: both paths and the kind are validated here.
-import { ipcMain } from 'electron'
+import electron from 'electron'
 import { constants } from 'node:fs'
 import { copyFile, mkdir, stat } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join, relative } from 'node:path'
@@ -52,6 +52,6 @@ export async function importAsset(bundle: unknown, file: unknown, kind: unknown)
 const EDITS = ['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll'] as const
 
 export function registerEditor() {
-  ipcMain.handle('editor:importAsset', (_e, bundle, file, kind) => importAsset(bundle, file, kind))
-  ipcMain.handle('editor:nativeEdit', (e, action: (typeof EDITS)[number]) => EDITS.includes(action) && e.sender[action]())
+  electron.ipcMain.handle('editor:importAsset', (_e, bundle, file, kind) => importAsset(bundle, file, kind))
+  electron.ipcMain.handle('editor:nativeEdit', (e, action: (typeof EDITS)[number]) => EDITS.includes(action) && e.sender[action]())
 }

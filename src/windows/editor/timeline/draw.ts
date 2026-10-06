@@ -123,47 +123,55 @@ const F_META = `500 10.5px ${FONT}`
 const F_SMALL = `500 10px ${FONT}`
 
 const C = {
-  rulerText: '#85858f',
-  major: 'rgba(255,255,255,0.32)',
-  minor: 'rgba(255,255,255,0.14)',
+  // Neutral chrome takes theme.css values: text tokens for labels, surfaces for chips.
+  rulerText: '#6c6c75', // --text-faint
+  major: '#6c6c75',
+  minor: '#3b3b41', // --surface-200
   grid: 'rgba(255,255,255,0.035)',
-  lane: 'rgba(255,255,255,0.03)',
-  hint: 'rgba(255,255,255,0.3)',
-  clip: '#7a581d',
-  clipEdge: 'rgba(255,214,128,0.22)',
-  clipSel: '#ffc94f',
-  clipCap: 'rgba(255,224,150,0.5)',
-  clipText: 'rgba(255,246,228,0.97)',
-  clipMeta: 'rgba(255,236,204,0.72)',
+  lane: 'rgba(0,0,0,0.2)', // wells sunk into the timeline panel (theme.css --surface-25 over --surface-50)
+  hint: '#6c6c75',
+  // Tracks follow the logo's gradient top to bottom: blue clips, violet zooms, mauve layouts, red masks,
+  // orange cuts.
+  clip: '#2e49b4',
+  clipTop: '#3754cc', // lit from above: the fill fades from this to clipBottom
+  clipBottom: '#263d9c',
+  clipGrid: 'rgba(220,228,255,0.08)',
+  clipEdge: 'rgba(196,212,255,0.6)',
+  clipSel: '#a3b6ff',
+  clipCap: 'rgba(214,224,255,0.55)',
+  clipText: 'rgba(255,255,255,0.97)',
+  clipMeta: 'rgba(232,238,255,0.9)',
   pill: 'rgba(255,255,255,0.16)',
-  wave: 'rgba(255,224,160,0.34)',
-  waveSys: 'rgba(255,224,160,0.15)',
-  zooms: ['#55555c', '#7c7c84'],
-  zoomOff: ['#34333d', '#46454f'],
-  layouts: ['#16785f', '#22a07f'],
-  masks: ['#9c3a5c', '#c4527a'],
+  wave: 'rgba(214,224,255,0.28)', // mic
+  waveEdge: 'rgba(232,238,255,0.72)',
+  waveSys: 'rgba(249,120,0,0.5)', // system audio, in front of the mic and warm against the clip
+  waveSysEdge: 'rgba(255,154,64,0.95)',
+  zooms: ['#6a5cbf', '#8a7ddb', 'rgba(214,206,255,0.6)'], // fill, end caps, top edge
+  zoomOff: ['#34333d', '#46454f', 'rgba(255,255,255,0.14)'],
+  layouts: ['#8a4f86', '#a9679f', 'rgba(248,196,240,0.5)'],
+  masks: ['#b0443a', '#d15b49', 'rgba(255,196,180,0.5)'],
   capHot: 'rgba(255,255,255,0.55)',
   text: '#ffffff',
   textOff: 'rgba(255,255,255,0.45)',
   meta: 'rgba(255,255,255,0.72)',
   sel: 'rgba(255,255,255,0.92)',
-  chip: '#2b2b31',
-  chipEdge: 'rgba(255,255,255,0.08)',
-  chipText: '#d6d6dc',
-  chipDim: '#202024',
-  chipDimText: '#7c7c85',
-  word: '#29292f',
+  chip: '#2c2c31', // --surface-150: keycaps and caption words rise out of the lane
+  chipEdge: 'rgba(255,255,255,0.14)', // --edge-strong, as a top highlight
+  chipText: '#a0a0a8', // --text-dim
+  chipDim: '#232327', // --surface-100
+  chipDimText: '#6c6c75',
+  word: '#2c2c31',
   filler: 'rgba(255,95,87,0.16)', // filler words: the ones worth cutting
-  playhead: '#ffffff',
+  playhead: '#e8e8ec', // --accent
   ghost: 'rgba(255,255,255,0.22)',
   split: '#ff5f57',
-  cut: '#f2b33d',
-  cutHot: '#ffcc66',
-  cutText: '#3b2904',
+  cut: '#f47a1c',
+  cutHot: '#ff9a4a',
+  cutText: '#3a1600',
   marquee: 'rgba(255,255,255,0.08)',
   marqueeEdge: 'rgba(255,255,255,0.6)',
-  scroll: 'rgba(255,255,255,0.16)',
-  scrollHot: 'rgba(255,255,255,0.32)',
+  scroll: 'rgba(255,255,255,0.12)', // the CSS scrollbar thumb
+  scrollHot: 'rgba(255,255,255,0.22)',
 }
 
 const HINTS: Record<M.ItemTrack, string> = {
@@ -277,21 +285,27 @@ function clipBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, c: Clip, b
   const sel = s.sel.has(c.id)
   ctx.beginPath()
   ctx.roundRect(xa, y, w, h, Math.min(8, w / 2))
-  ctx.fillStyle = C.clip
+  const fill = ctx.createLinearGradient(0, y, 0, y + h)
+  fill.addColorStop(0, C.clipTop)
+  fill.addColorStop(1, C.clipBottom)
+  ctx.fillStyle = fill
   ctx.fill()
-  if (w > 6 && (s.mic || s.system)) {
+  if (w > 6) {
     ctx.save()
     ctx.clip()
-    wave(ctx, s, c, b, xa, xb, y, h)
+    // The ruler's major grid runs through the clip, so its seconds read against the waveform.
+    const { major } = M.ticks(v.pps)
+    ctx.fillStyle = C.clipGrid
+    for (let t = Math.ceil(Math.max(timeOf(v, Math.max(xa, 0)), 0) / major) * major; xOf(v, t) < Math.min(xb, v.W); t += major) {
+      const x = snap(v, xOf(v, t))
+      if (x > xa + 2 && x < xb - 2) ctx.fillRect(x, y, 1, h)
+    }
+    if (s.mic || s.system) wave(ctx, s, c, b, xa, xb, y, h)
     ctx.restore()
   }
   const hv = s.hover?.kind === 'block' && s.hover.block === b && !s.armed ? s.hover.edge : null
   if (hv) cap(ctx, hv === 'start' ? xa : xb - 4, y + 6, 4, h - 12, C.clipCap)
-  ctx.beginPath()
-  ctx.roundRect(xa + 0.5, y + 0.5, w - 1, h - 1, Math.min(7.5, w / 2))
-  ctx.lineWidth = 1
-  ctx.strokeStyle = C.clipEdge
-  ctx.stroke()
+  topEdge(ctx, v, xa, y, w, h, Math.min(8, w / 2), C.clipEdge)
   if (sel) {
     ctx.beginPath()
     ctx.roundRect(xa + 1, y + 1, w - 2, h - 2, Math.min(7, w / 2))
@@ -343,24 +357,32 @@ function wave(ctx: CanvasRenderingContext2D, s: Scene, c: Clip, b: M.Block, xa: 
   const off = shiftOf(v, b.a)
   const perPx = c.speed / v.pps // source seconds per px
   const level = s.waves.level(perPx)
-  const base = y + h - 1
-  const max = h * 0.42 // stays under the labels
+  const base = y + h + 1 // silence sits just under the clip's edge, so its contour does not show
+  const max = h - 35 // peaks stay under the labels (meta baseline at y + 33)
   const x0 = Math.max(Math.floor(xa), 0)
   const x1 = Math.min(Math.ceil(xb), v.W)
-  for (const [src, color] of [[s.system, C.waveSys], [s.mic, C.wave]] as const) {
+  // Mic behind, system audio in front: each a translucent body under a crisp edge.
+  for (const [src, color, edge] of [[s.mic, C.wave, C.waveEdge], [s.system, C.waveSys, C.waveSysEdge]] as const) {
     const gain = src ? src.gain * (c.muted ? 0 : c.volume) : 0
     if (!src || gain <= 0) continue
-    ctx.beginPath()
-    ctx.moveTo(x0, base)
+    const top = new Path2D()
     for (let x = x0; x <= x1; x++) {
       const s0 = c.start + (timeOf(v, x) - off - b.a) * c.speed
       const p = s0 < c.start || s0 >= c.end ? 0 : s.waves.peak(src.url, level, s0, s0 + perPx)
-      ctx.lineTo(x, base - (p > 0 ? Math.min(1, Math.sqrt(p * gain)) * max : 0))
+      const yy = base - (p > 0 ? Math.min(1, Math.sqrt(p * gain)) * max : 0)
+      if (x === x0) top.moveTo(x, yy)
+      else top.lineTo(x, yy)
     }
-    ctx.lineTo(x1, base)
-    ctx.closePath()
+    const body = new Path2D(top)
+    body.lineTo(x1, base + 1)
+    body.lineTo(x0, base + 1)
+    body.closePath()
     ctx.fillStyle = color
-    ctx.fill()
+    ctx.fill(body)
+    ctx.lineWidth = 1
+    ctx.lineJoin = 'round'
+    ctx.strokeStyle = edge
+    ctx.stroke(top)
   }
 }
 
@@ -396,6 +418,18 @@ function itemLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.It
   run.flush()
 }
 
+/** A one-device-pixel highlight along a block's top, as if lit from above; the rounded corners trim it. */
+function topEdge(ctx: CanvasRenderingContext2D, v: View, x: number, y: number, w: number, h: number, r: number | number[], color: string) {
+  if (w <= 2) return
+  ctx.save()
+  ctx.beginPath()
+  ctx.roundRect(x, y, w, h, r)
+  ctx.clip()
+  ctx.fillStyle = color
+  ctx.fillRect(x, y, w, 1 / v.dpr)
+  ctx.restore()
+}
+
 function itemBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.ItemTrack, it: M.Item, b: M.Block, xa: number, xb: number) {
   const v = s.view
   const { y, h } = row
@@ -403,7 +437,7 @@ function itemBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.I
   xb = snap(v, xb)
   const w = xb - xa
   const zoom = track === 'zooms' ? (it as Zoom) : null
-  const [fill, capColor] = zoom ? (zoom.enabled ? C.zooms : C.zoomOff) : C[track as 'layouts' | 'masks']
+  const [fill, capColor, edge] = zoom ? (zoom.enabled ? C.zooms : C.zoomOff) : C[track as 'layouts' | 'masks']
   const r = Math.min(track === 'zooms' ? 8 : 6, w / 2)
   const radii = [b.head ? r : 1.5, b.tail ? r : 1.5, b.tail ? r : 1.5, b.head ? r : 1.5] // cut pieces get square inner ends
   ctx.beginPath()
@@ -419,6 +453,7 @@ function itemBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.I
     if (b.tail) cap(ctx, xb - cw, y, cw, h, hv === 'end' ? C.capHot : capColor)
     ctx.restore()
   }
+  topEdge(ctx, v, xa, y, w, h, radii, edge)
   if (s.sel.has(it.id)) {
     ctx.beginPath()
     ctx.roundRect(xa + 1, y + 1, w - 2, h - 2, radii.map((x) => Math.max(0, x - 1)))
@@ -476,15 +511,12 @@ function chipLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, tA: number,
     }
     run.flush()
     const w = xb - xa - 1
+    const [cx, cy, ch, cr] = [snap(v, xa), row.y + (keys ? 0 : 2), row.h - (keys ? 0 : 4), Math.min(keys ? 5 : 4, w / 2)]
     ctx.beginPath()
-    ctx.roundRect(snap(v, xa), row.y + (keys ? 0 : 2), w, row.h - (keys ? 0 : 4), Math.min(keys ? 5 : 4, w / 2))
+    ctx.roundRect(cx, cy, w, ch, cr)
     ctx.fillStyle = keys ? (chip.dim ? C.chipDim : C.chip) : chip.dim ? C.filler : C.word
     ctx.fill()
-    if (keys && !chip.dim) {
-      ctx.strokeStyle = C.chipEdge
-      ctx.lineWidth = 1
-      ctx.stroke()
-    }
+    if (!chip.dim) topEdge(ctx, v, cx, cy, w, ch, cr, C.chipEdge)
     if (tw + 8 <= w) {
       ctx.font = F_SMALL
       ctx.fillStyle = chip.dim ? C.chipDimText : C.chipText

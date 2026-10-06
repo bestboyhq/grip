@@ -3,6 +3,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import type { Permission } from '../../native/index.d.ts'
 import type { Rect } from './bounds.ts'
 
 export interface Settings {
@@ -23,6 +24,8 @@ export interface Settings {
   /** Past the welcome page: granting a permission can relaunch Grip, and onboarding resumes at permissions. */
   welcomed: boolean
   onboarded: boolean
+  /** Permissions Grip showed the system prompt for; macOS cannot tell these from denied. */
+  prompted: Permission[]
   /** Remembered window bounds, keyed `<kind>@<display id>`. */
   windows: Record<string, Rect>
 }
@@ -41,6 +44,7 @@ const defaults: Settings = {
   area: null,
   welcomed: false,
   onboarded: false,
+  prompted: [],
   windows: {},
 }
 

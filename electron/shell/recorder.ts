@@ -7,7 +7,7 @@
 // hidden when not picking, so the tray, shortcuts, URLs, and the quit prompt reach the recording.
 //
 // IPC (all windows of this flow):
-//   shell:state -> { status, mode, picking, counting, elapsed, at }, pushed as "shell:state" on change
+//   shell:state -> { status, mode, picking, counting, area, elapsed, at }, pushed as "shell:state" on change
 //   shell:command(cmd)            widget -> controller: stop, pause, resume, toggle-pause, cancel, restart
 //   shell:warn(message)           an engine warning (disk low, a device lost), shown as a notification
 //   shell:pick(mode | null)       enter or leave a picking mode (opens overlays per display)
@@ -36,6 +36,7 @@ import { editorCloser, type Choice } from './closing.ts'
 import { hold, release, type Held } from './session.ts'
 import { setSettings, settings, settingsListeners } from './settings.ts'
 import type { Mode } from './url.ts'
+import type { Rect, StartOptions } from '../../native/index.d.ts'
 
 export type Status = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping'
 export type Command = 'start' | 'stop' | 'pause' | 'resume' | 'toggle-pause' | 'cancel' | 'restart'
@@ -52,6 +53,9 @@ let status: Status = 'idle'
 let mode: Mode | null = null
 let picking = false // toolbar on screen
 let counting = false
+/** The area being recorded, from its start request until the recording ends: the overlays stay as
+ *  a click-through backdrop that dims everything around it. Rect relative to its display. */
+let area: { display: number; rect: Rect } | null = null
 let quitting = false
 let waiters: Array<(bundle: string | null) => void> = []
 /** Seconds recorded as of `at` (ms since epoch); `at` is 0 while not running. */
@@ -91,10 +95,8 @@ function alert(message: string, detail: string) {
   return dialog.showMessageBox({ type: 'warning', message, detail })
 }
 
-function broadcast() {
-  const s = { status, mode, picking, counting, ...clock }
-  sendAll('shell:state', s)
-}
+const state = () => ({ status, mode, picking, counting, area, ...clock })
+const broadcast = () => sendAll('shell:state', state())
 
 // ---- Toolbar (controller) ----
 
@@ -198,8 +200,10 @@ export function stopAndWait(): Promise<string | null> {
 function pick(m: Mode | null) {
   mode = m
   const overlays = m === 'display' || m === 'window' || m === 'area'
-  if (!overlays) for (const w of windowsOf('area')) w.destroy()
+  const backdrop = !!area && status !== 'idle'
+  if (!overlays && !backdrop) for (const w of windowsOf('area')) w.destroy()
   else if (!windowsOf('area').length) openOverlays()
+  for (const w of windowsOf('area')) w.setIgnoreMouseEvents(backdrop) // the backdrop never takes a click
   escape(overlays)
   broadcast()
 }
@@ -325,6 +329,8 @@ function setStatus(next: Status) {
     if (settings().showWidget) showWidget()
   } else {
     for (const w of windowsOf('widget')) w.destroy()
+    area = null
+    pick(null)
   }
   for (const k of [SHORTCUTS.pause, SHORTCUTS.cancel]) globalShortcut.unregister(k)
   if (active) {
@@ -462,7 +468,7 @@ export function openOnboarding(query = '') {
     maximizable: false,
     fullscreenable: false,
     titleBarStyle: 'hiddenInset',
-    backgroundColor: '#111113', // var(--bg): no flash of another gray while the page loads
+    backgroundColor: '#111113', // var(--surface-root): no flash of another gray while the page loads
   })
 }
 
@@ -471,7 +477,7 @@ export function openOnboarding(query = '') {
 type PopupItem = { id?: string; label?: string; checked?: boolean; enabled?: boolean; separator?: boolean; accelerator?: string; submenu?: PopupItem[] }
 
 export function registerRecorder() {
-  ipcMain.handle('shell:state', () => ({ status, mode, picking, counting, ...clock }))
+  ipcMain.handle('shell:state', state)
   ipcMain.handle('shell:pick', (_e, m: Mode | null) => pick(['display', 'window', 'area', 'device'].includes(m as string) ? m : null))
   ipcMain.handle('shell:close-picker', () => closePicker())
   ipcMain.handle('shell:warn', (_e, message: string) => notify(String(message)))
@@ -493,10 +499,16 @@ export function registerRecorder() {
     if (counting) toolbar?.hide()
     broadcast()
   })
-  ipcMain.handle('shell:start', (_e, opts: unknown) => command('start', opts))
+  ipcMain.handle('shell:start', (_e, opts: Partial<StartOptions>) => {
+    const t = opts?.target
+    area = t?.kind === 'area' ? { display: t.displayId, rect: t.rect } : null
+    broadcast()
+    return command('start', opts)
+  })
   ipcMain.handle('shell:fail', async (_e, error: unknown) => {
     const plain = plainError(error)
     counting = false
+    if (status === 'idle') area = null // it never started
     sendAll('shell:escape') // reset countdowns
     if (plain.permission) {
       closePicker() // the overlays float above every window, onboarding included
@@ -567,7 +579,7 @@ export function registerRecorder() {
       if (picking && toolbar) toolbar.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))
       if (windowsOf('area').length && !counting) {
         for (const w of windowsOf('area')) w.destroy()
-        openOverlays()
+        pick(mode) // the picker, or the backdrop of the area being recorded
       }
     })
   }

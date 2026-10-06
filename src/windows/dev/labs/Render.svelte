@@ -11,7 +11,8 @@
   import { Renderer, type Motion } from '../../../engine/gpu/renderer.ts'
   import { motionAt } from '../../../engine/compose.ts'
   import { WALLPAPERS } from '../../../engine/backgrounds/index.ts'
-  import { wallpaperThumbnails } from '../../../engine/backgrounds/thumbnails.ts'
+  import { wallpaperThumbnail } from '../../../engine/backgrounds/thumbnails.ts'
+  import { SvelteMap } from 'svelte/reactivity'
   import { invoke } from '../../../lib/ipc.ts'
   import { CURSORS, type BuiltinName } from '../../../assets/cursors.ts'
 
@@ -52,7 +53,7 @@
     overlay: false,
   })
   let status = $state('loading')
-  let thumbs = $state(new Map<string, string>())
+  const thumbs = new SvelteMap<string, string>()
   let canvas: HTMLCanvasElement
   let inspector: HTMLCanvasElement
   let screenVideo: HTMLVideoElement
@@ -242,7 +243,7 @@
       renderer = await Renderer.create(canvas, url)
       status = 'ready'
       await render()
-      thumbs = await wallpaperThumbnails()
+      for (const w of WALLPAPERS) wallpaperThumbnail(w.id, 192, 120).then((u) => thumbs.set(w.id, u), () => {})
     })().catch((e) => {
       status = 'error: ' + (e?.message ?? e)
       console.error(e)
@@ -309,17 +310,17 @@
 </div>
 
 <style>
-  .lab { display: flex; height: 100vh; background: var(--bg); }
-  aside { width: 230px; padding: 10px; display: flex; flex-direction: column; gap: 6px; overflow: auto; border-right: 1px solid var(--border); font-size: 12px; }
+  .lab { display: flex; height: 100vh; background: var(--surface-root); }
+  aside { width: 230px; padding: 10px; display: flex; flex-direction: column; gap: 6px; overflow: auto; background: var(--surface-50); box-shadow: var(--hairline-r); font-size: 12px; }
   aside label { display: flex; align-items: center; gap: 6px; }
   aside input[type='range'] { flex: 1; min-width: 0; }
   .status { color: var(--text-dim); font: 11px var(--mono); word-break: break-all; }
   main { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 10px; gap: 10px; }
   main > canvas { flex: 1; min-height: 0; width: 100%; object-fit: contain; }
   .bottom { display: flex; gap: 10px; height: 200px; }
-  .inspector { image-rendering: pixelated; border: 1px solid var(--border); }
+  .inspector { image-rendering: pixelated; box-shadow: 0 0 0 0.5px var(--edge-color); }
   .thumbs { display: grid; grid-template-columns: repeat(7, 72px); gap: 6px; align-content: start; }
-  .thumbs button { width: 72px; height: 45px; padding: 0; border: 2px solid transparent; border-radius: 6px; overflow: hidden; background: var(--bg-raised); }
+  .thumbs button { width: 72px; height: 45px; padding: 0; border: 2px solid transparent; border-radius: var(--radius-sm); overflow: hidden; background: var(--surface-100); }
   .thumbs button.on { border-color: var(--accent); }
   .thumbs img { width: 100%; height: 100%; display: block; }
   video { display: none; }

@@ -5,14 +5,36 @@
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
   --mono: ui-monospace, 'SF Mono', Menlo, monospace;
 
-  /* Surfaces, darkest to lightest. */
-  --bg: #111113; /* window */
-  --bg-panel: #1a1a1d; /* inspector, popovers */
-  --bg-raised: #252529; /* inputs, segmented tracks */
-  --bg-hover: #2e2e33;
-  --bg-active: #3a3a40;
-  --border: rgb(255 255 255 / 0.07);
-  --border-strong: rgb(255 255 255 / 0.13);
+  /* Surfaces, by depth. The window is the root; panels (inspector, timeline, popovers) sit on it; wells
+     sink into a panel, darker than it (segmented tracks, the wallpaper grid, timeline lanes); controls
+     and selected tiles rise above it. Hover and selected are per surface: an element takes the states
+     of the surface it sits on, so a hover always reads one step up from its own background. */
+  --surface-root: #111113;
+  --surface-root-hover: #18181b;
+  --surface-root-selected: #212125;
+  --surface-25: #151518; /* wells */
+  --surface-25-hover: #1b1b1f;
+  --surface-25-selected: #2c2c31;
+  --surface-50: #1a1a1d; /* panels */
+  --surface-50-hover: #222226;
+  --surface-50-selected: #2a2a2f;
+  --surface-100: #232327; /* controls: buttons, inputs, selects */
+  --surface-100-hover: #2b2b30;
+  --surface-100-selected: #34343a;
+  --surface-150: #2c2c31; /* raised: selected tiles, tooltips */
+  --surface-150-hover: #34343a;
+  --surface-200: #3b3b41; /* tracks of switches and sliders */
+  --surface-200-hover: #47474e;
+
+  /* Hairlines: half-point inset shadows, one device pixel on Retina. They take no layout space,
+     follow the corner radius, and stack with other shadows (box-shadow: var(--hairline), ...). */
+  --edge-color: rgb(255 255 255 / 0.08);
+  --edge-strong: rgb(255 255 255 / 0.14);
+  --hairline: inset 0 0 0 0.5px var(--edge-color);
+  --hairline-t: inset 0 0.5px 0 var(--edge-color);
+  --hairline-b: inset 0 -0.5px 0 var(--edge-color);
+  --hairline-l: inset 0.5px 0 0 var(--edge-color);
+  --hairline-r: inset -0.5px 0 0 var(--edge-color);
 
   --text: #ececef;
   --text-dim: #a0a0a8;
@@ -24,15 +46,45 @@
   --accent-ink: #111113; /* text and knobs on --accent */
   --accent-text: #fff; /* accent text on dark surfaces */
   --accent-soft: rgb(255 255 255 / 0.1);
+  --knob: #f5f5f7; /* slider and switch thumbs */
   --danger: #ff5f57;
+  --danger-hover: #ff7a73;
+  --success: #5fd38d;
+  --warning: #ffd60a; /* paused, needs attention */
+  --warning-text: #ffe58a;
+  --record: #ff453a; /* recording */
+  --record-hover: #ff6961;
   --focus-ring: rgb(255 255 255 / 0.55);
 
-  --radius-sm: 5px;
+  /* Concentric corners: a box nested in another with padding p has radius (outer - p), so the gap
+     between the two curves stays even. A 16 px well with 8 px padding holds 8 px tiles. */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
   --radius: 8px;
   --radius-lg: 12px;
+  --radius-xl: 16px;
+  --gutter: 8px; /* between the window edge and panels, between panels, and inside wells */
   --control-h: 26px;
-  --shadow-pop: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 12px 32px rgb(0 0 0 / 0.5);
+  --shadow-pop: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 12px 32px rgb(0 0 0 / 0.5), var(--hairline); /* popovers, menus */
+  --shadow-modal: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 24px 64px rgb(0 0 0 / 0.55), var(--hairline); /* dialogs, command menu */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* HUD windows (recorder bar, widget, notes) float over native HUD vibrancy. Their panel is a veil the
+   blur shows through, and states are white veils instead of opaque grays. Hairlines are re-declared
+   because a custom property resolves its var()s where it is declared. */
+.hud {
+  --surface-50: rgb(40 40 42 / 0.38);
+  --surface-50-hover: rgb(255 255 255 / 0.07);
+  --surface-50-selected: rgb(255 255 255 / 0.14);
+  --surface-100: rgb(255 255 255 / 0.12);
+  --surface-100-hover: rgb(255 255 255 / 0.18);
+  --surface-200: rgb(255 255 255 / 0.22);
+  --edge-color: rgb(255 255 255 / 0.13);
+  --edge-strong: rgb(255 255 255 / 0.105);
+  --hairline: inset 0 0 0 0.5px var(--edge-color);
+  --hairline-t: inset 0 0.5px 0 var(--edge-color);
+  --hairline-b: inset 0 -0.5px 0 var(--edge-color);
 }
 
 * { box-sizing: border-box; }
@@ -53,24 +105,24 @@ button:disabled, select:disabled, input:disabled, label:has(> input:disabled), [
 /* Buttons. `.btn` text button, `.btn.primary` filled accent, `.icon-btn` square icon button. */
 .btn, .icon-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  height: var(--control-h); padding: 0 10px; border: 0; border-radius: 6px;
-  background: var(--bg-raised); color: var(--text); font-size: 12.5px; font-weight: 500; white-space: nowrap;
+  height: var(--control-h); padding: 0 10px; border: 0; border-radius: var(--radius-sm);
+  background: var(--surface-100); color: var(--text); font-size: 12.5px; font-weight: 500; white-space: nowrap;
   transition: background-color 120ms, color 120ms, opacity 120ms;
 }
-.btn:hover, .icon-btn:hover { background: var(--bg-hover); }
-.btn:active, .icon-btn:active { background: var(--bg-active); }
+.btn:hover, .icon-btn:hover { background: var(--surface-100-hover); }
+.btn:active, .icon-btn:active { background: var(--surface-100-selected); }
 .btn.primary { background: var(--accent); color: var(--accent-ink); }
 .btn.primary:hover { background: var(--accent-hover); }
 .btn.ghost, .icon-btn { background: transparent; }
-.btn.ghost:hover, .icon-btn:hover { background: rgb(255 255 255 / 0.07); }
+.btn.ghost:hover, .icon-btn:hover { background: rgb(255 255 255 / 0.06); } /* ghosts sit on any surface */
 .icon-btn { width: 28px; height: 28px; padding: 0; color: var(--text-dim); }
 .icon-btn:hover { color: var(--text); }
 .btn:disabled, .icon-btn:disabled { opacity: 0.35; pointer-events: none; }
 
 /* Shared tooltip bubble (src/ui/tooltip.ts). */
 .tooltip {
-  position: fixed; inset: auto; margin: 0; padding: 4px 8px; border: 0; border-radius: 6px;
-  background: #3a3a40; color: var(--text); font-size: 12px; line-height: 16px; white-space: nowrap;
+  position: fixed; inset: auto; margin: 0; padding: 4px 8px; border: 0; border-radius: var(--radius-sm);
+  background: var(--surface-150); color: var(--text); font-size: 12px; line-height: 16px; white-space: nowrap;
   box-shadow: var(--shadow-pop); pointer-events: none;
   position-anchor: --tooltip; position-area: bottom; margin-top: 6px; position-try-fallbacks: flip-block;
 }

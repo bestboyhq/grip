@@ -1,7 +1,7 @@
 <!-- Motion lab: the built-in cursor set (src/assets/cursors.ts) at 1x/2x/4x (red dot = hotspot), the recorded path (grey)
      against the smoothed one (accent) with clicks, and the cursor itself in motion.
      #/dev?lab=Cursor[&bundle=<abs .grip path>][&t=<output s, freezes playback>][&set=builtin|touch]
-     [&cut=<source a>-<source b>][&loop=1][&smooth=0][&zoom=<view scale around the cursor>] -->
+     [&cut=<source a>-<source b>][&loop=1][&anim=smooth|medium|rapid|none][&zoom=<view scale around the cursor>] -->
 <script lang="ts">
   import { createProject, type Project } from '../../../shared/project.ts'
   import { parseEvents, type InputEvent } from '../../../shared/events.ts'
@@ -70,7 +70,7 @@
       if (cut?.length === 2) project.clips = removeSourceRange(project.clips, cut[0], cut[1])
       if (params.get('set')) project.style.cursor.set = params.get('set') as 'builtin' | 'touch'
       project.style.cursor.loop = params.get('loop') === '1'
-      project.style.cursor.smooth = params.get('smooth') !== '0'
+      project.style.cursor.animation = (params.get('anim') ?? 'smooth') as Project['style']['cursor']['animation']
       const input = { project, events, transcript: null, width: W, height: H }
       const map = timeMap(project.clips)
       const layout = prepareLayout(input, map, Math.min(W, H) / 1080)
@@ -205,7 +205,7 @@
     height: 100%;
     overflow: auto;
     padding: 16px;
-    background: var(--bg);
+    background: var(--surface-root);
   }
   .tiles {
     display: flex;

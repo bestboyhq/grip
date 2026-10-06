@@ -42,7 +42,7 @@
   main {
     height: 100vh;
     padding: 16px;
-    background: var(--bg);
+    background: var(--surface-root);
     font-variant-numeric: tabular-nums;
   }
 </style>

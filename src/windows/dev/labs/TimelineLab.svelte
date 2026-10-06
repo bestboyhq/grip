@@ -174,11 +174,11 @@
 <div class="lab">
   <header>
     <span>{doc.project ? `${doc.project.name}: ${doc.project.clips.length} clips, ${doc.project.zooms.length} zooms` : status}</span>
-    {#if doc.project}<button onclick={bench}>Run benchmark</button>{/if}
+    {#if doc.project}<button class="btn" onclick={bench}>Run benchmark</button>{/if}
   </header>
   {#if report}<pre>{report}</pre>{/if}
   <div class="stage">Editor preview area</div>
-  {#if doc.project}<Timeline {peaks} />{/if}
+  {#if doc.project}<div class="panel"><Timeline {peaks} /></div>{/if}
 </div>
 
 <style>
@@ -186,7 +186,7 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
-    background: #0e0e10;
+    background: var(--surface-root);
   }
   header {
     display: flex;
@@ -198,13 +198,23 @@
   pre {
     margin: 0 12px 8px;
     font: 11px/1.5 var(--mono);
-    color: #b9f5c8;
+    color: var(--success);
     white-space: pre-wrap;
   }
   .stage {
     flex: 1;
     display: grid;
     place-items: center;
-    color: #3a3a40;
+    color: var(--text-faint);
+  }
+  /* The editor's timeline panel. */
+  .panel {
+    flex: none;
+    max-height: 60vh;
+    overflow: auto;
+    margin: var(--gutter);
+    border-radius: var(--radius-lg);
+    background: var(--surface-50);
+    box-shadow: var(--hairline);
   }
 </style>

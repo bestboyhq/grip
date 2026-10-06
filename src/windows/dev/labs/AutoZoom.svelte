@@ -221,7 +221,7 @@
   {:else}
     <canvas class="main" bind:this={main}></canvas>
     <div class="bar">
-      <button onclick={() => (playing = !playing)}>{playing ? 'Pause' : 'Play'}</button>
+      <button class="btn" onclick={() => (playing = !playing)}>{playing ? 'Pause' : 'Play'}</button>
       <input type="range" min="0" max={prepared.map.duration} step="0.01" bind:value={t} aria-label="Time" />
       <span>{t.toFixed(2)} s</span>
     </div>
@@ -242,9 +242,9 @@
     padding: 16px;
     display: grid;
     gap: 10px;
-    color: #ddd;
-    font: 12px system-ui;
-    background: var(--bg);
+    color: var(--text);
+    font: 12px var(--font);
+    background: var(--surface-root);
     height: 100vh;
     overflow: auto;
   }
@@ -264,7 +264,8 @@
   .plot {
     width: 100%;
     height: 56px;
-    background: var(--bg-raised);
+    background: var(--surface-25);
+    box-shadow: var(--hairline);
     border-radius: var(--radius);
   }
   .strip {
@@ -281,10 +282,10 @@
   }
   figcaption {
     text-align: center;
-    opacity: 0.7;
+    color: var(--text-dim);
     margin-top: 2px;
   }
   .error {
-    color: #ff7b7b;
+    color: var(--danger);
   }
 </style>

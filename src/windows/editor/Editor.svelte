@@ -250,14 +250,14 @@
 </div>
 
 <style>
-  :global(html[data-window='editor']), :global(html[data-window='editor'] body) { background: var(--bg); }
-  .editor { display: flex; flex-direction: column; height: 100vh; background: var(--bg); }
+  :global(html[data-window='editor']), :global(html[data-window='editor'] body) { background: var(--surface-root); }
+  .editor { display: flex; flex-direction: column; height: 100vh; background: var(--surface-root); }
 
   /* Three columns: the name stays centered in the window while both sides fit, and in a narrow window
      it shrinks between them instead of covering their buttons. */
   .titlebar {
     flex: none; display: grid; grid-template-columns: 1fr minmax(0, 420px) 1fr; align-items: center; gap: 12px;
-    height: 52px; padding: 0 12px; border-bottom: 1px solid var(--border); -webkit-app-region: drag;
+    height: 52px; padding: 0 12px; -webkit-app-region: drag;
   }
   .titlebar :global(button), .titlebar :global(input), .titlebar :global(a), .titlebar :global([popover]) { -webkit-app-region: no-drag; }
   .file { display: flex; gap: 2px; margin-left: 72px; /* clear of the traffic lights */ }
@@ -265,17 +265,17 @@
     width: 100%; height: 28px; padding: 0 10px;
     border: 0; border-radius: 6px; background: transparent; text-align: center; font-size: 13px; font-weight: 600; text-overflow: ellipsis;
   }
-  .name:hover { background: rgb(255 255 255 / 0.05); }
-  .name:focus { background: var(--bg-raised); }
+  .name:hover { background: var(--surface-root-hover); }
+  .name:focus { background: var(--surface-100); box-shadow: var(--hairline); }
   .actions { justify-self: end; display: flex; align-items: center; gap: 4px; }
-  .sep { width: 1px; height: 18px; margin: 0 6px; background: var(--border-strong); }
+  .sep { width: 0.5px; height: 18px; margin: 0 6px; background: var(--edge-strong); }
   .export { margin-left: 4px; padding: 0 12px 0 10px; height: 28px; }
   .confirm { width: 280px; padding: 6px 6px 2px; }
   .confirm p { margin: 0 0 12px; font-size: 12.5px; line-height: 1.45; color: var(--text-dim); }
   .confirm strong { display: block; margin-bottom: 4px; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
   .buttons { display: flex; justify-content: flex-end; gap: 6px; }
   .btn.danger { background: var(--danger); color: #fff; }
-  .btn.danger:hover { background: #ff7a73; }
+  .btn.danger:hover { background: var(--danger-hover); }
 
   .body { flex: 1; min-height: 0; display: flex; }
   .stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -283,13 +283,16 @@
   .aim-hint { display: flex; align-items: center; gap: 6px; min-width: 0; margin-left: auto; color: var(--text-faint); font-size: 12px; white-space: nowrap; }
   .aim-hint span { overflow: hidden; text-overflow: ellipsis; }
 
-  /* As tall as its lanes, so every lane shows; the preview takes the rest. 60vh fits all six lanes (312 px)
-     at the 600 px minimum window height, so lanes never scroll out of reach (the canvas takes the wheel). */
-  .timeline { flex: none; max-height: 60vh; overflow: auto; }
+  /* A panel as tall as its lanes, so every lane shows; the preview takes the rest. 60vh fits all six lanes
+     (312 px) at the 600 px minimum window height, so lanes never scroll out of reach (the canvas takes the wheel). */
+  .timeline {
+    flex: none; max-height: 60vh; overflow: auto; margin: var(--gutter); border-radius: var(--radius-lg);
+    background: var(--surface-50); box-shadow: var(--hairline);
+  }
 
   .notice {
     position: fixed; z-index: 10; top: 58px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; margin: 0;
-    padding: 4px 4px 4px 12px; border-radius: 8px; background: var(--bg-panel); box-shadow: var(--shadow-pop), inset 0 0 0 0.5px rgb(255 255 255 / 0.1);
+    padding: 4px 4px 4px 12px; border-radius: var(--radius-lg); background: var(--surface-50); box-shadow: var(--shadow-pop);
     width: max-content; max-width: calc(100vw - 48px); font-size: 12.5px; line-height: 1.4;
   }
   .notice .icon-btn { width: 22px; height: 22px; }

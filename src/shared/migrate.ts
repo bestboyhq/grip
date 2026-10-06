@@ -6,7 +6,19 @@ import { PROJECT_VERSION, createProject, defaultStyle, type Project, type Style 
 
 /** MIGRATIONS[v] turns a version-v document into version v + 1. Add one with every PROJECT_VERSION
  *  bump. Purely additive changes need no step: missing fields are filled from the defaults. */
-export const MIGRATIONS: Record<number, (p: any) => any> = {}
+export const MIGRATIONS: Record<number, (p: any) => any> = {
+  1: (p) => (isObj(p.style) ? { ...p, style: upgradeStyle(p.style) } : p),
+}
+
+/** v1 on/off switches -> v2 presets and amounts (shared with presets saved by v1). */
+function upgradeStyle(st: Record<string, any>) {
+  if (typeof st.motionBlur === 'boolean') st.motionBlur = st.motionBlur ? 1 : 0
+  if (isObj(st.cursor) && typeof st.cursor.smooth === 'boolean') {
+    st.cursor.animation ??= st.cursor.smooth ? 'smooth' : 'none'
+    delete st.cursor.smooth
+  }
+  return st
+}
 
 export function migrate(json: unknown, steps = MIGRATIONS, latest = PROJECT_VERSION): Project {
   if (!isObj(json) || !Number.isInteger(json.version) || json.version < 1) throw new Error('This is not a Grip project file.')
@@ -29,7 +41,7 @@ export function newerError(name: string) {
 /** A preset or older style: missing fields get their defaults, then the whole style is checked. */
 export function normalizeStyle(x: unknown): Style {
   if (!isObj(x)) fail('style')
-  fill(x, defaultStyle())
+  fill(upgradeStyle(x), defaultStyle())
   checkStyle(x)
   return x as unknown as Style
 }
