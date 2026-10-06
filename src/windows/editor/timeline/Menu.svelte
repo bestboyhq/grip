@@ -27,9 +27,9 @@
   /** Open at the pointer, kept inside the window. */
   function place(node: HTMLDivElement) {
     el = node
-    const r = node.getBoundingClientRect()
-    node.style.left = `${Math.max(8, Math.min(x, innerWidth - r.width - 8))}px`
-    node.style.top = `${Math.max(8, Math.min(y, innerHeight - r.height - 8))}px`
+    // offset sizes, not the bounding rect: the opening scale animation shrinks the rect
+    node.style.left = `${Math.max(8, Math.min(x, innerWidth - node.offsetWidth - 8))}px`
+    node.style.top = `${Math.max(8, Math.min(y, innerHeight - node.offsetHeight - 8))}px`
     node.focus() // arrows move into the items; a mouse-opened menu shows no highlight yet
   }
 
@@ -122,11 +122,10 @@
     position: fixed;
     z-index: 50;
     min-width: 232px;
-    padding: 5px;
-    background: #232327;
-    border: 1px solid rgb(255 255 255 / 0.1);
-    border-radius: 10px;
-    box-shadow: 0 12px 32px rgb(0 0 0 / 0.45), 0 0 0 0.5px rgb(0 0 0 / 0.6);
+    padding: 6px;
+    background: var(--surface-50);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-pop);
     font-size: 13px;
     outline: none;
     animation: pop 110ms ease-out;
@@ -146,13 +145,13 @@
     height: 26px;
     padding: 0 10px;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     background: none;
     text-align: left;
   }
   button[role='menuitem']:hover:not(:disabled),
   button[role='menuitem']:focus-visible {
-    background: rgb(255 255 255 / 0.1);
+    background: var(--surface-50-hover);
     outline: none;
   }
   button:disabled {
@@ -165,13 +164,13 @@
   }
   button:hover:not(:disabled) kbd,
   button:focus-visible kbd {
-    color: rgb(255 255 255 / 0.8);
+    color: var(--text);
   }
   hr {
     border: 0;
-    height: 1px;
-    margin: 5px 6px;
-    background: rgb(255 255 255 / 0.08);
+    height: 0.5px;
+    margin: 6px 10px;
+    background: var(--edge-strong);
   }
   .choices {
     padding: 4px 6px 6px;
@@ -192,18 +191,20 @@
     min-width: 34px;
     padding: 0 8px;
     border: 0;
-    border-radius: 6px;
-    background: rgb(255 255 255 / 0.06);
+    border-radius: var(--radius-sm);
+    background: var(--surface-100);
+    box-shadow: var(--hairline);
     font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
   .row button:hover,
   .row button:focus-visible {
-    background: rgb(255 255 255 / 0.13);
+    background: var(--surface-100-hover);
     outline: none;
   }
   .row button.on {
     background: var(--accent);
     color: var(--accent-ink);
+    box-shadow: none;
   }
 </style>

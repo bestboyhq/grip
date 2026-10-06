@@ -167,7 +167,7 @@
 
 <style>
   :global(body) {
-    background: var(--bg);
+    background: var(--surface-root);
   }
   .window {
     position: fixed;
@@ -236,12 +236,12 @@
     font-size: 13px;
   }
   .banner {
-    margin: 14px 0 16px;
-    padding: 10px 14px;
-    border-radius: 10px;
+    margin: 14px -16px 16px; /* as wide as the list under it */
+    padding: 10px 16px;
+    border-radius: var(--radius-lg);
     background: rgb(255 214 10 / 0.12);
     box-shadow: inset 0 0 0 0.5px rgb(255 214 10 / 0.35);
-    color: #ffe58a;
+    color: var(--warning-text);
     font-size: 13px;
     line-height: 1.45;
   }
@@ -256,9 +256,10 @@
     margin: 0 -16px; /* bleeds by the row padding: icons and text line up with the heading */
     padding: 0;
     list-style: none;
-    border-radius: 12px;
-    background: var(--bg-raised);
-    box-shadow: inset 0 0 0 0.5px var(--border);
+    overflow: hidden; /* the need marker follows the corners */
+    border-radius: var(--radius-lg);
+    background: var(--surface-50);
+    box-shadow: var(--hairline);
   }
   .rows li {
     display: flex;
@@ -271,10 +272,13 @@
     min-height: 44px;
   }
   .rows li + li {
-    border-top: 0.5px solid var(--border);
+    box-shadow: var(--hairline-t);
   }
   .rows li.need {
-    box-shadow: inset 3px 0 0 #ffd60a;
+    box-shadow: inset 3px 0 0 var(--warning);
+  }
+  .rows li + li.need {
+    box-shadow: inset 3px 0 0 var(--warning), var(--hairline-t);
   }
   .tile {
     display: grid;
@@ -282,9 +286,10 @@
     flex: none;
     width: 36px;
     height: 36px;
-    border-radius: 9px;
-    background: rgb(255 255 255 / 0.07);
-    color: #e4e4e7;
+    border-radius: var(--radius);
+    background: var(--surface-100);
+    box-shadow: var(--hairline);
+    color: var(--text);
   }
   .text {
     flex: 1;
@@ -299,8 +304,8 @@
   }
   .tag {
     padding: 1px 6px;
-    border-radius: 5px;
-    background: var(--accent-soft);
+    border-radius: var(--radius-xs);
+    background: var(--surface-150);
     color: var(--accent-text);
     font-size: 10.5px;
     font-weight: 600;
@@ -314,7 +319,7 @@
     display: flex;
     align-items: center;
     gap: 5px;
-    color: #32d74b;
+    color: var(--success);
     font-size: 13px;
     font-weight: 500;
   }
@@ -323,18 +328,20 @@
     height: 28px;
     padding: 0 14px;
     border: 0;
-    border-radius: 7px;
-    background: rgb(255 255 255 / 0.12);
+    border-radius: var(--radius-sm);
+    background: var(--surface-100);
+    box-shadow: var(--hairline);
     font-size: 13px;
     font-weight: 500;
   }
   .button:hover:not(:disabled) {
-    background: rgb(255 255 255 / 0.17);
+    background: var(--surface-100-hover);
   }
   .button.primary {
     height: 32px;
     padding: 0 20px;
     background: var(--accent);
+    box-shadow: none;
     color: var(--accent-ink);
   }
   .button.primary:hover:not(:disabled) {
@@ -346,7 +353,7 @@
   .button:focus-visible,
   .link:focus-visible,
   input:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
   .link {
@@ -376,7 +383,8 @@
     height: 19px;
     margin: 0;
     border-radius: 10px;
-    background: rgb(255 255 255 / 0.16);
+    background: var(--surface-200);
+    box-shadow: var(--hairline);
     transition: background 150ms;
   }
   input[role='switch']::after {
@@ -387,7 +395,7 @@
     width: 15px;
     height: 15px;
     border-radius: 50%;
-    background: #fff;
+    background: var(--knob);
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
     transition: transform 150ms;
   }
@@ -400,9 +408,9 @@
   }
   kbd {
     padding: 3px 8px;
-    border-radius: 6px;
-    background: rgb(255 255 255 / 0.08);
-    box-shadow: inset 0 -1px 0 rgb(255 255 255 / 0.06);
+    border-radius: var(--radius-sm);
+    background: var(--surface-100);
+    box-shadow: var(--hairline);
     font: 13px var(--font);
     letter-spacing: 1px;
   }

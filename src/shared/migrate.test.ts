@@ -90,3 +90,20 @@ test('styles from presets are completed and checked', () => {
   assert.throws(() => normalizeStyle({ camera: { lut: '/etc/passwd' } }), /style\.camera\.lut/)
   assert.throws(() => normalizeStyle('x'), /style/)
 })
+
+test('v1 motion switches become v2 presets, in projects and presets', () => {
+  for (const [smooth, blur, animation, amount] of [[true, true, 'smooth', 1], [false, false, 'none', 0]] as const) {
+    const v1 = roundTrip(project())
+    v1.version = 1
+    delete v1.style.cursor.animation
+    delete v1.style.screenAnimation
+    v1.style.cursor.smooth = smooth
+    v1.style.motionBlur = blur
+    const p = migrate(roundTrip(v1))
+    assert.equal(p.style.cursor.animation, animation)
+    assert.equal(p.style.motionBlur, amount)
+    assert.equal(p.style.screenAnimation, 'focused')
+    assert.ok(!('smooth' in p.style.cursor))
+    assert.deepEqual(normalizeStyle(roundTrip(v1.style)), p.style)
+  }
+})

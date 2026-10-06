@@ -123,13 +123,13 @@
 </Section>
 
 <style>
-  .picker { position: relative; margin-top: 8px; border-radius: 8px; overflow: hidden; background: #000; box-shadow: inset 0 0 0 1px var(--border); cursor: crosshair; touch-action: none; }
+  .picker { position: relative; margin-top: 8px; border-radius: var(--radius); overflow: hidden; background: #000; box-shadow: var(--hairline); cursor: crosshair; touch-action: none; }
   .picker:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   video { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
   .dot {
     position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; pointer-events: none;
-    border: 2px solid #fff; background: var(--accent); box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 0 0 6px color-mix(in oklab, var(--accent) 25%, transparent);
+    border: 2px solid #fff; background: var(--accent); box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 2px 6px rgb(0 0 0 / 0.5); /* like the preview marker: reads on light and dark video */
   }
   .hint { margin: 6px 0 0; font-size: 11.5px; color: var(--text-faint); }
-  .hint.empty { margin: 0; padding: 14px 0; border-bottom: 1px solid var(--border); font-size: 12px; line-height: 1.45; }
+  .hint.empty { margin: 0; padding: 14px 0; box-shadow: var(--hairline-b); font-size: 12px; line-height: 1.45; }
 </style>

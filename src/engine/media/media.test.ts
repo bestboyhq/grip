@@ -67,7 +67,9 @@ if (process.versions.electron) {
 
   test('decoding and mixing in Electron (WebCodecs)', { timeout: 240_000 }, async (t) => {
     const dir = mkdtempSync(join(tmpdir(), 'studio media '))
-    const server = await createServer({ configFile: join(root, 'vite.config.ts'), root: join(root, 'src'), logLevel: 'error', server: { port: 0 } })
+    // No HMR: an edit in the worktree mid-run would remount the lab, starting a second run of every
+    // check in the same page, whose mixing sessions evict and re-prime the first run's.
+    const server = await createServer({ configFile: join(root, 'vite.config.ts'), root: join(root, 'src'), logLevel: 'error', server: { port: 0, hmr: false } })
     try {
       makeMedia(dir)
       await server.listen()

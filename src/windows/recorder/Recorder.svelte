@@ -176,7 +176,7 @@
   ondrop={(e) => dropFiles(e).catch((err: Error) => invoke('shell:warn', err.message))}
 />
 
-<main class="bar">
+<main class="bar hud">
   {#if countdown}
     <div class="countdown" role="status">
       <span class="n">{countdown.n}</span>
@@ -227,11 +227,10 @@
     display: flex;
     align-items: center;
     padding-left: 20px;
-    border-radius: 12px;
-    /* Over the window's HUD vibrancy; labs set --bar-bg to an opaque stand-in. */
-    background: var(--bar-bg, rgb(40 40 42 / 0.38));
-    box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.13);
-    color: #f4f4f5;
+    border-radius: var(--radius-lg);
+    background: var(--surface-50);
+    box-shadow: var(--hairline);
+    color: var(--text);
     -webkit-app-region: drag;
   }
   button {
@@ -241,10 +240,10 @@
     padding: 0;
     display: flex;
     align-items: center;
-    border-radius: 9px;
+    border-radius: var(--radius-sm); /* concentric: 6 px inside the 12 px bar */
   }
   button:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: -2px;
   }
   .close {
@@ -252,21 +251,18 @@
     height: 22px;
     justify-content: center;
     border-radius: 50%;
-    background: #f2f2f3;
-    color: #3b3b3e;
+    background: var(--accent);
+    color: var(--accent-ink);
   }
   .close:hover {
-    background: #fff;
-  }
-  .close:active {
-    background: #d8d8da;
+    background: var(--accent-hover);
   }
   /* Spacing matches the reference toolbar point for point: separators at 60.5, 313.5, 797.5. */
   .sep {
-    width: 1px;
+    width: 0.5px;
     height: 44px;
-    margin: 1px 6px 0;
-    background: rgb(255 255 255 / 0.105);
+    margin: 1px 6.25px 0;
+    background: var(--edge-strong);
   }
   .close {
     margin: 0 12px 0 0.5px;
@@ -278,7 +274,7 @@
     justify-content: flex-start;
     padding-top: 6.75px;
     gap: 4.15px;
-    color: #fff;
+    color: var(--text);
   }
   /* Icons of different heights share one centered box, so the labels line up. */
   .mode .icon {
@@ -289,18 +285,20 @@
   .mode .name {
     font-size: 10.3px;
     line-height: 13px;
-    color: rgb(255 255 255 / 0.55);
+    color: var(--text-dim);
   }
-  .mode:hover {
-    background: rgb(255 255 255 / 0.07);
+  .mode:hover,
+  .pick:hover,
+  .gear:hover {
+    background: var(--surface-50-hover);
   }
   .mode:active,
   .mode.on {
-    background: rgb(255 255 255 / 0.14);
-    color: #fff;
+    background: var(--surface-50-selected);
+    box-shadow: var(--hairline);
   }
   .mode.on .name {
-    color: #fff;
+    color: var(--text);
   }
   .pick {
     position: relative;
@@ -308,13 +306,10 @@
     gap: 10px;
     padding-top: 1.5px;
     font-size: 13.2px;
-    color: #fff;
-  }
-  .pick:hover {
-    background: rgb(255 255 255 / 0.07);
+    color: var(--text);
   }
   .pick.off {
-    color: rgb(255 255 255 / 0.5);
+    color: var(--text-faint);
   }
   .label {
     min-width: 0;
@@ -351,13 +346,13 @@
     top: 36.5px;
     height: 3px;
     border-radius: 1.5px;
-    background: rgb(255 255 255 / 0.05);
+    background: var(--surface-25);
   }
   .meter span {
     display: block;
     height: 3px;
     border-radius: 1.5px;
-    background: rgb(255 255 255 / 0.4);
+    background: var(--text-dim);
     transition: width 60ms linear;
   }
   .gear {
@@ -365,13 +360,10 @@
     height: 36px;
     padding: 0 5px 0 6.5px;
     gap: 6.5px;
-    color: rgb(255 255 255 / 0.55);
+    color: var(--text-dim);
   }
   .gear :global(svg + svg) {
     margin-top: 2px;
-  }
-  .gear:hover {
-    background: rgb(255 255 255 / 0.07);
   }
   .countdown {
     flex: 1;
@@ -393,8 +385,12 @@
     -webkit-app-region: no-drag;
     height: 26px;
     padding: 0 12px;
-    border-radius: 7px;
-    background: rgb(255 255 255 / 0.14);
+    border-radius: var(--radius-sm);
+    background: var(--surface-100);
+    box-shadow: var(--hairline);
     font-size: 13px;
+  }
+  .cancel:hover {
+    background: var(--surface-100-hover);
   }
 </style>

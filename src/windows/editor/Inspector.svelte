@@ -15,6 +15,7 @@
   import Zoom from './inspector/Zoom.svelte'
   import Captions from './inspector/Captions.svelte'
   import Audio from './inspector/Audio.svelte'
+  import Motion from './inspector/Motion.svelte'
   import TranscriptPanel from './transcript/TranscriptPanel.svelte'
 
   const tabs = [
@@ -26,7 +27,7 @@
     { id: 'transcript', label: 'Transcript', icon: 'transcript' },
     { id: 'audio', label: 'Audio', icon: 'audio' },
     { id: 'keystrokes', label: 'Keystrokes', icon: 'command' },
-    { id: 'motion', label: 'Motion', icon: 'motion' },
+    { id: 'motion', label: 'Animation', icon: 'motion' },
   ] as const satisfies ReadonlyArray<{ id: string; label: string; icon: IconName }>
   type Tab = (typeof tabs)[number]['id']
 
@@ -104,16 +105,14 @@
           <Slider label="Size" value={st.keystrokes.size} min={0.5} max={2} step={0.05} initial={init.keystrokes.size} disabled={!st.keystrokes.visible} format={(v) => `${Math.round(v * 100)}%`} onchange={(v, m) => edit((p) => (p.style.keystrokes.size = v), m)} />
         </Section>
       {:else}
-        <Section>
-          <Toggle label="Motion blur" hint="Blurs fast cursor and zoom moves along their real path, like a film camera." checked={st.motionBlur} onchange={(v) => edit((p) => (p.style.motionBlur = v))} />
-        </Section>
+        <Motion />
       {/if}
     </div>{/key}
   </div>
 </aside>
 
 <style>
-  .inspector { flex: none; display: flex; padding: 0 10px 10px 0; }
+  .inspector { flex: none; display: flex; padding-right: var(--gutter); }
   /* In a short window the tabs scroll instead of squashing. */
   .rail { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 52px; padding: 6px 0; overflow-y: auto; scrollbar-width: none; }
   .rail button {
@@ -125,11 +124,11 @@
     .rail { gap: 2px; }
     .rail button { height: 32px; }
   }
-  .rail button:hover { color: var(--text); background: rgb(255 255 255 / 0.06); }
-  .rail button.on { color: var(--accent-text); background: var(--accent-soft); }
+  .rail button:hover { color: var(--text); background: var(--surface-root-hover); }
+  .rail button.on { color: var(--accent-text); background: var(--surface-root-selected); box-shadow: var(--hairline); }
   .panel {
     width: 328px; display: flex; flex-direction: column; min-height: 0; border-radius: var(--radius-lg);
-    background: var(--bg-panel); box-shadow: inset 0 0 0 1px var(--border);
+    background: var(--surface-50); box-shadow: var(--hairline);
   }
   h2 { flex: none; margin: 0; padding: 14px 16px 4px; font-size: 13px; font-weight: 600; }
   /* Content fades out under the title instead of being cut by a hard edge when scrolled. */

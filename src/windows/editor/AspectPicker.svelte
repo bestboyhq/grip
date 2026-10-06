@@ -55,13 +55,13 @@
 
 <style>
   .aspect { display: flex; align-items: center; gap: 6px; color: var(--text-dim); }
-  .pick { position: relative; display: flex; align-items: center; height: 28px; border-radius: 6px; color: var(--text); }
-  .pick:hover { background: rgb(255 255 255 / 0.06); }
+  .pick { position: relative; display: flex; align-items: center; height: 28px; border-radius: var(--radius-sm); color: var(--text); }
+  .pick:hover { background: var(--surface-root-hover); }
   .pick:has(select:focus-visible) { outline: 2px solid var(--focus-ring); }
   .pick > :global(.icon:first-child) { position: absolute; left: 8px; color: var(--text-dim); pointer-events: none; }
   .pick > :global(.icon:last-child) { position: absolute; right: 6px; color: var(--text-dim); pointer-events: none; }
   select { field-sizing: content; height: 100%; padding: 0 26px 0 30px; border: 0; background: none; appearance: none; font-size: 12.5px; font-weight: 500; }
   select:focus-visible { outline: none; }
-  input { width: 52px; height: 26px; padding: 0 6px; border: 0; border-radius: 6px; background: var(--bg-raised); font-size: 12.5px; text-align: center; font-variant-numeric: tabular-nums; }
+  input { width: 52px; height: var(--control-h); padding: 0 6px; border: 0; border-radius: var(--radius-sm); background: var(--surface-100); box-shadow: var(--hairline); font-size: 12.5px; text-align: center; font-variant-numeric: tabular-nums; }
   input::-webkit-inner-spin-button { display: none; }
 </style>

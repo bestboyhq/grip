@@ -25,7 +25,7 @@
 </script>
 
 <main>
-  <button onclick={() => (open = true)}>Export…</button>
+  <button class="btn" onclick={() => (open = true)}>Export…</button>
   {#if error}<p>{error}</p>{:else if !path}<p>Add &project=&lt;bundle path&gt; to the URL.</p>{/if}
 </main>
 <ExportDialog bind:open />
@@ -34,6 +34,6 @@
   main {
     height: 100vh;
     padding: 16px;
-    background: var(--bg);
+    background: var(--surface-root);
   }
 </style>

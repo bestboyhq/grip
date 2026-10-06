@@ -131,10 +131,9 @@
   .menu {
     width: min(560px, calc(100vw - 48px));
     overflow: hidden;
-    background: #1f1f23;
-    border: 1px solid rgb(255 255 255 / 0.1);
-    border-radius: 12px;
-    box-shadow: 0 24px 64px rgb(0 0 0 / 0.5), 0 0 0 0.5px rgb(0 0 0 / 0.7);
+    background: var(--surface-50);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-modal);
     animation: rise 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
   @keyframes fade {
@@ -151,14 +150,14 @@
     height: 48px;
     padding: 0 18px;
     border: 0;
-    border-bottom: 1px solid rgb(255 255 255 / 0.08);
     background: none;
+    box-shadow: var(--hairline-b);
     color: var(--text);
     font: 15px var(--font);
     outline: none;
   }
   input::placeholder {
-    color: rgb(255 255 255 / 0.35);
+    color: var(--text-faint);
   }
   .list {
     max-height: min(400px, 56vh);
@@ -178,10 +177,10 @@
     gap: 8px;
     height: 34px;
     padding: 0 12px;
-    border-radius: 7px;
+    border-radius: var(--radius-sm);
   }
   .item[aria-selected='true'] {
-    background: rgb(255 255 255 / 0.08);
+    background: var(--surface-50-selected);
   }
   .title {
     white-space: nowrap;
@@ -200,8 +199,9 @@
   kbd {
     min-width: 20px;
     padding: 1px 6px;
-    border-radius: 5px;
-    background: rgb(255 255 255 / 0.07);
+    border-radius: var(--radius-xs);
+    background: var(--surface-150);
+    box-shadow: var(--hairline);
     color: var(--text-dim);
     font: 11px/18px var(--font);
     text-align: center;

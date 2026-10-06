@@ -57,6 +57,8 @@ Every domain obeys these invariants:
 
 - `npm run dev -- --open <bundle.grip>` runs the app.
   `STUDIO_CDP_PORT=<port>` exposes its windows to `agent-browser --cdp <port>`, and `STUDIO_HIDDEN=1` keeps them off screen.
+  One instance runs per worktree: a second launch hands its arguments to the running one and exits, so agents share it and its CDP port.
+  `npm run dev -- --lab <Name>` opens `src/windows/dev/labs/<Name>.svelte`; the `Wallpapers` lab renders wallpapers for review.
 - `npm run build:native` builds the Rust addon.
 - `npx electron scripts/fixture/make.ts [out.grip]` generates a synthetic 24 s recording with events, camera, mic speech, and system audio, by default at `.context/fixtures/Demo #1 ✨ café.grip`.
 - `APPLE_KEYCHAIN_PROFILE=<notarytool profile> npm run package` builds, signs with the Developer ID, and notarizes `release/Grip-*.dmg`.

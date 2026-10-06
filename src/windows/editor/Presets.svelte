@@ -140,19 +140,19 @@
   ul { margin: 0; padding: 0; list-style: none; max-height: 260px; overflow-y: auto; }
   li { display: flex; align-items: center; gap: 2px; }
   .item {
-    flex: 1; min-width: 0; display: block; height: 28px; padding: 0 8px; border: 0; border-radius: 6px;
+    flex: 1; min-width: 0; display: block; height: 28px; padding: 0 8px; border: 0; border-radius: var(--radius-sm);
     background: none; font-size: 12.5px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .item:hover { background: var(--bg-hover); }
+  .item:hover { background: var(--surface-50-hover); }
   .item:disabled { opacity: 0.5; }
   .small { width: 26px; height: 26px; }
   .ask { flex: 1; min-width: 0; padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
   .confirm { height: 24px; padding: 0 8px; font-size: 12px; }
   .danger { background: var(--danger); color: #fff; }
-  .danger:hover { background: #ff7a73; }
-  .import { color: var(--text-dim); border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; margin-top: 2px; height: 32px; }
-  .save { display: flex; gap: 6px; padding: 6px 2px 2px; border-top: 1px solid var(--border); margin-top: 2px; }
-  .save input { flex: 1; min-width: 0; height: var(--control-h); padding: 0 8px; border: 0; border-radius: 6px; background: var(--bg-raised); font-size: 12.5px; }
+  .danger:hover { background: var(--danger-hover); }
+  .import { display: flex; align-items: center; gap: 6px; color: var(--text-dim); box-shadow: var(--hairline-t); border-radius: 0 0 var(--radius-sm) var(--radius-sm); margin-top: 2px; height: 32px; }
+  .save { display: flex; gap: 6px; padding: 6px 2px 2px; box-shadow: var(--hairline-t); margin-top: 2px; }
+  .save input { flex: 1; min-width: 0; height: var(--control-h); padding: 0 8px; border: 0; border-radius: var(--radius-sm); background: var(--surface-100); box-shadow: var(--hairline); font-size: 12.5px; }
   .save input:focus-visible { outline-offset: -1px; }
   .empty, .status { margin: 0; padding: 6px 8px; font-size: 12px; line-height: 1.45; color: var(--text-dim); }
   .status { color: var(--text-faint); }

@@ -59,7 +59,7 @@
     inset: 16px;
     overflow: hidden;
     border-radius: 50%;
-    background: #1c1c1e;
+    background: var(--surface-50);
     box-shadow:
       0 0 0 1.5px rgb(255 255 255 / 0.2),
       0 8px 22px rgb(0 0 0 / 0.38);
@@ -86,6 +86,6 @@
     text-align: center;
     font-size: 12px;
     line-height: 1.3;
-    color: rgb(255 255 255 / 0.62);
+    color: var(--text-dim);
   }
 </style>

@@ -36,7 +36,6 @@
 </Section>
 
 <Section title="Movement">
-  <Toggle label="Smooth movement" hint="Removes jitter while passing exactly through every click." checked={c.smooth} disabled={off} onchange={set('smooth')} />
   <Toggle label="Hide when idle" hint="Fades the cursor out while it rests." checked={c.hideIdle} disabled={off} onchange={set('hideIdle')} />
   <Toggle label="Loop position" hint="Returns to where it started by the last frame, for looping videos." checked={c.loop} disabled={off} onchange={set('loop')} />
 </Section>
@@ -44,6 +43,7 @@
 <Section title="Clicks">
   <Segmented
     stacked
+    ariaLabel="Click effect"
     value={c.click}
     disabled={!hasEvents}
     onchange={set('click')}
@@ -59,5 +59,5 @@
 </Section>
 
 <style>
-  .note { margin: 14px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--bg-raised); color: var(--text-dim); font-size: 12px; line-height: 1.45; }
+  .note { margin: 14px 0 0; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-25); box-shadow: var(--hairline); color: var(--text-dim); font-size: 12px; line-height: 1.45; }
 </style>

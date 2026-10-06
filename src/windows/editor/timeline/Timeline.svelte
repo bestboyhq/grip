@@ -7,7 +7,7 @@
   import type { AudioSource } from '../../../shared/project.ts'
   import { timeMap, toSource, type TimeMap } from '../../../shared/timemap.ts'
   import { doc, edit, selection } from '../../../lib/doc.svelte.ts'
-  import { player, scrub, seek, toggle } from '../../../lib/player.svelte.ts'
+  import { player, previewTime, scrub, seek, toggle } from '../../../lib/player.svelte.ts'
   import { peaks as enginePeaks } from '../../../engine/audio/index.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
   import CommandMenu from '../commands/CommandMenu.svelte'
@@ -375,6 +375,7 @@
     }
     pointer = p
     ghost = null
+    player.hover = null // a drag shows what it edits: the playhead's frame
     cursor = dragCursor(drag)
     requestDraw()
   }
@@ -405,7 +406,7 @@
 
   function onpointerleave() {
     if (drag) return
-    pointer = hover = ghost = null
+    pointer = hover = ghost = player.hover = null
     requestDraw()
   }
 
@@ -491,6 +492,8 @@
   function hovered() {
     if (!model || !pointer || drag) return
     hover = hit(view, model, pointer.x, pointer.y)
+    // Hover scrub: the preview shows the moment under the pointer while paused; the playhead stays put.
+    player.hover = player.playing || hover.kind === 'scrollbar' || hover.kind === 'none' ? null : outTime(pointer.x)
     ghost = null
     if (hover.kind === 'lane' && isItem(hover.track) && !armed()) {
       const t = outTime(pointer.x)
@@ -560,7 +563,7 @@
       </button>
     </div>
     <div class="center">
-      <span class="time now">{formatTime(player.time)}</span>
+      <span class="time now">{formatTime(previewTime())}</span>
       <button class="icon" {@attach tooltip('Go to start')} aria-label="Go to start" onclick={() => seek(0)}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 4.5v11" /><path class="fill" d="M15.5 4.8v10.4L8 10z" /></svg>
       </button>
@@ -579,7 +582,6 @@
     <div class="right">
       <button
         class={['icon', { armed: splitTool || alt }]}
-        {@attach tooltip('Split tool', 'S or hold ⌥')}
         aria-label="Split tool"
         aria-pressed={splitTool}
         onclick={() => (splitTool = !splitTool)}
@@ -624,8 +626,7 @@
   .timeline {
     display: flex;
     flex-direction: column;
-    background: #151517;
-    border-top: 1px solid rgb(255 255 255 / 0.06);
+    background: var(--surface-50);
   }
   .bar {
     position: sticky; /* the transport stays put while lanes scroll in a short window */
@@ -656,13 +657,11 @@
     min-width: 76px;
     font-size: 12px;
     font-variant-numeric: tabular-nums;
-    color: var(--text-dim);
-    opacity: 0.7;
+    color: var(--text-faint);
   }
   .time.now {
     text-align: right;
     color: var(--text);
-    opacity: 0.85;
   }
   button {
     border: 0;
@@ -673,22 +672,23 @@
     place-items: center;
     width: 30px;
     height: 28px;
-    border-radius: 7px;
-    color: #c8c8ce;
+    border-radius: var(--radius-sm);
+    color: var(--text-dim);
   }
   .icon:hover {
-    background: rgb(255 255 255 / 0.07);
-    color: #fff;
+    background: var(--surface-50-hover);
+    color: var(--text);
   }
   .icon.play {
     width: 34px;
     height: 34px;
     border-radius: 50%;
-    background: rgb(255 255 255 / 0.08);
-    color: #fff;
+    background: var(--surface-100);
+    box-shadow: var(--hairline);
+    color: var(--text);
   }
   .icon.play:hover {
-    background: rgb(255 255 255 / 0.14);
+    background: var(--surface-100-hover);
   }
   .icon.armed {
     background: var(--danger);
@@ -713,11 +713,11 @@
     gap: 6px;
     height: 28px;
     padding: 0 8px 0 7px;
-    border-radius: 7px;
+    border-radius: var(--radius-sm);
     color: var(--text-dim);
   }
   .commands:hover {
-    background: rgb(255 255 255 / 0.07);
+    background: var(--surface-50-hover);
     color: var(--text);
   }
   .commands svg {
@@ -726,13 +726,13 @@
   }
   kbd {
     padding: 0 5px;
-    border-radius: 4px;
-    background: rgb(255 255 255 / 0.07);
+    border-radius: var(--radius-xs);
+    background: var(--surface-150);
     font: 11px/17px var(--font);
   }
   button:focus-visible,
   input:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: -2px;
   }
   input[type='range'] {
@@ -745,15 +745,15 @@
   input[type='range']::-webkit-slider-runnable-track {
     height: 4px;
     border-radius: 2px;
-    background: rgb(255 255 255 / 0.12);
+    background: var(--surface-200);
   }
   input[type='range']::-webkit-slider-thumb {
     width: 14px;
     height: 14px;
     margin-top: -5px;
     border-radius: 50%;
-    background: #d8d8de;
-    box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
+    background: var(--knob);
+    box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.35), 0 1px 3px rgb(0 0 0 / 0.45);
     appearance: none;
   }
   canvas {

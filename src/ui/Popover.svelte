@@ -44,8 +44,8 @@
 <style>
   .popover {
     inset: auto; margin: 6px 0 0; padding: 6px; min-width: 220px; max-height: 70vh; overflow: auto;
-    border: 0; border-radius: 10px; background: var(--bg-panel); color: var(--text);
-    box-shadow: var(--shadow-pop), inset 0 0 0 0.5px rgb(255 255 255 / 0.1);
+    border: 0; border-radius: var(--radius-lg); background: var(--surface-50); color: var(--text);
+    box-shadow: var(--shadow-pop);
     position-try-fallbacks: flip-block;
     opacity: 0; transform: translateY(-4px) scale(0.98); transform-origin: top right;
     transition: opacity 140ms var(--ease-out), transform 140ms var(--ease-out), display 140ms allow-discrete, overlay 140ms allow-discrete;

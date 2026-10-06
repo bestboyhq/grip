@@ -359,26 +359,27 @@
   button {
     height: 24px;
     padding: 0 9px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-raised);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--surface-100);
+    box-shadow: var(--hairline);
     font-size: 12px;
     white-space: nowrap;
   }
   button:hover:not(:disabled) {
-    background: var(--bg-hover);
+    background: var(--surface-100-hover);
   }
   button:disabled {
     color: var(--text-dim);
     opacity: 0.6;
   }
   button:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 1px;
   }
   .primary {
     background: var(--accent);
-    border-color: transparent;
+    box-shadow: none;
     color: var(--accent-ink);
     font-weight: 500;
   }
@@ -387,6 +388,10 @@
   }
   .ghost {
     background: transparent;
+    box-shadow: none;
+  }
+  .ghost:hover:not(:disabled) {
+    background: var(--surface-50-hover);
   }
   .bar {
     display: flex;
@@ -412,7 +417,7 @@
     overflow-y: auto;
     margin: 0 -16px; /* full width: the scrollbar sits at the panel edge */
     padding: 4px 16px 16px;
-    border-top: 1px solid var(--border);
+    box-shadow: var(--hairline-t);
     font-size: 14px;
     line-height: 1.7;
     user-select: text;
@@ -437,7 +442,7 @@
     transition: background-color 80ms;
   }
   .w:hover {
-    background: rgb(255 255 255 / 0.07);
+    background: var(--surface-50-hover);
   }
   .w:global([data-on]) {
     background: var(--accent);
@@ -452,8 +457,8 @@
     text-underline-offset: 3px;
   }
   .cut {
-    color: rgb(242 242 243 / 0.32);
-    text-decoration: line-through rgb(242 242 243 / 0.32);
+    color: var(--text-faint);
+    text-decoration: line-through var(--text-faint);
   }
   .doomed,
   .confirming .pause.doomed {
@@ -462,13 +467,13 @@
   }
   .pause.busy {
     background: none;
-    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14);
+    box-shadow: inset 0 0 0 0.5px var(--edge-strong);
   }
   .pause {
     display: inline-block;
     padding: 0 6px;
-    border-radius: 4px;
-    background: rgb(255 255 255 / 0.07);
+    border-radius: var(--radius-xs);
+    background: var(--surface-150);
     color: var(--text-dim);
     font: 11px/18px var(--font);
     font-variant-numeric: tabular-nums;
@@ -481,17 +486,17 @@
     padding: 0 3px;
     font: inherit;
     line-height: 1.35;
-    color: #fff;
-    background: var(--bg-raised);
+    color: var(--text);
+    background: var(--surface-100);
     border: 1px solid var(--accent);
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     outline: none;
   }
   footer {
     flex: none;
     margin: 0 -16px;
     padding: 10px 16px 2px;
-    border-top: 1px solid var(--border);
+    box-shadow: var(--hairline-t);
     color: var(--text-dim);
     font-size: 11px;
     line-height: 1.45;
@@ -525,7 +530,7 @@
     width: 100%;
     height: 4px;
     border-radius: 2px;
-    background: rgb(255 255 255 / 0.08);
+    background: var(--surface-200);
     overflow: hidden;
   }
   .meter div {

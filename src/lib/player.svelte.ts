@@ -29,8 +29,13 @@ import type { PlaybackMessage } from '../engine/audio/playback.worklet.ts'
 import workletUrl from '../engine/audio/playback.worklet.ts?worker&url'
 
 /** `prepared` counts preparations of the project for the preview (after edits, resizes, a face track
- *  or speech arriving), so views derived from currentScene() know when to look again. */
-export const player = $state({ time: 0, duration: 0, playing: false, error: null as string | null, prepared: 0 })
+ *  or speech arriving), so views derived from currentScene() know when to look again.
+ *  `hover`: output time under the pointer on the timeline while paused; the preview shows that moment
+ *  instead of the playhead's (the playhead stays put). Play and seek clear it. */
+export const player = $state({ time: 0, duration: 0, playing: false, error: null as string | null, prepared: 0, hover: null as number | null })
+
+/** The output time the preview shows: the hovered moment, else the playhead. */
+export const previewTime = () => player.hover ?? player.time
 
 /** Timing for labs and logs; plain (not reactive) so the hot loop stays cheap. Set `sync` to an
  *  array to log [audio clock, frame time] (output seconds) for each frame drawn while playing. */
@@ -131,6 +136,7 @@ export function attach(c: HTMLCanvasElement): () => void {
     preparing = 0
     canvas = null
     shown = { t: NaN, p: null }
+    player.hover = null
     void ctx?.close()
     ctx = node = null
     audioReady = null
@@ -142,6 +148,7 @@ export function play() {
   if (player.playing || !prepared) return
   catchUp()
   if (player.time >= player.duration - 1e-3) player.time = 0
+  player.hover = null
   player.playing = true
   startRun(false)
   // Audio not running yet (still starting, or suspended by the system): switch to its clock once it is.
@@ -159,15 +166,16 @@ export function pause() {
 
 export const toggle = () => (player.playing ? pause() : play())
 
-/** The frame at the playhead as a Scene in the canvas's pixel size, from the preparation the preview
+/** The frame the preview shows as a Scene in the canvas's pixel size, from the preparation the preview
  *  draws (face track and speech included), for hit-testing. Null until the first preparation. */
-export const currentScene = (): Scene | null => (prepared ? sceneAt(prepared, player.time) : null)
+export const currentScene = (): Scene | null => (prepared ? sceneAt(prepared, previewTime()) : null)
 
 /** The face track and mic speech the preview loaded, for other renders of the project (thumbnail). */
 export const loadedExtras = () => ({ faces: faces.value, speech: speech.value })
 
 export function seek(t: number) {
   catchUp()
+  player.hover = null
   player.time = Math.min(Math.max(t, 0), player.duration)
   if (player.playing) startRun(false)
   else keepPlayhead()
@@ -241,7 +249,7 @@ function frame(ts: number) {
     return
   }
   if (preparedTiming !== timing) return // the old timeline would show another moment than this one
-  const t = player.time
+  const t = Math.min(previewTime(), player.duration) // latest wins: hovers between two frames are never drawn
   if (t === shown.t && prepared === shown.p) return
   shown = { t, p: prepared }
   inFlight = true

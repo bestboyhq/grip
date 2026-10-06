@@ -14,7 +14,7 @@
 
 <style>
   section { display: flex; flex-direction: column; gap: 2px; padding: 14px 0; }
-  :global(section) + section { border-top: 1px solid var(--border); }
+  :global(section) + section { box-shadow: var(--hairline-t); }
   header { display: flex; align-items: center; justify-content: space-between; min-height: 20px; margin-bottom: 6px; }
   h3 { margin: 0; font-size: 12px; font-weight: 600; color: var(--text); letter-spacing: 0.01em; }
 </style>

@@ -5,7 +5,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { doc, edit, selection } from '../../lib/doc.svelte.ts'
-  import { player, attach, currentScene } from '../../lib/player.svelte.ts'
+  import { player, attach, currentScene, previewTime } from '../../lib/player.svelte.ts'
   import { outputSize, type Scene } from '../../engine/scene.ts'
   import type { CameraPosition } from '../../shared/project.ts'
   import { cornerAt, outputPoint, reason, screenPoint } from './helpers.ts'
@@ -51,7 +51,7 @@
     const z = zooms[0]
     if (!z || z.target.kind !== 'point') return null
     player.prepared
-    player.time
+    previewTime()
     const s = untrack(scene)
     const p = s && outputPoint(s, z.target.x, z.target.y)
     return p && { x: (p.x / s.width) * 100, y: (p.y / s.height) * 100 }
@@ -61,7 +61,7 @@
   const maskBox = $derived.by(() => {
     if (!mask) return null
     doc.rev
-    player.time
+    previewTime()
     const s = untrack(scene)
     const r = mask.rect
     const a = s && outputPoint(s, r.x, r.y)
@@ -196,7 +196,7 @@
   .fit { flex: 1; min-width: 0; container-type: size; display: grid; place-items: center; }
   .frame {
     position: relative; aspect-ratio: var(--ar); width: min(100cqw, 100cqh * var(--ar));
-    background: #0a0a0b; box-shadow: 0 0 0 1px var(--border); overflow: hidden; touch-action: none;
+    background: #0a0a0b; box-shadow: 0 0 0 0.5px var(--edge-color); overflow: hidden; touch-action: none;
   }
   .frame.aim { cursor: crosshair; }
   .frame.move { cursor: move; }

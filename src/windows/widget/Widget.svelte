@@ -35,7 +35,7 @@
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && (confirm = null)} oncontextmenu={menu} />
 
-<main class="widget">
+<main class="widget hud">
   {#if confirm}
     <span class="ask">{confirm === 'cancel' ? 'Delete recording?' : 'Start over?'}</span>
     <button class="text" onclick={() => (confirm = null)}>Keep</button>
@@ -61,10 +61,10 @@
     align-items: center;
     gap: 2px;
     padding: 0 8px 0 16px;
-    border-radius: 12px;
-    background: var(--bar-bg, rgb(40 40 42 / 0.38));
-    box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.13);
-    color: #f4f4f5;
+    border-radius: var(--radius-lg);
+    background: var(--surface-50);
+    box-shadow: var(--hairline);
+    color: var(--text);
     -webkit-app-region: drag;
   }
   .dot {
@@ -72,17 +72,17 @@
     height: 9px;
     margin-right: 9px;
     border-radius: 50%;
-    background: #ff453a;
+    background: var(--record);
     box-shadow: 0 0 0 3px rgb(255 69 58 / 0.22);
     animation: pulse 1.6s ease-in-out infinite;
   }
   .dot.paused {
-    background: #ffd60a;
+    background: var(--warning);
     box-shadow: 0 0 0 3px rgb(255 214 10 / 0.2);
     animation: none;
   }
   .dot.saving {
-    background: rgb(255 255 255 / 0.5);
+    background: var(--text-faint);
     box-shadow: none;
     animation: none;
   }
@@ -104,10 +104,10 @@
     letter-spacing: 0.2px;
   }
   .sep {
-    width: 1px;
+    width: 0.5px;
     height: 24px;
-    margin: 0 6px;
-    background: rgb(255 255 255 / 0.13);
+    margin: 0 6.25px;
+    background: var(--edge-strong);
   }
   button {
     -webkit-app-region: no-drag;
@@ -117,29 +117,29 @@
     height: 34px;
     padding: 0;
     border: 0;
-    border-radius: 9px;
+    border-radius: var(--radius-sm);
     background: none;
-    color: rgb(255 255 255 / 0.86);
+    color: var(--text-dim);
   }
   button:hover:not(:disabled) {
-    background: rgb(255 255 255 / 0.1);
-    color: #fff;
+    background: var(--surface-50-hover);
+    color: var(--text);
   }
   button:active:not(:disabled) {
-    background: rgb(255 255 255 / 0.16);
+    background: var(--surface-50-selected);
   }
   button:disabled {
     opacity: 0.35;
   }
   button:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: -2px;
   }
   .stop {
-    color: #ff453a;
+    color: var(--record);
   }
   .stop:hover:not(:disabled) {
-    color: #ff6961;
+    color: var(--record-hover);
   }
   .ask {
     flex: 1;
@@ -151,15 +151,22 @@
     height: 28px;
     padding: 0 12px;
     margin-left: 4px;
-    border-radius: 8px;
-    background: rgb(255 255 255 / 0.12);
+    border-radius: var(--radius-sm);
+    background: var(--surface-100);
+    box-shadow: var(--hairline);
     font-size: 13px;
-    color: #fff;
+    color: var(--text);
+  }
+  .text:hover:not(:disabled) {
+    background: var(--surface-100-hover);
   }
   .danger {
-    background: #ff453a;
+    background: var(--danger);
+    box-shadow: none;
+    color: #fff;
   }
   .danger:hover:not(:disabled) {
-    background: #ff5b51;
+    background: var(--danger-hover);
+    color: #fff;
   }
 </style>

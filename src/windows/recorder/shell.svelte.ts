@@ -57,6 +57,7 @@ export const shell = $state({
   mode: null as Mode | null,
   picking: false,
   counting: false,
+  area: null as { display: number; rect: EngineRect } | null, // the area being recorded
   elapsed: 0, // seconds recorded as of `at`
   at: 0, // ms since epoch; 0 while not running
 })

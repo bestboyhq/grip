@@ -72,7 +72,7 @@
       <p class="caption">{line?.text ?? ''}</p>
     </div>
     <div class="controls">
-      <button onclick={toggle}>{player.playing ? 'Pause' : 'Play'}</button>
+      <button class="btn" onclick={toggle}>{player.playing ? 'Pause' : 'Play'}</button>
       <span>{clock(player.time)} / {clock(player.duration)}</span>
     </div>
     <pre>{srt.slice(0, 4000)}</pre>
@@ -85,7 +85,7 @@
     display: grid;
     grid-template-columns: 1fr 360px;
     height: 100vh;
-    background: #141416;
+    background: var(--surface-root);
   }
   main {
     display: flex;
@@ -131,10 +131,10 @@
     user-select: text;
   }
   aside {
-    border-left: 1px solid var(--border);
+    box-shadow: var(--hairline-l);
     min-height: 0;
     padding: 0 16px 8px; /* as the editor's inspector */
-    background: var(--bg-panel);
+    background: var(--surface-50);
   }
   .error {
     color: var(--danger);

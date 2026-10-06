@@ -62,7 +62,7 @@
 
 <svelte:window onkeydown={key} />
 
-<main class="notes" style:--size="{prompter.size}px">
+<main class="notes hud" style:--size="{prompter.size}px">
   <header>
     {#if prompting}
       <button class="icon" aria-label="Back to editing" title="Back to editing (Esc)" onclick={stop}><Icon name="stop" size={16} /></button>
@@ -94,12 +94,12 @@
     inset: 0;
     display: flex;
     flex-direction: column;
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
-    /* Over the window's HUD vibrancy, like the toolbar. */
-    background: rgb(28 28 30 / 0.72);
-    box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.13);
-    color: #f4f4f5;
+    --surface-50: rgb(28 28 30 / 0.72); /* a denser veil than the toolbar's, so notes read over any desktop */
+    background: var(--surface-50);
+    box-shadow: var(--hairline);
+    color: var(--text);
   }
   header {
     flex: none;
@@ -108,7 +108,7 @@
     gap: 6px;
     height: 40px;
     padding: 0 6px 0 14px;
-    border-bottom: 0.5px solid rgb(255 255 255 / 0.1);
+    box-shadow: var(--hairline-b);
     -webkit-app-region: drag;
   }
   header > :first-child.icon {
@@ -118,7 +118,7 @@
     flex: 1;
     font-size: 12px;
     font-weight: 600;
-    color: rgb(255 255 255 / 0.6);
+    color: var(--text-dim);
   }
   button,
   input {
@@ -131,22 +131,22 @@
     border: 0;
     padding: 0;
     background: none;
-    color: rgb(255 255 255 / 0.8);
+    color: var(--text-dim);
   }
   .icon {
     width: 28px;
     height: 28px;
-    border-radius: 7px;
+    border-radius: var(--radius-sm);
   }
   .icon:hover {
-    background: rgb(255 255 255 / 0.1);
-    color: #fff;
+    background: var(--surface-50-hover);
+    color: var(--text);
   }
   .start {
     gap: 6px;
     height: 26px;
     padding: 0 10px 0 8px;
-    border-radius: 7px;
+    border-radius: var(--radius-sm);
     background: var(--accent);
     color: var(--accent-ink);
     font-size: 12px;
@@ -164,7 +164,7 @@
     gap: 6px;
     margin-left: 8px;
     font-size: 11.5px;
-    color: rgb(255 255 255 / 0.6);
+    color: var(--text-dim);
   }
   .tune input {
     appearance: none;
@@ -172,14 +172,14 @@
     height: 3px;
     margin: 0;
     border-radius: 1.5px;
-    background: rgb(255 255 255 / 0.22);
+    background: var(--surface-200);
   }
   .tune input::-webkit-slider-thumb {
     appearance: none;
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: #fff;
+    background: var(--knob);
     box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
   }
   .tune:last-of-type {
@@ -196,7 +196,7 @@
     line-height: 1.5;
   }
   textarea::placeholder {
-    color: rgb(255 255 255 / 0.35);
+    color: var(--text-faint);
   }
   .view {
     flex: 1;
