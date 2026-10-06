@@ -206,7 +206,7 @@
     <button class="pick mic" class:off={!mic} onclick={(e) => pickInput('mic', e.currentTarget)}>
       <Icon name={mic ? 'mic' : 'mic-off'} width={12} height={17} stroke={1.5} />
       <span class="label">{mic ? short(mic.name) : 'No microphone'}</span>
-      {#if mic}<span class="meter" aria-hidden="true"><span style:width="{Math.max(3, level * 135.5)}px"></span></span>{/if}
+      {#if mic}<span class="meter" aria-hidden="true"><span style:width="max(3px, {level * 100}%)"></span></span>{/if}
     </button>
     <button class="pick system" class:off={!s?.systemAudio} aria-pressed={!!s?.systemAudio} onclick={() => setSettings({ systemAudio: !s?.systemAudio })}>
       <Icon name={s?.systemAudio ? 'speaker' : 'speaker-off'} width={20} height={16} stroke={1.5} />
@@ -226,7 +226,7 @@
     inset: 0;
     display: flex;
     align-items: center;
-    padding-left: 20px;
+    padding: 0 10px 0 20px; /* the gear's chevron ends 20 px from the edge, like the close button starts */
     border-radius: var(--radius-lg);
     background: var(--surface-50);
     box-shadow: var(--hairline);
@@ -241,6 +241,9 @@
     display: flex;
     align-items: center;
     border-radius: var(--radius-sm); /* concentric: 6 px inside the 12 px bar */
+    transition:
+      background-color 120ms,
+      color 120ms;
   }
   button:focus-visible {
     outline: 2px solid var(--focus-ring);
@@ -257,7 +260,8 @@
   .close:hover {
     background: var(--accent-hover);
   }
-  /* Spacing matches the reference toolbar point for point: separators at 60.5, 313.5, 797.5. */
+  /* Every hover box is 52 px tall, 6 px inside the bar, and the camera, microphone, and system audio
+     boxes touch: the highlight moves along one track from button to button without dropping out. */
   .sep {
     width: 0.5px;
     height: 44px;
@@ -300,11 +304,15 @@
   .mode.on .name {
     color: var(--text);
   }
+  /* The three share the room between the separators, content centered: equal padding on both sides
+     of every box, whatever the device names. */
   .pick {
     position: relative;
-    height: 40px;
+    flex: auto;
+    height: 52px;
+    justify-content: center;
     gap: 10px;
-    padding-top: 1.5px;
+    padding: 1.5px 12px 0;
     font-size: 13.2px;
     color: var(--text);
   }
@@ -318,22 +326,15 @@
     text-overflow: ellipsis;
   }
   .camera {
-    width: 123px;
-    margin-left: 16.5px;
-    padding-right: 10px; /* a long name never touches the microphone */
     gap: 8.5px;
   }
-  .mic {
-    width: 134px;
-    padding-left: 8px;
-    gap: 10px;
+  /* Long device names truncate here, so the toolbar always fits and nothing else shrinks. */
+  .camera .label,
+  .mic .label {
+    max-width: 100px;
   }
   .mic :global(svg) {
     margin-top: -2.5px;
-  }
-  .system {
-    width: 160px;
-    margin: 0 13.5px 0 24px;
   }
   .system :global(svg) {
     margin-top: -1px;
@@ -341,9 +342,9 @@
   /* Level of the chosen microphone: a faint track under it, the level a dot at silence. */
   .meter {
     position: absolute;
-    left: -2.5px;
-    right: 1px;
-    top: 36.5px;
+    left: 12px;
+    right: 12px;
+    top: 42.5px;
     height: 3px;
     border-radius: 1.5px;
     background: var(--surface-25);
@@ -356,9 +357,8 @@
     transition: width 60ms linear;
   }
   .gear {
-    margin-left: 10.5px;
-    height: 36px;
-    padding: 0 5px 0 6.5px;
+    height: 52px;
+    padding: 0 10px;
     gap: 6.5px;
     color: var(--text-dim);
   }
@@ -372,7 +372,7 @@
     justify-content: center;
     gap: 14px;
     font-size: 14px;
-    padding-right: 20px;
+    padding-right: 10px; /* centered in the bar, whose padding is 20 left, 10 right */
   }
   .countdown .n {
     font-size: 30px;
