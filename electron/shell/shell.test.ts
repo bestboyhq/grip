@@ -4,6 +4,7 @@ import { inTurn, parseLaunch, parseGripUrl } from './url.ts'
 import { plainError } from './errors.ts'
 import { areaOf, arrangement, fit, place, reachable } from './bounds.ts'
 import { hold, release } from './session.ts'
+import { withScale } from './png.ts'
 import { execFile } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -156,4 +157,24 @@ test('launches that start together take turns at the single-instance lock', asyn
   for (let i = 1; i < turns.length; i++) assert.ok(turns[i][0] >= turns[i - 1][1], `launch ${i} overlapped: ${JSON.stringify(turns)}`)
   assert.equal(inTurn(join(root, 'userdata', 'launch.lock', 'not a dir'), () => 'ran'), 'ran', 'an unlockable file never blocks a launch')
   rmSync(root, { recursive: true, force: true })
+})
+
+test('screenshots carry their pixel density, like the ones macOS takes', () => {
+  const chunk = (type: string, data: number[]) => {
+    const b = Buffer.alloc(12 + data.length)
+    b.writeUInt32BE(data.length)
+    b.write(type, 4, 'latin1')
+    Buffer.from(data).copy(b, 8)
+    return b
+  }
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+  const png = Buffer.concat([sig, chunk('IHDR', Array(13).fill(1)), chunk('pHYs', Array(9).fill(0)), chunk('IDAT', [1, 2, 3]), chunk('IEND', [])])
+  const out = withScale(png, 2)
+  const types: string[] = []
+  for (let i = 8; i < out.length; i += 12 + out.readUInt32BE(i)) types.push(out.toString('latin1', i + 4, i + 8))
+  assert.deepEqual(types, ['IHDR', 'pHYs', 'IDAT', 'IEND']) // the old density replaced, right after the header
+  const phys = 8 + 25
+  assert.equal(out.readUInt32BE(phys + 8), 5669) // 144 dpi
+  assert.equal(out.readUInt8(phys + 16), 1)
+  assert.deepEqual([...out.subarray(out.length - 12 - 15, out.length - 12)].slice(8, 11), [1, 2, 3])
 })

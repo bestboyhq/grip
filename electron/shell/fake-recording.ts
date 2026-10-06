@@ -10,16 +10,19 @@
 //   recording:micMonitor(micId) | micMonitorStop; broadcasts recording:micLevel({ peak, rms })
 //   recording:start({ target, cameraId?, micId?, systemAudio }) -> RecState; rejects with a reason
 //   recording:pause | resume | cancel | restart -> RecState; recording:stop -> sources | null
+//   recording:screenshot(displayId, rect) -> PNG (the stand-in's thumbnail, at the rect's pixel size)
+//   recording:draw(phase, x, y, color?, width?): pen strokes land in the take's events.jsonl
 //   broadcasts recording:state(state), recording:finished(bundle, { reason }); recordingEvents too
 //   camera:list -> [{ id, name, kind: 'built-in' | 'external' | 'continuity' | 'ios', formats }]
-import { ipcMain, screen, systemPreferences } from 'electron'
+import { ipcMain, nativeImage, screen, systemPreferences } from 'electron'
 import { constants, existsSync } from 'node:fs'
-import { cp, readFile } from 'node:fs/promises'
+import { appendFile, cp, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Project } from '../../src/shared/project.ts'
 import { sendAll } from '../windows.ts'
 import { recordingEvents, recordingName } from '../recording.ts'
 import { createBundle, projectsDir, writeNewRecording } from '../projects.ts'
+import { settings } from './settings.ts'
 
 export function registerFakeRecording(bundle: string) {
   let state = 'idle'
@@ -74,6 +77,22 @@ export function registerFakeRecording(bundle: string) {
     }, 33)
   })
   handle('recording:micMonitorStop', () => clearInterval(meter))
+  handle('recording:screenshot', (id: number, r: { w: number; h: number }) => {
+    const scale = screen.getAllDisplays().find((d) => d.id === Number(id))?.scaleFactor ?? 2
+    const size = { width: Math.round(r.w * scale), height: Math.round(r.h * scale), quality: 'best' as const }
+    return nativeImage.createFromPath(join(bundle, 'thumbnail.png')).resize(size).toPNG()
+  })
+  // Pen strokes in the stand-in's screen pixels, as if the primary display were the screen source.
+  let t0 = 0
+  let ink: string[] = []
+  let screenWidth = 1920
+  handle('recording:draw', (phase: string, x: number, y: number, color?: string, width?: number) => {
+    if (state !== 'recording') return false
+    const d = screen.getPrimaryDisplay().bounds
+    const k = screenWidth / d.width
+    ink.push(JSON.stringify({ t: (Date.now() - t0) / 1000, type: 'draw', phase, x: (x - d.x) * k, y: (y - d.y) * k, ...(phase === 'start' && { color, width: (width ?? 4) * k }) }))
+    return true
+  })
   let inputs = { cameraId: '', micId: '', systemAudio: true }
   handle('recording:start', async (req: typeof inputs) => {
     console.log('[fake recording] start', JSON.stringify(req))
@@ -82,6 +101,9 @@ export function registerFakeRecording(bundle: string) {
     inputs = req
     set('starting')
     await wait(300)
+    t0 = Date.now()
+    ink = []
+    screenWidth = (JSON.parse(await readFile(join(bundle, 'project.json'), 'utf8')) as Project).sources.screen?.width ?? 1920
     return set('recording')
   })
   handle('recording:pause', () => (state === 'recording' ? set('paused') : state))
@@ -99,7 +121,8 @@ export function registerFakeRecording(bundle: string) {
     if (!inputs.systemAudio) delete sources.system
     const dir = await createBundle(recordingName(new Date(), (n) => existsSync(join(projectsDir(), `${n}.grip`))))
     await cp(join(bundle, 'sources'), join(dir, 'sources'), { recursive: true, mode: constants.COPYFILE_FICLONE })
-    await writeNewRecording(dir, sources)
+    if (ink.length && sources.events) await appendFile(join(dir, sources.events), ink.join('\n') + '\n')
+    await writeNewRecording(dir, sources, { camera: settings().cameraCorner })
     set('idle')
     sendAll('recording:finished', dir, { reason: 'user' })
     recordingEvents.emit('finished', dir, { reason: 'user' })

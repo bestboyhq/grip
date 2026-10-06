@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { constrain, formAt, presetFrame, presetSize, resize } from './geometry.ts'
+import { constrain, formAt, presetFrame, presetSize, resize, toolsAt } from './geometry.ts'
 
 const W = 1512
 const H = 982
@@ -50,4 +50,15 @@ test('constrain and window presets', () => {
   // Same top-left, pulled inside the work area.
   assert.deepEqual(presetFrame({ x: 600, y: 500, width: 800, height: 600 }, '16:9', work), { x: 232, y: 262, width: 1280, height: 720 })
   assert.deepEqual(presetFrame({ x: 600, y: 500, width: 800, height: 600 }, 'current', work), { x: 600, y: 500, width: 800, height: 600 })
+})
+
+test('tool strip placement', () => {
+  // Right of the area, level with its top.
+  assert.deepEqual(toolsAt({ x: 100, y: 100, width: 400, height: 400 }, 44, 300, W, H, null), { x: 510, y: 100 })
+  // No room right: left of it. No room either side: inside its right edge.
+  assert.deepEqual(toolsAt({ x: 1000, y: 100, width: 500, height: 400 }, 44, 300, W, H, null), { x: 946, y: 100 })
+  assert.deepEqual(toolsAt({ x: 0, y: 100, width: W, height: 400 }, 44, 300, W, H, null), { x: W - 12 - 44, y: 100 })
+  // A short area with its form under it: the strip goes up, clear of the form.
+  const form = { x: 0, y: 214, width: 700, height: 50 }
+  assert.deepEqual(toolsAt({ x: 200, y: 100, width: 200, height: 100 }, 44, 300, W, H, form), { x: 410, y: 12 })
 })

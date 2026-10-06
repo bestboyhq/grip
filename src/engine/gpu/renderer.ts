@@ -8,7 +8,7 @@
 //              the shutter's view samples
 //   cursor     swept quad, motion blur over the shutter's cursor samples
 //   highlight, loupe, camera
-//   final      overlay canvas (clicks, keystrokes, captions) on top, dithered to the 8-bit canvas
+//   final      overlay canvas (clicks, drawings, keystrokes, captions) on top, dithered to the 8-bit canvas
 // Composition happens in an rgba16float frame, so soft shadows and gradients never band before
 // the final dither. Steady state allocates no GPU memory: textures live until the output size or
 // an asset changes, and video frames come in zero-copy as external textures.
@@ -178,7 +178,7 @@ export class Renderer {
     return {
       t: 0, src: 0, width, height, unit: Math.min(width, height) / 1080, background, backgroundBlur: blur,
       view: { center: { x: width / 2, y: height / 2 }, scale: 1 },
-      screen: null, camera: null, cursor: null, clicks: [], keystrokes: [], caption: null, masks: [], loupe: null,
+      screen: null, camera: null, cursor: null, clicks: [], drawings: [], keystrokes: [], caption: null, masks: [], loupe: null,
     }
   }
 
@@ -463,7 +463,7 @@ export class Renderer {
   }
 
   private paintOverlay(scene: Scene): boolean {
-    if (!scene.clicks.length && !scene.keystrokes.length && !scene.caption) return false
+    if (!scene.clicks.length && !scene.drawings.length && !scene.keystrokes.length && !scene.caption) return false
     const ctx = this.overlayCtx!
     ctx.clearRect(0, 0, this.w, this.h)
     drawOverlays(ctx, scene)

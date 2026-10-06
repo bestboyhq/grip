@@ -1,5 +1,6 @@
-<!-- Recording widget: timer, pause/resume, restart, finish, delete. Floats over everything, drags
-     anywhere, stays out of the recording. Restart and delete ask first: both throw the take away. -->
+<!-- Recording widget: timer, pen, pause/resume, restart, finish, delete. Floats over everything, drags
+     anywhere, stays out of the recording. Restart and delete ask first: both throw the take away.
+     The pen draws on the recorded display; what it draws is in the video and fades out after a moment. -->
 <script lang="ts">
   import { onMount } from 'svelte'
   import { invoke } from '../../lib/ipc.ts'
@@ -44,6 +45,14 @@
     <span class="dot" class:paused class:saving aria-hidden="true"></span>
     <span class="time" role="timer" aria-label="Recording time">{saving ? 'Saving…' : formatTime(seconds)}</span>
     <span class="sep"></span>
+    <button
+      class:on={shell.drawing}
+      aria-label="Draw on screen"
+      aria-pressed={shell.drawing}
+      title={shell.drawing ? 'Stop drawing (esc)' : 'Draw on screen (⌥⇧⌘D)'}
+      disabled={saving || paused || shell.inkDisplay === null}
+      onclick={() => invoke('shell:draw')}><Icon name="pen" size={18} stroke={1.7} /></button
+    >
     <button aria-label={paused ? 'Resume' : 'Pause'} title={paused ? 'Resume (⌥⇧⌘P)' : 'Pause (⌥⇧⌘P)'} disabled={saving} onclick={() => run('toggle-pause')}>
       <Icon name={paused ? 'play' : 'pause'} size={18} />
     </button>
@@ -134,6 +143,12 @@
   button:focus-visible {
     outline: 2px solid var(--focus-ring);
     outline-offset: -2px;
+  }
+  button.on,
+  button.on:hover:not(:disabled) {
+    background: var(--surface-50-selected);
+    box-shadow: var(--hairline);
+    color: var(--record);
   }
   .stop {
     color: var(--record);

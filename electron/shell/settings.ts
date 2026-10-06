@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Permission } from '../../native/index.d.ts'
 import type { Rect } from './bounds.ts'
+import type { CameraPosition } from '../../src/shared/project.ts'
 
 export interface Settings {
   camera: string | null // capture device id; null = no camera
@@ -13,6 +14,8 @@ export interface Settings {
   countdown: boolean
   showWidget: boolean
   showCamera: boolean // camera bubble on screen while picking and recording
+  /** The corner of the recorded area the camera bubble sits in; new recordings put the camera there. */
+  cameraCorner: CameraPosition
   hideDesktopIcons: boolean
   /** Speaker notes on screen while picking and recording; only the user sees them. */
   speakerNotes: boolean
@@ -37,6 +40,7 @@ const defaults: Settings = {
   countdown: true,
   showWidget: true,
   showCamera: true,
+  cameraCorner: 'bottom-right',
   hideDesktopIcons: false,
   speakerNotes: false,
   notes: '',

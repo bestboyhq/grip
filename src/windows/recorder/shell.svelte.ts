@@ -58,6 +58,8 @@ export const shell = $state({
   picking: false,
   counting: false,
   area: null as { display: number; rect: EngineRect } | null, // the area being recorded
+  drawing: false, // the pen is on (while recording)
+  inkDisplay: null as number | null, // the display being recorded, where the pen draws
   elapsed: 0, // seconds recorded as of `at`
   at: 0, // ms since epoch; 0 while not running
   update: '', // a downloaded version waiting for a restart

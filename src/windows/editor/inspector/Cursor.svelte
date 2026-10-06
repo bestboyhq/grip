@@ -58,6 +58,16 @@
   <Toggle label="Click sound" checked={c.clickSound} disabled={!hasEvents} onchange={set('clickSound')} />
 </Section>
 
+<Section title="Drawings">
+  <Toggle
+    label="Show drawings"
+    hint="Lines you drew on screen while recording."
+    checked={doc.project!.style.drawings.visible}
+    disabled={!hasEvents}
+    onchange={(v) => edit((p) => { p.style.drawings.visible = v })}
+  />
+</Section>
+
 <style>
   .note { margin: 14px 0 0; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-25); box-shadow: var(--hairline); color: var(--text-dim); font-size: 12px; line-height: 1.45; }
 </style>

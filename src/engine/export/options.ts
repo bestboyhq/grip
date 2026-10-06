@@ -19,14 +19,14 @@ export interface ExportOptions {
   codec: Codec // mp4
   quality: Quality // mp4
   loop: number // gif: 0 = forever, n = play n times
-  maxMB: number // gif: size target in MB (10^6 bytes), 0 = none
+  maxMB: number // size limit in MB (10^6 bytes), 0 = none
 }
 
 export const SIZES: Record<Format, number[]> = { mp4: [720, 1080, 1440, 2160], gif: [480, 720, 1080] }
 export const RATES: Record<Format, number[]> = { mp4: [30, 60], gif: [10, 15, 24, 30] }
 export const QUALITIES: Quality[] = ['studio', 'social', 'web', 'small']
 export const LOOPS = [0, 1, 2, 3]
-export const LIMITS = [0, 5, 10, 15]
+export const LIMITS = [0, 5, 10, 15, 20]
 
 export const defaultOptions = (): ExportOptions => ({ format: 'mp4', size: 1080, fps: 60, codec: 'h264', quality: 'social', loop: 0, maxMB: 0 })
 
@@ -47,9 +47,10 @@ export function cleanOptions(o: Partial<ExportOptions> | null | undefined): Expo
 }
 
 /** The options a job runs with. A share link (and the Share button's temp export) is always an H.264
- *  MP4, whatever the dialog shows: the link page is a video page, and H.264 plays in every browser. */
+ *  MP4 without a size limit, whatever the dialog shows: the link page is a video page, H.264 plays in
+ *  every browser, and our server takes any size. */
 export function jobOptions(dest: Destination, o: Partial<ExportOptions> | null | undefined): ExportOptions {
-  return cleanOptions(dest === 'share' || dest === 'temp' ? { ...o, format: 'mp4', codec: 'h264' } : o)
+  return cleanOptions(dest === 'share' || dest === 'temp' ? { ...o, format: 'mp4', codec: 'h264', maxMB: 0 } : o)
 }
 
 export interface ExportRequest {
@@ -148,12 +149,41 @@ export function videoBitrate(width: number, height: number, o: Pick<ExportOption
 // ponytail: GIF constants measured on the synthetic fixture with a camera bubble (3.0 MB for 24 s at
 // 720p15, 4.4 MB at 642p30); GIF size swings with content, which is why the size limit exists.
 export function estimateBytes(duration: number, width: number, height: number, o: ExportOptions): number {
-  if (o.format === 'gif') {
-    // One full frame, then the changed regions of each frame.
-    const est = width * height * (0.5 + 0.0085 * frameCount(duration, o.fps))
-    return o.maxMB ? Math.min(est, o.maxMB * 1e6) : est
-  }
-  return ((videoBitrate(width, height, o) + AUDIO_BITRATE) * duration) / 8
+  const est =
+    o.format === 'gif'
+      ? width * height * (0.5 + 0.0085 * frameCount(duration, o.fps)) // one full frame, then the changed regions of each frame
+      : ((videoBitrate(width, height, o) + AUDIO_BITRATE) * duration) / 8
+  return o.maxMB ? Math.min(est, o.maxMB * 1e6) : est
+}
+
+export const even = (n: number) => Math.max(2, Math.round(n / 2) * 2)
+
+export const tooLong = (mb: number) => `This video is too long to fit under ${mb} MB. Trim it, or export without a size limit.`
+
+/** How an MP4 of `duration` output seconds fits under `limit` bytes (0 = no limit), from the encoder's
+ *  size `base`. Gives up as little as it must, in order: none (the selected quality fits), a capped
+ *  bitrate, 30 fps, then a smaller picture (down to 360p) with 96 kbps audio, plenty for a voice. Below
+ *  half the Small quality's bits per pixel, text in motion turns to mush, and fewer, sharper pixels read
+ *  better. Null when even 360p cannot fit. */
+export function mp4Plan(duration: number, limit: number, base: { width: number; height: number }, o: Pick<ExportOptions, 'fps' | 'quality' | 'codec'>): { width: number; height: number; fps: number; bitrate: number; audio: number } | null {
+  // Video bits per second: the limit minus the sample tables mediabunny reserves up front (about 35 bytes
+  // a packet, for every frame and 2 AAC packets per 1024 samples, as mp4Pass declares them) and the
+  // audio, with 10% left for the encoder overshooting its average.
+  const budget = (fps: number, audio: number) => (limit ? ((limit - 64e3 - 35 * (fps + SAMPLE_RATE / 512) * duration) * 8 * 0.9) / duration - audio : Infinity)
+  const floor = (k: number, fps: number) => videoBitrate(base.width * k, base.height * k, { ...o, fps, quality: 'small' }) / 2
+  const at = (k: number, fps: number, audio: number) => ({
+    width: even(base.width * k),
+    height: even(base.height * k),
+    fps,
+    bitrate: Math.round(Math.min(videoBitrate(base.width * k, base.height * k, { ...o, fps }), budget(fps, audio))),
+    audio,
+  })
+  for (const fps of [o.fps, Math.min(o.fps, 30)]) if (budget(fps, AUDIO_BITRATE) >= floor(1, fps)) return at(1, fps, AUDIO_BITRATE)
+  const fps = Math.min(o.fps, 30)
+  const b = budget(fps, 96_000)
+  const min = Math.min(1, 360 / Math.min(base.width, base.height))
+  if (!(b >= floor(min, fps))) return null
+  return at(Math.min(1, Math.max(min, Math.sqrt(b / floor(1, fps)))), fps, 96_000)
 }
 
 export function formatBytes(n: number): string {

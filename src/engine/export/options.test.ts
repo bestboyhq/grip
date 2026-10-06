@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { Stall, cleanOptions, frameCount, gifDelay, gifRefit, jobOptions, passes, safeFileName, uniqueName, watch } from './options.ts'
+import { AUDIO_BITRATE, Stall, cleanOptions, estimateBytes, frameCount, gifDelay, gifRefit, jobOptions, mp4Plan, passes, safeFileName, uniqueName, videoBitrate, watch } from './options.ts'
 
 test('frame counts and GIF delays add up to the timeline', () => {
   assert.equal(frameCount(24, 30), 720)
@@ -67,12 +67,36 @@ test('options from storage or IPC snap to valid values', () => {
   assert.equal(cleanOptions({ format: 'gif' }).size, 720)
   assert.equal(cleanOptions({ codec: 'prores' as never }).codec, 'h264')
   assert.equal(cleanOptions(null).format, 'mp4')
+  assert.equal(cleanOptions({ format: 'mp4', maxMB: 20 }).maxMB, 20)
+})
+
+test('an MP4 size limit gives up as little as it must, and never plans past the limit', () => {
+  const base = { width: 1920, height: 1080 }
+  const o = { fps: 60, quality: 'social', codec: 'h264' } as const
+  const limit = 20e6
+  const normal = { ...base, fps: 60, bitrate: videoBitrate(1920, 1080, o), audio: AUDIO_BITRATE }
+  assert.deepEqual(mp4Plan(3600, 0, base, o), normal, 'no limit')
+  assert.deepEqual(mp4Plan(10, limit, base, o), normal, 'fits: the selected quality, untouched')
+  const capped = mp4Plan(60, limit, base, o)!
+  assert.deepEqual({ ...capped, bitrate: 0 }, { ...normal, bitrate: 0 })
+  assert.ok(capped.bitrate < normal.bitrate, 'tight: same picture, lower bitrate')
+  const slower = mp4Plan(120, limit, base, o)!
+  assert.ok(slower.height === 1080 && slower.fps === 30, 'tighter: 30 fps before a smaller picture')
+  const small = mp4Plan(300, limit, base, o)!
+  assert.ok(small.height < 1080 && small.height >= 360 && small.fps === 30 && small.audio === 96_000, `very tight: smaller picture, ${small.width}x${small.height}`)
+  assert.ok(small.width % 2 === 0 && small.height % 2 === 0 && Math.abs(small.width / small.height - 16 / 9) < 0.01, 'even sides, same aspect')
+  assert.equal(mp4Plan(3600, limit, base, o), null, 'an hour cannot fit in 20 MB')
+  for (const d of [1, 10, 30, 60, 120, 300, 600]) {
+    const p = mp4Plan(d, limit, base, o)!
+    assert.ok(((p.bitrate + p.audio) * d) / 8 < 0.9 * limit, `${d} s`)
+  }
+  assert.equal(estimateBytes(600, 1920, 1080, { ...cleanOptions(null), maxMB: 20 }), limit)
 })
 
 test('share links are always H.264 MP4, whatever the dialog shows', () => {
   const gif = { format: 'gif', size: 480, fps: 10, maxMB: 5 } as const
   for (const dest of ['share', 'temp'] as const) {
-    assert.deepEqual(jobOptions(dest, gif), { ...cleanOptions({ ...gif, format: 'mp4' }), codec: 'h264' })
+    assert.deepEqual(jobOptions(dest, gif), { ...cleanOptions({ ...gif, format: 'mp4' }), codec: 'h264', maxMB: 0 })
     assert.equal(jobOptions(dest, { codec: 'hevc', size: 2160 }).codec, 'h264')
     assert.equal(jobOptions(dest, { codec: 'hevc', size: 2160 }).size, 2160)
   }

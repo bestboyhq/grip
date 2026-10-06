@@ -50,7 +50,7 @@
   import { formatTime } from '../helpers.ts'
   import { outputSize } from '../../../engine/scene.ts'
   import { fitEncoder } from '../../../engine/export/index.ts'
-  import { estimateBytes, formatBytes, LIMITS, LOOPS, QUALITIES, RATES, SIZES, type Destination, type ExportOptions, type Format } from '../../../engine/export/options.ts'
+  import { estimateBytes, formatBytes, LIMITS, LOOPS, mp4Plan, QUALITIES, RATES, SIZES, tooLong, type Destination, type ExportOptions, type Format } from '../../../engine/export/options.ts'
   import Segmented from '../../../ui/Segmented.svelte'
 
   let { open = $bindable(false) }: { open?: boolean } = $props()
@@ -65,7 +65,9 @@
 
   const duration = $derived(doc.project ? timeMap(doc.project.clips).duration : 0)
   const base = $derived(doc.project ? outputSize(doc.project, o.size) : null)
-  const size = $derived(o.format === 'gif' ? base : fit)
+  // What the MP4 will be under its size limit; null when it cannot fit.
+  const plan = $derived(o.format === 'mp4' && fit ? mp4Plan(duration, o.maxMB * 1e6, fit, o) : undefined)
+  const size = $derived(o.format === 'gif' ? base : (plan ?? fit))
   const shrunk = $derived(o.format === 'mp4' && base && fit && fit.width < base.width)
   const estimate = $derived(size && duration ? estimateBytes(duration, size.width, size.height, o) : 0)
 
@@ -169,9 +171,9 @@
         />
       {:else}
         <Segmented label="Loop" value={o.loop} onchange={(v) => (o.loop = v)} options={LOOPS.map((v) => ({ value: v, label: v === 0 ? 'Forever' : v === 1 ? 'Once' : `${v}×` }))} />
-        <Segmented label="Size limit" value={o.maxMB} onchange={(v) => (o.maxMB = v)} options={LIMITS.map((v) => ({ value: v, label: v ? `${v} MB` : 'None' }))} />
-        <p class="hint">{o.maxMB ? `Scaled down if needed to stay under ${o.maxMB} MB` : 'Size follows length and motion'}</p>
       {/if}
+      <Segmented label="Size limit" value={o.maxMB} onchange={(v) => (o.maxMB = v)} options={LIMITS.map((v) => ({ value: v, label: v ? `${v} MB` : 'None' }))} />
+      <p class="hint">{o.maxMB ? `Scaled down if needed to stay under ${o.maxMB} MB` : 'Size follows length and motion'}</p>
     </div>
 
     <p class="summary">
@@ -181,7 +183,11 @@
         <span>No project open</span>
       {/if}
     </p>
-    {#if shrunk && base && fit}
+    {#if plan === null}
+      <p class="note error">{tooLong(o.maxMB)}</p>
+    {:else if plan && fit && (plan.width < fit.width || plan.fps < o.fps)}
+      <p class="note">Exports at {plan.width} × {plan.height}{plan.fps < o.fps ? `, ${plan.fps} fps` : ''} to stay under {o.maxMB} MB.</p>
+    {:else if shrunk && base && fit}
       <p class="note">H.264 tops out at 4096 pixels, so this exports at {fit.width} × {fit.height}. HEVC keeps {base.width} × {base.height}.</p>
     {:else if o.format === 'gif' && duration > 60}
       <p class="note">GIFs over a minute get large and slow. MP4 is usually the better choice.</p>

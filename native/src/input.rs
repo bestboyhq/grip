@@ -90,6 +90,16 @@ enum Event<'a> {
         kind: Option<&'static str>,
     },
     Secure { on: bool },
+    /// A pen stroke point drawn on screen (record_draw): start carries color and width (pixels).
+    Draw {
+        phase: &'static str,
+        x: f64,
+        y: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        color: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        width: Option<f64>,
+    },
 }
 
 #[derive(Serialize)]
@@ -704,6 +714,14 @@ impl InputRecorder {
         Ok(Self { shared, threads, warning })
     }
 
+    /// Record a pen stroke point at global point (gx, gy), now; `width` in points. False while paused.
+    pub fn draw(&self, phase: &'static str, gx: f64, gy: f64, color: Option<&str>, width: Option<f64>) -> bool {
+        let g = *lock(&self.shared.geometry);
+        let (x, y) = to_pixels(&g, gx, gy);
+        let width = width.map(|w| round(w * g.scale, 100.0));
+        self.shared.emit(clock::now_ns(), &Event::Draw { phase, x, y, color, width })
+    }
+
     /// Why part of the input is missing from this recording (a permission), in one plain line.
     pub fn warning(&self) -> Option<&'static str> {
         self.warning
@@ -954,6 +972,26 @@ mod tests {
             assert!(!dir.join("cursors").read_dir().unwrap().any(|f| f.unwrap().path().extension().unwrap() == "tmp"));
             std::fs::remove_dir_all(dir).unwrap();
         }
+    }
+
+    #[test]
+    fn draw_points_land_in_video_pixels() {
+        let _g = clock::serial();
+        let dir = tmp("draw");
+        let geometry = Arc::new(Mutex::new(CaptureGeometry { x: 100.0, y: 50.0, w: 800.0, h: 600.0, scale: 2.0 }));
+        clock::SESSION.start(clock::now_ns());
+        let rec = InputRecorder::start_with(&dir, geometry, false).unwrap();
+        assert!(rec.draw("start", 110.0, 60.0, Some("#ff3b30"), Some(4.0)));
+        assert!(rec.draw("move", 120.5, 70.0, None, None));
+        assert!(rec.draw("end", 130.0, 80.0, None, None));
+        rec.stop().unwrap();
+        let ev: Vec<_> = read_events(&dir).into_iter().filter(|e| e["type"] == "draw").collect();
+        assert_eq!(ev.len(), 3);
+        assert_eq!((ev[0]["phase"].as_str(), ev[0]["x"].as_f64(), ev[0]["y"].as_f64()), (Some("start"), Some(20.0), Some(20.0)));
+        assert_eq!((ev[0]["color"].as_str(), ev[0]["width"].as_f64()), (Some("#ff3b30"), Some(8.0)));
+        assert_eq!((ev[1]["x"].as_f64(), ev[1].get("color")), (Some(41.0), None));
+        assert_eq!(ev[2]["phase"], "end");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     /// Manual: `cargo test live_polling_demo -- --ignored --nocapture`. Moves the real pointer in
