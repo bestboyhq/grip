@@ -85,6 +85,8 @@ jobs:
           workspaces: native
           key: macos-26 # build scripts cache Xcode paths: a new runner image needs a new cache
       - if: steps.tested.outputs.cache-hit != 'true'
+        run: brew install ffmpeg # the capture tests probe what they record
+      - if: steps.tested.outputs.cache-hit != 'true'
         run: cargo test && touch .tested
         working-directory: native
       - if: steps.tested.outputs.cache-hit != 'true'
