@@ -1,9 +1,11 @@
 <!-- Recording toolbar, bottom center of the active display: close, Display / Window / Area / Device,
-     camera, microphone with a live level, system audio, settings.
+     camera, microphone with a live level, system audio, settings. A downloaded update veils it until
+     the user restarts or puts it off (Later, Esc) for that version.
      It is also the session controller (electron/shell/recorder.ts): it runs the shell's commands
      against the capture engine and reports the engine's errors and warnings to the shell. -->
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { fade } from 'svelte/transition'
   import { dropFiles, invoke, on } from '../../lib/ipc.ts'
   import Icon from './Icon.svelte'
   import {
@@ -36,6 +38,8 @@
   let lists = $state<{ cameras: Device[]; mics: Device[]; devices: Device[] }>({ cameras: [], mics: [], devices: [] })
   let level = $state(0)
   let countdown = $state<{ n: number; name: string } | null>(null)
+  let later = $state('') // the update version put off: the toolbar is back until a newer one
+  const update = $derived(shell.update !== later ? shell.update : '')
 
   const s = $derived(shell.settings)
   const camera = $derived(lists.cameras.find((c) => c.id === s?.camera))
@@ -170,18 +174,19 @@
   onkeydown={(e) => {
     if (e.key !== 'Escape') return
     if (countdown) countdown = null
+    else if (update) later = update
     else invoke(shell.mode ? 'shell:pick' : 'shell:close-picker', null)
   }}
   ondragover={(e) => e.preventDefault()}
   ondrop={(e) => dropFiles(e).catch((err: Error) => invoke('shell:warn', err.message))}
 />
 
-<main class="bar hud">
+<main class="bar hud" inert={!!update}>
   {#if countdown}
     <div class="countdown" role="status">
       <span class="n">{countdown.n}</span>
       <span>Recording {countdown.name}…</span>
-      <button class="cancel" onclick={() => (countdown = null)}>Cancel</button>
+      <button class="action" onclick={() => (countdown = null)}>Cancel</button>
     </div>
   {:else}
     <button class="close" aria-label="Close" onclick={() => invoke('shell:close-picker')}><Icon name="close" size={22} stroke={2.4} /></button>
@@ -206,7 +211,7 @@
     <button class="pick mic" class:off={!mic} onclick={(e) => pickInput('mic', e.currentTarget)}>
       <Icon name={mic ? 'mic' : 'mic-off'} width={12} height={17} stroke={1.5} />
       <span class="label">{mic ? short(mic.name) : 'No microphone'}</span>
-      {#if mic}<span class="meter" aria-hidden="true"><span style:width="{Math.max(3, level * 135.5)}px"></span></span>{/if}
+      {#if mic}<span class="meter" aria-hidden="true"><span style:width="max(3px, {level * 100}%)"></span></span>{/if}
     </button>
     <button class="pick system" class:off={!s?.systemAudio} aria-pressed={!!s?.systemAudio} onclick={() => setSettings({ systemAudio: !s?.systemAudio })}>
       <Icon name={s?.systemAudio ? 'speaker' : 'speaker-off'} width={20} height={16} stroke={1.5} />
@@ -219,6 +224,13 @@
     </button>
   {/if}
 </main>
+{#if update}
+  <div class="update hud" role="status" transition:fade={{ duration: 150 }}>
+    <span class="note">Grip {update} is ready to install.</span>
+    <button class="action" onclick={() => (later = update)}>Later</button>
+    <button class="action primary" onclick={() => invoke('update:restart')}>Restart to Update</button>
+  </div>
+{/if}
 
 <style>
   .bar {
@@ -226,7 +238,7 @@
     inset: 0;
     display: flex;
     align-items: center;
-    padding-left: 20px;
+    padding: 0 10px 0 20px; /* the gear's chevron ends 20 px from the edge, like the close button starts */
     border-radius: var(--radius-lg);
     background: var(--surface-50);
     box-shadow: var(--hairline);
@@ -241,6 +253,9 @@
     display: flex;
     align-items: center;
     border-radius: var(--radius-sm); /* concentric: 6 px inside the 12 px bar */
+    transition:
+      background-color 120ms,
+      color 120ms;
   }
   button:focus-visible {
     outline: 2px solid var(--focus-ring);
@@ -257,7 +272,8 @@
   .close:hover {
     background: var(--accent-hover);
   }
-  /* Spacing matches the reference toolbar point for point: separators at 60.5, 313.5, 797.5. */
+  /* Every hover box is 52 px tall, 6 px inside the bar, and the camera, microphone, and system audio
+     boxes touch: the highlight moves along one track from button to button without dropping out. */
   .sep {
     width: 0.5px;
     height: 44px;
@@ -300,11 +316,15 @@
   .mode.on .name {
     color: var(--text);
   }
+  /* The three share the room between the separators, content centered: equal padding on both sides
+     of every box, whatever the device names. */
   .pick {
     position: relative;
-    height: 40px;
+    flex: auto;
+    height: 52px;
+    justify-content: center;
     gap: 10px;
-    padding-top: 1.5px;
+    padding: 1.5px 12px 0;
     font-size: 13.2px;
     color: var(--text);
   }
@@ -318,22 +338,15 @@
     text-overflow: ellipsis;
   }
   .camera {
-    width: 123px;
-    margin-left: 16.5px;
-    padding-right: 10px; /* a long name never touches the microphone */
     gap: 8.5px;
   }
-  .mic {
-    width: 134px;
-    padding-left: 8px;
-    gap: 10px;
+  /* Long device names truncate here, so the toolbar always fits and nothing else shrinks. */
+  .camera .label,
+  .mic .label {
+    max-width: 100px;
   }
   .mic :global(svg) {
     margin-top: -2.5px;
-  }
-  .system {
-    width: 160px;
-    margin: 0 13.5px 0 24px;
   }
   .system :global(svg) {
     margin-top: -1px;
@@ -341,9 +354,9 @@
   /* Level of the chosen microphone: a faint track under it, the level a dot at silence. */
   .meter {
     position: absolute;
-    left: -2.5px;
-    right: 1px;
-    top: 36.5px;
+    left: 12px;
+    right: 12px;
+    top: 42.5px;
     height: 3px;
     border-radius: 1.5px;
     background: var(--surface-25);
@@ -356,9 +369,8 @@
     transition: width 60ms linear;
   }
   .gear {
-    margin-left: 10.5px;
-    height: 36px;
-    padding: 0 5px 0 6.5px;
+    height: 52px;
+    padding: 0 10px;
     gap: 6.5px;
     color: var(--text-dim);
   }
@@ -372,7 +384,7 @@
     justify-content: center;
     gap: 14px;
     font-size: 14px;
-    padding-right: 20px;
+    padding-right: 10px; /* centered in the bar, whose padding is 20 left, 10 right */
   }
   .countdown .n {
     font-size: 30px;
@@ -381,7 +393,25 @@
     width: 24px;
     text-align: center;
   }
-  .cancel {
+  /* Over the toolbar, which shows through dimmed. */
+  .update {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: var(--radius-lg);
+    background: rgb(20 20 22 / 0.78);
+    box-shadow: var(--hairline);
+    backdrop-filter: blur(2px);
+    -webkit-app-region: drag;
+  }
+  .note {
+    margin-right: 6px;
+    font-size: 13px;
+  }
+  .action {
     -webkit-app-region: no-drag;
     height: 26px;
     padding: 0 12px;
@@ -390,7 +420,15 @@
     box-shadow: var(--hairline);
     font-size: 13px;
   }
-  .cancel:hover {
+  .action:hover {
     background: var(--surface-100-hover);
+  }
+  .action.primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 500;
+  }
+  .action.primary:hover {
+    background: var(--accent-hover);
   }
 </style>

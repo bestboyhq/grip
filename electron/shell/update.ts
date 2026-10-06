@@ -2,8 +2,11 @@
 // bakes into the app as app-update.yml. electron-updater downloads the new zip in the background,
 // Squirrel.Mac checks its Developer ID signature and stages it, and it installs when Grip quits.
 // "Restart to Update" quits through the normal path (recording, export, and unsaved-edit prompts,
-// where Cancel still cancels), then relaunches into the new version.
-import { app, autoUpdater as squirrel, dialog, type MenuItemConstructorOptions } from 'electron'
+// where Cancel still cancels), then relaunches into the new version. A downloaded update also shows
+// on the recording toolbar (shell:state `update`, electron/shell/recorder.ts).
+//
+// IPC: update:restart   the toolbar's Restart to Update
+import { app, autoUpdater as squirrel, dialog, ipcMain, powerMonitor, type MenuItemConstructorOptions } from 'electron'
 import electronUpdater from 'electron-updater'
 import { hidden } from '../windows.ts'
 import { isQuitting } from './recorder.ts'
@@ -18,11 +21,17 @@ let version = ''
 let asked = false // the user clicked Check for Updates: answer them, even "up to date"
 let requested = false // Restart to Update started the next quit
 let restarting = false // the quit in progress ends in installing and relaunching
+/** Main-process reactions to a state change (the recording toolbar's shell:state). */
+export const updateListeners: Array<() => void> = []
 
 function set(next: typeof state) {
   state = next
   setAppMenu()
+  for (const f of updateListeners) f()
 }
+
+/** The downloaded version waiting for a restart; '' until there is one. */
+export const readyVersion = () => (state === 'ready' ? version : '')
 
 function say(message: string, detail: string) {
   if (!hidden) void dialog.showMessageBox({ message, detail })
@@ -114,6 +123,8 @@ export function startUpdates(log: (err: unknown) => void) {
     autoUpdater.once('error', () => app.quit()) // Squirrel refused: still quit, it was asked for
     autoUpdater.quitAndInstall()
   })
+  ipcMain.handle('update:restart', restartToUpdate)
   void check()
   setInterval(check, EVERY)
+  powerMonitor.on('resume', check) // the interval stops while the Mac sleeps: a laptop opened each morning checks then
 }

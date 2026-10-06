@@ -7,7 +7,8 @@
 // hidden when not picking, so the tray, shortcuts, URLs, and the quit prompt reach the recording.
 //
 // IPC (all windows of this flow):
-//   shell:state -> { status, mode, picking, counting, area, elapsed, at }, pushed as "shell:state" on change
+//   shell:state -> { status, mode, picking, counting, area, elapsed, at, update }, pushed as "shell:state" on change
+//                                 (update: a downloaded version waiting for a restart, or '')
 //   shell:command(cmd)            widget -> controller: stop, pause, resume, toggle-pause, cancel, restart
 //   shell:warn(message)           an engine warning (disk low, a device lost), shown as a notification
 //   shell:pick(mode | null)       enter or leave a picking mode (opens overlays per display)
@@ -35,6 +36,7 @@ import { plainError, type Permission } from './errors.ts'
 import { editorCloser, type Choice } from './closing.ts'
 import { hold, release, type Held } from './session.ts'
 import { setSettings, settings, settingsListeners } from './settings.ts'
+import { readyVersion, updateListeners } from './update.ts'
 import type { Mode } from './url.ts'
 import type { Rect, StartOptions } from '../../native/index.d.ts'
 
@@ -95,7 +97,7 @@ function alert(message: string, detail: string) {
   return dialog.showMessageBox({ type: 'warning', message, detail })
 }
 
-const state = () => ({ status, mode, picking, counting, area, ...clock })
+const state = () => ({ status, mode, picking, counting, area, ...clock, update: readyVersion() })
 const broadcast = () => sendAll('shell:state', state())
 
 // ---- Toolbar (controller) ----
@@ -558,6 +560,7 @@ export function registerRecorder() {
   })
 
   settingsListeners.push(updateHelpers)
+  updateListeners.push(broadcast)
   recordingEvents.on('state', setStatus)
   recordingEvents.on('finished', (bundle: string, end?: { reason?: string; message?: string }) => {
     for (const done of waiters.splice(0)) done(bundle)

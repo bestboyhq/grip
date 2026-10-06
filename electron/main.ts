@@ -101,7 +101,7 @@ app.whenReady().then(() => {
   registerRecorder()
   watchDisplays()
   setAppMenu()
-  createTray()
+  if (!hidden) createTray() // agent runs, one per worktree, stay out of the menu bar
   warmUp()
   ready = true
 
