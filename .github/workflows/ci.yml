@@ -11,6 +11,21 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Three jobs in parallel; each skips or restores whatever its inputs leave unchanged.
+  check:
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npx vite build
+
   test:
     runs-on: macos-26
     steps:
@@ -19,23 +34,68 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - uses: Swatinem/rust-cache@v2
+      - id: image
+        run: echo "id=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      # The addon is a function of its sources and the runner image (Xcode, SDK): rebuilt only when they change.
+      - id: native
+        uses: actions/cache@v4
+        with:
+          path: native/studio.darwin-arm64.node
+          key: native-${{ steps.image.outputs.id }}-${{ hashFiles('native/src/**', 'native/Cargo.*', 'native/build.rs') }}
+      - if: steps.native.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
           key: macos-26 # build scripts cache Xcode paths: a new runner image needs a new cache
-      - run: brew install ffmpeg
       - run: npm ci
-      - run: npm run build:native
-      - run: npx electron scripts/fixture/make.ts
-      - run: npm run check
+      - if: steps.native.outputs.cache-hit != 'true'
+        run: npm run build:native
+      - run: brew install ffmpeg
+      - uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/electron
+          key: electron-${{ hashFiles('node_modules/electron/package.json') }}
+      # The synthetic recording takes a minute to render: regenerated only when its generator changes.
+      - id: fixture
+        uses: actions/cache@v4
+        with:
+          path: .context/fixtures
+          key: fixture-${{ steps.image.outputs.id }}-${{ hashFiles('scripts/fixture/**', 'src/shared/project.ts', 'src/shared/events.ts') }}
+      - if: steps.fixture.outputs.cache-hit != 'true'
+        run: npx electron scripts/fixture/make.ts
       - run: npm test
-      - run: npx vite build
-      - run: cargo test
+
+  rust:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - id: image
+        run: echo "id=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      # The addon's tests take two minutes (an hour of video through the encoder): a green run of the same
+      # sources on the same image leaves a marker, and later runs skip them.
+      - id: tested
+        uses: actions/cache/restore@v4
+        with:
+          path: native/.tested
+          key: rust-tested-${{ steps.image.outputs.id }}-${{ hashFiles('native/src/**', 'native/Cargo.*', 'native/build.rs') }}
+          lookup-only: true
+      - if: steps.tested.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          key: macos-26 # build scripts cache Xcode paths: a new runner image needs a new cache
+      - if: steps.tested.outputs.cache-hit != 'true'
+        run: cargo test && touch .tested
         working-directory: native
+      - if: steps.tested.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: native/.tested
+          key: ${{ steps.tested.outputs.cache-primary-key }}
 
   # The version the merged commits call for; empty when none of them is a feat, fix, perf, or breaking change.
   version:
-    needs: test
+    needs: [check, test, rust]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:

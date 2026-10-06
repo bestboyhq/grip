@@ -5,3 +5,4 @@ release/
 native/target/
 native/*.node
 .DS_Store
+native/.tested
