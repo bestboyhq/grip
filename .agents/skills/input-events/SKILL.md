@@ -13,6 +13,7 @@ Cursor, click, scroll, and keystroke telemetry recorded beside the screen.
 - Record cursor type changes while the mouse is still, so a link click leaves no stale pointer hand.
 - Map keys through the active layout, including non-Latin layouts, fn, F-keys, arrows, and the macOS modifier order ⌃⌥⇧⌘.
 - Secure input (password fields) emits no keystrokes, and the overlay degrades gracefully.
+- Pen strokes drawn on screen while recording are draw events in the same stream; the mouse presses that drew them are not clicks (no click effect, no auto-zoom).
 - Derive editor segments: typing (to speed up), idle cursor (to hide), and synthetic jitter from accessibility tools (to remove).
 
 Done when replaying the event stream over the raw capture reproduces exactly what the user saw, cursor shape included.

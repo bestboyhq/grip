@@ -1,5 +1,6 @@
-// The recording flow around the capture engine: toolbar, picking overlays, countdown, recording
-// widget, camera bubble, speaker notes, global shortcuts, and the editor once a recording finishes.
+// The capture flow around the engine: toolbar, picking overlays (area first: record it or take a
+// screenshot of it), countdown, recording widget, drawing on screen, camera bubble, speaker notes,
+// global shortcuts, and the result card once a recording or screenshot is done.
 //
 // The capture engine (electron/recording.ts) reports state and finished recordings on
 // `recordingEvents`; its controls are IPC only, so the recorder window is the session controller:
@@ -7,15 +8,23 @@
 // hidden when not picking, so the tray, shortcuts, URLs, and the quit prompt reach the recording.
 //
 // IPC (all windows of this flow):
-//   shell:state -> { status, mode, picking, counting, area, elapsed, at, update }, pushed as "shell:state" on change
-//                                 (update: a downloaded version waiting for a restart, or '')
+//   shell:state -> { status, mode, picking, counting, area, drawing, inkDisplay, elapsed, at, update }, pushed as
+//                                 "shell:state" on change (update: a downloaded version waiting for a restart, or '';
+//                                 drawing: the pen is on, on display inkDisplay)
 //   shell:command(cmd)            widget -> controller: stop, pause, resume, toggle-pause, cancel, restart
 //   shell:warn(message)           an engine warning (disk low, a device lost), shown as a notification
 //   shell:pick(mode | null)       enter or leave a picking mode (opens overlays per display)
 //   shell:close-picker            hide toolbar, overlays, and the idle camera bubble
 //   shell:countdown(on)           a countdown runs (Esc cancels it: "shell:escape")
 //   shell:start(opts)             overlay -> controller: start recording with these options
-//   shell:fail(error)             a recording call failed: plain-language message or permission fix
+//   shell:draw(on?)               toggle (or set) drawing on screen while recording
+//   shell:shot(png, scale, save)  overlay: a finished screenshot; copied to the clipboard, or saved to the Desktop
+//   shell:fit(height)             the result card sizes itself to its content (bottom edge stays)
+//   shell:drag(path, iconUrl)     the result card: drag its file out (into Slack, Mail, Finder)
+//   shell:reveal(path)            the result card: show its file in Finder
+//   shell:shot-copy(path)         the result card: a screenshot onto the clipboard again
+//   shell:shot-save(path) -> path the result card: a screenshot into a file on the Desktop
+//   shell:fail(error, title?)     a recording (or screenshot) call failed: plain-language message or permission fix
 //   shell:display(id)             display geometry for an overlay, and where the toolbar sits on it
 //   shell:popup(items, x, y)      native menu at (x, y) in the sender window -> picked id | null
 //   shell:open-project(path?)     open a bundle in the editor (no path: Open dialog)
@@ -25,13 +34,17 @@
 //   notes:prompter                main -> speaker notes window: start or stop the prompter (⌥⌘.)
 // Editor windows: "editor:close" asks one to save and refresh its thumbnail; it answers
 // editor:closed(error), '' once saved.
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, Notification, screen, type BrowserWindowConstructorOptions, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, shell, type BrowserWindowConstructorOptions, type MenuItemConstructorOptions, type Rectangle } from 'electron'
 import { existsSync, statSync } from 'node:fs'
-import { basename, isAbsolute, resolve } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { basename, isAbsolute, join, resolve } from 'node:path'
 import { importVideo, recoveredAtLaunch } from '../projects.ts'
-import { recordingEvents } from '../recording.ts'
+import { recordingEvents, recordingName } from '../recording.ts'
+import { DRAW_FADE, DRAW_HOLD } from '../../src/engine/overlays/drawings.ts'
+import type { CameraPosition } from '../../src/shared/project.ts'
 import { activeDisplay, hidden, openWindow, reveal, sendAll, setRecordingDock, windowsOf } from '../windows.ts'
 import { arrangement, place } from './bounds.ts'
+import { withScale } from './png.ts'
 import { plainError, type Permission } from './errors.ts'
 import { editorCloser, type Choice } from './closing.ts'
 import { hold, release, type Held } from './session.ts'
@@ -43,9 +56,10 @@ import type { Rect, StartOptions } from '../../native/index.d.ts'
 export type Status = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping'
 export type Command = 'start' | 'stop' | 'pause' | 'resume' | 'toggle-pause' | 'cancel' | 'restart'
 
-export const SHORTCUTS = { record: 'Alt+Command+Return', pause: 'Alt+Shift+Command+P', cancel: 'Alt+Shift+Command+Backspace', prompter: 'Alt+Command+.' }
+export const SHORTCUTS = { record: 'Alt+Command+Return', pause: 'Alt+Shift+Command+P', cancel: 'Alt+Shift+Command+Backspace', prompter: 'Alt+Command+.', draw: 'Alt+Shift+Command+D' }
 const TOOLBAR = { width: 882, height: 64 }
-const WIDGET = { width: 280, height: 48 }
+const WIDGET = { width: 316, height: 48 }
+const RESULT = { width: 300, height: 260 } // the card fits its height to its content (shell:fit)
 const BUBBLE = 216 // camera bubble window; the circle inside leaves room for its shadow
 const NOTES = { width: 440, height: 260 }
 
@@ -58,6 +72,12 @@ let counting = false
 /** The area being recorded, from its start request until the recording ends: the overlays stay as
  *  a click-through backdrop that dims everything around it. Rect relative to its display. */
 let area: { display: number; rect: Rect } | null = null
+/** The display being recorded (null: an iPhone or iPad), where the pen draws. */
+let recDisplay: number | null = null
+/** The pen is on: the recorded display's overlay takes the mouse and strokes go into the recording. */
+let drawing = false
+/** Until when (ms since epoch) strokes drawn before the pen went off still fade out on screen. */
+let inkUntil = 0
 let quitting = false
 let waiters: Array<(bundle: string | null) => void> = []
 /** Seconds recorded as of `at` (ms since epoch); `at` is 0 while not running. */
@@ -97,7 +117,7 @@ function alert(message: string, detail: string) {
   return dialog.showMessageBox({ type: 'warning', message, detail })
 }
 
-const state = () => ({ status, mode, picking, counting, area, ...clock, update: readyVersion() })
+const state = () => ({ status, mode, picking, counting, area, drawing, inkDisplay: recDisplay, ...clock, update: readyVersion() })
 const broadcast = () => sendAll('shell:state', state())
 
 // ---- Toolbar (controller) ----
@@ -129,15 +149,16 @@ function controller(): BrowserWindow {
   return (toolbar = win)
 }
 
-/** Open the recording picker on the display under the mouse. While recording, bring back the controls. */
-export function showPicker(m?: Mode) {
+/** Open the picker on the display under the mouse, in area mode unless told otherwise: the last area
+ *  comes back selected, ready to record (↩) or to copy as a screenshot (⌘C). While recording, bring
+ *  back the controls. */
+export function showPicker(m: Mode = 'area') {
   if (status !== 'idle') return showWidget()
   const win = controller()
   win.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))
   picking = true
   reveal(win)
-  if (m) pick(m)
-  else broadcast()
+  pick(m)
   updateHelpers()
 }
 
@@ -202,12 +223,20 @@ export function stopAndWait(): Promise<string | null> {
 function pick(m: Mode | null) {
   mode = m
   const overlays = m === 'display' || m === 'window' || m === 'area'
-  const backdrop = !!area && status !== 'idle'
+  // While recording: the backdrop around an area, the pen, and strokes still fading out.
+  const backdrop = status !== 'idle' && (!!area || drawing || Date.now() < inkUntil)
   if (!overlays && !backdrop) for (const w of windowsOf('area')) w.destroy()
   else if (!windowsOf('area').length) openOverlays()
-  for (const w of windowsOf('area')) w.setIgnoreMouseEvents(backdrop) // the backdrop never takes a click
-  escape(overlays)
+  else if (m === 'area') {
+    // Switched to area mode: the overlay under the mouse takes the keyboard (openOverlays does it for new ones).
+    const here = windowsOf('area').find((w) => screen.getDisplayMatching(w.getBounds()).id === activeDisplay().id)
+    if (here?.isVisible()) reveal(here)
+  }
+  // The backdrop never takes a click, except the pen's display while it is on.
+  for (const w of windowsOf('area')) w.setIgnoreMouseEvents(backdrop && !(drawing && screen.getDisplayMatching(w.getBounds()).id === recDisplay))
+  escape(overlays || drawing)
   broadcast()
+  updateBubble()
 }
 
 /** The display arrangement the picker was laid out for. macOS reports metrics changes in bursts
@@ -229,7 +258,9 @@ function openOverlays() {
     })
     protect(w, 0)
     w.setBounds(d.bounds) // over the menu bar too
-    w.once('ready-to-show', () => reveal(w, false))
+    // Picking an area: the overlay under the mouse takes the keyboard (↩ records, ⌘C copies, A arrow...).
+    // A panel: it takes key focus without bringing Grip forward.
+    w.once('ready-to-show', () => reveal(w, mode === 'area' && d.id === activeDisplay().id))
   }
 }
 
@@ -237,6 +268,7 @@ function escape(on: boolean) {
   if (!on) return globalShortcut.unregister('Escape')
   if (globalShortcut.isRegistered('Escape')) return
   shortcut('Escape', () => {
+    if (drawing) return setDrawing(false)
     if (counting) {
       counting = false
       sendAll('shell:escape')
@@ -257,25 +289,128 @@ function showWidget() {
   w.once('ready-to-show', () => reveal(w, false))
 }
 
+/** What the camera bubble sits in: the area being recorded or picked, else the display's work area.
+ *  Global points. */
+function bubbleBox(): Rectangle {
+  const display = (id: number) => screen.getAllDisplays().find((d) => d.id === id)
+  const global = (id: number, r: { x: number; y: number; width: number; height: number }) => {
+    const b = display(id)?.bounds
+    return b && { x: b.x + r.x, y: b.y + r.y, width: r.width, height: r.height }
+  }
+  const s = settings()
+  const box =
+    status !== 'idle' && area ? global(area.display, { x: area.rect.x, y: area.rect.y, width: area.rect.w, height: area.rect.h })
+    : picking && mode === 'area' && s.area ? global(s.area.display, s.area.rect)
+    : null
+  return box ?? (recDisplay !== null && status !== 'idle' ? display(recDisplay) : undefined)?.workArea ?? activeDisplay().workArea
+}
+
+/** The bubble in its corner (settings.cameraCorner) of bubbleBox, where the video will show the
+ *  camera; smaller in a small area. The window has room for the circle's shadow around it. */
+function bubbleBounds(): Rectangle {
+  const box = bubbleBox()
+  const size = Math.round(Math.min(BUBBLE, Math.max(128, Math.min(box.width, box.height) * 0.45)))
+  const corner = settings().cameraCorner
+  const inset = 6 // the circle sits 10 pt inside the box (the window pads it by 16)
+  return {
+    width: size,
+    height: size,
+    x: Math.round(corner.endsWith('left') ? box.x + inset : box.x + box.width - size - inset),
+    y: Math.round(corner.startsWith('top') ? box.y + inset : box.y + box.height - size - inset),
+  }
+}
+
+let placed: Rectangle | null = null
 function updateBubble() {
   const s = settings()
   const want = !!s.camera && s.showCamera && (picking || status !== 'idle')
   const open = windowsOf('camera')[0]
   if (!want) return open?.destroy()
-  if (open) return
-  const area = activeDisplay().workArea
-  const w = openWindow('camera', {
-    ...floating,
-    width: BUBBLE,
-    height: BUBBLE,
-    x: area.x + 24,
-    y: area.y + area.height - BUBBLE - 24,
-    transparent: true,
-    hasShadow: false,
-    movable: true,
-  })
+  const b = bubbleBounds()
+  if (open) {
+    if (JSON.stringify(open.getBounds()) !== JSON.stringify(b)) open.setBounds((placed = b))
+    return
+  }
+  const w = openWindow('camera', { ...floating, ...(placed = b), transparent: true, hasShadow: false, movable: true })
   protect(w, 1)
   w.once('ready-to-show', () => reveal(w, false))
+  // Dropped after a drag: it snaps to the nearest corner, which the next recording keeps.
+  w.on('moved', () => {
+    const r = w.getBounds()
+    if (JSON.stringify(r) === JSON.stringify(placed)) return
+    const box = bubbleBox()
+    const top = r.y + r.height / 2 < box.y + box.height / 2
+    const left = r.x + r.width / 2 < box.x + box.width / 2
+    const corner: CameraPosition = `${top ? 'top' : 'bottom'}-${left ? 'left' : 'right'}`
+    if (corner !== settings().cameraCorner) setSettings({ cameraCorner: corner }) // its listener moves it
+    else w.setBounds((placed = bubbleBounds()), true)
+  })
+}
+
+// ---- Drawing on screen ----
+
+export const toggleDrawing = () => setDrawing(!drawing)
+
+/** The pen, while recording: strokes on the recorded display go into the recording (recording:draw)
+ *  and fade out on screen as they will in the video. */
+function setDrawing(on: boolean) {
+  if (on && (status !== 'recording' || recDisplay === null)) return
+  if (on === drawing) return
+  drawing = on
+  if (!on) fadeInk()
+  pick(mode)
+}
+
+/** The pen went off: its strokes still fade out on screen, then the overlays may go. */
+function fadeInk() {
+  const fade = (DRAW_HOLD + DRAW_FADE) * 1000
+  inkUntil = Date.now() + fade
+  setTimeout(() => status !== 'idle' && pick(mode), fade + 50)
+}
+
+// ---- Result card ----
+
+/** The card after a recording (bundle=<path>) or a screenshot (shot=<path>), bottom right of the
+ *  display: copy, share, or edit it. One at a time; a new recording closes it. */
+function showResult(query: string) {
+  for (const w of windowsOf('result')) w.destroy()
+  const work = activeDisplay().workArea
+  const w = openWindow(`result?${query}`, {
+    ...floating,
+    ...RESULT,
+    x: work.x + work.width - RESULT.width - 16,
+    y: work.y + work.height - RESULT.height - 16,
+    vibrancy: 'hud',
+    visualEffectState: 'active',
+  })
+  protect(w, 2)
+  w.once('ready-to-show', () => reveal(w, false))
+}
+
+/** Screenshot files Grip wrote (temp and Desktop). The result card may copy, save, reveal, or drag
+ *  these, and exports in Grip's temp folder. */
+const shots = new Set<string>()
+const ours = (path: unknown): path is string =>
+  typeof path === 'string' && isAbsolute(path) && existsSync(path) && (shots.has(path) || resolve(path).startsWith(join(app.getPath('temp'), 'Grip ')))
+
+/** A new screenshot file in `dir`, named like macOS names them. */
+async function writeShot(dir: string, png: Uint8Array): Promise<string> {
+  await mkdir(dir, { recursive: true })
+  const file = join(dir, `${recordingName(new Date(), (n) => existsSync(join(dir, `${n}.png`)), 'Screenshot')}.png`)
+  await writeFile(file, png)
+  shots.add(file)
+  return file
+}
+
+const copyImage = (png: Uint8Array) => clipboard.write([new ClipboardItem({ 'image/png': new Blob([png as Uint8Array<ArrayBuffer>]) })])
+
+/** A finished screenshot: onto the clipboard, or into a file on the Desktop. Then the card. */
+async function finishShot(png: Uint8Array, scale: number, save: boolean) {
+  png = withScale(png, scale) // pastes and opens as big as it was on screen
+  const file = await writeShot(save ? app.getPath('desktop') : join(app.getPath('temp'), 'Grip Screenshots'), png)
+  if (!save) await copyImage(png)
+  closePicker()
+  showResult(`shot=${encodeURIComponent(file)}${save ? '&saved' : ''}`)
 }
 
 /** Speaker notes: a prompter under the menu bar, near the camera, while picking and recording. */
@@ -322,22 +457,31 @@ function setStatus(next: Status) {
   status = next
   const active = next !== 'idle'
   setRecordingDock(active)
+  if (next !== 'recording' && drawing) {
+    // Paused or ending: the engine takes no strokes now.
+    drawing = false
+    fadeInk()
+  }
   if (active) {
-    // Recording (or about to): clear the picker off the screen.
+    // Recording (or about to): clear the picker and the last result off the screen.
     counting = false
     pick(null)
     picking = false
     toolbar?.hide()
+    for (const w of windowsOf('result')) w.destroy()
     if (settings().showWidget) showWidget()
   } else {
     for (const w of windowsOf('widget')) w.destroy()
     area = null
+    recDisplay = null
+    inkUntil = 0
     pick(null)
   }
-  for (const k of [SHORTCUTS.pause, SHORTCUTS.cancel]) globalShortcut.unregister(k)
+  for (const k of [SHORTCUTS.pause, SHORTCUTS.cancel, SHORTCUTS.draw]) globalShortcut.unregister(k)
   if (active) {
     shortcut(SHORTCUTS.pause, () => command('toggle-pause'))
     shortcut(SHORTCUTS.cancel, cancelRecording)
+    shortcut(SHORTCUTS.draw, toggleDrawing)
   }
   updateHelpers()
   broadcast()
@@ -504,10 +648,35 @@ export function registerRecorder() {
   ipcMain.handle('shell:start', (_e, opts: Partial<StartOptions>) => {
     const t = opts?.target
     area = t?.kind === 'area' ? { display: t.displayId, rect: t.rect } : null
+    // A window records on the display it was picked on, the one under the mouse.
+    recDisplay = t?.kind === 'area' || t?.kind === 'display' ? t.displayId : t?.kind === 'window' ? activeDisplay().id : null
     broadcast()
     return command('start', opts)
   })
-  ipcMain.handle('shell:fail', async (_e, error: unknown) => {
+  ipcMain.handle('shell:draw', (_e, on?: unknown) => setDrawing(typeof on === 'boolean' ? on : !drawing))
+  ipcMain.handle('shell:shot', (_e, png: unknown, scale: unknown, save: unknown) => {
+    if (!(png instanceof Uint8Array) || png.byteLength < 8) throw new Error('The screenshot is empty.')
+    return finishShot(png, Math.min(Math.max(Number(scale) || 1, 1), 4), save === true)
+  })
+  ipcMain.handle('shell:fit', (e, height: unknown) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const h = Math.round(Number(height))
+    if (!win || !(h >= 40 && h <= 800)) return
+    const b = win.getBounds()
+    win.setBounds({ ...b, y: b.y + b.height - h, height: h })
+  })
+  // The result card: only files Grip made (ours), never any path a page asks for.
+  ipcMain.handle('shell:drag', (e, path: unknown, icon: unknown) => {
+    // Synchronous: the drag must start while the mouse is still down.
+    const image = typeof icon === 'string' && icon.startsWith('data:image/png') ? nativeImage.createFromDataURL(icon) : null
+    if (ours(path) && image && !image.isEmpty()) e.sender.startDrag({ file: path, icon: image })
+  })
+  ipcMain.handle('shell:reveal', (_e, path: unknown) => ours(path) && shell.showItemInFolder(path))
+  ipcMain.handle('shell:shot-copy', async (_e, path: unknown) => {
+    if (ours(path) && shots.has(path)) await copyImage(await readFile(path))
+  })
+  ipcMain.handle('shell:shot-save', async (_e, path: unknown) => (ours(path) && shots.has(path) ? writeShot(app.getPath('desktop'), await readFile(path)) : null))
+  ipcMain.handle('shell:fail', async (_e, error: unknown, title?: unknown) => {
     const plain = plainError(error)
     counting = false
     if (status === 'idle') area = null // it never started
@@ -518,7 +687,7 @@ export function registerRecorder() {
     }
     if (picking) showPicker()
     broadcast()
-    await alert('Grip couldn’t record.', plain.message)
+    await alert(typeof title === 'string' ? title : 'Grip couldn’t record.', plain.message)
   })
   ipcMain.handle('shell:display', (_e, id: number) => {
     const d = screen.getAllDisplays().find((d) => d.id === Number(id)) ?? screen.getPrimaryDisplay()
@@ -565,8 +734,8 @@ export function registerRecorder() {
   recordingEvents.on('finished', (bundle: string, end?: { reason?: string; message?: string }) => {
     for (const done of waiters.splice(0)) done(bundle)
     if (quitting) return
-    openProject(bundle)
-    // It stopped on its own (disk full, display unplugged, a write failed): say why, over the editor.
+    showResult(`bundle=${encodeURIComponent(bundle)}`)
+    // It stopped on its own (disk full, display unplugged, a write failed): say why.
     if (end?.reason && end.reason !== 'user') void alert('Grip stopped recording.', end.message ?? 'The recording was saved.')
   })
   // Recordings cut off by a crash or power loss, made whole at launch (capture repairs its own

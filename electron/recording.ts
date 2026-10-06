@@ -12,6 +12,8 @@
 //     target: display | window (frame?: move and resize it there first) | area | device (iPhone/iPad)
 //   recording:pause | recording:resume | recording:cancel | recording:restart -> RecState
 //   recording:stop -> RecordingSources | null
+//   recording:screenshot(displayId, rect) -> PNG bytes   a still of rect (points, relative to the display), without Grip's windows
+//   recording:draw(phase, x, y, color?, width?) -> boolean   a pen stroke point (global points) into the event stream
 // Calls in the wrong state are no-ops that return the current state.
 // Broadcast to every window:
 //   recording:state(state)
@@ -25,7 +27,7 @@ import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Permission, PermissionStatus, RecordingEvent, RecordingSources, StartOptions } from '../native/index.d.ts'
+import type { Permission, PermissionStatus, RecordingEvent, RecordingSources, Rect, StartOptions } from '../native/index.d.ts'
 import { analyzeCamera } from './camera.ts'
 import { native } from './native.ts'
 import { setSettings, settings } from './shell/settings.ts'
@@ -64,10 +66,10 @@ function broadcast(channel: string, ...args: unknown[]) {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(channel, ...args)
 }
 
-/** "Recording 2026-10-04 at 13.20.11", made unique if one already exists. */
-export function recordingName(d: Date, taken: (name: string) => boolean = () => false): string {
+/** "Recording 2026-10-04 at 13.20.11" ("Screenshot ..." with that `kind`), made unique if one already exists. */
+export function recordingName(d: Date, taken: (name: string) => boolean = () => false, kind = 'Recording'): string {
   const p = (n: number) => String(n).padStart(2, '0')
-  const base = `Recording ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} at ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`
+  const base = `${kind} ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} at ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`
   let name = base
   for (let i = 2; taken(name); i++) name = `${base} (${i})`
   return name
@@ -84,7 +86,7 @@ function finish(dir: string, sources: RecordingSources, reason = 'user', message
         broadcast('recording:error', message ?? 'Nothing was recorded.')
         return
       }
-      await writeNewRecording(dir, sources)
+      await writeNewRecording(dir, sources, { camera: settings().cameraCorner })
       if (sources.camera) analyzeCamera(dir).catch((err) => console.error('analyzeCamera', dir, err))
       broadcast('recording:finished', dir, { reason, message })
       recordingEvents.emit('finished', dir, { reason, message })
@@ -168,6 +170,12 @@ export function registerRecording() {
   ipcMain.handle('recording:stop', () => stop())
   ipcMain.handle('recording:cancel', () => native.cancelRecording())
   ipcMain.handle('recording:restart', () => native.restartRecording())
+  ipcMain.handle('recording:screenshot', (_e, displayId: unknown, r: Partial<Rect>) =>
+    native.captureScreenshot(Number(displayId), { x: Number(r?.x), y: Number(r?.y), w: Number(r?.w), h: Number(r?.h) }),
+  )
+  ipcMain.handle('recording:draw', (_e, phase: unknown, x: unknown, y: unknown, color?: unknown, width?: unknown) =>
+    native.recordDraw(String(phase), Number(x), Number(y), typeof color === 'string' ? color : undefined, typeof width === 'number' ? width : undefined),
+  )
 
   // Quitting mid-recording (after any prompt) still saves it.
   app.on('will-quit', (e) => {

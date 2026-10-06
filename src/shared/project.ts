@@ -148,6 +148,8 @@ export interface Style {
     lut?: string // relative path to a .cube, or a built-in grade 'grade:<id>' (src/engine/gpu/lut.ts)
   }
   keystrokes: { visible: boolean; size: number }
+  /** Ink drawn on screen while recording (the draw events in the event stream). */
+  drawings: { visible: boolean }
   captions: {
     visible: boolean
     font: string
@@ -213,6 +215,7 @@ export const defaultStyle = (): Style => ({
     hideWhenSilent: false,
   },
   keystrokes: { visible: true, size: 1 },
+  drawings: { visible: true },
   captions: {
     visible: false,
     font: 'system-ui',

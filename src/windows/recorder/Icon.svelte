@@ -3,6 +3,7 @@
   export type IconName =
     | 'display' | 'window' | 'area' | 'device' | 'camera' | 'camera-off' | 'mic' | 'mic-off' | 'speaker' | 'speaker-off'
     | 'gear' | 'chevron' | 'close' | 'pause' | 'play' | 'stop' | 'restart' | 'trash' | 'check' | 'screen' | 'keyboard' | 'accessibility'
+    | 'pen'
 
   /** Drawing boxes other than 24 x 24. Toolbar glyphs are drawn in points (1 unit = 1 pt at their size). */
   const BOX: Partial<Record<IconName, string>> = {
@@ -91,6 +92,9 @@
     <path d="M4.2 3.6v3.6h3.6" />
   {:else if name === 'trash'}
     <path d="M4 6.5h16M9.5 6.5V4.6a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.9M6.2 6.5l.9 12.6a2 2 0 0 0 2 1.9h5.8a2 2 0 0 0 2-1.9l.9-12.6" />
+  {:else if name === 'pen'}
+    <path d="M14.8 4.6a2.1 2.1 0 0 1 3 0l1.6 1.6a2.1 2.1 0 0 1 0 3L9.3 19.3 4.5 20.5l1.2-4.8z" />
+    <path d="M13 6.4l4.6 4.6" />
   {:else if name === 'check'}
     <path d="M5 12.5l4.5 4.5L19 7.5" />
   {:else if name === 'screen'}

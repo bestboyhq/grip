@@ -4,9 +4,9 @@
 //
 // Coordinates: output pixels, origin top-left, in UNZOOMED space. `view` is the zoom camera:
 // an unzoomed point p lands at (p - view.center) * view.scale + (width/2, height/2).
-// The view applies to background, screen, cursor, click effects, and masks (masks stay locked to
-// content), inside the screen's viewport (the whole output except in split layouts). Camera,
-// keystrokes, and captions are drawn after it, unzoomed.
+// The view applies to background, screen, cursor, click effects, drawings, and masks (masks and
+// drawings stay locked to content), inside the screen's viewport (the whole output except in split
+// layouts). Camera, keystrokes, and captions are drawn after it, unzoomed.
 
 import type { Background, Project, Rect, Style, Transcript } from '../shared/project.ts'
 import type { InputEvent } from '../shared/events.ts'
@@ -14,7 +14,7 @@ import { timeMap, toSource, type TimeMap } from '../shared/timemap.ts'
 import { prepareLayout, layoutAt } from './layout.ts'
 import { prepareCursor, cursorAt, cursorPath, type CursorPath } from './motion/index.ts'
 import { prepareZoom, viewAt, loupeAt, zoomAmount, zoomPath, type ZoomPath } from './zoom/index.ts'
-import { prepareOverlays, clicksAt, keystrokesAt, captionAt } from './overlays/index.ts'
+import { prepareOverlays, clicksAt, drawingsAt, keystrokesAt, captionAt } from './overlays/index.ts'
 
 export interface View {
   center: { x: number; y: number }
@@ -63,6 +63,14 @@ export interface Click {
   style: Style['cursor']['click']
 }
 
+/** A stroke drawn on screen while recording, as far as it was drawn by t. */
+export interface Drawing {
+  points: Array<{ x: number; y: number }> // unzoomed output px
+  color: string
+  width: number // px
+  opacity: number
+}
+
 export interface Keystroke {
   keys: string[] // keycaps in macOS order, e.g. ['⇧', '⌘', 'P']; specials as symbols ('↩', '⎋', '←'), 'Space', 'F5'
   opacity: number
@@ -107,6 +115,7 @@ export interface Scene {
   camera: CameraLayer | null
   cursor: CursorLayer | null
   clicks: Click[]
+  drawings: Drawing[]
   keystrokes: Keystroke[]
   caption: Caption | null
   masks: MaskLayer[]
@@ -191,6 +200,7 @@ export function sceneAt(p: Prepared, t: number): Scene {
     camera,
     cursor: cursorAt(p.cursor, t),
     clicks: clicksAt(p.overlays, t),
+    drawings: drawingsAt(p.overlays, t),
     keystrokes: keystrokesAt(p.overlays, t),
     caption: captionAt(p.overlays, t),
     masks,

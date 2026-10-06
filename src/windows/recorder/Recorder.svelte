@@ -131,7 +131,7 @@
       if (countdown !== mine) return
       countdown = null
     }
-    run('start', startRequest(target))
+    invoke('shell:start', startRequest(target)) // the shell keeps the target (the pen's display)
   }
 
   async function pickInput(kind: 'camera' | 'mic', el: HTMLElement) {

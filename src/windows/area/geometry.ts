@@ -89,3 +89,20 @@ export function constrain(r: Rect, ratio: number | null, W: number, H: number): 
   h = Math.max(MIN, Math.min(h * k, H))
   return { width: w, height: h, x: clamp(r.x + r.width / 2 - w / 2, 0, W - w), y: clamp(r.y + r.height / 2 - h / 2, 0, H - h) }
 }
+
+/** Top-left of the w x h tool strip beside area `sel`: right of it, else left of it, else inside its
+ *  right edge; level with its top, but clear of `form` (the panel under or over the area) and
+ *  inside the display (W x H). */
+export function toolsAt(sel: Rect, w: number, h: number, W: number, H: number, form: Rect | null): { x: number; y: number } {
+  const GAP = 10
+  const EDGE = 12
+  let x = sel.x + sel.width + GAP
+  if (x + w > W - EDGE) x = sel.x - GAP - w
+  if (x < EDGE) x = sel.x + sel.width - GAP - w
+  x = clamp(x, EDGE, W - w - EDGE)
+  let y = clamp(sel.y, EDGE, H - h - EDGE)
+  if (form && x < form.x + form.width && x + w > form.x && y < form.y + form.height && y + h > form.y) {
+    y = clamp(form.y > sel.y ? form.y - GAP - h : form.y + form.height + GAP, EDGE, H - h - EDGE)
+  }
+  return { x, y }
+}

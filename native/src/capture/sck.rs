@@ -607,6 +607,52 @@ pub fn windows() -> Result<Vec<Window>, String> {
     Ok(found)
 }
 
+/// A still of `r` (points relative to the display's top-left corner) at the display's pixel
+/// density, as PNG, without the cursor. Kept out like in recordings: our own windows (the picker,
+/// its tools, the camera bubble) and notification banners.
+pub fn screenshot(display_id: u32, r: Rect) -> Result<Vec<u8>, String> {
+    let content = content(false)?;
+    let display = find_display(&content, display_id).ok_or("That display is no longer connected.")?;
+    let (apps, keep) = excluded(&content, false);
+    let filter = unsafe {
+        SCContentFilter::initWithDisplay_excludingApplications_exceptingWindows(SCContentFilter::alloc(), &display, &apps, &keep)
+    };
+    let b = CGDisplayBounds(display_id);
+    let x = r.x.clamp(0.0, b.size.width);
+    let y = r.y.clamp(0.0, b.size.height);
+    let (w, h) = (r.w.min(b.size.width - x), r.h.min(b.size.height - y));
+    if w < 1.0 || h < 1.0 {
+        return Err("The selected area is empty.".into());
+    }
+    let scale = unsafe { SCShareableContent::infoForFilter(&filter).pointPixelScale() } as f64;
+    let scale = if scale > 0.0 { scale } else { 2.0 };
+    let config = unsafe { SCStreamConfiguration::new() };
+    unsafe {
+        config.setSourceRect(CGRect::new(CGPoint::new(x, y), CGSize::new(w, h)));
+        config.setWidth((w * scale).round() as usize);
+        config.setHeight((h * scale).round() as usize);
+        config.setShowsCursor(false);
+        config.setCaptureResolution(SCCaptureResolutionType::Best);
+        config.setColorSpaceName(kCGColorSpaceSRGB);
+    }
+    let (tx, rx) = mpsc::channel();
+    let done = RcBlock::new(move |img: *mut CGImage, e: *mut NSError| {
+        let png = match unsafe { img.as_ref() } {
+            Some(img) => png(img).ok_or_else(|| "Could not encode the screenshot.".to_string()),
+            None => Err(unsafe { e.as_ref() }.map_or("The screenshot failed.".into(), ns_error)),
+        };
+        let _ = tx.send(png);
+    });
+    unsafe { SCScreenshotManager::captureImageWithFilter_configuration_completionHandler(&filter, &config, Some(&done)) };
+    rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "Timed out taking the screenshot.".to_string())?
+}
+
+fn png(img: &CGImage) -> Option<Vec<u8>> {
+    let rep = NSBitmapImageRep::initWithCGImage(NSBitmapImageRep::alloc(), img);
+    let data = unsafe { rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new()) }?;
+    Some(data.to_vec())
+}
+
 fn jpeg_data_url(img: &CGImage) -> Option<String> {
     let rep = NSBitmapImageRep::initWithCGImage(NSBitmapImageRep::alloc(), img);
     let props =

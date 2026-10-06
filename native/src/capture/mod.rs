@@ -820,6 +820,34 @@ pub async fn list_windows() -> napi::Result<Vec<sck::Window>> {
     blocking(sck::windows).await
 }
 
+/// PNG of `rect` (points relative to the display's top-left corner) at the display's pixel density,
+/// without the cursor or Grip's own windows.
+#[napi]
+pub async fn capture_screenshot(display_id: u32, rect: Rect) -> napi::Result<napi::bindgen_prelude::Buffer> {
+    blocking(move || sck::screenshot(display_id, rect)).await.map(Into::into)
+}
+
+/// A point of a pen stroke drawn over the screen while recording, in global points: a stroke is
+/// "start" (with its #rrggbb color and width in points), "move"s, and "end". It goes into the input
+/// event stream on the session clock. False when nothing records it (no recording, or paused).
+#[napi]
+pub fn record_draw(phase: String, x: f64, y: f64, color: Option<String>, width: Option<f64>) -> bool {
+    let phase = match phase.as_str() {
+        "start" => "start",
+        "move" => "move",
+        "end" => "end",
+        _ => return false,
+    };
+    let hex = |c: &String| c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+    let color = color.filter(hex);
+    let width = width.filter(|w| w.is_finite() && *w > 0.0 && *w <= 100.0);
+    if !x.is_finite() || !y.is_finite() {
+        return false;
+    }
+    let s = slot();
+    s.rec.as_ref().and_then(|r| r.input.as_ref()).is_some_and(|i| i.draw(phase, x, y, color.as_deref(), width))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,16 +1,17 @@
-// Owner: compositor (overlays). Click effects, keystroke groups, and caption pages in OUTPUT time,
-// plus drawOverlays() which paints them with Canvas 2D (text and keycaps get the platform's
-// font rendering) for the GPU compositor to layer on top.
-// prepareOverlays maps every item through the one time map once per project revision and output
-// size; clicksAt / keystrokesAt / captionAt are pure lookups, so any frame renders alone, in any order.
+// Owner: compositor (overlays). Click effects, drawn strokes, keystroke groups, and caption pages in
+// OUTPUT time, plus drawOverlays() which paints them with Canvas 2D (text and keycaps get the
+// platform's font rendering) for the GPU compositor to layer on top.
+// prepareOverlays maps every item through the one time map once per project revision and output size;
+// clicksAt / drawingsAt / keystrokesAt / captionAt are pure lookups, so any frame renders alone, in any order.
 
 import { toOutput, type TimeMap } from '../../shared/timemap.ts'
 import type { InputEvent, Modifier } from '../../shared/events.ts'
 import type { Style } from '../../shared/project.ts'
-import { outputSize, type Caption, type Click, type Keystroke, type Scene, type SceneInput } from '../scene.ts'
+import { outputSize, type Caption, type Click, type Drawing, type Keystroke, type Scene, type SceneInput } from '../scene.ts'
 import { screenAt, type prepareLayout } from '../layout.ts'
 import { springProgress } from '../motion/spring.ts'
 import { captionCues } from '../transcript/index.ts'
+import { paintStroke, strokesFromEvents, visibleStrokes, type Stroke } from './drawings.ts'
 
 type Ctx = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D
 type Prepared = ReturnType<typeof prepareOverlays>
@@ -80,6 +81,7 @@ export function prepareOverlays(input: SceneInput, map: TimeMap, layout: ReturnT
     layout,
     unit,
     clicks: clickTimes(input.events, map),
+    strokes: drawnStrokes(input.events, map),
     keys,
     keyReach, // max visible-until over keys[0..i], so lookups can stop scanning back early
     keyBase: keystrokeBase(width, height, unit, project.style.captions),
@@ -92,10 +94,10 @@ export function prepareOverlays(input: SceneInput, map: TimeMap, layout: ReturnT
 type Button = Extract<InputEvent, { button: unknown }>
 /** Per events array (replaced, never edited in place): what clicks and keystrokes read of it, so a
  *  preparation after an edit does not walk a 2-hour recording's million events again. */
-const scanned = new WeakMap<InputEvent[], { downs: Button[]; presses: Press[]; typing: Array<{ start: number }> }>()
+const scanned = new WeakMap<InputEvent[], { downs: Button[]; strokes: Stroke[]; presses: Press[]; typing: Array<{ start: number }> }>()
 function scan(events: InputEvent[]) {
   let s = scanned.get(events)
-  if (!s) scanned.set(events, (s = { downs: events.filter((e): e is Button => e.type === 'down'), ...keyPresses(events) }))
+  if (!s) scanned.set(events, (s = { downs: events.filter((e): e is Button => e.type === 'down'), strokes: strokesFromEvents(events), ...keyPresses(events) }))
   return s
 }
 
@@ -119,6 +121,39 @@ export function clicksAt(o: Prepared, t: number): Click[] {
   if (!r || !s) return []
   const k = r.w / s.width
   return live.map((c) => ({ x: r.x + c.x * k, y: r.y + c.y * k, age: t - c.start, style }))
+}
+
+// ---- Drawings ----
+
+/** Strokes in output time. Points inside cuts are dropped; a stroke cut out entirely is gone. */
+function drawnStrokes(events: InputEvent[], map: TimeMap): Stroke[] {
+  const out: Stroke[] = []
+  for (const s of scan(events).strokes) {
+    const points: Stroke['points'] = []
+    // Min and max, not first and last: reordered clips can play a stroke's points out of order.
+    let start = Infinity
+    let end = -Infinity
+    for (const p of s.points) {
+      const t = toOutput(map, p.t)
+      if (t === null) continue
+      points.push({ t, x: p.x, y: p.y })
+      start = Math.min(start, t)
+      end = Math.max(end, t)
+    }
+    if (points.length) out.push({ ...s, points, start, end })
+  }
+  return out.sort((a, b) => a.start - b.start)
+}
+
+/** Strokes showing at t, in unzoomed output px, locked to the screen content like clicks. */
+export function drawingsAt(o: Prepared, t: number): Drawing[] {
+  if (!o.input.project.style.drawings.visible) return []
+  const s = o.input.project.sources.screen
+  const live = visibleStrokes(o.strokes, t)
+  const r = live.length && s ? screenAt(o.layout, t)?.screen : null
+  if (!r || !s) return []
+  const k = r.w / s.width
+  return live.map((d) => ({ ...d, width: d.width * k, points: d.points.map((p) => ({ x: r.x + p.x * k, y: r.y + p.y * k })) }))
 }
 
 // ---- Keystrokes ----
@@ -353,15 +388,31 @@ export function captionAt(o: Prepared, t: number): Caption | null {
 
 // ---- Drawing ----
 
-/** Paint clicks, keystrokes, and the caption for `scene` into a transparent 2D canvas of scene size.
- *  Clicks are drawn in zoomed space (apply scene.view); keystrokes and captions unzoomed. */
+/** Paint drawings, clicks, keystrokes, and the caption for `scene` into a transparent 2D canvas of
+ *  scene size. Drawings and clicks are drawn in zoomed space (apply scene.view) inside the screen's
+ *  viewport, like the cursor; keystrokes and captions unzoomed. */
 export function drawOverlays(ctx: Ctx, scene: Scene): void {
-  if (scene.clicks.length) {
+  if (scene.clicks.length || scene.drawings.length) {
     const v = scene.view
+    const s = scene.screen
     ctx.save()
+    if (s) {
+      ctx.beginPath()
+      ctx.roundRect(s.viewport.x, s.viewport.y, s.viewport.w, s.viewport.h, s.viewportRadius)
+      ctx.clip()
+    }
     ctx.translate(scene.width / 2, scene.height / 2)
     ctx.scale(v.scale, v.scale)
     ctx.translate(-v.center.x, -v.center.y)
+    if (s && scene.drawings.length) {
+      // Ink stays on the recording: never on the inset band, the padding, or past rounded corners.
+      ctx.save()
+      ctx.beginPath()
+      ctx.roundRect(s.rect.x, s.rect.y, s.rect.w, s.rect.h, Math.max(0, s.radius - s.inset))
+      ctx.clip()
+      for (const d of scene.drawings) paintStroke(ctx, d.points, d.color, d.width, d.opacity)
+      ctx.restore()
+    }
     for (const c of scene.clicks) drawClick(ctx, c, scene.unit)
     ctx.restore()
   }

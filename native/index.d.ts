@@ -45,6 +45,12 @@ export interface CameraFormat {
 
 export declare function cancelRecording(): Promise<RecState>
 
+/**
+ * PNG of `rect` (points relative to the display's top-left corner) at the display's pixel density,
+ * without the cursor or Grip's own windows.
+ */
+export declare function captureScreenshot(displayId: number, rect: Rect): Promise<Buffer>
+
 export interface Display {
   id: number
   name: string
@@ -90,6 +96,13 @@ export type Permission = 'screen' | 'accessibility' | 'inputMonitoring' | 'micro
 export declare function permissionStatus(kind: Permission): PermissionStatus
 
 export type PermissionStatus = 'granted' | 'denied' | 'notDetermined' | 'restricted'
+
+/**
+ * A point of a pen stroke drawn over the screen while recording, in global points: a stroke is
+ * "start" (with its #rrggbb color and width in points), "move"s, and "end". It goes into the input
+ * event stream on the session clock. False when nothing records it (no recording, or paused).
+ */
+export declare function recordDraw(phase: string, x: number, y: number, color?: string | undefined | null, width?: number | undefined | null): boolean
 
 export type RecordingEvent =
   | { type: 'state'; state: RecState }

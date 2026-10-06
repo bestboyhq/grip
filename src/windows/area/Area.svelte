@@ -1,15 +1,22 @@
 <!-- Picking overlay, one transparent window per display (#/area?display=<id>).
      Display mode: highlight the hovered display. Window mode: highlight the window under the mouse,
      with preset sizes. Area mode: drag out a rectangle, resize it by its handles, type its size, lock
-     an aspect; the last area is remembered. Then a 3-2-1 countdown over the recorded region. While an
-     area records, the overlays stay as a click-through backdrop that dims everything around it. -->
+     an aspect; the last area is remembered. Then record it (↩, a 3-2-1 countdown over the region), or
+     take a screenshot of it: ⌘C copies it at once, a tool from the strip beside it (or its key)
+     freezes it to draw on first, then ⌘C copies or ⌘S saves it to the Desktop.
+     While an area records, the overlays stay as a click-through backdrop that dims everything around
+     it; with the pen on (shell:draw), the recorded display's overlay takes the mouse and every stroke
+     goes into the recording, fading out on screen like it will in the video. -->
 <script lang="ts">
   import { onMount } from 'svelte'
   import logoDot from '../../../build/Grip.icon/Assets/dot.svg'
   import { invoke, on } from '../../lib/ipc.ts'
   import Icon from '../recorder/Icon.svelte'
+  import UiIcon from '../../ui/Icon.svelte'
+  import { paintStroke, visibleStrokes, type Stroke } from '../../engine/overlays/drawings.ts'
   import { fromEngine, setSettings, shell, startRequest, toEngine, windowList, type Rect, type StartRequest, type WindowSource } from '../recorder/shell.svelte.ts'
-  import { ASPECTS, constrain, formAt, presetFrame, presetSize, PRESETS, resize, type Handle } from './geometry.ts'
+  import { ASPECTS, constrain, formAt, presetFrame, presetSize, PRESETS, resize, toolsAt, type Handle } from './geometry.ts'
+  import { COLORS, FONT, FONT_FAMILY, paintShapes, tiny, TOOLS, type P, type Shape, type Tool } from './annotate.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
@@ -68,7 +75,7 @@
   const save = () => setSettings({ area: sel && display ? { display: display.id, rect: $state.snapshot(sel), aspect } : null })
 
   function down(e: PointerEvent, kind: 'new' | 'move' | Handle) {
-    if (shell.mode !== 'area' || target || e.button !== 0) return
+    if (shell.mode !== 'area' || target || shot || e.button !== 0) return
     e.stopPropagation()
     ;(document.body as Element).setPointerCapture(e.pointerId)
     const orig = kind === 'new' ? { x: e.clientX, y: e.clientY, width: 0, height: 0 } : sel!
@@ -113,6 +120,173 @@
   }
 
   const form = $derived(sel && formAt(sel, formW, formH, W, floor))
+  let toolsW = $state(0)
+  let toolsH = $state(0)
+  const tools = $derived(sel && form && toolsAt(sel, toolsW, toolsH, W, H, { ...form, width: formW, height: formH }))
+
+  // ---- Screenshot: the area frozen into an image, drawn on, then copied or saved ----
+
+  let shot = $state<{ image: HTMLImageElement; png: Uint8Array; rect: Rect } | null>(null)
+  let tool = $state<Tool | null>(null)
+  let color = $state(COLORS[0].value)
+  let shapes = $state<Shape[]>([])
+  let draft = $state<Shape | null>(null)
+  let typing = $state<{ at: P; text: string } | null>(null)
+  let freezing: Promise<boolean> | null = null
+
+  /** Capture the selected area as it is now (without Grip's own windows). */
+  function freeze(): Promise<boolean> {
+    if (shot) return Promise.resolve(true)
+    if (!sel || !display) return Promise.resolve(false)
+    const rect = $state.snapshot(sel)
+    const id = display.id
+    return (freezing ??= (async () => {
+      try {
+        const png: Uint8Array = await invoke('recording:screenshot', id, toEngine(rect))
+        const image = new Image()
+        image.src = URL.createObjectURL(new Blob([png as BlobPart], { type: 'image/png' }))
+        await image.decode()
+        shot = { image, png, rect }
+        return true
+      } catch (e) {
+        invoke('shell:fail', e instanceof Error ? e.message : String(e), 'Grip couldn’t take the screenshot.')
+        return false
+      } finally {
+        freezing = null
+      }
+    })())
+  }
+
+  async function pickTool(t: Tool) {
+    if (await freeze()) tool = t
+  }
+
+  function undo() {
+    if (typing) typing = null
+    else shapes.pop()
+  }
+
+  function commitText() {
+    if (typing && !tiny({ kind: 'text', color, ...typing })) shapes.push({ kind: 'text', color, at: typing.at, text: typing.text })
+    typing = null
+  }
+
+  /** Copy (or save) the screenshot: the frozen image with its drawings, else the area as it is now. */
+  async function finishShot(save: boolean) {
+    commitText()
+    if (!(await freeze()) || !shot) return
+    let png = shot.png
+    if (shapes.length) {
+      const { image } = shot
+      const c = new OffscreenCanvas(image.naturalWidth, image.naturalHeight)
+      const ctx = c.getContext('2d')!
+      ctx.drawImage(image, 0, 0)
+      paintShapes(ctx, $state.snapshot(shapes), image, image.naturalWidth / shot.rect.width)
+      png = new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer())
+    }
+    invoke('shell:shot', png, shot.image.naturalWidth / shot.rect.width, save)
+  }
+
+  /** The drawing board over the frozen area: the image and every shape, painted with the code that
+   *  makes the copied PNG. Repaints whenever a shape changes. */
+  function board(canvas: HTMLCanvasElement) {
+    if (!shot) return
+    const k = devicePixelRatio
+    const w = Math.round(shot.rect.width * k)
+    const h = Math.round(shot.rect.height * k)
+    if (canvas.width !== w || canvas.height !== h) [canvas.width, canvas.height] = [w, h] // a resize reallocates: only once
+    const ctx = canvas.getContext('2d')!
+    ctx.drawImage(shot.image, 0, 0, w, h)
+    paintShapes(ctx, draft ? [...shapes, draft] : shapes, shot.image, k)
+  }
+
+  const at = (e: PointerEvent): P => {
+    const r = (e.currentTarget as Element).getBoundingClientRect()
+    return { x: e.clientX - r.left, y: e.clientY - r.top }
+  }
+  function boardDown(e: PointerEvent) {
+    e.stopPropagation()
+    e.preventDefault() // keeps the focus where it goes (the text input), not on the page
+    if (e.button !== 0 || !tool) return
+    const p = at(e)
+    commitText()
+    if (tool === 'text') return void (typing = { at: p, text: '' })
+    ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+    draft = tool === 'pen' ? { kind: 'pen', color, points: [p] } : { kind: tool, color, a: p, b: p }
+  }
+  function boardMove(e: PointerEvent) {
+    if (!draft) return
+    const p = at(e)
+    if (draft.kind === 'pen') draft.points.push(p)
+    else if (draft.kind !== 'text') draft.b = p
+  }
+  function boardUp() {
+    if (draft && !tiny(draft)) shapes.push(draft)
+    draft = null
+  }
+
+  const ICONS = { arrow: 'arrow', rect: 'rect', pen: 'pen', text: 'text', blur: 'pixelate' } as const
+
+  // ---- The pen while recording: ink in local points, on this overlay's own clock ----
+
+  const PEN = { color: '#ff3b30', width: 5 } // width in points
+  const pen = $derived(!!display && shell.status !== 'idle' && shell.inkDisplay === display.id)
+  let ink: Stroke[] = []
+  let stroke: Stroke | null = null
+  let inkCanvas = $state<HTMLCanvasElement>()
+  let inkFrame = 0
+  const now = () => performance.now() / 1000
+
+  function paintInk() {
+    inkFrame = 0
+    const c = inkCanvas
+    if (!c) return
+    const k = devicePixelRatio
+    if (c.width !== Math.round(W * k)) {
+      c.width = Math.round(W * k)
+      c.height = Math.round(H * k)
+    }
+    const ctx = c.getContext('2d')!
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, c.width, c.height)
+    ctx.setTransform(k, 0, 0, k, 0, 0)
+    const shown = visibleStrokes(ink, now())
+    for (const s of shown) paintStroke(ctx, s.points, s.color, s.width, s.opacity)
+    if (shown.length || stroke) inkFrame = requestAnimationFrame(paintInk)
+    else ink = []
+  }
+  const repaint = () => (inkFrame ||= requestAnimationFrame(paintInk))
+
+  function inkPoint(phase: 'start' | 'move' | 'end', e: PointerEvent) {
+    if (!stroke || !display) return
+    const t = now()
+    stroke.points.push({ t, x: e.clientX, y: e.clientY })
+    stroke.end = t
+    const first = phase === 'start'
+    invoke('recording:draw', phase, e.clientX + display.bounds.x, e.clientY + display.bounds.y, first ? PEN.color : undefined, first ? PEN.width : undefined)
+  }
+  function penDown(e: PointerEvent) {
+    if (!shell.drawing || e.button !== 0) return
+    ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+    const t = now()
+    ink.push((stroke = { start: t, end: t, color: PEN.color, width: PEN.width, points: [] }))
+    inkPoint('start', e)
+    repaint()
+  }
+  function penMove(e: PointerEvent) {
+    if (stroke) for (const c of e.getCoalescedEvents?.() ?? [e]) inkPoint('move', c)
+  }
+  function penUp(e: PointerEvent) {
+    inkPoint('end', e)
+    stroke = null
+  }
+  // The pen went off mid-stroke (Esc with the button down): end the stroke there.
+  $effect(() => {
+    if (!shell.drawing && stroke) {
+      invoke('recording:draw', 'end', stroke.points.at(-1)!.x + (display?.bounds.x ?? 0), stroke.points.at(-1)!.y + (display?.bounds.y ?? 0))
+      stroke = null
+    }
+  })
 
   let takes = 0 // countdowns started; a newer one (Esc, then start again) ends the older loop
   async function begin(req: StartRequest, region: Rect) {
@@ -142,7 +316,20 @@
     if (sel && display) begin(startRequest({ kind: 'area', displayId: display.id, rect: toEngine(sel) }), sel)
   }
   function key(e: KeyboardEvent) {
-    if (e.key !== 'Enter' || target || (e.target as Element).tagName === 'INPUT') return
+    const field = ['INPUT', 'TEXTAREA'].includes((e.target as Element).tagName)
+    if (shell.mode === 'area' && sel && !target && !field) {
+      // Shortcuts by letter, on any layout: the typed Latin letter, else the key's place (QWERTY).
+      const k = /^[a-z]$/i.test(e.key) ? e.key.toLowerCase() : e.code.replace(/^Key/, '').toLowerCase()
+      const shortcut = { c: () => finishShot(false), s: () => finishShot(true), z: undo }[k]
+      if (e.metaKey && !e.ctrlKey && !e.altKey && shortcut) {
+        e.preventDefault()
+        return shortcut()
+      }
+      const t = TOOLS.find((t) => t.key === k)
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && t) return pickTool(t.id)
+      if (e.key === 'Enter' && shot) return finishShot(false)
+    }
+    if (e.key !== 'Enter' || target || field) return
     if (shell.mode === 'area') startArea()
     else if (shell.mode === 'window') startWindow()
     else if (shell.mode === 'display' && mouse) startDisplay()
@@ -213,41 +400,105 @@
     {/if}
   {:else if shell.mode === 'area'}
     {#if sel}
-      <div class="sel" class:dragging={drag} style:left="{sel.x}px" style:top="{sel.y}px" style:width="{sel.width}px" style:height="{sel.height}px" role="presentation" onpointerdown={(e) => down(e, 'move')}>
-        {#if drag}<div class="grid"></div>{/if}
-        {#each HANDLES as h (h)}
-          <span class="handle {h}" role="presentation" onpointerdown={(e) => down(e, h)}></span>
-        {/each}
+      <div class="sel" class:dragging={drag} class:frozen={!!shot} style:left="{sel.x}px" style:top="{sel.y}px" style:width="{sel.width}px" style:height="{sel.height}px" role="presentation" onpointerdown={(e) => down(e, 'move')}>
+        {#if shot}
+          <canvas class="board" class:pointing={!!tool && tool !== 'text'} class:typing={tool === 'text'} {@attach board} onpointerdown={boardDown} onpointermove={boardMove} onpointerup={boardUp}></canvas>
+          {#if typing}
+            <!-- Enter places the text, ⇧↩ starts a new line. -->
+            <textarea
+              class="type"
+              style:left="{typing.at.x}px"
+              style:top="{typing.at.y}px"
+              style:color
+              style:font="600 {FONT}px/{FONT * 1.25}px {FONT_FAMILY}"
+              rows={typing.text.split('\n').length}
+              spellcheck="false"
+              aria-label="Text"
+              bind:value={typing.text}
+              {@attach (el) => el.focus()}
+              onpointerdown={(e) => e.stopPropagation()}
+              onkeydown={(e) => {
+                if (e.key !== 'Enter' || e.shiftKey) return
+                e.preventDefault()
+                commitText()
+              }}
+            ></textarea>
+          {/if}
+        {:else}
+          {#if drag}<div class="grid"></div>{/if}
+          {#each HANDLES as h (h)}
+            <span class="handle {h}" role="presentation" onpointerdown={(e) => down(e, h)}></span>
+          {/each}
+        {/if}
       </div>
       {#if form}
         <div class="form" style:left="{form.x}px" style:top="{form.y}px" bind:offsetWidth={formW} bind:offsetHeight={formH} role="group" aria-label="Area" onpointerdown={(e) => e.stopPropagation()}>
-          <label class="size"
-            ><input
-              type="number"
-              min="64"
-              aria-label="Width in pixels"
-              value={px(sel.width)}
-              onchange={(e) => setSize('width', e.currentTarget)}
-              onblur={(e) => setSize('width', e.currentTarget)}
-            /><span>×</span><input
-              type="number"
-              min="64"
-              aria-label="Height in pixels"
-              value={px(sel.height)}
-              onchange={(e) => setSize('height', e.currentTarget)}
-              onblur={(e) => setSize('height', e.currentTarget)}
-            /></label
-          >
-          <div class="segmented" role="radiogroup" aria-label="Aspect ratio">
-            {#each Object.keys(ASPECTS) as a (a)}
-              <button role="radio" aria-checked={aspect === a} class:on={aspect === a} onclick={() => setAspect(a)}>{a === 'free' ? 'Free' : a}</button>
+          {#if shot}
+            <span class="readout">{px(sel.width)} × {px(sel.height)}</span>
+            <button class="action" onclick={() => finishShot(true)}><UiIcon name="download" size={16} />Save<kbd>⌘S</kbd></button>
+            <button class="start" onclick={() => finishShot(false)}><UiIcon name="copy" size={16} />Copy<kbd>⌘C</kbd></button>
+          {:else}
+            <label class="size"
+              ><input
+                type="number"
+                min="64"
+                aria-label="Width in pixels"
+                value={px(sel.width)}
+                onchange={(e) => setSize('width', e.currentTarget)}
+                onblur={(e) => setSize('width', e.currentTarget)}
+              /><span>×</span><input
+                type="number"
+                min="64"
+                aria-label="Height in pixels"
+                value={px(sel.height)}
+                onchange={(e) => setSize('height', e.currentTarget)}
+                onblur={(e) => setSize('height', e.currentTarget)}
+              /></label
+            >
+            <div class="segmented" role="radiogroup" aria-label="Aspect ratio">
+              {#each Object.keys(ASPECTS) as a (a)}
+                <button role="radio" aria-checked={aspect === a} class:on={aspect === a} onclick={() => setAspect(a)}>{a === 'free' ? 'Free' : a}</button>
+              {/each}
+            </div>
+            <button class="action" onclick={() => finishShot(false)}><UiIcon name="copy" size={16} />Screenshot<kbd>⌘C</kbd></button>
+            <button class="start" onclick={startArea}><span class="dot" style:background-image="url({logoDot})"></span>Record<kbd>↩</kbd></button>
+          {/if}
+        </div>
+      {/if}
+      {#if tools && !drag}
+        <div
+          class="tools"
+          role="toolbar"
+          tabindex="-1"
+          aria-label="Draw on the screenshot"
+          aria-orientation="vertical"
+          style:left="{tools.x}px"
+          style:top="{tools.y}px"
+          bind:offsetWidth={toolsW}
+          bind:offsetHeight={toolsH}
+          onpointerdown={(e) => e.stopPropagation()}
+        >
+          {#each TOOLS as t (t.id)}
+            <button class="tool" class:on={tool === t.id} aria-pressed={tool === t.id} aria-label={t.label} title="{t.label} ({t.key.toUpperCase()})" onclick={() => pickTool(t.id)}><UiIcon name={ICONS[t.id]} /></button>
+          {/each}
+          <span class="rule"></span>
+          <div class="swatches" role="radiogroup" aria-label="Color">
+            {#each COLORS as c (c.value)}
+              <button class="swatch" role="radio" aria-checked={color === c.value} aria-label={c.name} title={c.name} style:--c={c.value} onclick={() => (color = c.value)}></button>
             {/each}
           </div>
-          {@render startButton(startArea)}
+          <span class="rule"></span>
+          <button class="tool" aria-label="Undo" title="Undo (⌘Z)" disabled={!shapes.length && !typing} onclick={undo}><UiIcon name="undo" /></button>
         </div>
       {/if}
     {:else}
       <div class="hint">Drag to select an area · Esc to cancel</div>
+    {/if}
+  {/if}
+  {#if pen && display}
+    <canvas class="ink" class:live={shell.drawing} bind:this={inkCanvas} onpointerdown={penDown} onpointermove={penMove} onpointerup={penUp}></canvas>
+    {#if shell.drawing}
+      <div class="pen-hint" role="status" style:top="{display.workArea.y - display.bounds.y + 10}px"><UiIcon name="pen" size={16} />Drawing on screen<kbd>esc</kbd></div>
     {/if}
   {/if}
 </main>
@@ -517,5 +768,174 @@
   @media (prefers-reduced-motion: reduce) {
     .count { animation: none; }
     .frame { transition: none; }
+  }
+  /* Secondary action beside the accent one: same height, a control on the panel. */
+  .action {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 34px;
+    padding: 0 12px 0 11px;
+    border: 0;
+    border-radius: var(--radius);
+    background: var(--surface-100);
+    box-shadow: var(--hairline);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background-color 120ms;
+  }
+  .action:hover {
+    background: var(--surface-100-hover);
+  }
+  .action:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  kbd {
+    margin-left: 1px;
+    font: 500 11.5px var(--font);
+    opacity: 0.55;
+  }
+  .readout {
+    padding: 0 6px 0 2px;
+    color: var(--text-dim);
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .sel.frozen {
+    cursor: default;
+  }
+  .board {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .board.pointing {
+    cursor: crosshair;
+  }
+  .board.typing {
+    cursor: text;
+  }
+  .type {
+    position: absolute;
+    min-width: 40px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    outline: 1px dashed rgb(255 255 255 / 0.7);
+    outline-offset: 3px;
+    background: none;
+    resize: none;
+    overflow: hidden;
+    field-sizing: content;
+    text-shadow: 0 0.5px 3px rgb(0 0 0 / 0.3);
+    caret-color: currentColor;
+  }
+  /* Drawing tools beside the area: a column of tools, colors, and undo. */
+  .tools {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 6px;
+    border-radius: var(--radius-lg); /* concentric: 6 px buttons inside 6 px padding */
+    background: var(--surface-50);
+    box-shadow: var(--shadow-pop);
+    cursor: default;
+  }
+  .tool {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-dim);
+    transition: background-color 120ms, color 120ms;
+  }
+  .tool:hover:not(:disabled) {
+    background: var(--surface-50-hover);
+    color: var(--text);
+  }
+  .tool.on {
+    background: var(--surface-50-selected);
+    box-shadow: var(--hairline);
+    color: var(--text);
+  }
+  .tool:disabled {
+    opacity: 0.35;
+  }
+  .tool:focus-visible,
+  .swatch:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+  .rule {
+    width: 20px;
+    height: 0.5px;
+    margin: 4px 0;
+    background: var(--edge-strong);
+  }
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(2, 16px);
+    gap: 6px;
+    padding: 3px 0;
+  }
+  .swatch {
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--c);
+    box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.25);
+  }
+  /* The dark swatch needs a lighter rim to show on the dark strip. */
+  .swatch[aria-label='Black'] {
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.4);
+  }
+  .swatch[aria-checked='true'] {
+    box-shadow:
+      inset 0 0 0 0.5px rgb(255 255 255 / 0.25),
+      0 0 0 2px var(--surface-50),
+      0 0 0 3.5px var(--text);
+  }
+  /* The pen while recording: ink everywhere, the mouse only while it is on. A dot in the ink's color
+     is the cursor, so the recorded cursor reads as the pen's tip. */
+  .ink {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  .ink.live {
+    pointer-events: auto;
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Ccircle cx='8' cy='8' r='4' fill='%23ff3b30' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E") 8 8, crosshair;
+  }
+  .pen-hint {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px 7px 10px;
+    border-radius: var(--radius-lg);
+    background: var(--surface-50);
+    box-shadow: var(--shadow-pop);
+    color: var(--text);
+    font-size: 13px;
+    pointer-events: none;
+  }
+  .pen-hint :global(svg) {
+    color: var(--record);
   }
 </style>

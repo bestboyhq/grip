@@ -1,5 +1,6 @@
 // Owner: app-shell. Window factory and routes. Every window loads the same renderer bundle with a
-// hash route: #/editor?project=<path>, #/recorder, #/widget, #/area, #/camera, #/notes, #/onboarding, #/export.
+// hash route: #/editor?project=<path>, #/recorder, #/widget, #/area, #/camera, #/notes, #/onboarding, #/export,
+// #/result.
 // Windows remember their position per display, come back on screen when a display goes away, and
 // drive the dock icon: it shows while a normal window is open, and hides during a recording.
 import { app, BrowserWindow, screen, type BrowserWindowConstructorOptions } from 'electron'
@@ -16,7 +17,7 @@ export const hidden = !!process.env.STUDIO_HIDDEN
 /** Window kind = route name. Normal windows show the dock icon; the rest float over the screen. */
 const NORMAL = new Set(['editor', 'export', 'onboarding', 'recorder', 'dev'])
 /** Kinds whose position is remembered per display. */
-const REMEMBER = new Set(['editor', 'export', 'widget', 'camera', 'notes'])
+const REMEMBER = new Set(['editor', 'export', 'widget', 'notes']) // the camera bubble goes by its corner
 const kinds = new WeakMap<BrowserWindow, string>()
 
 export const kindOf = (w: BrowserWindow) => kinds.get(w)

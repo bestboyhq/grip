@@ -1,11 +1,12 @@
-// Menu bar icon: new recording, recent projects, open, import, settings, updates, quit. While
-// recording a click finishes, and the menu (right-click) has finish, pause, delete. Dropped .grip bundles
-// open; dropped videos import as new projects.
+// Menu bar icon. A click starts a capture (the area picker: record it or copy a screenshot); while
+// recording a click finishes. Right-click opens the menu: new recording, recent projects, open,
+// import, settings, updates, quit; while recording finish, pause, draw, delete. Dropped .grip
+// bundles open; dropped videos import as new projects.
 import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { recentProjects } from '../projects.ts'
 import { updateMenuItems } from './update.ts'
-import { cancelRecording, command, importDialog, openFilesOrAlert, openOnboarding, openProject, openProjectDialog, recordingStatus, SHORTCUTS, showPicker, statusListeners } from './recorder.ts'
+import { cancelRecording, command, importDialog, openFilesOrAlert, openOnboarding, openProject, openProjectDialog, recordingStatus, SHORTCUTS, showPicker, statusListeners, toggleDrawing } from './recorder.ts'
 
 let tray: Tray | null = null // module scope: a collected Tray disappears from the menu bar
 
@@ -36,6 +37,7 @@ async function template(): Promise<MenuItemConstructorOptions[]> {
   return [
     { label: 'Finish Recording', accelerator: SHORTCUTS.record, registerAccelerator: false, click: () => command('stop') },
     { label: s === 'paused' ? 'Resume Recording' : 'Pause Recording', accelerator: SHORTCUTS.pause, registerAccelerator: false, click: () => command('toggle-pause') },
+    { label: 'Draw on Screen', accelerator: SHORTCUTS.draw, registerAccelerator: false, enabled: s === 'recording', click: () => toggleDrawing() },
     { label: 'Delete Recording…', accelerator: SHORTCUTS.cancel, registerAccelerator: false, click: cancelRecording },
     { label: 'Show Recording Controls', click: () => showPicker() },
     { type: 'separator' },
@@ -45,16 +47,16 @@ async function template(): Promise<MenuItemConstructorOptions[]> {
 
 export function createTray() {
   tray = new Tray(icon('trayTemplate.png'))
-  tray.setToolTip('Grip')
+  tray.setToolTip('Record or take a screenshot')
   const pop = async () => tray?.popUpContextMenu(Menu.buildFromTemplate(await template()))
   const running = () => ['recording', 'paused'].includes(recordingStatus())
-  // While recording the icon is a stop button: one click finishes, with no menu to land in the
-  // recording. Right-click still opens the menu.
-  tray.on('click', () => (running() ? command('stop') : pop()))
+  // One click to capture: the picker, or while recording a stop button, with no menu to land in the
+  // recording. Right-click (or ⌃-click) opens the menu.
+  tray.on('click', (e) => (e.ctrlKey ? pop() : running() ? command('stop') : showPicker()))
   tray.on('right-click', pop)
   tray.on('drop-files', (_e, files) => openFilesOrAlert(files))
   statusListeners.push((s) => {
     tray?.setImage(icon(s === 'idle' ? 'trayTemplate.png' : 'trayRecordingTemplate.png'))
-    tray?.setToolTip(s === 'idle' ? 'Grip' : 'Finish recording')
+    tray?.setToolTip(s === 'idle' ? 'Record or take a screenshot' : 'Finish recording')
   })
 }
