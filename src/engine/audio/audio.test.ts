@@ -192,7 +192,13 @@ test('the limiter holds the true-peak ceiling', async () => {
 })
 
 const rms = (a: Float32Array, s: number, e: number) => Math.sqrt(a.subarray(s, e).reduce((acc, v) => acc + v * v, 0) / (e - s))
-const gainOf = async (url: string) => voiceGain(await loudness(await openAudio(new BlobSource(files.get(url)!), url)))
+const gainOf = async (url: string) => voiceGain(await loudness(await openAudio(new BlobSource(files.get(url)!), url), await env.rnnoise()))
+/** A harmonic "voice" at 160 Hz, peak about 3: RNNoise hears it as speech. */
+function voiced(i: number) {
+  let v = 0
+  for (let h = 1; h < 12; h++) v += Math.sin((2 * Math.PI * 160 * h * i) / SR) / h
+  return v
+}
 
 test('voice chain: RNNoise removes noise in pauses, keeps timing, applies loudness gain', async () => {
   // A harmonic "voice" from 1.0 s to 2.0 s over fan rumble and mains hum.
@@ -201,9 +207,7 @@ test('voice chain: RNNoise removes noise in pauses, keeps timing, applies loudne
   const x = Float32Array.from({ length: 3 * SR }, (_, i) => {
     seed = (seed * 1103515245 + 12345) % 2147483648
     lp += 0.2 * (seed / 1073741824 - 1 - lp)
-    let v = 0
-    for (let h = 1; h < 12; h++) v += Math.sin((2 * Math.PI * 160 * h * i) / SR) / h
-    return (i >= SR && i < 2 * SR ? 0.15 * v : 0) + 0.03 * lp + 0.005 * Math.sin((2 * Math.PI * 60 * i) / SR)
+    return (i >= SR && i < 2 * SR ? 0.15 * voiced(i) : 0) + 0.03 * lp + 0.005 * Math.sin((2 * Math.PI * 60 * i) / SR)
   })
   files.set('voice', wav([x]))
   const dry = (await render(plan([clip(0, 3)], [{ url: 'voice', label: 'voice.wav', volume: 1 }])))[0]
@@ -218,11 +222,7 @@ test('voice chain: RNNoise removes noise in pauses, keeps timing, applies loudne
 
 test('a quiet voice plays normalized from the first chunk a fresh mixer renders, the same in preview and export', async () => {
   // 20 s of "speech" at about -38 LUFS: a harmonic voice in 1.5 s phrases.
-  const x = Float32Array.from({ length: 20 * SR }, (_, i) => {
-    let v = 0
-    for (let h = 1; h < 12; h++) v += Math.sin((2 * Math.PI * 160 * h * i) / SR) / h
-    return (i / SR) % 2 < 1.5 ? 0.012 * v : 0
-  })
+  const x = Float32Array.from({ length: 20 * SR }, (_, i) => ((i / SR) % 2 < 1.5 ? 0.012 * voiced(i) : 0))
   files.set('quiet', wav([x]))
   const p = plan([clip(0, 20)], [{ url: 'quiet', label: 'quiet.wav', volume: 1, voice: true }])
   const g = await gainOf('quiet')
@@ -238,18 +238,33 @@ test('a quiet voice plays normalized from the first chunk a fresh mixer renders,
 })
 
 test('voice loudness: a short file is measured whole, a long one from evenly spread windows', async () => {
-  // A 997 Hz tone whose level changes every 5 s within 6 dB, silent for about a fifth of the time.
-  const level = (k: number) => {
-    const u = Math.abs((Math.sin(k * 12.9898 + 1) * 43758.5453) % 1)
-    return u < 0.2 ? 0 : 0.1 * 10 ** (((u - 0.2) * 7.5 - 3) / 20)
-  }
-  const x = Float32Array.from({ length: 100 * SR }, (_, i) => level(Math.floor(i / SR / 5)) * Math.sin((2 * Math.PI * 997 * i) / SR))
+  // A voice whose level changes every 5 s within 6 dB. No pauses: every window is speech, so the
+  // speech gate keeps them all and an ungated meter is the reference.
+  const level = (k: number) => 0.03 * 10 ** ((Math.abs((Math.sin(k * 12.9898 + 1) * 43758.5453) % 1) * 6 - 3) / 20)
+  const x = Float32Array.from({ length: 100 * SR }, (_, i) => level(Math.floor(i / SR / 5)) * voiced(i))
   const whole = new LoudnessMeter()
   whole.push([x, x]) // a mono source is heard on both channels
   const f = await openAudio(new BlobSource(wav([x])), 'speech.wav')
-  near((await loudness(f))!, whole.integrated()!, 0.01, 'up to 64 windows: every block, as one meter over the whole file')
-  near((await loudness(f, 10))!, whole.integrated()!, 0.3, 'more: windows spread evenly estimate the whole-file loudness')
-  assert.equal(await loudness(await openAudio(new BlobSource(wav([new Float32Array(SR)])), 'silence.wav')), null)
+  const rnnoise = await env.rnnoise()
+  near((await loudness(f, rnnoise))!, whole.integrated()!, 0.01, 'up to 64 windows: every block, as one meter over the whole file')
+  near((await loudness(f, rnnoise, 10))!, whole.integrated()!, 0.3, 'more: windows spread evenly estimate the whole-file loudness')
+  assert.equal(await loudness(await openAudio(new BlobSource(wav([new Float32Array(SR)])), 'silence.wav'), rnnoise), null)
+})
+
+test('voice loudness counts speech only: a mic that caught room tone and trackpad clicks gets no gain', async () => {
+  // Room tone near -60 dBFS and a trackpad click (a 30 ms burst peaking near -40 dBFS) every 1.5 s.
+  let seed = 3
+  const noise = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 1073741824 - 1
+  const room = Float32Array.from({ length: 20 * SR }, (_, i) => {
+    const k = i % (1.5 * SR)
+    return 0.001 * noise() + (k < 0.03 * SR ? 0.01 * noise() * Math.exp(-k / (0.005 * SR)) : 0)
+  })
+  const rnnoise = await env.rnnoise()
+  const open = (x: Float32Array, label: string) => openAudio(new BlobSource(wav([x])), label)
+  assert.equal(await loudness(await open(room, 'room.wav'), rnnoise), null, 'no speech, no loudness: the voice gain stays 1')
+  // Speech over the same room: measured as the speech alone.
+  const voice = Float32Array.from(room, (_, i) => ((i / SR) % 4 < 2 ? 0.01 * voiced(i) : 0))
+  near((await loudness(await open(room.map((v, i) => v + voice[i]), 'talk.wav'), rnnoise))!, (await loudness(await open(voice, 'voice.wav'), rnnoise))!, 0.5, 'speech over clicks')
 })
 
 test('music made to loop plays straight through its seams', async () => {
