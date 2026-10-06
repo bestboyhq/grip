@@ -255,8 +255,14 @@
         assert(pk.length === 2000, 'peaks shape')
         const zoomed = await peaks(mic, 2, 2.1, 1000) // finer than the cache: decoded on the spot
         assert(zoomed.length === 2000, 'zoomed peaks shape')
-        const cached = await fetch(fileUrl(`${fixture}/cache/sources_mic.m4a.${(await fetch(mic, { method: 'HEAD' })).headers.get('content-length')}.analysis`), { method: 'HEAD' })
-        assert(cached.ok, 'analysis cache file in the bundle')
+        // The analysis is written to the bundle in the background once it is done: give a slow disk 5 s.
+        const cache = fileUrl(`${fixture}/cache/sources_mic.m4a.${(await fetch(mic, { method: 'HEAD' })).headers.get('content-length')}.analysis`)
+        let cached = false
+        for (let i = 0; i < 50; i++) {
+          if ((cached = (await fetch(cache, { method: 'HEAD' })).ok)) break
+          await new Promise((r) => setTimeout(r, 100))
+        }
+        assert(cached, 'analysis cache file in the bundle')
         return `24 s rendered in ${ms.toFixed(0)} ms (${((24000 / ms) | 0)}x realtime), peak ${peak.toFixed(3)}, cache written`
       })
       await check('preview and export mix are bit-identical through 200 cuts and speed changes', async () => {

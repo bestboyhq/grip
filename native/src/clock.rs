@@ -72,7 +72,9 @@ impl SessionClock {
 /// The clock of the current recording session, shared by every capture module.
 pub static SESSION: SessionClock = SessionClock::new();
 
-/// Tests that start or stop SESSION run one at a time, whatever module they are in.
+/// Tests that start or stop SESSION, or encode video, run one at a time, whatever module they are in.
+/// CI's macOS VMs fail every encoder at once ("The operation could not be completed") when several
+/// tests encode side by side; one Mac recording screen and camera encodes two streams, not five.
 #[cfg(test)]
 pub fn serial() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

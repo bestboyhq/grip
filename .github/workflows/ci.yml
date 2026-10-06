@@ -56,10 +56,13 @@ jobs:
           path: ~/Library/Caches/electron
           key: electron-${{ hashFiles('node_modules/electron/package.json') }}
       # The synthetic recording takes a minute to render: regenerated only when its generator changes.
+      # Saved without the bundle's cache/ (waveforms the tests write), so every run tests writing it.
       - id: fixture
         uses: actions/cache@v4
         with:
-          path: .context/fixtures
+          path: |
+            .context/fixtures
+            !.context/fixtures/*.grip/cache
           key: fixture-${{ steps.image.outputs.id }}-${{ hashFiles('scripts/fixture/**', 'src/shared/project.ts', 'src/shared/events.ts') }}
       - if: steps.fixture.outputs.cache-hit != 'true'
         run: npx electron scripts/fixture/make.ts
