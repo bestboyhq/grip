@@ -1,6 +1,6 @@
 <!-- Recording toolbar, bottom center of the active display: close, Display / Window / Area / Device,
      camera, microphone with a live level, system audio, settings. A downloaded update veils it until
-     the user restarts or puts it off (Later, Esc) for that version.
+     the user restarts or puts it off (Later, Esc) for a day.
      It is also the session controller (electron/shell/recorder.ts): it runs the shell's commands
      against the capture engine and reports the engine's errors and warnings to the shell. -->
 <script lang="ts">
@@ -38,8 +38,6 @@
   let lists = $state<{ cameras: Device[]; mics: Device[]; devices: Device[] }>({ cameras: [], mics: [], devices: [] })
   let level = $state(0)
   let countdown = $state<{ n: number; name: string } | null>(null)
-  let later = $state('') // the update version put off: the toolbar is back until a newer one
-  const update = $derived(shell.update !== later ? shell.update : '')
 
   const s = $derived(shell.settings)
   const camera = $derived(lists.cameras.find((c) => c.id === s?.camera))
@@ -176,14 +174,14 @@
   onkeydown={(e) => {
     if (e.key !== 'Escape') return
     if (countdown) countdown = null
-    else if (update) later = update
+    else if (shell.update) invoke('update:later')
     else invoke('shell:close-picker')
   }}
   ondragover={(e) => e.preventDefault()}
   ondrop={(e) => dropFiles(e).catch((err: Error) => invoke('shell:warn', err.message))}
 />
 
-<main class="bar hud" inert={!!update}>
+<main class="bar hud" inert={!!shell.update}>
   {#if countdown}
     <div class="countdown" role="status">
       <span class="n">{countdown.n}</span>
@@ -226,10 +224,10 @@
     </button>
   {/if}
 </main>
-{#if update}
+{#if shell.update}
   <div class="update hud" role="status" transition:fade={{ duration: 150 }}>
-    <span class="note">Grip {update} is ready to install.</span>
-    <button class="action" onclick={() => (later = update)}>Later</button>
+    <span class="note">Grip {shell.update} is ready to install.</span>
+    <button class="action" onclick={() => invoke('update:later')}>Later</button>
     <button class="action primary" onclick={() => invoke('update:restart')}>Restart to Update</button>
   </div>
 {/if}
