@@ -184,6 +184,8 @@ jobs:
       - run: npm ci
       - *keychain
       - run: node scripts/update-e2e.ts
+        env:
+          CSC_FOR_PULL_REQUEST: true # electron-builder skips signing in PRs, and Squirrel installs only signed updates
 
   # Ships the merge as an in-app update: users get it on their next update check.
   publish:
