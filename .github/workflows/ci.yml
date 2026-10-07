@@ -98,9 +98,10 @@ jobs:
           path: native/.tested
           key: ${{ steps.tested.outputs.cache-primary-key }}
 
+  # A merge that calls for a release builds it beside the tests, and `publish` ships it once they pass.
+
   # The version the merged commits call for; empty when none of them is a feat, fix, perf, or breaking change.
   version:
-    needs: [check, test, rust]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
@@ -115,13 +116,11 @@ jobs:
       - id: next
         run: echo "version=$(node scripts/version.ts)" >> "$GITHUB_OUTPUT"
 
-  # Ships the merge as an in-app update: users get it on their next update check.
+  # The signed, notarized DMG and update zip.
   release:
     needs: version
     if: needs.version.outputs.next != ''
     runs-on: macos-26
-    permissions:
-      contents: write
     env:
       V: ${{ needs.version.outputs.next }}
     steps:
@@ -135,7 +134,8 @@ jobs:
           workspaces: native
           key: macos-26 # build scripts cache Xcode paths: a new runner image needs a new cache
       - run: npm ci
-      - name: Import the Developer ID certificate
+      - &keychain
+        name: Import the Developer ID certificate
         run: |
           kc="$RUNNER_TEMP/signing.keychain-db" pw=$(openssl rand -base64 24)
           security create-keychain -p "$pw" "$kc"
@@ -145,7 +145,7 @@ jobs:
           security import "$RUNNER_TEMP/cert.p12" -P "$CSC_KEY_PASSWORD" -A -t cert -f pkcs12 -k "$kc"
           rm "$RUNNER_TEMP/cert.p12"
           security set-key-partition-list -S apple-tool:,apple: -k "$pw" "$kc" > /dev/null
-          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          security list-keychains -d user | xargs security list-keychains -d user -s "$kc"
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -157,7 +157,48 @@ jobs:
       - run: npm run package
         env:
           APPLE_KEYCHAIN_PROFILE: grip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: |
+            release/Grip-${{ env.V }}-arm64*
+            release/latest-mac.yml
+          compression-level: 0 # the dmg and zip are compressed already
+          retention-days: 1
+          if-no-files-found: error
+
+  # Proves a signed build still updates itself.
+  update-e2e:
+    needs: version
+    if: needs.version.outputs.next != ''
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          key: macos-26 # build scripts cache Xcode paths: a new runner image needs a new cache
+      - run: npm ci
+      - *keychain
       - run: node scripts/update-e2e.ts
-      - run: gh release create "v$V" --generate-notes --target "$GITHUB_SHA" release/Grip-$V-arm64* release/latest-mac.yml
+
+  # Ships the merge as an in-app update: users get it on their next update check.
+  publish:
+    needs: [check, test, rust, version, release, update-e2e]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: release
+      - run: gh release create "v$V" --generate-notes --target "$GITHUB_SHA" release/*
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          V: ${{ needs.version.outputs.next }}
