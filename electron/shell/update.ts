@@ -3,7 +3,7 @@
 // Squirrel.Mac checks its Developer ID signature and stages it, and it installs when Grip quits.
 // "Restart to Update" quits through the normal path (recording, export, and unsaved-edit prompts,
 // where Cancel still cancels), then relaunches into the new version. A downloaded update also shows
-// on the recording toolbar (shell:state `update`, electron/shell/recorder.ts) and as a dot on the menu
+// on the recording toolbar (shell:state `update`, electron/shell/recorder.ts) and as a blue dot on the menu
 // bar icon (electron/shell/tray.ts).
 // A menu bar app is rarely quit, so a waiting update also installs while the user is away (screen
 // locked, or no input for a while), when that loses and hides nothing: no recording or export, and no
