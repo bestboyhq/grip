@@ -59,9 +59,6 @@ export interface ExportRequest {
   options: ExportOptions
   dest: Destination
   path?: string // absolute output path for 'file'; asked with a save dialog when absent
-  /** The recording as it was on screen: no background, padding, corners, shadow, or device frame
-   *  (the result card's quick shares). */
-  plain?: boolean
 }
 
 export type JobState = 'queued' | 'running' | 'uploading' | 'done' | 'failed' | 'canceled'

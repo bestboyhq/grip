@@ -44,6 +44,7 @@ const BRIDGE = 1 // s: a shorter gap between zooms pans across instead of zoomin
 const DEAD_ZONE = 0.5 // the cursor roams this fraction of the half view before the camera pans
 const FOCUS_ZONE = 0.4 // clicked elements and typing stay this close to the center, so they show whole
 const EDGE_ZONE = 0.85 // the cursor never gets closer to the frame edge than this
+const WALL_ZONE = 0.95 // ...and when a fast flick outruns the trailing spring, never past this
 const CAMERA_CLEAR = 28 // screen points x cursor size (about a cursor's height, magnified with it by the
 // zoom) the cursor and clicked elements keep from a picture-in-picture camera
 const LEAD = 0.6 // s: auto zooms start this long before a click or typing (the focused spring is ~98% there)
@@ -289,8 +290,9 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
     const s = Math.max(b0, zoom ? zoom.level : 1)
 
     let c: Pt = { x: vp.x + vp.w / 2, y: vp.y + vp.h / 2 }
-    if (zoom?.target.kind === 'point') c = aim = { x: r.x + zoom.target.x * r.w, y: r.y + zoom.target.y * r.h }
-    else if (zoom || s > 1) {
+    const follow = zoom?.target.kind !== 'point' && (!!zoom || s > 1)
+    if (zoom?.target.kind === 'point') c = aim = { x: r.x + zoom!.target.x * r.w, y: r.y + zoom!.target.y * r.h }
+    else if (follow) {
       // Follow: the cursor roams a dead zone, focus places stay central, both stay out from under a
       // picture-in-picture camera, and the cursor stays in frame above all.
       // Everything is read lag ahead so the trailing spring lands on time.
@@ -324,6 +326,13 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
       // First frame, or an instant zoom cutting in or out: jump, no animation.
       if (k > 0) jumps.set(k - 1, zoom ? span!.a : prev!.b)
       for (let i = 0; i < 3; i++) (pos[i] = target[i]), (vel[i] = 0)
+    }
+    const now = follow ? cursorPt(t, r) : null
+    if (now) {
+      const v = Math.exp(pos[2])
+      const w = clampCenter(keep({ x: pos[0], y: pos[1] }, now, (WALL_ZONE * vp.w) / (2 * v), (WALL_ZONE * vp.h) / (2 * v)), bounds, v, vp)
+      pos[0] = w.x
+      pos[1] = w.y
     }
     for (let i = 0; i < 3; i++) {
       data[3 * k + i] = pos[i]

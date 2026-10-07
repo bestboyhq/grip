@@ -190,12 +190,13 @@ export interface Project {
 
 export const defaultStyle = (): Style => ({
   aspect: 'auto',
-  background: { kind: 'wallpaper', id: 'dusk' },
+  // Plain: the recording edge to edge. A background, padding, corners, and shadow are the user's call.
+  background: { kind: 'color', color: '#000000' },
   backgroundBlur: 0,
-  padding: 80,
-  radius: 14,
+  padding: 0,
+  radius: 0,
   inset: 0,
-  shadow: 0.6,
+  shadow: 0,
   device: 'none',
   screenAnimation: 'focused',
   motionBlur: 1,

@@ -40,7 +40,7 @@ test('inset: the recording keeps its aspect inside a frame grown by the inset, w
     assert.ok(b.x >= box.x - 1e-6 && b.y >= box.y - 1e-6 && b.x + b.w <= box.x + box.w + 1e-6 && b.y + b.h <= box.y + box.h + 1e-6, device)
     assert.ok(Math.max(b.w - box.w, b.h - box.h) > -1e-3, `${device}: as large as fits`)
   }
-  const l = at(project((p) => Object.assign(p.style, { inset: 30, radius: 40 })), 1)
+  const l = at(project((p) => Object.assign(p.style, { padding: 80, inset: 30, radius: 40 })), 1)
   assert.equal(l.screen!.inset, 30)
   assert.ok(Math.abs(l.screen!.rect.y - 30 - 80) < 1e-6, 'frame touches the padding')
   assert.equal(l.screen!.radius, 40)

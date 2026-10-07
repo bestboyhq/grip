@@ -2,12 +2,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { WALLPAPERS, DEFAULT_WALLPAPER, wallpaper, parseColor, oklab } from './index.ts'
-import { defaultStyle } from '../../shared/project.ts'
 
 test('wallpapers: unique ids, valid styles and palettes, the default exists, unknown ids fall back', () => {
   assert.equal(new Set(WALLPAPERS.map((w) => w.id)).size, WALLPAPERS.length)
-  const style = defaultStyle().background
-  assert.ok(style.kind === 'wallpaper' && style.id === DEFAULT_WALLPAPER && wallpaper(DEFAULT_WALLPAPER).id === 'dusk')
+  assert.equal(wallpaper(DEFAULT_WALLPAPER).id, 'dusk')
   assert.equal(wallpaper('from-the-future').id, DEFAULT_WALLPAPER)
   for (const w of WALLPAPERS) {
     assert.ok(existsSync(new URL(`../gpu/wallpapers/${w.style}.wgsl`, import.meta.url)), `${w.id}: no style ${w.style}`)

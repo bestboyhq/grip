@@ -1,7 +1,7 @@
 <!-- The card after a recording or a screenshot, bottom right of the display (#/result?bundle=<path>
      or ?shot=<path>[&saved], electron/shell/recorder.ts showResult). A recording copies as an MP4
      that fits under 20 MB or a GIF under 10 MB, ready to paste anywhere, or shares as a link, each
-     plain, as it was on screen (no background or rounded frame); or it opens in the editor to style.
+     styled like the project (plain by default, as it was on screen); or it opens in the editor.
      Exports keep running if the card closes. A screenshot is already on the clipboard (or on the
      Desktop) and the card leaves by itself. Drag the picture into another app to drop the file. -->
 <script lang="ts">
@@ -68,7 +68,7 @@
   async function run(dest: 'clipboard' | 'share', options: ExportOptions) {
     if (active) return
     try {
-      const [j]: JobInfo[] = await invoke('export:enqueue', [{ bundle, options, dest, plain: true }])
+      const [j]: JobInfo[] = await invoke('export:enqueue', [{ bundle, options, dest }])
       job = seen.get(j.id) ?? j
     } catch (e) {
       job = { state: 'failed', error: (e as Error).message } as JobInfo
