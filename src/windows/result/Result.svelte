@@ -1,9 +1,10 @@
 <!-- The card after a recording or a screenshot, bottom right of the display (#/result?bundle=<path>
-     or ?shot=<path>[&saved], electron/shell/recorder.ts showResult). A recording copies as an MP4
-     that fits under 20 MB or a GIF under 10 MB, ready to paste anywhere, or shares as a link, each
-     styled like the project (plain by default, as it was on screen); or it opens in the editor.
-     Exports keep running if the card closes. A screenshot is already on the clipboard (or on the
-     Desktop) and the card leaves by itself. Drag the picture into another app to drop the file. -->
+     or ?shot=<path>[&saved][&reopened], electron/shell/recorder.ts showResult), and again from
+     Recent Captures (reopened: nothing copied or saved yet). A recording copies as an MP4 that fits
+     under 20 MB or a GIF under 10 MB, ready to paste anywhere, or shares as a link, each styled like
+     the project (plain by default, as it was on screen); or it opens in the editor. Exports keep
+     running if the card closes. A new screenshot is already on the clipboard (or on the Desktop) and
+     the card leaves by itself. Drag the picture into another app to drop the file. -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
   import { invoke, on } from '../../lib/ipc.ts'
@@ -16,7 +17,9 @@
   const query = untrack(() => params) // a window's route never changes
   const bundle = query.get('bundle') ?? ''
   let shot = $state(query.get('shot') ?? '')
-  let saved = $state(query.has('saved'))
+  let saved = $state(query.has('saved')) // the file is on the Desktop
+  /** What the card did, checked next to the title: a new screenshot is copied or saved already. */
+  let did = $state<'copied' | 'saved' | ''>(query.has('reopened') ? '' : query.has('saved') ? 'saved' : 'copied')
 
   // One tuned preset per button. Copy: an MP4 that pastes into Slack, Discord, WhatsApp, or Mail.
   // GIF: under GitHub's 10 MB, for READMEs and issues.
@@ -58,9 +61,9 @@
     }
   })
 
-  // A screenshot's card leaves after a few seconds, unless the pointer rests on it.
+  // A screenshot's card leaves a few seconds after it copied or saved, unless the pointer rests on it.
   $effect(() => {
-    if (!shot || hovered) return
+    if (!shot || !did || hovered) return
     const t = setTimeout(close, 6000)
     return () => clearTimeout(t)
   })
@@ -82,12 +85,13 @@
 
   async function copyShot() {
     await invoke('shell:shot-copy', shot)
-    saved = false
+    did = 'copied'
   }
 
   async function saveShot() {
     shot = (await invoke('shell:shot-save', shot)) ?? shot
     saved = true
+    did = 'saved'
   }
 
   /** Dragging the picture drops its file: the screenshot, or the last copied export. */
@@ -139,7 +143,7 @@
   <div class="title">
     <span>{shot ? 'Screenshot' : 'Recording'}</span>
     {#if shot}
-      <span class="meta ok"><Icon name="check" size={14} />{saved ? 'Saved to Desktop' : 'Copied to clipboard'}</span>
+      {#if did}<span class="meta ok"><Icon name="check" size={14} />{did === 'saved' ? 'Saved to Desktop' : 'Copied to clipboard'}</span>{/if}
     {:else if duration}
       <span class="meta">{formatTime(duration)}</span>
     {/if}
@@ -147,8 +151,10 @@
 
   {#if shot}
     <div class="actions">
-      {#if saved}
+      {#if did !== 'copied'}
         <button class="btn" onclick={copyShot}><Icon name="copy" size={16} />Copy</button>
+      {/if}
+      {#if saved}
         <button class="btn" onclick={() => invoke('shell:reveal', shot)}><Icon name="folder" size={16} />Show in Finder</button>
       {:else}
         <button class="btn" onclick={saveShot}><Icon name="download" size={16} />Save to Desktop</button>

@@ -827,6 +827,21 @@ pub async fn capture_screenshot(display_id: u32, rect: Rect) -> napi::Result<nap
     blocking(move || sck::screenshot(display_id, rect)).await.map(Into::into)
 }
 
+/// A whole display as the screenshot sees it, in raw pixels: `data` is RGBA, Display P3.
+#[napi(object)]
+pub struct Still {
+    pub width: u32,
+    pub height: u32,
+    pub data: napi::bindgen_prelude::Buffer,
+}
+
+/// The display frozen for the picker: the screenshot without its PNG round trip.
+#[napi]
+pub async fn capture_still(display_id: u32) -> napi::Result<Still> {
+    let (width, height, data) = blocking(move || sck::still(display_id)).await?;
+    Ok(Still { width, height, data: data.into() })
+}
+
 /// A point of a pen stroke drawn over the screen while recording, in global points: a stroke is
 /// "start" (with its #rrggbb color and width in points), "move"s, and "end". It goes into the input
 /// event stream on the session clock. False when nothing records it (no recording, or paused).

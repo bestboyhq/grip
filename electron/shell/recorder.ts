@@ -14,7 +14,8 @@
 //   shell:command(cmd)            widget -> controller: stop, pause, resume, toggle-pause, cancel, restart
 //   shell:warn(message)           an engine warning (disk low, a device lost), shown as a notification
 //   shell:pick(mode | null)       enter or leave a picking mode (opens overlays per display)
-//   shell:still(displayId) -> PNG | null   overlay: its display frozen as it was when the picker opened (taken once)
+//   shell:still(displayId) -> Still | null   overlay: its display frozen as it was when the picker opened (raw
+//                                 RGBA); a loaded overlay asks ahead and gets it when a pick opens
 //   shell:ready                   overlay: painted (its still too), show it
 //   shell:close-picker            hide toolbar, overlays, and the idle camera bubble
 //   shell:countdown(on)           a countdown runs (Esc cancels it: "shell:escape")
@@ -26,11 +27,13 @@
 //   shell:reveal(path)            the result card: show its file in Finder
 //   shell:shot-copy(path)         the result card: a screenshot onto the clipboard again
 //   shell:shot-save(path) -> path the result card: a screenshot into a file on the Desktop
+//   shell:captures -> [{ id, label, icon }]   Recent Captures as menu items (id: the path; icon: PNG at 2x)
+//   shell:reopen(path)            a recent capture's result card again (the picker closes first)
 //   shell:fail(error, title?)     a recording (or screenshot) call failed: plain-language message or permission fix
 //   shell:shortcut(keys | null) -> ok   Settings: the record shortcut becomes `keys` (an accelerator), false if
 //                                 macOS won't give it to Grip; null pauses it while the user types a new one
 //   shell:display(id)             display geometry for an overlay, and where the toolbar sits on it
-//   shell:popup(items, x, y)      native menu at (x, y) in the sender window -> picked id | null
+//   shell:popup(items, x, y)      native menu at (x, y) in the sender window -> picked id | null (icon: PNG at 2x)
 //   shell:open-project(path?)     open a bundle in the editor (no path: Open dialog)
 //   shell:open-files(paths)       dropped files: bundles open, videos import first; rejects with a reason
 //   shell:open-settings           the settings window (onboarding route, settings page)
@@ -41,23 +44,25 @@
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, shell, type BrowserWindowConstructorOptions, type MenuItemConstructorOptions, type Rectangle } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { basename, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { importVideo, recoveredAtLaunch } from '../projects.ts'
 import { capture, recordingEvents, recordingName } from '../recording.ts'
+import { native } from '../native.ts'
 import { DRAW_FADE, DRAW_HOLD } from '../../src/engine/overlays/drawings.ts'
 import type { CameraPosition } from '../../src/shared/project.ts'
-import { activeDisplay, hidden, openWindow, reveal, sendAll, setRecordingDock, windowsOf } from '../windows.ts'
+import { activeDisplay, hidden, openWindow, reveal, sendAll, setRecordingDock, updateDock, windowsOf } from '../windows.ts'
 import { arrangement, place } from './bounds.ts'
 import { withScale } from './png.ts'
 import { plainError, type Permission } from './errors.ts'
 import { editorCloser, type Choice } from './closing.ts'
 import { hold, release, type Held } from './session.ts'
 import { setSettings, settings, settingsListeners } from './settings.ts'
+import { addCapture, captureRows, captures, moveCapture, shotsDir } from './captures.ts'
 import { toolbarUpdate, updateListeners } from './update.ts'
 import { setAppMenu } from './menu.ts'
 import { symbols } from '../../src/shared/shortcut.ts'
 import type { Mode } from './url.ts'
-import type { Rect, StartOptions } from '../../native/index.d.ts'
+import type { Rect, StartOptions, Still } from '../../native/index.d.ts'
 
 export type Status = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping'
 export type Command = 'start' | 'stop' | 'pause' | 'resume' | 'toggle-pause' | 'cancel' | 'restart'
@@ -165,6 +170,7 @@ function controller(): BrowserWindow {
     webPreferences: { backgroundThrottling: false },
   })
   protect(win, 2)
+  native.disableWindowAnimation(win.getNativeWindowHandle()) // shows at once, with the frozen screen
   loaded = new Promise<void>((r) => win.webContents.once('did-finish-load', () => r()))
   win.on('close', (e) => {
     if (quitting) return
@@ -190,9 +196,9 @@ export function showPicker(m: Mode = 'area') {
   const win = controller()
   win.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))
   picking = true
-  // New overlays bring the toolbar with the frozen screen (showOverlay). Otherwise it shows now, before
-  // pick() gives the keyboard back to the area overlay.
-  if (m === 'device' || windowsOf('area').length) reveal(win)
+  // Overlays bring the toolbar with the frozen screen (showOverlay). Ones on screen already: it shows
+  // now, before pick() gives the keyboard back to the area overlay.
+  if (m === 'device' || windowsOf('area').some((w) => w.isVisible())) reveal(win)
   pick(m)
   updateHelpers()
 }
@@ -220,8 +226,11 @@ export async function command(cmd: Command, opts?: unknown) {
   win.webContents.send('shell:do', cmd, opts)
 }
 
-/** Load the controller ahead of first use (tray menu, shortcuts). */
-export const warmUp = () => void controller()
+/** Load the controller and the overlays ahead of first use (tray menu, shortcuts). */
+export function warmUp() {
+  controller()
+  loadOverlays()
+}
 
 /** Ask, then delete the recording in progress. The shortcut held down or pressed again while the
  *  question is open asks once. */
@@ -254,6 +263,11 @@ export function stopAndWait(): Promise<string | null> {
 }
 
 // ---- Overlays: one per display, for display, window, and area picking and the countdown ----
+// They load ahead, hidden, so a pick only captures the stills and hands them over. Used ones go with
+// their state (a drawn screenshot, a countdown), and fresh ones load for the next pick.
+
+/** The overlays are in use: picking, or the backdrop of a recording. */
+let overlaysOpen = false
 
 function pick(m: Mode | null) {
   mode = m
@@ -261,9 +275,8 @@ function pick(m: Mode | null) {
   // While recording: the backdrop around an area, the pen, and strokes still fading out.
   const backdrop = status !== 'idle' && (!!area || drawing || Date.now() < inkUntil)
   if (!overlays && !backdrop) {
-    for (const w of windowsOf('area')) w.destroy()
-    stills.clear()
-  } else if (!windowsOf('area').length) openOverlays()
+    if (overlaysOpen) closeOverlays()
+  } else if (!overlaysOpen) openOverlays()
   else if (m === 'area') {
     // Switched to area mode: the overlay under the mouse takes the keyboard (showOverlay does it for new ones).
     const here = windowsOf('area').find((w) => screen.getDisplayMatching(w.getBounds()).id === activeDisplay().id)
@@ -282,15 +295,41 @@ function pick(m: Mode | null) {
 const displays = () => arrangement(screen.getAllDisplays())
 let covered = ''
 
-/** Each display as it was when its overlay opened to pick (PNG, null if the capture failed), until
- *  the overlay takes it (shell:still): the overlays show it frozen, and screenshots are cut from it. */
-const stills = new Map<number, Promise<Uint8Array | null>>()
+/** Each display as it was when the overlays opened to pick (null while recording, or if the capture
+ *  failed), for its overlay, which asks ahead (shell:still): the overlays show it frozen, and
+ *  screenshots are cut from it. */
+const stills = new Map<number, PromiseWithResolvers<Still | null>>()
+const stillOf = (id: number) => stills.get(id) ?? stills.set(id, Promise.withResolvers()).get(id)!
+/** Every display is frozen. Nothing of ours shows before: the capture leaves out only what is on screen. */
+let frozen: Promise<unknown> = Promise.resolve()
 
 function openOverlays() {
-  const all = screen.getAllDisplays()
+  overlaysOpen = true
+  const idle = status === 'idle'
   // Picking: freeze every display now, before anything of ours shows (a menu or a hover stays open).
-  if (status === 'idle') for (const d of all) stills.set(d.id, capture.screenshot(d.id, { x: 0, y: 0, w: d.bounds.width, h: d.bounds.height }).catch(() => null))
-  for (const d of all) {
+  frozen = Promise.all(
+    screen.getAllDisplays().map(async (d) => {
+      const { resolve } = stillOf(d.id) // this pick's: a capture done after it closed goes nowhere
+      resolve(idle ? await capture.still(d.id).catch(() => null) : null)
+    }),
+  )
+  if (windowsOf('area').some((w) => w.webContents.isCrashed())) for (const w of windowsOf('area')) w.destroy() // gone while waiting
+  if (!windowsOf('area').length) loadOverlays()
+  // Each shows once it has painted its still (shell:ready); one that never does can't hold the picker back.
+  for (const w of windowsOf('area')) setTimeout(() => showOverlay(w), 2000)
+}
+
+/** The overlays go with their stills; fresh ones load for the next pick. */
+function closeOverlays() {
+  overlaysOpen = false
+  for (const w of windowsOf('area')) w.destroy()
+  stills.clear()
+  loadOverlays()
+}
+
+/** One overlay per display, hidden until a pick hands it its still. */
+function loadOverlays() {
+  for (const d of screen.getAllDisplays()) {
     const w = openWindow(`area?display=${d.id}`, {
       ...floating,
       ...d.bounds,
@@ -302,8 +341,7 @@ function openOverlays() {
     })
     protect(w, 0)
     w.setBounds(d.bounds) // over the menu bar too
-    // It shows once it has painted its still (shell:ready); one that never does can't hold the picker back.
-    setTimeout(() => showOverlay(w), 2000)
+    native.disableWindowAnimation(w.getNativeWindowHandle()) // the frozen screen shows at once, without a zoom
   }
 }
 
@@ -315,8 +353,15 @@ function showOverlay(w: BrowserWindow) {
   reveal(w, mode === 'area' && screen.getDisplayMatching(w.getBounds()).id === activeDisplay().id)
 }
 
+/** Esc is a global shortcut while picking, counting down, or drawing, but not while one of our menus is
+ *  open (shell:popup): then Esc closes the menu, and the next press the picker. As a shortcut it never
+ *  reaches the menu, and macOS holds its presses until the menu closes; the first then unregisters Esc
+ *  (closePicker), and the next one, for a shortcut Electron no longer has, aborts the app. */
+let escWanted = false
+let menus = 0
 function escape(on: boolean) {
-  if (!on) return globalShortcut.unregister('Escape')
+  escWanted = on
+  if (!on || menus) return globalShortcut.unregister('Escape')
   if (globalShortcut.isRegistered('Escape')) return
   shortcut('Escape', () => {
     if (drawing) return setDrawing(false)
@@ -384,7 +429,7 @@ function updateBubble() {
   }
   const w = openWindow('camera', { ...floating, ...(placed = b), transparent: true, hasShadow: false, movable: true })
   protect(w, 1)
-  w.once('ready-to-show', () => reveal(w, false))
+  w.once('ready-to-show', () => frozen.then(() => w.isDestroyed() || reveal(w, false)))
   // Dropped after a drag: it snaps to the nearest corner, which the next recording keeps.
   w.on('moved', () => {
     const r = w.getBounds()
@@ -439,8 +484,9 @@ function showResult(query: string) {
   setTimeout(() => w.isDestroyed() || w.isVisible() || reveal(w, false), 1500)
 }
 
-/** Screenshot files Grip wrote (temp and Desktop). The result card may copy, save, reveal, or drag
- *  these, and exports in Grip's temp folder. */
+/** Screenshot files Grip wrote (its Screenshots folder and the Desktop), this session or listed in
+ *  Recent Captures. The result card may copy, save, reveal, or drag these, and exports in Grip's
+ *  temp folder. */
 const shots = new Set<string>()
 const ours = (path: unknown): path is string =>
   typeof path === 'string' && isAbsolute(path) && existsSync(path) && (shots.has(path) || resolve(path).startsWith(join(app.getPath('temp'), 'Grip ')))
@@ -459,10 +505,22 @@ const copyImage = (png: Uint8Array) => clipboard.write([new ClipboardItem({ 'ima
 /** A finished screenshot: onto the clipboard, or into a file on the Desktop. Then the card. */
 async function finishShot(png: Uint8Array, scale: number, save: boolean) {
   png = withScale(png, scale) // pastes and opens as big as it was on screen
-  const file = await writeShot(save ? app.getPath('desktop') : join(app.getPath('temp'), 'Grip Screenshots'), png)
+  const file = await writeShot(save ? app.getPath('desktop') : shotsDir(), png)
+  addCapture({ kind: 'shot', path: file, at: Date.now() })
   if (!save) await copyImage(png)
   closePicker()
   showResult(`shot=${encodeURIComponent(file)}${save ? '&saved' : ''}`)
+}
+
+/** A recent capture's card again (menu bar and gear menus), saying nothing was copied or saved yet.
+ *  The picker's overlays float above everything: it closes first. */
+export function reopenCapture(path: string) {
+  const c = captures().find((c) => c.path === path)
+  if (!c) return
+  if (picking) closePicker()
+  if (c.kind === 'recording') return showResult(`bundle=${encodeURIComponent(c.path)}`)
+  shots.add(c.path)
+  showResult(`shot=${encodeURIComponent(c.path)}${dirname(c.path) === shotsDir() ? '' : '&saved'}&reopened`)
 }
 
 /** Speaker notes: a prompter under the menu bar, near the camera, while picking and recording. */
@@ -487,7 +545,7 @@ function updateNotes() {
     visualEffectState: 'active',
   })
   protect(w, 1)
-  w.once('ready-to-show', () => reveal(w, false))
+  w.once('ready-to-show', () => frozen.then(() => w.isDestroyed() || reveal(w, false)))
   // Start or stop the prompter from any app, the one being recorded included.
   shortcut(SHORTCUTS.prompter, () => w.isDestroyed() || w.webContents.send('notes:prompter'))
 }
@@ -561,8 +619,10 @@ function editorFor(path: string): BrowserWindow | undefined {
   return windowsOf('editor').find((w) => !w.webContents.isDestroyed() && (w.webContents.getURL() || routes.get(w) || '').split('#')[1]?.split(/[?&]/).includes(param))
 }
 
-/** Open a bundle in the editor, or bring its editor forward. `recovered`: the editor says so. */
+/** Open a bundle in the editor, or bring its editor forward. `recovered`: the editor says so.
+ *  Like every window and dialog the user asks for, it closes the picker first, which floats above them. */
 export function openProject(path: string, recovered = false) {
+  closePicker()
   path = resolve(path).replace(/\/+$/, '')
   if (!path.endsWith('.grip') || !existsSync(path) || !statSync(path).isDirectory()) {
     alert(`“${basename(path)}” can’t be opened.`, 'It is not a Grip project, or it was moved or deleted.')
@@ -596,7 +656,17 @@ export function openFilesOrAlert(paths: string[]) {
   openFiles(paths).catch((e: Error) => void alert('Grip couldn’t open that.', e.message))
 }
 
+/** A dialog the user asked for, in front: the picker, which floats above it, goes, and Grip comes
+ *  forward. The picker's toolbar takes the dock icon with it (updateDock), and with the icon the focus,
+ *  so that happens first: after the dialog shows, it would drop the dialog behind other apps. */
+function toDialog() {
+  closePicker()
+  updateDock()
+  if (!hidden) app.focus({ steal: true })
+}
+
 export async function openProjectDialog() {
+  toDialog()
   const r = await dialog.showOpenDialog({
     title: 'Open Project',
     // openDirectory too: where the .grip package type is not registered (dev), a bundle is a folder.
@@ -607,6 +677,7 @@ export async function openProjectDialog() {
 }
 
 export async function importDialog() {
+  toDialog()
   const r = await dialog.showOpenDialog({
     title: 'Import Video',
     message: 'Each video becomes a new project.',
@@ -657,6 +728,7 @@ async function unsaved(win: BrowserWindow, error: string): Promise<Choice> {
 }
 
 export function openOnboarding(query = '') {
+  closePicker()
   const open = windowsOf('onboarding')[0]
   if (open) open.destroy()
   openWindow(`onboarding${query ? `?${query}` : ''}`, {
@@ -672,17 +744,13 @@ export function openOnboarding(query = '') {
 
 // ---- IPC ----
 
-type PopupItem = { id?: string; label?: string; checked?: boolean; enabled?: boolean; separator?: boolean; accelerator?: string; submenu?: PopupItem[] }
+type PopupItem = { id?: string; label?: string; checked?: boolean; enabled?: boolean; separator?: boolean; accelerator?: string; icon?: Uint8Array; submenu?: PopupItem[] }
 
 export function registerRecorder() {
   ipcMain.handle('shell:state', state)
   ipcMain.handle('shell:pick', (_e, m: Mode | null) => pick(['display', 'window', 'area', 'device'].includes(m as string) ? m : null))
   ipcMain.handle('shell:close-picker', () => closePicker())
-  ipcMain.handle('shell:still', (_e, id: unknown) => {
-    const still = stills.get(Number(id)) ?? null
-    stills.delete(Number(id))
-    return still
-  })
+  ipcMain.handle('shell:still', (_e, id: unknown) => stillOf(Number(id)).promise)
   ipcMain.handle('shell:ready', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender)
     if (w && windowsOf('area').includes(w)) showOverlay(w)
@@ -702,7 +770,7 @@ export function registerRecorder() {
   })
   ipcMain.handle('shell:countdown', (_e, on: boolean) => {
     counting = !!on
-    escape(counting || windowsOf('area').length > 0)
+    escape(counting || overlaysOpen)
     if (counting) toolbar?.hide()
     broadcast()
   })
@@ -737,16 +805,20 @@ export function registerRecorder() {
   ipcMain.handle('shell:shot-copy', async (_e, path: unknown) => {
     if (ours(path) && shots.has(path)) await copyImage(await readFile(path))
   })
-  ipcMain.handle('shell:shot-save', async (_e, path: unknown) => (ours(path) && shots.has(path) ? writeShot(app.getPath('desktop'), await readFile(path)) : null))
+  ipcMain.handle('shell:shot-save', async (_e, path: unknown) => {
+    if (!ours(path) || !shots.has(path)) return null
+    const file = await writeShot(app.getPath('desktop'), await readFile(path))
+    moveCapture(path, file) // Recent Captures follows it to the Desktop; Grip's copy goes
+    return file
+  })
+  ipcMain.handle('shell:captures', async () => (await captureRows()).map((r) => ({ id: r.path, label: r.label, icon: r.icon.toPNG({ scaleFactor: 2 }) })))
+  ipcMain.handle('shell:reopen', (_e, path: unknown) => typeof path === 'string' && reopenCapture(path))
   ipcMain.handle('shell:fail', async (_e, error: unknown, title?: unknown) => {
     const plain = plainError(error)
     counting = false
     if (status === 'idle') area = null // it never started
     sendAll('shell:escape') // reset countdowns
-    if (plain.permission) {
-      closePicker() // the overlays float above every window, onboarding included
-      return openOnboarding(`page=permissions&need=${plain.permission satisfies Permission}`)
-    }
+    if (plain.permission) return openOnboarding(`page=permissions&need=${plain.permission satisfies Permission}`)
     if (picking) showPicker()
     broadcast()
     await alert(typeof title === 'string' ? title : 'Grip couldn’t record.', plain.message)
@@ -781,12 +853,20 @@ export function registerRecorder() {
                 enabled: i.enabled ?? true,
                 accelerator: i.accelerator,
                 registerAccelerator: false,
+                icon: i.icon instanceof Uint8Array ? nativeImage.createFromBuffer(Buffer.from(i.icon), { scaleFactor: 2 }) : undefined,
                 submenu: i.submenu && build(i.submenu),
                 click: () => (picked = i.id ?? null),
               },
         )
+      menus++
+      escape(escWanted)
       // The click lands after the menu reports closed: settle on the next turn.
-      Menu.buildFromTemplate(build(items)).popup({ window: win, x: Math.round(x), y: Math.round(y), callback: () => setTimeout(() => done(picked), 0) })
+      const closed = () => {
+        menus--
+        escape(escWanted)
+        setTimeout(() => done(picked), 0)
+      }
+      Menu.buildFromTemplate(build(items)).popup({ window: win, x: Math.round(x), y: Math.round(y), callback: closed })
     })
   })
   ipcMain.handle('shell:open-settings', () => openOnboarding('page=settings'))
@@ -802,6 +882,7 @@ export function registerRecorder() {
   recordingEvents.on('state', setStatus)
   recordingEvents.on('finished', (bundle: string, end?: { reason?: string; message?: string }) => {
     for (const done of waiters.splice(0)) done(bundle)
+    addCapture({ kind: 'recording', path: bundle, at: Date.now() })
     if (quitting) return
     showResult(`bundle=${encodeURIComponent(bundle)}`)
     // It stopped on its own (disk full, display unplugged, a write failed): say why.
@@ -818,9 +899,10 @@ export function registerRecorder() {
       if (displays() === covered) return
       covered = displays()
       if (picking && toolbar) toolbar.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))
-      if (windowsOf('area').length && !counting) {
-        for (const w of windowsOf('area')) w.destroy()
-        pick(mode) // the picker, or the backdrop of the area being recorded
+      if (!counting) {
+        const was = overlaysOpen
+        closeOverlays() // fresh ones for the new arrangement
+        if (was) pick(mode) // the picker, or the backdrop of the area being recorded
       }
     })
   }

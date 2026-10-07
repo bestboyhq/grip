@@ -51,31 +51,31 @@
   const inside = (r: Rect, p: { x: number; y: number }) => p.x >= r.x && p.x < r.x + r.width && p.y >= r.y && p.y < r.y + r.height
 
   /** The display as it was when the picker opened, shown under everything while picking; screenshots
-   *  are cut from it. */
-  let still = $state<HTMLImageElement | null>(null)
-  async function decode(png: Uint8Array | null) {
-    if (!png) return null
-    const image = new Image()
-    image.src = URL.createObjectURL(new Blob([png as BlobPart], { type: 'image/png' }))
-    await image.decode()
-    return image
-  }
+   *  are cut from it. Raw pixels: nothing to decode. */
+  let still = $state<ImageData | null>(null)
+  const pixels = (s: { width: number; height: number; data: Uint8Array<ArrayBuffer> } | null) =>
+    s && new ImageData(new Uint8ClampedArray(s.data.buffer, s.data.byteOffset, s.data.byteLength), s.width, s.height, { colorSpace: 'display-p3' })
+  const paint = (canvas: HTMLCanvasElement) => void (still && canvas.getContext('2d', P3)!.putImageData(still, 0, 0))
   // A countdown or a recording shows the screen live from then on.
   $effect(() => {
     if (!still || !(target || shell.counting || shell.status !== 'idle')) return
-    URL.revokeObjectURL(still.src)
     still = null
   })
 
   onMount(() => {
     const id = Number(params.get('display'))
-    // The overlay shows (shell:ready) once it has painted its display and still, frozen from the first frame.
-    Promise.all([invoke('shell:display', id), invoke('shell:still', id).then(decode).catch(() => null)]).then(async ([d, s]) => {
-      display = d
-      still = s
-      await tick()
-      invoke('shell:ready')
-    })
+    // Loaded ahead, it lays itself out while it waits for a pick's still, then shows (shell:ready) once it
+    // has painted it: frozen from the first frame. Its display again then: the work area may have moved.
+    invoke('shell:display', id).then((d) => (display = d))
+    invoke('shell:still', id)
+      .then(pixels)
+      .catch(() => null)
+      .then(async (s) => {
+        display = await invoke('shell:display', id)
+        still = s
+        await tick()
+        invoke('shell:ready')
+      })
     const offs = [
       on('shell:escape', () => {
         target = null
@@ -173,7 +173,7 @@
     return (capturing ??= (async () => {
       try {
         if (from) {
-          const k = from.naturalWidth / W // still px per point
+          const k = from.width / W // still px per point
           const [x, y, w, h] = [rect.x, rect.y, rect.width, rect.height].map((v) => Math.round(v * k))
           return { image: await createImageBitmap(from, x, y, w, h), rect }
         }
@@ -403,7 +403,7 @@
 
 <svelte:window onkeydown={key} />
 
-{#if still}<img class="still" src={still.src} alt="" />{/if}
+{#if still}<canvas class="still" width={still.width} height={still.height} {@attach paint}></canvas>{/if}
 <svelte:body onpointermove={move} onpointerup={up} onpointerleave={() => drag || (mouse = null)} />
 
 {#snippet startButton(onclick: () => void)}
@@ -491,7 +491,7 @@
             ></textarea>
           {/if}
         {:else}
-          {#if drag}<div class="grid"></div>{/if}
+          {#if drag && drag.kind !== 'move'}<div class="grid"></div>{/if}
           {#each HANDLES as h (h)}
             <span class="handle {h}" role="presentation" onpointerdown={(e) => down(e, h)}></span>
           {/each}
@@ -739,17 +739,18 @@
     inset: 0;
     background: rgb(0 0 0 / 0.42);
   }
+  /* Thirds while resizing: faint hairlines that fade in, there to compose by, not to look at. */
   .grid {
+    --line: rgb(255 255 255 / 0.16);
+    --thirds: transparent calc(100% / 3 - 0.5px), var(--line) 0 calc(100% / 3 + 0.5px), transparent 0 calc(200% / 3 - 0.5px), var(--line) 0 calc(200% / 3 + 0.5px), transparent 0;
     position: absolute;
     inset: 0;
-    background:
-      linear-gradient(90deg, transparent calc(25% - 0.5px), rgb(255 255 255 / 0.35) calc(25% - 0.5px) calc(25% + 0.5px), transparent calc(25% + 0.5px)),
-      linear-gradient(90deg, transparent calc(50% - 0.5px), rgb(255 255 255 / 0.5) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-      linear-gradient(90deg, transparent calc(75% - 0.5px), rgb(255 255 255 / 0.35) calc(75% - 0.5px) calc(75% + 0.5px), transparent calc(75% + 0.5px)),
-      linear-gradient(transparent calc(25% - 0.5px), rgb(255 255 255 / 0.35) calc(25% - 0.5px) calc(25% + 0.5px), transparent calc(25% + 0.5px)),
-      linear-gradient(transparent calc(50% - 0.5px), rgb(255 255 255 / 0.5) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-      linear-gradient(transparent calc(75% - 0.5px), rgb(255 255 255 / 0.35) calc(75% - 0.5px) calc(75% + 0.5px), transparent calc(75% + 0.5px));
+    background: linear-gradient(90deg, var(--thirds)), linear-gradient(var(--thirds));
     pointer-events: none;
+    animation: grid-in 200ms ease-out;
+  }
+  @keyframes grid-in {
+    from { opacity: 0; }
   }
   .handle {
     position: absolute;
@@ -840,7 +841,7 @@
     to { transform: scale(0.96); opacity: 0.2; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .count { animation: none; }
+    .count, .grid { animation: none; }
     .frame { transition: none; }
   }
   /* Secondary action beside the accent one: same height, a control on the panel. */
