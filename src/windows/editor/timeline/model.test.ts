@@ -118,12 +118,16 @@ test('2-hour stress project: model builds fast and stays consistent', () => {
   const words = M.wordChips(transcript, {})
   const input = { ...p, duration: p.sources.duration }
   let m = M.buildModel(input, keys, words)
-  // CPU time, not wall time: test files run in parallel, and a busy CI runner triples wall time.
-  const cpu = process.cpuUsage()
-  for (let i = 0; i < 10; i++) m = M.buildModel({ ...input, clips: p.clips.slice() }, keys, words, m) // every lane remaps
-  const { user, system } = process.cpuUsage(cpu)
-  const ms = (user + system) / 1000 / 10
-  console.log(`  full remap: ${ms.toFixed(1)} ms, ${m.captions.blocks.length} words, ${m.zooms.blocks.length} zoom blocks, ${(m.map.duration / 3600).toFixed(2)} h`)
+  // CPU time, not wall time: test files run in parallel, and a busy CI runner triples wall time. The
+  // best of 10 remaps: a regression slows every one, while a CI virtual Mac's stall lands in a few.
+  let ms = Infinity
+  for (let i = 0; i < 10; i++) {
+    const cpu = process.cpuUsage()
+    m = M.buildModel({ ...input, clips: p.clips.slice() }, keys, words, m) // every lane remaps
+    const { user, system } = process.cpuUsage(cpu)
+    ms = Math.min(ms, (user + system) / 1000)
+  }
+  console.log(`  full remap: ${ms.toFixed(1)} ms (best of 10), ${m.captions.blocks.length} words, ${m.zooms.blocks.length} zoom blocks, ${(m.map.duration / 3600).toFixed(2)} h`)
   assert.ok(m.map.duration > 7000 && m.map.duration < 7400)
   assert.equal(m.clips.blocks.length, 500)
   assert.ok(m.zooms.blocks.length >= 300)

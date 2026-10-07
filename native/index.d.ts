@@ -273,6 +273,4 @@ export interface Window {
   bundleId: string
   /** Global points, origin top-left of the main display. */
   frame: Rect
-  /** Small JPEG as a data URL; absent when the window could not be captured. */
-  thumbnail?: string
 }

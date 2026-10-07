@@ -188,10 +188,10 @@ function controller(): BrowserWindow {
   return (toolbar = win)
 }
 
-/** Open the picker on the display under the mouse, in area mode unless told otherwise: the screen
- *  freezes, and the last area comes back selected, ready to record (↩) or to copy as a screenshot
- *  (⌘C). While recording, bring back the controls. */
-export function showPicker(m: Mode = 'area') {
+/** Open the picker on the display under the mouse, in the last mode unless told otherwise: the
+ *  screen freezes, and the last area comes back selected, ready to record (↩) or to copy as a
+ *  screenshot (⌘C). While recording, bring back the controls. */
+export function showPicker(m: Mode = settings().mode) {
   if (status !== 'idle') return showWidget()
   const win = controller()
   win.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))
@@ -272,6 +272,7 @@ let overlaysOpen = false
 function pick(m: Mode | null) {
   mode = m
   const overlays = m === 'display' || m === 'window' || m === 'area'
+  if (overlays && m !== settings().mode) setSettings({ mode: m }) // the next picker opens in it
   // While recording: the backdrop around an area, the pen, and strokes still fading out.
   const backdrop = status !== 'idle' && (!!area || drawing || Date.now() < inkUntil)
   if (!overlays && !backdrop) {

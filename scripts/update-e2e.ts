@@ -23,18 +23,19 @@ const run = (cmd: string, args: string[]) => execFileSync(cmd, args, { stdio: 'i
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const menu = () => sh('osascript', ['-e', `tell application "System Events" to tell process "${NAME}" to get name of menu items of menu 1 of menu bar item "${NAME}" of menu bar 1`])
 const quit = (signal: string) => spawn('pkill', [signal, '-f', `${app}/Contents/MacOS/${NAME}`])
+function alive(pattern: string) {
+  try {
+    return sh('pgrep', ['-f', pattern]).length > 0
+  } catch {
+    return false // pgrep exits 1 when nothing matches
+  }
+}
+const running = () => alive(`${app}/Contents/MacOS/${NAME}`)
 const launch = (env: Record<string, string>, args: string[] = []) =>
   spawn(join(app, 'Contents/MacOS', NAME), args, { env: { ...process.env, ...env }, stdio: 'ignore', detached: true }).unref()
 const windows = () => Number(sh('osascript', ['-e', `tell application "System Events" to count windows of process "${NAME}"`]))
 /** "Foreground" with a dock icon, "UIElement" without. */
 const appType = () => /type="(\w+)"/.exec(sh('lsappinfo', ['info', '-only', 'ApplicationType', sh('lsappinfo', ['find', `bundleid=${ID}`])]))?.[1]
-function running() {
-  try {
-    return sh('pgrep', ['-f', `${app}/Contents/MacOS/${NAME}`]).length > 0
-  } catch {
-    return false // pgrep exits 1 when nothing matches
-  }
-}
 const version = (bundle = app) => sh('defaults', ['read', join(bundle, 'Contents/Info.plist'), 'CFBundleShortVersionString'])
 /** The version Squirrel staged, which ShipIt installs when the app quits. */
 const staged = () => version(fileURLToPath(sh('plutil', ['-extract', 'updateBundleURL', 'raw', join(homedir(), `Library/Caches/${ID}.ShipIt/ShipItState.plist`)])))
@@ -52,6 +53,8 @@ async function stop() {
   quit('-TERM')
   await until('the app to quit', () => !running(), 15_000).catch(() => quit('-KILL'))
   await until('the app to be killed', () => !running(), 5000)
+  // A quit installs a staged update: ShipIt writes into its cache folder until it is done.
+  await until('ShipIt to finish', () => !alive(`${ID}.ShipIt`), 60_000)
 }
 
 // The app must be gone before its files: deleting a starting app crashes it.
@@ -123,5 +126,6 @@ try {
   console.log(`ok: 0.0.3 updated itself to ${version()} while away and came back to the menu bar only`)
 } finally {
   feed.close()
-  await cleanup()
+  // A failed cleanup must not hide why the run failed; the next run cleans up first anyway.
+  await cleanup().catch((e) => console.error(`cleanup failed: ${e instanceof Error ? e.message : e}`))
 }

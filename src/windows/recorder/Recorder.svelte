@@ -4,10 +4,11 @@
      It is also the session controller (electron/shell/recorder.ts): it runs the shell's commands
      against the capture engine and reports the engine's errors and warnings to the shell. -->
 <script lang="ts">
-  import { onMount } from 'svelte'
-  import { fade } from 'svelte/transition'
+  import { onMount, untrack } from 'svelte'
+  import { blur, fade } from 'svelte/transition'
   import { dropFiles, invoke, on } from '../../lib/ipc.ts'
   import Icon from './Icon.svelte'
+  import { springProgress, type SpringConfig } from '../../engine/motion/spring.ts'
   import {
     ensurePermission,
     inputs,
@@ -45,6 +46,145 @@
   /** "FaceTime HD Camera" reads "FaceTime HD" next to a camera icon. Menus keep the full name. */
   const short = (name: string) => name.replace(/\s+(camera|microphone|mic)$/i, '')
   const refresh = () => inputs().then((x) => (lists = x))
+
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)')
+  /** A value on a spring (the engine's closed form). A new target mid-glide keeps its velocity, so a
+   *  sweep across the bar reads as one motion. */
+  class Glide {
+    current = $state(0)
+    velocity = $state(0) // units per second
+    moving = false
+    #from = 0
+    #to = 0
+    #v0 = 0
+    #t0 = 0
+    #spring: SpringConfig
+    constructor(spring: SpringConfig) {
+      this.#spring = spring
+    }
+    #at = (now: number) => this.#from + (this.#to - this.#from) * springProgress((now - this.#t0) / 1000, this.#spring, this.#v0)
+    set(to: number, instant: boolean) {
+      const now = performance.now()
+      const p = this.moving ? this.#at(now) : this.current
+      if (instant || (!this.moving && Math.abs(to - p) < 0.5)) {
+        this.moving = false
+        this.current = to
+        this.velocity = 0
+        return
+      }
+      const v = this.moving ? (this.#at(now + 1) - p) * 1000 : 0
+      ;[this.#from, this.#to, this.#v0, this.#t0] = [p, to, v / (to - p || 1e-6), now]
+      if (this.moving) return
+      this.moving = true
+      const tick = (t: number) => {
+        if (!this.moving) return
+        const now = Math.max(t, this.#t0)
+        const next = this.#at(now)
+        const v = (this.#at(now + 1) - next) * 1000
+        this.moving = Math.abs(this.#to - next) > 0.05 || Math.abs(v) > 5
+        this.current = this.moving ? next : this.#to
+        this.velocity = this.moving ? v : 0
+        if (this.moving) requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    }
+  }
+  // Every button's box is 52 px tall, 6 px inside the bar. A bubble keeps 2 px in from its sides, so
+  // one beside the locked bubble stays its own drop instead of joining it into one slab.
+  const BOX = { top: 6, height: 52, side: 2 }
+  let pointer: { x: number; y: number } | null = null
+  /** A highlight under a button that flows to the next one like a drop of liquid: it stretches
+   *  behind as it speeds up, thins as it stretches, and settles with a little give. The hover one
+   *  also leans toward the pointer. */
+  class Pill {
+    el = $state<HTMLElement | null>(null)
+    x: Glide // center
+    w: Glide
+    y: Glide // lean
+    #magnetic: boolean
+    constructor(spring: SpringConfig, magnetic: boolean) {
+      this.x = new Glide(spring)
+      this.w = new Glide(spring)
+      this.y = new Glide(spring)
+      this.#magnetic = magnetic
+    }
+    /** Flow to `el`; it jumps there when it comes from nowhere. `layout`: the buttons moved, and at
+     *  rest it follows them exactly. */
+    to(el: HTMLElement | null, layout = false) {
+      const from = this.el
+      this.el = el
+      if (!el?.isConnected) return
+      const r = el.getBoundingClientRect()
+      const cx = r.left - el.parentElement!.getBoundingClientRect().left + r.width / 2
+      const lean = (d: number, k: number, max: number) => Math.max(-max, Math.min(max, d * k))
+      const pull = this.#magnetic && pointer ? { x: lean(pointer.x - cx, 0.12, 5), y: lean(pointer.y - BOX.top - BOX.height / 2, 0.15, 2.5) } : { x: 0, y: 0 }
+      const instant = !from || reduced.matches || (layout && !this.x.moving && !this.w.moving && !this.y.moving)
+      this.x.set(cx + pull.x, instant)
+      this.w.set(r.width - 2 * BOX.side, instant)
+      this.y.set(pull.y, instant)
+    }
+    /** The drawn box: longer and thinner with speed, the stretch trailing behind the center, and
+     *  its corners rounding off into a round head and a long tail. At rest, the button's box. */
+    get box() {
+      const v = this.x.velocity
+      const flow = 1 - Math.exp(-Math.abs(v) / 1200) // 0 at rest, easing toward 1 with speed
+      const stretch = 40 * flow
+      const height = BOX.height - 9 * flow
+      const head = 6 + (height / 2 - 6) * flow
+      const tail = head + stretch * 0.8 * flow
+      const [l, r] = v > 0 ? [tail, head] : [head, tail]
+      return {
+        left: this.x.current - this.w.current / 2 - (v > 0 ? stretch : 0),
+        top: BOX.top + (BOX.height - height) / 2 + this.y.current,
+        width: this.w.current + stretch,
+        height,
+        radius: `${l}px ${r}px ${r}px ${l}px / ${head}px`,
+      }
+    }
+  }
+  // Unhurried, with a little give as it settles (damping ratio 0.85, 0.6% past): a response of
+  // 0.35 s for hover and 0.42 s for the chosen mode, 95% of the way in about 210 ms and 250 ms.
+  const hover = new Pill({ stiffness: 322, damping: 30.5, mass: 1 }, true)
+  const chosen = new Pill({ stiffness: 224, damping: 25.4, mass: 1 }, false)
+  let modeEls = $state<Partial<Record<Mode, HTMLElement>>>({})
+  $effect(() => {
+    const el = (shell.mode && modeEls[shell.mode]) || null
+    untrack(() => chosen.to(el))
+  })
+  // Out of a button (the drag region between groups reads as out of the window): the highlight
+  // waits a moment, so crossing a separator flows on instead of popping in again.
+  let linger: ReturnType<typeof setTimeout> | undefined
+  const leave = () => {
+    clearTimeout(linger)
+    linger = setTimeout(() => hover.to(null), 90)
+  }
+  function over(e: PointerEvent) {
+    const target = (e.target as Element).closest<HTMLElement>('.close, .mode, .pick, .gear')
+    if (!target) return leave()
+    clearTimeout(linger)
+    hover.to(target)
+  }
+  function move(e: PointerEvent) {
+    pointer = { x: e.clientX, y: e.clientY } // the bar fills the window
+    if (hover.el) hover.to(hover.el)
+  }
+  // Labels glide to their new width, which moves the buttons beside them: the highlights follow.
+  const relayout = new ResizeObserver(() => {
+    hover.to(hover.el, true)
+    chosen.to(chosen.el, true)
+  })
+  const follow = (el: HTMLElement) => {
+    relayout.observe(el)
+    return () => relayout.unobserve(el)
+  }
+  /** The label box takes its text's width; CSS glides it there. */
+  function fit(text: HTMLElement) {
+    const box = text.parentElement!
+    const ro = new ResizeObserver(([e]) => (box.style.width = `${Math.ceil(e.borderBoxSize[0].inlineSize)}px`))
+    ro.observe(text)
+    return () => ro.disconnect()
+  }
+  const SWAP = { amount: 2, duration: 200 }
 
   // Devices come and go (USB, Continuity): refresh when the picker opens and on every plug.
   $effect(() => {
@@ -120,6 +260,7 @@
   /** Record a target picked from a menu: the countdown runs here, on the toolbar. */
   async function record(name: string, target: Target) {
     if (s?.countdown) {
+      hover.to(null) // its button goes with the countdown
       countdown = { n: 3, name }
       const mine = countdown // canceled, or replaced by a newer countdown: this one stops
       while (countdown === mine && mine.n > 0) {
@@ -189,7 +330,14 @@
   ondrop={(e) => dropFiles(e).catch((err: Error) => invoke('shell:warn', err.message))}
 />
 
-<main class="bar hud" inert={!!shell.update}>
+{#snippet pill(b: Pill['box'], on: boolean)}
+  <span class="pill" class:on style:translate="{b.left}px {b.top}px" style:width="{b.width}px" style:height="{b.height}px" style:border-radius={b.radius}></span>
+{/snippet}
+{#snippet label(text: string)}
+  <span class="label">{#key text}<span class="text" in:blur={SWAP} {@attach fit}>{text}</span>{/key}</span>
+{/snippet}
+
+<main class="bar hud" inert={!!shell.update} onpointerover={over} onpointermove={move} onpointerleave={leave}>
   {#if countdown}
     <div class="countdown" role="status">
       <span class="n">{countdown.n}</span>
@@ -197,10 +345,16 @@
       <button class="action" onclick={() => (countdown = null)}>Cancel</button>
     </div>
   {:else}
-    <button class="close" aria-label="Close" onclick={() => invoke('shell:close-picker')}><Icon name="close" size={22} stroke={2.4} /></button>
+    {@const c = chosen.box}
+    {@const h = hover.box}
+    <!-- One veil for both: the chosen mode is the hover bubble locked in place, and where the two meet
+         they merge like drops instead of adding up to a glare. -->
+    <span class="veil">{@render pill(c, !!chosen.el)}{@render pill(h, !!hover.el)}</span>
+    <button class="close" aria-label="Close" onclick={() => invoke('shell:close-picker')}><span class="circle"><Icon name="close" size={22} stroke={2.4} /></span></button>
     <span class="sep"></span>
     {#each MODES as m (m.id)}
       <button
+        bind:this={modeEls[m.id]}
         class="mode"
         class:on={shell.mode === m.id}
         aria-pressed={shell.mode === m.id}
@@ -212,18 +366,18 @@
       </button>
     {/each}
     <span class="sep"></span>
-    <button class="pick camera" class:off={!camera} onclick={(e) => pickInput('camera', e.currentTarget)}>
-      <Icon name={camera ? 'camera' : 'camera-off'} size={21} stroke={1.75} />
-      <span class="label">{camera ? short(camera.name) : 'No camera'}</span>
+    <button class="pick camera" class:off={!camera} onclick={(e) => pickInput('camera', e.currentTarget)} {@attach follow}>
+      {#key !camera}<span class="glyph" in:blur={SWAP}><Icon name={camera ? 'camera' : 'camera-off'} size={21} stroke={1.75} /></span>{/key}
+      {@render label(camera ? short(camera.name) : 'No camera')}
     </button>
-    <button class="pick mic" class:off={!mic} onclick={(e) => pickInput('mic', e.currentTarget)}>
-      <Icon name={mic ? 'mic' : 'mic-off'} width={12} height={17} stroke={1.5} />
-      <span class="label">{mic ? short(mic.name) : 'No microphone'}</span>
-      {#if mic}<span class="meter" aria-hidden="true"><span style:width="max(3px, {level * 100}%)"></span></span>{/if}
+    <button class="pick mic" class:off={!mic} onclick={(e) => pickInput('mic', e.currentTarget)} {@attach follow}>
+      {#key !mic}<span class="glyph" in:blur={SWAP}><Icon name={mic ? 'mic' : 'mic-off'} width={12} height={17} stroke={1.5} /></span>{/key}
+      {@render label(mic ? short(mic.name) : 'No microphone')}
+      {#if mic}<span class="meter" aria-hidden="true" transition:fade={{ duration: 150 }}><span style:width="max(3px, {level * 100}%)"></span></span>{/if}
     </button>
-    <button class="pick system" class:off={!s?.systemAudio} aria-pressed={!!s?.systemAudio} onclick={() => setSettings({ systemAudio: !s?.systemAudio })}>
-      <Icon name={s?.systemAudio ? 'speaker' : 'speaker-off'} width={20} height={16} stroke={1.5} />
-      <span class="label">{s?.systemAudio ? 'Record system audio' : 'No system audio'}</span>
+    <button class="pick system" class:off={!s?.systemAudio} aria-pressed={!!s?.systemAudio} onclick={() => setSettings({ systemAudio: !s?.systemAudio })} {@attach follow}>
+      {#key !s?.systemAudio}<span class="glyph" in:blur={SWAP}><Icon name={s?.systemAudio ? 'speaker' : 'speaker-off'} width={20} height={16} stroke={1.5} /></span>{/key}
+      {@render label(s?.systemAudio ? 'Record system audio' : 'No system audio')}
     </button>
     <span class="sep"></span>
     <button class="gear" aria-label="Recording settings" onclick={(e) => openSettings(e.currentTarget)}>
@@ -246,7 +400,7 @@
     inset: 0;
     display: flex;
     align-items: center;
-    padding: 0 10px 0 20px; /* the gear's chevron ends 20 px from the edge, like the close button starts */
+    padding: 0 10px; /* the end buttons' boxes; the close circle starts 20 px in, like the gear's chevron ends */
     border-radius: var(--radius-lg);
     background: var(--surface-50);
     box-shadow: var(--hairline);
@@ -270,14 +424,21 @@
     outline-offset: -2px;
   }
   .close {
+    width: 43px;
+    height: 52px;
+    justify-content: center;
+  }
+  .circle {
+    display: grid;
+    place-items: center;
     width: 22px;
     height: 22px;
-    justify-content: center;
     border-radius: 50%;
     background: var(--accent);
     color: var(--accent-ink);
+    transition: background-color 120ms;
   }
-  .close:hover {
+  .close:hover .circle {
     background: var(--accent-hover);
   }
   /* Every hover box is 52 px tall, 6 px inside the bar, and the camera, microphone, and system audio
@@ -289,7 +450,7 @@
     background: var(--edge-strong);
   }
   .close {
-    margin: 0 12px 0 0.5px;
+    margin-right: 1.5px;
   }
   .mode {
     width: 60px;
@@ -311,15 +472,27 @@
     line-height: 13px;
     color: var(--text-dim);
   }
-  .mode:hover,
-  .pick:hover,
-  .gear:hover {
-    background: var(--surface-50-hover);
+  /* The hover and chosen-mode bubbles, under the buttons' content (the fixed bar is a stacking
+     context). The veil draws both as solid shapes and fades their union to the hover veil's 7%
+     (--surface-50-hover). */
+  .veil {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: 0.07;
+    pointer-events: none;
   }
-  .mode:active,
-  .mode.on {
-    background: var(--surface-50-selected);
-    box-shadow: var(--hairline);
+  .pill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 140ms ease;
+  }
+  .pill.on {
+    opacity: 1;
   }
   .mode.on .name {
     color: var(--text);
@@ -339,19 +512,27 @@
   .pick.off {
     color: var(--text-faint);
   }
+  .glyph {
+    display: flex;
+  }
   .label {
-    min-width: 0;
     overflow: hidden;
+    transition: width 280ms var(--ease-out);
+  }
+  .text {
+    display: block;
+    width: max-content;
     white-space: nowrap;
-    text-overflow: ellipsis;
   }
   .camera {
     gap: 8.5px;
   }
   /* Long device names truncate here, so the toolbar always fits and nothing else shrinks. */
-  .camera .label,
-  .mic .label {
+  .camera .text,
+  .mic .text {
     max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .mic :global(svg) {
     margin-top: -2.5px;
@@ -392,7 +573,6 @@
     justify-content: center;
     gap: 14px;
     font-size: 14px;
-    padding-right: 10px; /* centered in the bar, whose padding is 20 left, 10 right */
   }
   .countdown .n {
     font-size: 30px;
