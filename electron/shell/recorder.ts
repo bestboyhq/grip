@@ -46,7 +46,7 @@ import { importVideo, recoveredAtLaunch } from '../projects.ts'
 import { capture, recordingEvents, recordingName } from '../recording.ts'
 import { DRAW_FADE, DRAW_HOLD } from '../../src/engine/overlays/drawings.ts'
 import type { CameraPosition } from '../../src/shared/project.ts'
-import { activeDisplay, hidden, openWindow, reveal, sendAll, setRecordingDock, windowsOf } from '../windows.ts'
+import { activeDisplay, hidden, openWindow, reveal, sendAll, setRecordingDock, updateDock, windowsOf } from '../windows.ts'
 import { arrangement, place } from './bounds.ts'
 import { withScale } from './png.ts'
 import { plainError, type Permission } from './errors.ts'
@@ -315,8 +315,15 @@ function showOverlay(w: BrowserWindow) {
   reveal(w, mode === 'area' && screen.getDisplayMatching(w.getBounds()).id === activeDisplay().id)
 }
 
+/** Esc is a global shortcut while picking, counting down, or drawing, but not while one of our menus is
+ *  open (shell:popup): then Esc closes the menu, and the next press the picker. As a shortcut it never
+ *  reaches the menu, and macOS holds its presses until the menu closes; the first then unregisters Esc
+ *  (closePicker), and the next one, for a shortcut Electron no longer has, aborts the app. */
+let escWanted = false
+let menus = 0
 function escape(on: boolean) {
-  if (!on) return globalShortcut.unregister('Escape')
+  escWanted = on
+  if (!on || menus) return globalShortcut.unregister('Escape')
   if (globalShortcut.isRegistered('Escape')) return
   shortcut('Escape', () => {
     if (drawing) return setDrawing(false)
@@ -561,8 +568,10 @@ function editorFor(path: string): BrowserWindow | undefined {
   return windowsOf('editor').find((w) => !w.webContents.isDestroyed() && (w.webContents.getURL() || routes.get(w) || '').split('#')[1]?.split(/[?&]/).includes(param))
 }
 
-/** Open a bundle in the editor, or bring its editor forward. `recovered`: the editor says so. */
+/** Open a bundle in the editor, or bring its editor forward. `recovered`: the editor says so.
+ *  Like every window and dialog the user asks for, it closes the picker first, which floats above them. */
 export function openProject(path: string, recovered = false) {
+  closePicker()
   path = resolve(path).replace(/\/+$/, '')
   if (!path.endsWith('.grip') || !existsSync(path) || !statSync(path).isDirectory()) {
     alert(`“${basename(path)}” can’t be opened.`, 'It is not a Grip project, or it was moved or deleted.')
@@ -596,7 +605,17 @@ export function openFilesOrAlert(paths: string[]) {
   openFiles(paths).catch((e: Error) => void alert('Grip couldn’t open that.', e.message))
 }
 
+/** A dialog the user asked for, in front: the picker, which floats above it, goes, and Grip comes
+ *  forward. The picker's toolbar takes the dock icon with it (updateDock), and with the icon the focus,
+ *  so that happens first: after the dialog shows, it would drop the dialog behind other apps. */
+function toDialog() {
+  closePicker()
+  updateDock()
+  if (!hidden) app.focus({ steal: true })
+}
+
 export async function openProjectDialog() {
+  toDialog()
   const r = await dialog.showOpenDialog({
     title: 'Open Project',
     // openDirectory too: where the .grip package type is not registered (dev), a bundle is a folder.
@@ -607,6 +626,7 @@ export async function openProjectDialog() {
 }
 
 export async function importDialog() {
+  toDialog()
   const r = await dialog.showOpenDialog({
     title: 'Import Video',
     message: 'Each video becomes a new project.',
@@ -657,6 +677,7 @@ async function unsaved(win: BrowserWindow, error: string): Promise<Choice> {
 }
 
 export function openOnboarding(query = '') {
+  closePicker()
   const open = windowsOf('onboarding')[0]
   if (open) open.destroy()
   openWindow(`onboarding${query ? `?${query}` : ''}`, {
@@ -743,10 +764,7 @@ export function registerRecorder() {
     counting = false
     if (status === 'idle') area = null // it never started
     sendAll('shell:escape') // reset countdowns
-    if (plain.permission) {
-      closePicker() // the overlays float above every window, onboarding included
-      return openOnboarding(`page=permissions&need=${plain.permission satisfies Permission}`)
-    }
+    if (plain.permission) return openOnboarding(`page=permissions&need=${plain.permission satisfies Permission}`)
     if (picking) showPicker()
     broadcast()
     await alert(typeof title === 'string' ? title : 'Grip couldn’t record.', plain.message)
@@ -785,8 +803,15 @@ export function registerRecorder() {
                 click: () => (picked = i.id ?? null),
               },
         )
+      menus++
+      escape(escWanted)
       // The click lands after the menu reports closed: settle on the next turn.
-      Menu.buildFromTemplate(build(items)).popup({ window: win, x: Math.round(x), y: Math.round(y), callback: () => setTimeout(() => done(picked), 0) })
+      const closed = () => {
+        menus--
+        escape(escWanted)
+        setTimeout(() => done(picked), 0)
+      }
+      Menu.buildFromTemplate(build(items)).popup({ window: win, x: Math.round(x), y: Math.round(y), callback: closed })
     })
   })
   ipcMain.handle('shell:open-settings', () => openOnboarding('page=settings'))
