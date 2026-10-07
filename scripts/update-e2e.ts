@@ -6,7 +6,7 @@
 // Needs the Developer ID identity (Squirrel installs only signed updates) and Accessibility for the
 // terminal (it clicks the menu). It builds under its own name and app id, so an installed Grip, its
 // settings, and its update cache stay untouched.
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { homedir } from 'node:os'
@@ -34,8 +34,8 @@ const running = () => alive(`${app}/Contents/MacOS/${NAME}`)
 const launch = (env: Record<string, string>, args: string[] = []) =>
   spawn(join(app, 'Contents/MacOS', NAME), args, { env: { ...process.env, ...env }, stdio: 'ignore', detached: true }).unref()
 const windows = () => Number(sh('osascript', ['-e', `tell application "System Events" to count windows of process "${NAME}"`]))
-/** "Foreground" with a dock icon, "UIElement" without. */
-const appType = () => /type="(\w+)"/.exec(sh('lsappinfo', ['info', '-only', 'ApplicationType', sh('lsappinfo', ['find', `bundleid=${ID}`])]))?.[1]
+/** "0" (regular) with a dock icon, "1" (accessory) without, "" when not running. AppKit, not lsappinfo: its text differs between macOS versions. */
+const policy = () => sh('osascript', ['-l', 'JavaScript', '-e', `ObjC.import('AppKit'); $.NSRunningApplication.runningApplicationsWithBundleIdentifier('${ID}').firstObject.activationPolicy`])
 const version = (bundle = app) => sh('defaults', ['read', join(bundle, 'Contents/Info.plist'), 'CFBundleShortVersionString'])
 /** The version Squirrel staged, which ShipIt installs when the app quits. */
 const staged = () => version(fileURLToPath(sh('plutil', ['-extract', 'updateBundleURL', 'raw', join(homedir(), `Library/Caches/${ID}.ShipIt/ShipItState.plist`)])))
@@ -120,10 +120,16 @@ try {
   latest = '0.0.4'
   launch({ STUDIO_HIDDEN: '1', STUDIO_UPDATE_EVERY: '5000', STUDIO_UPDATE_AWAY: '1' }, ['grip://stop'])
   await until('0.0.4 to be installed while away', () => version() === '0.0.4')
-  await until('0.0.4 to relaunch', () => running() && appType() !== undefined)
+  await until('0.0.4 to relaunch', () => running() && policy() !== '')
   await sleep(5000) // a launch that opens onboarding has it on screen by now
-  if (windows() || appType() !== 'UIElement') throw new Error(`0.0.4 came back with ${windows()} windows, as a ${appType()} app`)
+  if (windows() || policy() !== '1') throw new Error(`0.0.4 came back with ${windows()} windows and activation policy ${policy()}, not 1 (accessory)`)
   console.log(`ok: 0.0.3 updated itself to ${version()} while away and came back to the menu bar only`)
+} catch (e) {
+  // Why it did not install or relaunch, before cleanup deletes the evidence.
+  for (const p of [`Library/Caches/${ID}.ShipIt/ShipIt_stderr.log`, `Library/Caches/${ID}.ShipIt/ShipIt_stdout.log`, `Library/Logs/${NAME}/main.log`])
+    if (existsSync(join(homedir(), p))) console.error(`--- ~/${p}\n${readFileSync(join(homedir(), p), 'utf8').slice(-8000)}`)
+  console.error(`--- processes\n${spawnSync('pgrep', ['-lf', NAME], { encoding: 'utf8' }).stdout}`)
+  throw e
 } finally {
   feed.close()
   // A failed cleanup must not hide why the run failed; the next run cleans up first anyway.

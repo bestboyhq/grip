@@ -167,10 +167,9 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # Proves a signed build still updates itself.
+  # Proves a signed build still updates itself. On every PR too: a release waits on it, so a PR that
+  # breaks it must not reach main.
   update-e2e:
-    needs: version
-    if: needs.version.outputs.next != ''
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v5
@@ -185,6 +184,8 @@ jobs:
       - run: npm ci
       - *keychain
       - run: node scripts/update-e2e.ts
+        env:
+          CSC_FOR_PULL_REQUEST: true # electron-builder skips signing in PRs, and Squirrel installs only signed updates
 
   # Ships the merge as an in-app update: users get it on their next update check.
   publish:
