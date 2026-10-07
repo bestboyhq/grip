@@ -26,8 +26,10 @@ register(
     return to ? { url: to, shortCircuit: true } : next(specifier, context)
   }`),
 )
-const { registerRecording } = await import('./recording.ts')
+const { recordingEvents, registerRecording } = await import('./recording.ts')
 registerRecording()
+const opened: string[] = []
+recordingEvents.on('settings', (k: string) => opened.push(k)) // the drag-to-allow panel follows it
 const g = globalThis as any
 const ask = (k: string) => g.handlers['recording:requestPermission']({}, k)
 const status = () => g.handlers['recording:permissions']({})
@@ -35,17 +37,18 @@ const status = () => g.handlers['recording:permissions']({})
 test('asking for a permission shows the system prompt or System Settings, never both', async () => {
   try {
     const tcc = g.tcc
-    tcc.status = { screen: 'denied', accessibility: 'denied', inputMonitoring: 'notDetermined', microphone: 'denied', camera: 'granted' }
+    tcc.status = { screen: 'denied', accessibility: 'denied', microphone: 'notDetermined', camera: 'granted' }
     // Screen Recording and Accessibility read "denied" before Grip ever asked: Grip knows better.
     assert.equal(status().screen, 'notDetermined')
     assert.equal(status().accessibility, 'notDetermined')
-    for (const k of ['screen', 'accessibility', 'inputMonitoring']) await ask(k)
-    assert.deepEqual([tcc.prompts, tcc.panes], [['screen', 'accessibility', 'inputMonitoring'], []], 'first asks: prompts only')
+    for (const k of ['screen', 'accessibility', 'microphone']) await ask(k)
+    assert.deepEqual([tcc.prompts, tcc.panes], [['screen', 'accessibility', 'microphone'], []], 'first asks: prompts only')
     assert.equal(status().screen, 'denied', 'asked once: macOS’s answer now stands')
-    tcc.status.inputMonitoring = 'denied'
-    for (const k of ['screen', 'accessibility', 'inputMonitoring', 'microphone', 'camera']) await ask(k)
+    tcc.status.microphone = 'denied'
+    for (const k of ['screen', 'accessibility', 'microphone', 'camera']) await ask(k)
     assert.deepEqual(tcc.prompts.length, 3, 'no prompt twice')
-    assert.deepEqual(tcc.panes, ['screen', 'accessibility', 'inputMonitoring', 'microphone'], 'later asks: Settings only; granted: nothing')
+    assert.deepEqual(tcc.panes, ['screen', 'accessibility', 'microphone'], 'later asks: Settings only; granted: nothing')
+    assert.deepEqual(opened, tcc.panes, 'every Settings pane is announced')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

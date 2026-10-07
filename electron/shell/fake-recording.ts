@@ -44,7 +44,6 @@ export function registerFakeRecording(bundle: string) {
   const permissions = () => ({
     screen: media('screen'),
     accessibility: systemPreferences.isTrustedAccessibilityClient(false) ? 'granted' : 'notDetermined',
-    inputMonitoring: 'notDetermined',
     microphone: media('microphone'),
     camera: media('camera'),
   })
@@ -80,7 +79,10 @@ export function registerFakeRecording(bundle: string) {
   handle('recording:screenshot', (id: number, r: { w: number; h: number }) => {
     const scale = screen.getAllDisplays().find((d) => d.id === Number(id))?.scaleFactor ?? 2
     const size = { width: Math.round(r.w * scale), height: Math.round(r.h * scale), quality: 'best' as const }
-    return nativeImage.createFromPath(join(bundle, 'thumbnail.png')).resize(size).toPNG()
+    const thumbnail = nativeImage.createFromPath(join(bundle, 'thumbnail.png'))
+    // A bundle never opened in the editor has no thumbnail: a gradient of four BGRA pixels stands in.
+    const image = thumbnail.isEmpty() ? nativeImage.createFromBitmap(Buffer.from([200, 120, 40, 255, 80, 160, 240, 255, 60, 200, 120, 255, 230, 230, 230, 255]), { width: 2, height: 2 }) : thumbnail
+    return image.resize(size).toPNG()
   })
   // Pen strokes in the stand-in's screen pixels, as if the primary display were the screen source.
   let t0 = 0

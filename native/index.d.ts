@@ -90,7 +90,7 @@ export declare function openPermissionSettings(kind: Permission): void
 
 export declare function pauseRecording(): RecState
 
-export type Permission = 'screen' | 'accessibility' | 'inputMonitoring' | 'microphone' | 'camera'
+export type Permission = 'screen' | 'accessibility' | 'microphone' | 'camera'
 
 /** Current status. Screen Recording and Accessibility cannot tell "never asked" from "denied". */
 export declare function permissionStatus(kind: Permission): PermissionStatus
@@ -156,6 +156,16 @@ export declare function resumeRecording(): RecState
 export interface Rotation {
   t: number
   deg: number
+}
+
+/** System Settings' window, or nothing when System Settings is not running. */
+export declare function settingsWindow(): SettingsWindow | null
+
+export interface SettingsWindow {
+  /** Its frontmost window (global points), when one is on screen. */
+  frame?: Rect
+  /** Another app is in front: neither System Settings nor Grip is active. */
+  covered: boolean
 }
 
 /** Meter `micId` (default mic when absent) at ~30 Hz until `stopMicMonitor`. Replaces a running meter. */

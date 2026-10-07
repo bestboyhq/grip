@@ -19,12 +19,14 @@
 //   shell:start(opts)             overlay -> controller: start recording with these options
 //   shell:draw(on?)               toggle (or set) drawing on screen while recording
 //   shell:shot(png, scale, save)  overlay: a finished screenshot; copied to the clipboard, or saved to the Desktop
-//   shell:fit(height)             the result card sizes itself to its content (bottom edge stays)
+//   shell:fit(height)             the result card sizes itself to its content (bottom edge stays), and shows
 //   shell:drag(path, iconUrl)     the result card: drag its file out (into Slack, Mail, Finder)
 //   shell:reveal(path)            the result card: show its file in Finder
 //   shell:shot-copy(path)         the result card: a screenshot onto the clipboard again
 //   shell:shot-save(path) -> path the result card: a screenshot into a file on the Desktop
 //   shell:fail(error, title?)     a recording (or screenshot) call failed: plain-language message or permission fix
+//   shell:shortcut(keys | null) -> ok   Settings: the record shortcut becomes `keys` (an accelerator), false if
+//                                 macOS won't give it to Grip; null pauses it while the user types a new one
 //   shell:display(id)             display geometry for an overlay, and where the toolbar sits on it
 //   shell:popup(items, x, y)      native menu at (x, y) in the sender window -> picked id | null
 //   shell:open-project(path?)     open a bundle in the editor (no path: Open dialog)
@@ -50,16 +52,19 @@ import { editorCloser, type Choice } from './closing.ts'
 import { hold, release, type Held } from './session.ts'
 import { setSettings, settings, settingsListeners } from './settings.ts'
 import { readyVersion, updateListeners } from './update.ts'
+import { setAppMenu } from './menu.ts'
+import { symbols } from '../../src/shared/shortcut.ts'
 import type { Mode } from './url.ts'
 import type { Rect, StartOptions } from '../../native/index.d.ts'
 
 export type Status = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping'
 export type Command = 'start' | 'stop' | 'pause' | 'resume' | 'toggle-pause' | 'cancel' | 'restart'
 
-export const SHORTCUTS = { record: 'Alt+Command+Return', pause: 'Alt+Shift+Command+P', cancel: 'Alt+Shift+Command+Backspace', prompter: 'Alt+Command+.', draw: 'Alt+Shift+Command+D' }
+/** Shortcuts while recording, and the prompter's. The record shortcut is the user's: settings.recordShortcut. */
+export const SHORTCUTS = { pause: 'Alt+Shift+Command+P', cancel: 'Alt+Shift+Command+Backspace', prompter: 'Alt+Command+.', draw: 'Alt+Shift+Command+D' }
 const TOOLBAR = { width: 882, height: 64 }
 const WIDGET = { width: 316, height: 48 }
-const RESULT = { width: 300, height: 260 } // the card fits its height to its content (shell:fit)
+const RESULT = { width: 300, height: 400 } // taller than any card, which fits its height to its content (shell:fit)
 const BUBBLE = 216 // camera bubble window; the circle inside leaves room for its shadow
 const NOTES = { width: 440, height: 260 }
 
@@ -106,9 +111,35 @@ function protect(win: BrowserWindow, level: number) {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 }
 
-/** Global shortcuts belong to the user's Mac: hidden runs (agents, tests) never take them. */
-function shortcut(accelerator: string, fn: () => void) {
-  if (!hidden && !globalShortcut.register(accelerator, fn)) console.warn(`Shortcut ${accelerator} is taken by another app`)
+/** Global shortcuts belong to the user's Mac: hidden runs (agents, tests) never take them. False when
+ *  another app has it. */
+function shortcut(accelerator: string, fn: () => void): boolean {
+  if (hidden || globalShortcut.register(accelerator, fn)) return true
+  console.warn(`Shortcut ${accelerator} is taken by another app`)
+  return false
+}
+
+/** The record shortcut as registered; '' while paused, or when another app has it. */
+let recordKeys = ''
+
+/** Make `keys` (an accelerator from src/shared/shortcut.ts) the record shortcut, or pause it (null)
+ *  while the user types a new one, so pressing the current one records it instead of opening the
+ *  picker. False when it isn't one, or another app has it: the one before stays. */
+function setRecordShortcut(keys: string | null): boolean {
+  if (recordKeys) globalShortcut.unregister(recordKeys)
+  recordKeys = ''
+  if (keys === null) return true
+  const before = settings().recordShortcut
+  if (!symbols(keys) || !shortcut(keys, () => (status === 'idle' ? showPicker() : command('stop')))) {
+    if (keys !== before) setRecordShortcut(before)
+    return false
+  }
+  if (!hidden) recordKeys = keys
+  if (keys !== before) {
+    setSettings({ recordShortcut: keys })
+    setAppMenu() // its New Recording item shows the shortcut
+  }
+  return true
 }
 
 /** A one-off message. Hidden runs log it instead of blocking on a modal. */
@@ -275,7 +306,7 @@ function escape(on: boolean) {
       if (picking) reveal(controller())
       return broadcast()
     }
-    pick(null)
+    closePicker() // the toolbar too: Esc leaves the picker in one press
   })
 }
 
@@ -384,7 +415,8 @@ function showResult(query: string) {
     visualEffectState: 'active',
   })
   protect(w, 2)
-  w.once('ready-to-show', () => reveal(w, false))
+  // It shows once it fits its content (shell:fit); a picture that never loads can't hold it back.
+  setTimeout(() => w.isDestroyed() || w.isVisible() || reveal(w, false), 1500)
 }
 
 /** Screenshot files Grip wrote (temp and Desktop). The result card may copy, save, reveal, or drag
@@ -664,6 +696,7 @@ export function registerRecorder() {
     if (!win || !(h >= 40 && h <= 800)) return
     const b = win.getBounds()
     win.setBounds({ ...b, y: b.y + b.height - h, height: h })
+    if (!win.isVisible()) reveal(win, false)
   })
   // The result card: only files Grip made (ours), never any path a page asks for.
   ipcMain.handle('shell:drag', (e, path: unknown, icon: unknown) => {
@@ -688,6 +721,13 @@ export function registerRecorder() {
     if (picking) showPicker()
     broadcast()
     await alert(typeof title === 'string' ? title : 'Grip couldn’t record.', plain.message)
+  })
+  ipcMain.handle('shell:shortcut', (e, keys: unknown) => {
+    if (keys !== null) return typeof keys === 'string' && setRecordShortcut(keys)
+    setRecordShortcut(null)
+    // Settings closed while the user was typing one: the current one comes back.
+    e.sender.once('destroyed', () => recordKeys || setRecordShortcut(settings().recordShortcut))
+    return true
   })
   ipcMain.handle('shell:display', (_e, id: number) => {
     const d = screen.getAllDisplays().find((d) => d.id === Number(id)) ?? screen.getPrimaryDisplay()
@@ -742,7 +782,7 @@ export function registerRecorder() {
   // files, projects rebuilds the rest): each opens in the editor, which says it was recovered.
   recordingEvents.on('recovered', (bundle: string) => openProject(bundle, true))
   recoveredAtLaunch.then((list) => list.forEach((r) => openProject(r.path, true)))
-  shortcut(SHORTCUTS.record, () => (status === 'idle' ? showPicker() : command('stop')))
+  setRecordShortcut(settings().recordShortcut)
   covered = displays()
   for (const e of ['display-added', 'display-removed', 'display-metrics-changed'] as const) {
     screen.on(e as 'display-added', () => {

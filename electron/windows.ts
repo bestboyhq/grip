@@ -1,6 +1,6 @@
 // Owner: app-shell. Window factory and routes. Every window loads the same renderer bundle with a
 // hash route: #/editor?project=<path>, #/recorder, #/widget, #/area, #/camera, #/notes, #/onboarding, #/export,
-// #/result.
+// #/result, #/grant.
 // Windows remember their position per display, come back on screen when a display goes away, and
 // drive the dock icon: it shows while a normal window is open, and hides during a recording.
 import { app, BrowserWindow, screen, type BrowserWindowConstructorOptions } from 'electron'

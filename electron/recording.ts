@@ -33,11 +33,12 @@ import { native } from './native.ts'
 import { setSettings, settings } from './shell/settings.ts'
 import { createBundle, projectEvents, projectsDir, readProject, writeNewRecording } from './projects.ts'
 
-/** Main-process listeners (dock, quit prompt): 'state' (RecState), 'finished' (bundle path,
- *  { reason, message? }), and 'recovered' (bundle path). */
+/** Main-process listeners (dock, quit prompt, drag-to-allow panel): 'state' (RecState), 'finished'
+ *  (bundle path, { reason, message? }), 'recovered' (bundle path), and 'settings' (Permission: System
+ *  Settings opened at its pane). */
 export const recordingEvents = new EventEmitter()
 
-const PERMISSIONS: Permission[] = ['screen', 'accessibility', 'inputMonitoring', 'microphone', 'camera']
+const PERMISSIONS: Permission[] = ['screen', 'accessibility', 'microphone', 'camera']
 // macOS reports these as denied before Grip ever asked; Grip remembers asking instead.
 const UNTOLD: Permission[] = ['screen', 'accessibility']
 
@@ -54,8 +55,13 @@ async function requestPermission(kind: Permission): Promise<PermissionStatus> {
     if (UNTOLD.includes(kind)) setSettings({ prompted: [...settings().prompted, kind] })
     return native.requestPermission(kind)
   }
-  if (s !== 'granted' && s !== 'restricted') native.openPermissionSettings(kind)
+  if (s !== 'granted' && s !== 'restricted') openSettings(kind)
   return s
+}
+
+function openSettings(kind: Permission) {
+  native.openPermissionSettings(kind)
+  recordingEvents.emit('settings', kind)
 }
 
 /** Bundle of the running recording. Set before any await, so a second start sees it. */
@@ -156,7 +162,7 @@ export function registerRecording() {
   ipcMain.handle('recording:state', () => native.recordingState())
   ipcMain.handle('recording:permissions', () => Object.fromEntries(PERMISSIONS.map((k) => [k, permissionStatus(k)])))
   ipcMain.handle('recording:requestPermission', (_e, kind: Permission) => requestPermission(kind))
-  ipcMain.handle('recording:openPermissionSettings', (_e, kind: Permission) => native.openPermissionSettings(kind))
+  ipcMain.handle('recording:openPermissionSettings', (_e, kind: Permission) => openSettings(kind))
   ipcMain.handle('recording:displays', () => native.listDisplays())
   ipcMain.handle('recording:windows', () => native.listWindows())
   ipcMain.handle('recording:microphones', () => native.listMicrophones())

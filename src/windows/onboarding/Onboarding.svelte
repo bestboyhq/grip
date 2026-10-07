@@ -8,20 +8,19 @@
   import Icon, { type IconName } from '../recorder/Icon.svelte'
   import { ensurePermission, setSettings, shell, type Permission, type PermissionStatus, type Settings } from '../recorder/shell.svelte.ts'
   import appIcon from '../../../build/icon.png'
+  import { acceleratorOf, symbols } from '../../shared/shortcut.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
   const ROWS: Array<{ id: Permission; title: string; reason: string; icon: IconName; required?: boolean }> = [
     { id: 'screen', title: 'Screen Recording', reason: 'Records your screen and the sound your Mac plays.', icon: 'screen', required: true },
     { id: 'accessibility', title: 'Accessibility', reason: 'Shows your keystrokes, and fits the window you record to size.', icon: 'accessibility' },
-    { id: 'inputMonitoring', title: 'Input Monitoring', reason: 'Lets Grip read the keys you press while you record.', icon: 'keyboard' },
     { id: 'microphone', title: 'Microphone', reason: 'Records your voice.', icon: 'mic' },
     { id: 'camera', title: 'Camera', reason: 'Records you in a bubble next to your screen.', icon: 'camera' },
   ]
   const NEED: Record<Permission, string> = {
     screen: 'Screen recording is turned off for Grip, so it can’t record. Turn it back on below.',
     accessibility: 'Accessibility is turned off for Grip, so your keystrokes won’t show. Turn it back on below.',
-    inputMonitoring: 'Input Monitoring is turned off for Grip, so your keystrokes won’t show. Turn it back on below.',
     microphone: 'The microphone is turned off for Grip. Turn it back on below.',
     camera: 'The camera is turned off for Grip. Turn it back on below.',
   }
@@ -33,7 +32,6 @@
     ['hideDesktopIcons', 'Hide desktop icons', 'Keeps a busy desktop out of your recordings.'],
   ]
   const SHORTCUTS = [
-    ['New recording, or finish', '⌥⌘↩'],
     ['Pause or resume', '⌥⇧⌘P'],
     ['Delete recording', '⌥⇧⌘⌫'],
     ['Start or stop the prompter', '⌥⌘.'],
@@ -66,6 +64,33 @@
   async function request(p: Permission) {
     asked = [...asked, p]
     if (await ensurePermission(p)) status = { ...status, [p]: 'granted' }
+  }
+
+  // The record shortcut is the user's: click it, type a new one (Esc keeps the old one).
+  let typingKeys = $state(false)
+  let keysNote = $state('') // why the last one typed can't be used
+  const recordKeys = $derived(symbols(shell.settings?.recordShortcut ?? '') ?? '')
+
+  function listen() {
+    if (typingKeys) return
+    typingKeys = true
+    keysNote = ''
+    invoke('shell:shortcut', null) // pressing the current one records it, not opens the picker
+  }
+  function stopListening() {
+    if (!typingKeys) return
+    typingKeys = false
+    invoke('shell:shortcut', shell.settings?.recordShortcut)
+  }
+  async function typeKeys(e: KeyboardEvent) {
+    if (!typingKeys || (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey)) return // Tab moves on
+    e.preventDefault()
+    if (e.key === 'Escape') return stopListening()
+    const keys = acceleratorOf(e)
+    if (keys === '') return // only modifiers so far
+    if (!keys) return void (keysNote = 'Use ⌘ or ⌃ with another modifier, like ⌥⌘ or ⇧⌘.')
+    typingKeys = false
+    keysNote = (await invoke('shell:shortcut', keys)) ? '' : `Another app uses ${symbols(keys)}. Try another.`
   }
 </script>
 
@@ -116,6 +141,7 @@
 {/snippet}
 
 <main class="window">
+  <div class="titlebar"></div>
   {#if page === 'welcome'}
     <section class="welcome">
       <img src={appIcon} alt="" width="128" height="128" />
@@ -154,6 +180,18 @@
       </ul>
       <h3>Keyboard shortcuts</h3>
       <ul class="rows compact">
+        <li>
+          <div class="text">
+            <div class="title">New recording, or finish</div>
+            <!-- macOS takes its own screenshot shortcuts before any app sees them. -->
+            <div class="reason" role="status">
+              {keysNote || (typingKeys ? 'To use ⇧⌘3, ⇧⌘4, or ⇧⌘5, first turn them off in System Settings › Keyboard › Keyboard Shortcuts › Screenshots.' : 'Works in any app. Click it to change it.')}
+            </div>
+          </div>
+          <button class="keys" class:typing={typingKeys} aria-label="New recording shortcut: {recordKeys}. Change" title="Click to change" onclick={listen} onkeydown={typeKeys} onblur={stopListening}
+            >{typingKeys ? 'Type a shortcut' : recordKeys}</button
+          >
+        </li>
         {#each SHORTCUTS as [label, keys] (label)}
           <li>
             <div class="text"><div class="title">{label}</div></div>
@@ -174,12 +212,14 @@
     inset: 0;
     display: flex;
     flex-direction: column;
-    -webkit-app-region: drag;
   }
-  button,
-  input,
-  .rows {
-    -webkit-app-region: no-drag;
+  /* The window drags by its title bar only: macOS gives a drag region's scroll wheel to the window,
+     so a page that drags everywhere never scrolls. */
+  .titlebar {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 40px;
+    -webkit-app-region: drag;
   }
   .welcome {
     flex: 1;
@@ -208,7 +248,9 @@
   }
   .body {
     flex: 1;
-    padding: 52px 40px 0;
+    margin-top: 40px; /* under the title bar: it scrolls where it shows */
+    padding: 12px 40px 0;
+    mask-image: linear-gradient(transparent, #000 12px); /* rows scroll away under a fade, not a cut */
     min-height: 0;
     overflow-y: auto; /* a banner and hints never push Continue off the window */
   }
@@ -352,6 +394,8 @@
   }
   .button:focus-visible,
   .link:focus-visible,
+  .keys:focus-visible,
+  .keys.typing,
   input:focus-visible {
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
@@ -406,12 +450,26 @@
     transform: translateX(13px);
     background: var(--accent-ink);
   }
-  kbd {
+  kbd,
+  .keys {
     padding: 3px 8px;
     border-radius: var(--radius-sm);
     background: var(--surface-100);
     box-shadow: var(--hairline);
     font: 13px var(--font);
     letter-spacing: 1px;
+  }
+  /* The one shortcut to change: a key cap that takes a click. */
+  .keys {
+    flex: none;
+    border: 0;
+    color: var(--text);
+  }
+  .keys:hover {
+    background: var(--surface-100-hover);
+  }
+  .keys.typing {
+    color: var(--text-dim);
+    letter-spacing: 0;
   }
 </style>

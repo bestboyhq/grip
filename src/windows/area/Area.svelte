@@ -3,7 +3,8 @@
      with preset sizes. Area mode: drag out a rectangle, resize it by its handles, type its size, lock
      an aspect; the last area is remembered. Then record it (↩, a 3-2-1 countdown over the region), or
      take a screenshot of it: ⌘C copies it at once, a tool from the strip beside it (or its key)
-     freezes it to draw on first, then ⌘C copies or ⌘S saves it to the Desktop.
+     freezes it to draw on first (a drawn shape drags to another place), then ⌘C copies or ⌘S
+     saves it to the Desktop.
      While an area records, the overlays stay as a click-through backdrop that dims everything around
      it; with the pen on (shell:draw), the recorded display's overlay takes the mouse and every stroke
      goes into the recording, fading out on screen like it will in the video. -->
@@ -16,7 +17,7 @@
   import { paintStroke, visibleStrokes, type Stroke } from '../../engine/overlays/drawings.ts'
   import { fromEngine, setSettings, shell, startRequest, toEngine, windowList, type Rect, type StartRequest, type WindowSource } from '../recorder/shell.svelte.ts'
   import { ASPECTS, constrain, formAt, presetFrame, presetSize, PRESETS, resize, toolsAt, type Handle } from './geometry.ts'
-  import { COLORS, FONT, FONT_FAMILY, paintShapes, tiny, TOOLS, type P, type Shape, type Tool } from './annotate.ts'
+  import { COLORS, FONT, FONT_FAMILY, moved, paintShapes, shapeAt, tiny, TOOLS, type P, type Shape, type Tool } from './annotate.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
@@ -126,65 +127,82 @@
 
   // ---- Screenshot: the area frozen into an image, drawn on, then copied or saved ----
 
-  let shot = $state<{ image: HTMLImageElement; png: Uint8Array; rect: Rect } | null>(null)
+  type Shot = { image: HTMLImageElement; png: Uint8Array; rect: Rect }
+  let shot = $state<Shot | null>(null) // frozen to draw on
   let tool = $state<Tool | null>(null)
   let color = $state(COLORS[0].value)
   let shapes = $state<Shape[]>([])
+  let past = $state.raw<Shape[][]>([]) // the shapes before each change, for undo
   let draft = $state<Shape | null>(null)
   let typing = $state<{ at: P; text: string } | null>(null)
-  let freezing: Promise<boolean> | null = null
+  let capturing: Promise<Shot | null> | null = null
+  let finishing = false // a copy or save is on its way: ⌘C spam makes one screenshot
 
-  /** Capture the selected area as it is now (without Grip's own windows). */
-  function freeze(): Promise<boolean> {
-    if (shot) return Promise.resolve(true)
-    if (!sel || !display) return Promise.resolve(false)
+  /** The selected area as it is now (without Grip's own windows), or as it was frozen. */
+  function capture(): Promise<Shot | null> {
+    if (shot) return Promise.resolve(shot)
+    if (!sel || !display) return Promise.resolve(null)
     const rect = $state.snapshot(sel)
     const id = display.id
-    return (freezing ??= (async () => {
+    return (capturing ??= (async () => {
       try {
         const png: Uint8Array = await invoke('recording:screenshot', id, toEngine(rect))
         const image = new Image()
         image.src = URL.createObjectURL(new Blob([png as BlobPart], { type: 'image/png' }))
         await image.decode()
-        shot = { image, png, rect }
-        return true
+        return { image, png, rect }
       } catch (e) {
         invoke('shell:fail', e instanceof Error ? e.message : String(e), 'Grip couldn’t take the screenshot.')
-        return false
+        return null
       } finally {
-        freezing = null
+        capturing = null
       }
     })())
   }
 
+  /** Freeze the area to draw on it. */
   async function pickTool(t: Tool) {
-    if (await freeze()) tool = t
+    const s = await capture()
+    if (!s) return
+    shot = s
+    tool = t
   }
 
+  const remember = () => (past = [...past, $state.snapshot(shapes)])
   function undo() {
     if (typing) typing = null
-    else shapes.pop()
+    else if (past.length) {
+      shapes = past.at(-1)!
+      past = past.slice(0, -1)
+    }
   }
 
   function commitText() {
-    if (typing && !tiny({ kind: 'text', color, ...typing })) shapes.push({ kind: 'text', color, at: typing.at, text: typing.text })
+    if (typing && !tiny({ kind: 'text', color, ...typing })) {
+      remember()
+      shapes.push({ kind: 'text', color, at: typing.at, text: typing.text })
+    }
     typing = null
   }
 
-  /** Copy (or save) the screenshot: the frozen image with its drawings, else the area as it is now. */
+  /** Copy (or save) the screenshot: the frozen image with its drawings, else the area as it is now.
+   *  An area copied at once is never frozen: nothing on screen changes before the picker goes. */
   async function finishShot(save: boolean) {
+    if (finishing) return
+    finishing = true
     commitText()
-    if (!(await freeze()) || !shot) return
-    let png = shot.png
+    const s = await capture()
+    if (!s) return void (finishing = false)
+    let png = s.png
     if (shapes.length) {
-      const { image } = shot
+      const { image } = s
       const c = new OffscreenCanvas(image.naturalWidth, image.naturalHeight)
       const ctx = c.getContext('2d')!
       ctx.drawImage(image, 0, 0)
-      paintShapes(ctx, $state.snapshot(shapes), image, image.naturalWidth / shot.rect.width)
+      paintShapes(ctx, $state.snapshot(shapes), image, image.naturalWidth / s.rect.width)
       png = new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer())
     }
-    invoke('shell:shot', png, shot.image.naturalWidth / shot.rect.width, save)
+    invoke('shell:shot', png, s.image.naturalWidth / s.rect.width, save).catch(() => (finishing = false))
   }
 
   /** The drawing board over the frozen area: the image and every shape, painted with the code that
@@ -200,28 +218,47 @@
     paintShapes(ctx, draft ? [...shapes, draft] : shapes, shot.image, k)
   }
 
-  const at = (e: PointerEvent): P => {
-    const r = (e.currentTarget as Element).getBoundingClientRect()
+  /** Where `e` is on the board; `on`: the event the board got (coalesced events have no target). */
+  const at = (e: PointerEvent, on = e): P => {
+    const r = (on.currentTarget as Element).getBoundingClientRect()
     return { x: e.clientX - r.left, y: e.clientY - r.top }
   }
+  /** A pen point, with a stylus's pressure; a mouse's ink goes by its speed (paintStroke). */
+  const inkAt = (e: PointerEvent, on = e) => ({ ...at(e, on), ...(e.pointerType === 'pen' && { p: e.pressure }) })
+  const measurer = new OffscreenCanvas(1, 1).getContext('2d')!
+  measurer.font = `600 ${FONT}px ${FONT_FAMILY}`
+  const shapeUnder = (p: P) => shapeAt(shapes, p, (line) => measurer.measureText(line).width)
+  let over = $state(false) // the pointer is on a shape: a drag moves it
+  let moving: { i: number; from: P; orig: Shape; moved: boolean } | null = null
+
   function boardDown(e: PointerEvent) {
     e.stopPropagation()
     e.preventDefault() // keeps the focus where it goes (the text input), not on the page
     if (e.button !== 0 || !tool) return
     const p = at(e)
     commitText()
-    if (tool === 'text') return void (typing = { at: p, text: '' })
+    const i = shapeUnder(p)
+    if (i >= 0) moving = { i, from: p, orig: $state.snapshot(shapes[i]), moved: false }
+    else if (tool === 'text') return void (typing = { at: p, text: '' })
+    else draft = tool === 'pen' ? { kind: 'pen', color, points: [inkAt(e)] } : { kind: tool, color, a: p, b: p }
     ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
-    draft = tool === 'pen' ? { kind: 'pen', color, points: [p] } : { kind: tool, color, a: p, b: p }
   }
   function boardMove(e: PointerEvent) {
-    if (!draft) return
     const p = at(e)
-    if (draft.kind === 'pen') draft.points.push(p)
+    if (moving) {
+      if (!moving.moved) remember()
+      moving.moved = true
+      shapes[moving.i] = moved(moving.orig, p.x - moving.from.x, p.y - moving.from.y)
+    } else if (!draft) over = shapeUnder(p) >= 0
+    else if (draft.kind === 'pen') for (const c of e.getCoalescedEvents?.() ?? [e]) draft.points.push(inkAt(c, e))
     else if (draft.kind !== 'text') draft.b = p
   }
   function boardUp() {
-    if (draft && !tiny(draft)) shapes.push(draft)
+    moving = null
+    if (draft && !tiny(draft)) {
+      remember()
+      shapes.push(draft)
+    }
     draft = null
   }
 
@@ -402,7 +439,7 @@
     {#if sel}
       <div class="sel" class:dragging={drag} class:frozen={!!shot} style:left="{sel.x}px" style:top="{sel.y}px" style:width="{sel.width}px" style:height="{sel.height}px" role="presentation" onpointerdown={(e) => down(e, 'move')}>
         {#if shot}
-          <canvas class="board" class:pointing={!!tool && tool !== 'text'} class:typing={tool === 'text'} {@attach board} onpointerdown={boardDown} onpointermove={boardMove} onpointerup={boardUp}></canvas>
+          <canvas class="board" class:pointing={!!tool && tool !== 'text'} class:typing={tool === 'text'} class:over {@attach board} onpointerdown={boardDown} onpointermove={boardMove} onpointerup={boardUp}></canvas>
           {#if typing}
             <!-- Enter places the text, ⇧↩ starts a new line. -->
             <textarea
@@ -488,7 +525,7 @@
             {/each}
           </div>
           <span class="rule"></span>
-          <button class="tool" aria-label="Undo" title="Undo (⌘Z)" disabled={!shapes.length && !typing} onclick={undo}><UiIcon name="undo" /></button>
+          <button class="tool" aria-label="Undo" title="Undo (⌘Z)" disabled={!past.length && !typing} onclick={undo}><UiIcon name="undo" /></button>
         </div>
       {/if}
     {:else}
@@ -819,6 +856,9 @@
   .board.typing {
     cursor: text;
   }
+  .board.over {
+    cursor: move;
+  }
   .type {
     position: absolute;
     min-width: 40px;
@@ -882,15 +922,16 @@
     margin: 4px 0;
     background: var(--edge-strong);
   }
+  /* One column under the tools, each color centered on the tools' axis. */
   .swatches {
-    display: grid;
-    grid-template-columns: repeat(2, 16px);
-    gap: 6px;
-    padding: 3px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 0;
   }
   .swatch {
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     padding: 0;
     border: 0;
     border-radius: 50%;

@@ -419,8 +419,8 @@ fn secure_input() -> bool {
     unsafe { IsSecureEventInputEnabled() != 0 }
 }
 
-/// Whether the tap receives keys: Input Monitoring, or Accessibility, granted.
-fn keys_allowed() -> bool {
+/// Whether the tap receives keys: Accessibility granted (it covers Input Monitoring), or Input Monitoring alone.
+pub(crate) fn keys_allowed() -> bool {
     CGPreflightListenEventAccess() || unsafe { AXIsProcessTrusted() != 0 }
 }
 
@@ -696,8 +696,8 @@ impl InputRecorder {
         let tap = if use_tap { spawn_tap(shared.clone()) } else { None };
         let warning = match (tap.is_some(), keys_allowed()) {
             (true, true) => None,
-            (true, false) => Some("Keystrokes are not recorded: allow Grip in System Settings > Privacy & Security > Input Monitoring."),
-            (false, _) => Some("Keystrokes and scrolling are not recorded: allow Grip in System Settings > Privacy & Security > Input Monitoring."),
+            (true, false) => Some("Keystrokes are not recorded: allow Grip in System Settings > Privacy & Security > Accessibility."),
+            (false, _) => Some("Keystrokes and scrolling are not recorded: allow Grip in System Settings > Privacy & Security > Accessibility."),
         };
         let cursors = Cursors { dir: cursors, saved: HashSet::new(), last: None, size: cursor_size(), standard: standard_cursors() };
         let s = shared.clone();

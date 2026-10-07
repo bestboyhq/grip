@@ -11,7 +11,7 @@ export interface P {
 }
 export type Shape =
   | { kind: 'arrow' | 'rect' | 'blur'; color: string; a: P; b: P }
-  | { kind: 'pen'; color: string; points: P[] }
+  | { kind: 'pen'; color: string; points: Array<P & { p?: number }> } // p: a stylus's pressure
   | { kind: 'text'; color: string; at: P; text: string }
 
 /** Keyboard shortcuts of the tools, in toolbar order. */
@@ -35,21 +35,20 @@ export const FONT = 20 // pt
 const BLOCK = 9 // pt, pixel blocks of the pixelate tool
 export const FONT_FAMILY = '-apple-system, BlinkMacSystemFont, system-ui, sans-serif'
 
-/** An arrow from a to b: where the shaft ends (inside the head, so its round cap never pokes out)
- *  and the head's three corners. Short arrows get a smaller head. */
-export function arrowHead(a: P, b: P, w = LINE) {
+/** An arrow from a to b as one outline, tip first around: a shaft that widens from a fine tail to
+ *  the head, and a head whose barbs sweep back past where the shaft meets it. Short arrows get a
+ *  smaller head. */
+export function arrowOutline(a: P, b: P, w = LINE): P[] {
   const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
   const ux = (b.x - a.x) / len
   const uy = (b.y - a.y) / len
-  const head = Math.min(w * 4.2, len * 0.55)
-  const half = head * 0.58
-  const base = { x: b.x - ux * head, y: b.y - uy * head }
-  return {
-    shaft: { x: b.x - ux * head * 0.7, y: b.y - uy * head * 0.7 },
-    tip: b,
-    left: { x: base.x - uy * half, y: base.y + ux * half },
-    right: { x: base.x + uy * half, y: base.y - ux * half },
-  }
+  const at = (back: number, side: number): P => ({ x: b.x - ux * back - uy * side, y: b.y - uy * back + ux * side }) // back from the tip
+  const head = Math.min(w * 5, len * 0.6)
+  const barb = head * 0.55 // half the head's width
+  const neck = head * 0.72 // where the shaft meets the head
+  const shaft = Math.min(w * 0.55, barb * 0.4) // half the shaft's width there
+  const tail = shaft * 0.3
+  return [b, at(head, barb), at(neck, shaft), at(len, tail), at(len, -tail), at(neck, -shaft), at(head, -barb)]
 }
 
 const box = (a: P, b: P) => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) })
@@ -88,18 +87,13 @@ export function paintShapes(ctx: Ctx, shapes: Shape[], image: HTMLImageElement |
         ctx.roundRect(r.x, r.y, r.w, r.h, Math.min(4, r.w / 2, r.h / 2))
         ctx.stroke()
       } else if (s.kind === 'arrow') {
-        const h = arrowHead(s.a, s.b)
         ctx.beginPath()
-        ctx.moveTo(s.a.x, s.a.y)
-        ctx.lineTo(h.shaft.x, h.shaft.y)
-        ctx.stroke()
-        ctx.lineWidth = LINE * 0.6 // rounds the head's corners without growing it
-        ctx.beginPath()
-        ctx.moveTo(h.tip.x, h.tip.y)
-        ctx.lineTo(h.left.x, h.left.y)
-        ctx.lineTo(h.right.x, h.right.y)
+        for (const q of arrowOutline(s.a, s.b)) ctx.lineTo(q.x, q.y)
         ctx.closePath()
         ctx.fill()
+        // Corners rounded a hair, with no second shadow falling on the fill.
+        ctx.shadowColor = 'transparent'
+        ctx.lineWidth = LINE * 0.25
         ctx.stroke()
       } else if (s.kind === 'text') {
         ctx.font = `600 ${FONT}px ${FONT_FAMILY}`
@@ -109,6 +103,45 @@ export function paintShapes(ctx: Ctx, shapes: Shape[], image: HTMLImageElement |
     }
     ctx.restore()
   }
+}
+
+/** Distance from p to the segment a-b. */
+function toSegment(p: P, a: P, b: P): number {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const t = Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)))
+  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy)
+}
+
+/** The topmost shape under p, or -1: near an arrow, a pen stroke, or a rectangle's edge (so a mark
+ *  can still go inside a rectangle), or inside a pixelated box or a text. `measure`: a line of
+ *  text's width in points. */
+export function shapeAt(shapes: Shape[], p: P, measure: (line: string) => number): number {
+  const near = LINE / 2 + 5
+  const inside = (r: ReturnType<typeof box>, m: number) => p.x >= r.x - m && p.x <= r.x + r.w + m && p.y >= r.y - m && p.y <= r.y + r.h + m
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i]
+    let hit: boolean
+    if (s.kind === 'pen') hit = s.points.some((q, j) => toSegment(p, s.points[Math.max(0, j - 1)], q) <= near)
+    else if (s.kind === 'arrow') hit = toSegment(p, s.a, s.b) <= near
+    else if (s.kind === 'text') {
+      const lines = s.text.split('\n')
+      hit = inside({ x: s.at.x, y: s.at.y, w: Math.max(...lines.map(measure)), h: lines.length * FONT * 1.25 }, 4)
+    } else {
+      const r = box(s.a, s.b)
+      hit = s.kind === 'blur' ? inside(r, 0) : inside(r, near) && !inside(r, -near)
+    }
+    if (hit) return i
+  }
+  return -1
+}
+
+/** `s` moved by (dx, dy). */
+export function moved(s: Shape, dx: number, dy: number): Shape {
+  const by = <T extends P>(q: T): T => ({ ...q, x: q.x + dx, y: q.y + dy })
+  if (s.kind === 'pen') return { ...s, points: s.points.map(by) }
+  if (s.kind === 'text') return { ...s, at: by(s.at) }
+  return { ...s, a: by(s.a), b: by(s.b) }
 }
 
 /** Whether a shape drawn this small is a slip of the mouse, not a mark. */

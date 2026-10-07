@@ -36,15 +36,24 @@
   const file = $derived(shot || (job?.state === 'done' && job.dest !== 'share' ? job.path : ''))
   const close = () => window.close()
 
+  // The card fits its height to its content, and shows then: only once the picture has its size, so
+  // it never appears at one size and jumps to another.
+  let sized = false
+  const fit = () => sized && invoke('shell:fit', Math.ceil(card.getBoundingClientRect().height))
+  const pictureSized = () => {
+    sized = true
+    fit()
+  }
+
   onMount(() => {
-    const fit = new ResizeObserver(() => invoke('shell:fit', Math.ceil(card.getBoundingClientRect().height)))
-    fit.observe(card)
+    const refit = new ResizeObserver(fit)
+    refit.observe(card)
     const off = on('export:update', (j: JobInfo) => {
       seen.set(j.id, j)
       if (j.id === job?.id) job = j
     })
     return () => {
-      fit.disconnect()
+      refit.disconnect()
       off()
     }
   })
@@ -109,7 +118,7 @@
 <main class="card hud" bind:this={card} onpointerenter={() => (hovered = true)} onpointerleave={() => (hovered = false)}>
   <div class="picture" class:grab={!!file} draggable={!!file} ondragstart={drag} role="img" aria-label={shot ? 'Screenshot' : 'Recording'}>
     {#if shot}
-      <img bind:this={picture} src={fileUrl(shot)} alt="" />
+      <img bind:this={picture} src={fileUrl(shot)} alt="" onload={pictureSized} onerror={pictureSized} />
     {:else}
       <video
         bind:this={picture}
@@ -119,7 +128,9 @@
         onloadedmetadata={(e) => {
           duration = e.currentTarget.duration
           e.currentTarget.currentTime = Math.min(0.5, duration / 2) // past a black first frame
+          pictureSized()
         }}
+        onerror={pictureSized}
       ></video>
     {/if}
     <button class="close" aria-label="Close" onclick={close}><Icon name="close" size={14} /></button>

@@ -3,6 +3,7 @@
 // recorder's live overlay paints with the same code as preview and export. Any time base works:
 // the engine passes output time, the live overlay its own clock.
 
+import { getStroke } from 'perfect-freehand'
 import type { InputEvent } from '../../shared/events.ts'
 
 export interface Stroke {
@@ -59,35 +60,34 @@ export function visibleStrokes(strokes: Stroke[], t: number): Array<{ points: Ar
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
 
-/** One stroke: a smooth path through the midpoints of its points, round caps and joins, a dot for a
- *  tap. A soft dark halo keeps it readable on light and same-colored content. */
-export function paintStroke(ctx: Ctx, points: Array<{ x: number; y: number }>, color: string, width: number, opacity: number): void {
+// tldraw's draw settings (packages/tldraw/src/lib/shapes/draw/getPath.ts), for strokes that are done.
+const MOUSE = { thinning: 0.5, streamline: 0.64, smoothing: 0.62, easing: (t: number) => Math.sin((t * Math.PI) / 2), simulatePressure: true, last: true }
+const STYLUS = { thinning: 0.62, streamline: 0.62, smoothing: 0.62, easing: (t: number) => t * 0.65 + Math.sin((t * Math.PI) / 2) * 0.35, simulatePressure: false, last: true }
+
+/** One stroke as ink, like tldraw's pen (perfect-freehand): wider where the hand slows down or presses
+ *  harder, thinner where it speeds up, smoothed of jitter, a dot for a tap. Points with a pressure
+ *  `p` (a stylus) go by it, points without (a mouse, a trackpad) by their speed. `width` is the
+ *  width at medium pressure. A soft dark halo keeps it readable on light and same-colored content. */
+export function paintStroke(ctx: Ctx, points: Array<{ x: number; y: number; p?: number }>, color: string, width: number, opacity: number): void {
   if (!points.length || !(width > 0) || !(opacity > 0)) return
+  const stylus = points.some((q) => q.p !== undefined)
+  const outline = getStroke(points.map((q) => [q.x, q.y, q.p ?? 0.5]), stylus ? { ...STYLUS, size: 1 + width * 1.2 } : { ...MOUSE, size: width })
+  if (outline.length < 3) return
   const m = ctx.getTransform()
   ctx.save()
   ctx.globalAlpha = Math.min(1, opacity)
-  ctx.strokeStyle = ctx.fillStyle = color
-  ctx.lineWidth = width
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
+  ctx.fillStyle = color
   ctx.shadowColor = 'rgb(0 0 0 / 0.25)'
   ctx.shadowBlur = width * 0.6 * Math.hypot(m.a, m.b) // shadows ignore the transform; scale by hand
+  // A smooth closed curve through the midpoints of the outline, filled once: one halo, no seams.
+  const n = outline.length
   ctx.beginPath()
-  const [a] = points
-  // A tap without moving: Canvas may prune a zero-length path instead of capping it.
-  if (points.every((p) => p.x === a.x && p.y === a.y)) {
-    ctx.arc(a.x, a.y, width / 2, 0, Math.PI * 2)
-    ctx.fill()
-  } else {
-    ctx.moveTo(a.x, a.y)
-    for (let i = 1; i < points.length - 1; i++) {
-      const p = points[i]
-      const q = points[i + 1]
-      ctx.quadraticCurveTo(p.x, p.y, (p.x + q.x) / 2, (p.y + q.y) / 2)
-    }
-    const z = points[points.length - 1]
-    ctx.lineTo(z.x, z.y)
-    ctx.stroke()
+  for (let i = 0; i <= n; i++) {
+    const [ax, ay] = outline[i % n]
+    const [bx, by] = outline[(i + 1) % n]
+    if (i === 0) ctx.moveTo((ax + bx) / 2, (ay + by) / 2)
+    else ctx.quadraticCurveTo(ax, ay, (ax + bx) / 2, (ay + by) / 2)
   }
+  ctx.fill()
   ctx.restore()
 }
