@@ -1,5 +1,5 @@
 // `grip://` automation URLs (Raycast, Shortcuts, scripts):
-//   grip://record[?mode=display|window|area|device]   open the picker (the last mode unless given)
+//   grip://record[?mode=display|window|area|device]   open the picker (the toolbar alone unless given)
 //   grip://stop                                         finish the recording in progress
 //   grip://open?path=<absolute path to a .grip bundle>
 //   grip://open?url=<shared project link>               download it and open it (electron/share.ts)
