@@ -12,7 +12,7 @@ export const RULER = 38 // playhead knob on top, labels, tick dots
 const TOP = RULER + 4
 const GAP = 6
 const BOTTOM = 16
-const HEIGHTS: Record<M.TrackId, number> = { clips: 52, zooms: 36, layouts: 26, masks: 26, keys: 20, captions: 20 }
+const HEIGHTS: Record<M.TrackId, number> = { clips: 40, zooms: 36, layouts: 26, masks: 26, keys: 20, captions: 20 }
 const EDGE = 8 // px of a block's end that grabs the edge
 
 export interface Row {
@@ -323,31 +323,28 @@ function clipBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, c: Clip, b
   if (c.muted || c.volume !== 1) {
     meta.push({ icon: c.muted || c.volume === 0 ? mute : speaker, text: c.muted ? '' : `${Math.round(c.volume * 100)}%`, font: F_META, color: C.clipText, pill: C.pill })
   }
-  const title: Seg[] = [{ icon: film, text: 'Clip', font: F_TITLE, color: C.clipText }]
   if (w > 20) {
     ctx.save()
     ctx.beginPath()
     ctx.rect(xa + 4, y, w - 8, h)
     ctx.clip()
-    if (fitsRow(ctx, title, vw - 16) && fitsRow(ctx, meta, vw - 16)) {
-      row1(ctx, title, cx, y + 18)
-      row1(ctx, meta, cx, y + 33)
-    } else {
+    if (fitsRow(ctx, meta, vw - 16)) row1(ctx, meta, cx, y + 16)
+    else {
       const compact = c.speed === 1 ? [meta[0]] : [meta[1]]
-      if (fitsRow(ctx, compact, vw - 8)) row1(ctx, compact, cx, y + 22)
+      if (fitsRow(ctx, compact, vw - 8)) row1(ctx, compact, cx, y + 16)
     }
     ctx.restore()
     if (w > 200) {
-      // Source in and out, above the waveform: only whole, and clear of the title centered between them.
+      // Source in and out, above the waveform: only whole, and clear of the labels centered between them.
       const a = formatTime(c.start, 0)
       const b = formatTime(c.end, 0)
-      const half = rowWidth(ctx, title) / 2 + 8
+      const half = rowWidth(ctx, meta) / 2 + 8
       ctx.font = F_SMALL
       ctx.fillStyle = C.clipMeta
       ctx.textAlign = 'left'
-      if (xa + 9 >= 0 && xa + 9 + measure(ctx, F_SMALL, a) <= cx - half) ctx.fillText(a, xa + 9, y + 15)
+      if (xa + 9 >= 0 && xa + 9 + measure(ctx, F_SMALL, a) <= cx - half) ctx.fillText(a, xa + 9, y + 16)
       ctx.textAlign = 'right'
-      if (xb - 9 <= v.W && xb - 9 - measure(ctx, F_SMALL, b) >= cx + half) ctx.fillText(b, xb - 9, y + 15)
+      if (xb - 9 <= v.W && xb - 9 - measure(ctx, F_SMALL, b) >= cx + half) ctx.fillText(b, xb - 9, y + 16)
     }
   }
 }
@@ -358,7 +355,7 @@ function wave(ctx: CanvasRenderingContext2D, s: Scene, c: Clip, b: M.Block, xa: 
   const perPx = c.speed / v.pps // source seconds per px
   const level = s.waves.level(perPx)
   const base = y + h + 1 // silence sits just under the clip's edge, so its contour does not show
-  const max = h - 35 // peaks stay under the labels (meta baseline at y + 33)
+  const max = h - 22 // peaks stay under the labels (baseline at y + 16)
   const x0 = Math.max(Math.floor(xa), 0)
   const x1 = Math.min(Math.ceil(xb), v.W)
   // Mic behind, system audio in front: each a translucent body under a crisp edge.
@@ -719,14 +716,6 @@ function line(ctx: CanvasRenderingContext2D, draw: () => void, width = 1.2) {
   draw()
   ctx.stroke()
 }
-const film: Icon = (ctx, x, y, s) =>
-  line(ctx, () => {
-    ctx.roundRect(x + 0.5, y + 1.5, s - 1, s - 3, 1.5)
-    ctx.moveTo(x + s * 0.3, y + 1.5)
-    ctx.lineTo(x + s * 0.3, y + s - 1.5)
-    ctx.moveTo(x + s * 0.7, y + 1.5)
-    ctx.lineTo(x + s * 0.7, y + s - 1.5)
-  })
 const gauge: Icon = (ctx, x, y, s) =>
   line(ctx, () => {
     ctx.arc(x + s / 2, y + s / 2 + 0.5, s / 2 - 0.5, Math.PI * 0.8, Math.PI * 2.2)
