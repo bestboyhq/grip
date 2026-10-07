@@ -9,18 +9,19 @@ use block2::RcBlock;
 use napi::bindgen_prelude::spawn_blocking;
 use napi_derive::napi;
 use objc2::runtime::Bool;
-use objc2_app_kit::NSWorkspace;
+use objc2_app_kit::{NSRunningApplication, NSWorkspace};
 use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio, AVMediaTypeVideo};
 use objc2_core_foundation::{CFBoolean, CFDictionary, CFString};
 use objc2_core_graphics::{CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess};
 use objc2_foundation::{NSString, NSURL};
+
+use crate::capture::Rect;
 
 #[napi(string_enum = "camelCase")]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Permission {
     Screen,
     Accessibility,
-    InputMonitoring,
     Microphone,
     Camera,
 }
@@ -41,13 +42,6 @@ unsafe extern "C" {
     static kAXTrustedCheckOptionPrompt: &'static CFString;
 }
 
-#[link(name = "IOKit", kind = "framework")]
-unsafe extern "C" {
-    fn IOHIDCheckAccess(request: u32) -> u32;
-    fn IOHIDRequestAccess(request: u32) -> u8;
-}
-const HID_LISTEN_EVENT: u32 = 1;
-
 /// The one-line reason shown when `kind` is missing.
 pub fn missing(kind: Permission) -> &'static str {
     match kind {
@@ -56,9 +50,6 @@ pub fn missing(kind: Permission) -> &'static str {
         }
         Permission::Accessibility => {
             "Grip needs Accessibility permission. Turn it on in System Settings > Privacy & Security > Accessibility."
-        }
-        Permission::InputMonitoring => {
-            "Grip needs Input Monitoring permission. Turn it on in System Settings > Privacy & Security > Input Monitoring."
         }
         Permission::Microphone => {
             "Grip needs Microphone permission. Turn it on in System Settings > Privacy & Security > Microphone."
@@ -91,11 +82,6 @@ pub fn permission_status(kind: Permission) -> PermissionStatus {
     match kind {
         Permission::Screen => granted(CGPreflightScreenCaptureAccess()),
         Permission::Accessibility => granted(unsafe { AXIsProcessTrusted() } != 0),
-        Permission::InputMonitoring => match unsafe { IOHIDCheckAccess(HID_LISTEN_EVENT) } {
-            0 => PermissionStatus::Granted,
-            1 => PermissionStatus::Denied,
-            _ => PermissionStatus::NotDetermined,
-        },
         Permission::Microphone => av_status(false),
         Permission::Camera => av_status(true),
     }
@@ -116,9 +102,6 @@ pub fn request(kind: Permission) -> PermissionStatus {
         Permission::Accessibility => {
             let prompt = CFDictionary::from_slices(&[unsafe { kAXTrustedCheckOptionPrompt }], &[CFBoolean::new(true)]);
             unsafe { AXIsProcessTrustedWithOptions(prompt.as_ref()) };
-        }
-        Permission::InputMonitoring => {
-            unsafe { IOHIDRequestAccess(HID_LISTEN_EVENT) };
         }
         Permission::Microphone | Permission::Camera => {
             let video = kind == Permission::Camera;
@@ -144,7 +127,6 @@ pub fn open_permission_settings(kind: Permission) -> napi::Result<()> {
     let pane = match kind {
         Permission::Screen => "Privacy_ScreenCapture",
         Permission::Accessibility => "Privacy_Accessibility",
-        Permission::InputMonitoring => "Privacy_ListenEvent",
         Permission::Microphone => "Privacy_Microphone",
         Permission::Camera => "Privacy_Camera",
     };
@@ -158,22 +140,36 @@ pub fn open_permission_settings(kind: Permission) -> napi::Result<()> {
     }
 }
 
+#[napi(object)]
+pub struct SettingsWindow {
+    /// Its frontmost window (global points), when one is on screen.
+    pub frame: Option<Rect>,
+    /// Another app is in front: neither System Settings nor Grip is active.
+    pub covered: bool,
+}
+
+/// System Settings' window, or nothing when System Settings is not running.
+#[napi]
+pub fn settings_window() -> Option<SettingsWindow> {
+    let id = NSString::from_str("com.apple.systempreferences");
+    let app = NSRunningApplication::runningApplicationsWithBundleIdentifier(&id).firstObject()?;
+    let frame = crate::capture::sck::front_window(app.processIdentifier())
+        .map(|r| Rect { x: r.origin.x, y: r.origin.y, w: r.size.width, h: r.size.height });
+    let covered = !app.isActive() && !NSRunningApplication::currentApplication().isActive();
+    Some(SettingsWindow { frame, covered })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn every_status_answers_and_every_reason_is_one_line() {
-        for kind in [
-            Permission::Screen,
-            Permission::Accessibility,
-            Permission::InputMonitoring,
-            Permission::Microphone,
-            Permission::Camera,
-        ] {
+        for kind in [Permission::Screen, Permission::Accessibility, Permission::Microphone, Permission::Camera] {
             let _ = permission_status(kind); // must not prompt, block, or crash without TCC grants
             let m = missing(kind);
             assert!(!m.contains('\n') && m.ends_with('.') && m.contains("System Settings"), "{m}");
         }
+        let _ = settings_window(); // needs no permission
     }
 }

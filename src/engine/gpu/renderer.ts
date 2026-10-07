@@ -13,7 +13,7 @@
 // the final dither. Steady state allocates no GPU memory: textures live until the output size or
 // an asset changes, and video frames come in zero-copy as external textures.
 
-import type { Background, Rect } from '../../shared/project.ts'
+import { defaultStyle, type Background, type Rect } from '../../shared/project.ts'
 import type { CursorLayer, Scene, View } from '../scene.ts'
 import { deviceGeometry } from '../layout.ts'
 import { drawOverlays } from '../overlays/index.ts'
@@ -557,7 +557,7 @@ export class Renderer {
     const lab = (slot: number, c: readonly number[]) => p.set([...oklab(c), 1], slot * 4)
     const COLS = 15
     let bg = scene.background
-    if (bg.kind === 'image' && !image) bg = { kind: 'wallpaper', id: DEFAULT_WALLPAPER }
+    if (bg.kind === 'image' && !image) bg = defaultStyle().background
     let img: GPUTexture | null = null
     const enc = d.createCommandEncoder()
     p.set([W, H], 5)

@@ -34,6 +34,13 @@ export function place(size: { width: number; height: number }, area: Rect, botto
   return fit({ x, y, ...size }, area)
 }
 
+/** `size` centered under `w`, `gap` points below it, or over its bottom edge when `area` ends first. */
+export function under(size: { width: number; height: number }, w: Rect, area: Rect, gap: number): Rect {
+  const below = w.y + w.height + gap
+  const y = below + size.height <= area.y + area.height ? below : w.y + w.height - size.height - gap
+  return fit({ x: w.x + (w.width - size.width) / 2, y, ...size }, area)
+}
+
 /** What the picking overlays depend on: each display's id, bounds, scale, and rotation. Work-area
  *  changes (the Dock, the menu bar) leave it alone. */
 export function arrangement(displays: Array<{ id: number; bounds: Rect; scaleFactor: number; rotation: number }>): string {

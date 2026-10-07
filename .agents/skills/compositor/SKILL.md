@@ -8,6 +8,8 @@ description: GPU composition of each output frame. Use when changing backgrounds
 GPU composition of each output frame.
 
 - One render graph: background, then the padded, rounded, shadowed screen with optional device mockup, then camera, masks, and overlays (cursor, click effects, keystrokes, captions).
+- New projects start plain: the recording edge to edge, with no background, padding, corners, or shadow.
+  Picking a background while none would show adds padding so it does.
 - Backgrounds: wallpapers, gradients, colors, images, blur, with gradients dithered so they show no banding.
 - Rounded corners and shadows are antialiased on light and dark backgrounds at every scale.
 - Output aspect ratios: auto, 16:9, 9:16, 4:5, 1:1, and custom.

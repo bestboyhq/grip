@@ -21,8 +21,8 @@ use objc2_core_foundation::{CFArray, CFDictionary, CFRetained, CFString, CFType,
 use objc2_core_graphics::{
     CGDisplayBounds, CGDisplayCopyDisplayMode, CGDisplayIsBuiltin, CGDisplayIsMain, CGDisplayIsOnline, CGDisplayMode,
     CGGetActiveDisplayList, CGImage, CGPreflightScreenCaptureAccess, CGRectMakeWithDictionaryRepresentation,
-    CGWindowListCopyWindowInfo, CGWindowListOption, kCGColorSpaceSRGB, kCGDisplayStreamYCbCrMatrix_ITU_R_709_2,
-    kCGWindowBounds, kCGWindowOwnerPID,
+    CGWindowListCopyWindowInfo, CGWindowListOption, kCGColorSpaceDisplayP3, kCGColorSpaceSRGB, kCGDisplayStreamYCbCrMatrix_ITU_R_709_2,
+    kCGWindowBounds, kCGWindowLayer, kCGWindowOwnerPID,
 };
 use objc2_core_media::{CMSampleBuffer, CMTime};
 use objc2_core_video::kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
@@ -209,6 +209,17 @@ fn window_info(id: u32) -> Option<(i32, CGRect)> {
     let info = list.firstObject()?;
     let pid = number(&info, cf_ns(unsafe { kCGWindowOwnerPID }))? as i32;
     Some((pid, cg_rect(&info, cf_ns(unsafe { kCGWindowBounds }))?))
+}
+
+/// Frame (global points) of `pid`'s frontmost normal window on screen: no permission needed.
+pub fn front_window(pid: i32) -> Option<CGRect> {
+    let opts = CGWindowListOption::OptionOnScreenOnly | CGWindowListOption::ExcludeDesktopElements;
+    let list = CGWindowListCopyWindowInfo(opts, 0)?;
+    // SAFETY: as in window_info.
+    let list: &NSArray<NSDictionary<NSString, AnyObject>> = unsafe { &*(&*list as *const CFArray).cast() };
+    let (owner, layer) = unsafe { (cf_ns(kCGWindowOwnerPID), cf_ns(kCGWindowLayer)) };
+    let info = list.iter().find(|w| number(w, owner) == Some(pid as f64) && number(w, layer) == Some(0.0))?;
+    cg_rect(&info, cf_ns(unsafe { kCGWindowBounds }))
 }
 
 fn cf_ns(s: &CFString) -> &NSString {
@@ -608,7 +619,8 @@ pub fn windows() -> Result<Vec<Window>, String> {
 }
 
 /// A still of `r` (points relative to the display's top-left corner) at the display's pixel
-/// density, as PNG, without the cursor. Kept out like in recordings: our own windows (the picker,
+/// density, as a Display P3 PNG like the ones macOS takes (sRGB would dull wide-gamut colors), without
+/// the cursor. Kept out like in recordings: our own windows (the picker,
 /// its tools, the camera bubble) and notification banners.
 pub fn screenshot(display_id: u32, r: Rect) -> Result<Vec<u8>, String> {
     let content = content(false)?;
@@ -633,7 +645,7 @@ pub fn screenshot(display_id: u32, r: Rect) -> Result<Vec<u8>, String> {
         config.setHeight((h * scale).round() as usize);
         config.setShowsCursor(false);
         config.setCaptureResolution(SCCaptureResolutionType::Best);
-        config.setColorSpaceName(kCGColorSpaceSRGB);
+        config.setColorSpaceName(kCGColorSpaceDisplayP3);
     }
     let (tx, rx) = mpsc::channel();
     let done = RcBlock::new(move |img: *mut CGImage, e: *mut NSError| {

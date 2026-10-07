@@ -177,7 +177,7 @@
     if (e.key !== 'Escape') return
     if (countdown) countdown = null
     else if (update) later = update
-    else invoke(shell.mode ? 'shell:pick' : 'shell:close-picker', null)
+    else invoke('shell:close-picker')
   }}
   ondragover={(e) => e.preventDefault()}
   ondrop={(e) => dropFiles(e).catch((err: Error) => invoke('shell:warn', err.message))}

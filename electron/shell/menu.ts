@@ -3,7 +3,8 @@
 // while text fields keep native editing. No page zoom: those keys belong to the timeline.
 import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron'
 import { kindOf } from '../windows.ts'
-import { importDialog, openOnboarding, openProjectDialog, SHORTCUTS, showPicker } from './recorder.ts'
+import { importDialog, openOnboarding, openProjectDialog, showPicker } from './recorder.ts'
+import { settings } from './settings.ts'
 import { updateMenuItems } from './update.ts'
 
 /** The bundle shown by the focused editor window. */
@@ -50,7 +51,7 @@ export function setAppMenu() {
     {
       label: 'File',
       submenu: [
-        { label: 'New Recording', accelerator: SHORTCUTS.record, registerAccelerator: false, click: () => showPicker() },
+        { label: 'New Recording', accelerator: settings().recordShortcut, registerAccelerator: false, click: () => showPicker() },
         { label: 'Open Project…', accelerator: 'Command+O', click: openProjectDialog },
         { role: 'recentDocuments', submenu: [{ role: 'clearRecentDocuments' }] },
         { type: 'separator' },

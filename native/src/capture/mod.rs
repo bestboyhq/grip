@@ -955,16 +955,13 @@ mod tests {
         assert_eq!((s.file.as_str(), s.width, s.height, s.fps), ("sources/screen.mp4", 1280, 720, 30.0));
         let log = log.lock().unwrap();
         // The input recorder's permission warning reaches the recorder UI as a recording warning.
-        use crate::permissions::{Permission, PermissionStatus, permission_status};
-        let keys = [Permission::InputMonitoring, Permission::Accessibility]
-            .iter()
-            .any(|p| permission_status(*p) == PermissionStatus::Granted);
+        let keys = crate::input::keys_allowed();
         let warned = log.iter().find_map(|e| match e {
             RecordingEvent::Warning { code, message } if code == "input" => Some(message.clone()),
             _ => None,
         });
         assert_eq!(warned.is_some(), !keys, "{warned:?}");
-        assert!(warned.is_none_or(|m| m.contains("Input Monitoring") && !m.contains('\n')));
+        assert!(warned.is_none_or(|m| m.contains("Accessibility") && !m.contains('\n')));
         assert!(matches!(log.iter().rev().find(|e| matches!(e, RecordingEvent::Finished { .. })),
             Some(RecordingEvent::Finished { reason, .. }) if reason == "user"));
     }

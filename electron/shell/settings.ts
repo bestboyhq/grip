@@ -31,6 +31,9 @@ export interface Settings {
   prompted: Permission[]
   /** Remembered window bounds, keyed `<kind>@<display id>`. */
   windows: Record<string, Rect>
+  /** The global shortcut that opens the picker and finishes a recording: an Electron accelerator
+   *  (src/shared/shortcut.ts), set through shell:shortcut. */
+  recordShortcut: string
 }
 
 const defaults: Settings = {
@@ -50,6 +53,7 @@ const defaults: Settings = {
   onboarded: false,
   prompted: [],
   windows: {},
+  recordShortcut: 'Alt+Command+Return',
 }
 
 const file = () => join(app.getPath('userData'), 'settings.json')

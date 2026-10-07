@@ -6,6 +6,7 @@ import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions } from 'e
 import { join } from 'node:path'
 import { recentProjects } from '../projects.ts'
 import { updateMenuItems } from './update.ts'
+import { settings } from './settings.ts'
 import { cancelRecording, command, importDialog, openFilesOrAlert, openOnboarding, openProject, openProjectDialog, recordingStatus, SHORTCUTS, showPicker, statusListeners, toggleDrawing } from './recorder.ts'
 
 let tray: Tray | null = null // module scope: a collected Tray disappears from the menu bar
@@ -33,9 +34,10 @@ async function template(): Promise<MenuItemConstructorOptions[]> {
     { type: 'separator' },
     { label: 'Quit Grip', accelerator: 'Command+Q', registerAccelerator: false, click: () => app.quit() },
   ]
-  if (s === 'idle') return [{ label: 'New Recording', accelerator: SHORTCUTS.record, registerAccelerator: false, click: () => showPicker() }, ...common]
+  const record = settings().recordShortcut
+  if (s === 'idle') return [{ label: 'New Recording', accelerator: record, registerAccelerator: false, click: () => showPicker() }, ...common]
   return [
-    { label: 'Finish Recording', accelerator: SHORTCUTS.record, registerAccelerator: false, click: () => command('stop') },
+    { label: 'Finish Recording', accelerator: record, registerAccelerator: false, click: () => command('stop') },
     { label: s === 'paused' ? 'Resume Recording' : 'Pause Recording', accelerator: SHORTCUTS.pause, registerAccelerator: false, click: () => command('toggle-pause') },
     { label: 'Draw on Screen', accelerator: SHORTCUTS.draw, registerAccelerator: false, enabled: s === 'recording', click: () => toggleDrawing() },
     { label: 'Delete Recording…', accelerator: SHORTCUTS.cancel, registerAccelerator: false, click: cancelRecording },

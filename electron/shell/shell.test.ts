@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { inTurn, parseLaunch, parseGripUrl } from './url.ts'
 import { plainError } from './errors.ts'
-import { areaOf, arrangement, fit, place, reachable } from './bounds.ts'
+import { areaOf, arrangement, fit, place, reachable, under } from './bounds.ts'
 import { hold, release } from './session.ts'
 import { withScale } from './png.ts'
 import { execFile } from 'node:child_process'
@@ -84,6 +84,11 @@ test('window placement', () => {
   assert.deepEqual(place({ width: 880, height: 64 }, main, 20), { x: 316, y: 860, width: 880, height: 64 })
   assert.equal(areaOf({ x: 1400, y: 0, width: 400, height: 300 }, [main, ext]), 1)
   assert.equal(areaOf({ x: 9000, y: 0, width: 10, height: 10 }, [main, ext]), -1)
+  // The drag-to-allow panel: under System Settings, over its bottom edge when the screen ends, never off it.
+  const panel = { width: 380, height: 72 }
+  assert.deepEqual(under(panel, { x: 400, y: 100, width: 700, height: 600 }, main, 12), { x: 560, y: 712, ...panel })
+  assert.deepEqual(under(panel, { x: 400, y: 300, width: 700, height: 600 }, main, 12), { x: 560, y: 816, ...panel })
+  assert.deepEqual(under(panel, { x: -300, y: 100, width: 500, height: 600 }, main, 12), { x: 0, y: 712, ...panel })
 })
 
 test('the packaged app ships every file the main process imports', () => {

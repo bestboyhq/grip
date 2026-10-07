@@ -96,7 +96,7 @@ test('open clamps the playhead and drops assets that are gone', async () => {
   await writeProject(bundle, p)
   const r = await readProject(bundle)
   assert.equal(r.playhead, 4)
-  assert.equal(r.style.background.kind, 'wallpaper')
+  assert.deepEqual(r.style.background, createProject('', sources).style.background)
   assert.equal(r.style.camera.lut, undefined)
   p.style.camera.lut = 'grade:warm' // a built-in grade is not a file
   await writeProject(bundle, p)
@@ -310,7 +310,7 @@ test('presets bundle their assets, apply anywhere, and fall back to defaults for
   await assert.rejects(importPreset(hostile, dir), /damaged/)
   await writeFile(hostile, JSON.stringify({ format: 'grip-preset', version: 1, name: 'Proto', style: { background: { kind: 'image', file: '__proto__' } }, assets: {} }))
   const proto = await importPreset(hostile, dir)
-  assert.equal((await applyPreset(proto.id, to, dir)).background.kind, 'wallpaper')
+  assert.deepEqual((await applyPreset(proto.id, to, dir)).background, createProject('', sources).style.background)
   await writeFile(hostile, JSON.stringify({ format: 'grip-preset', version: 99, name: 'Future', style: {}, assets: {} }))
   await assert.rejects(importPreset(hostile, dir), /newer version of Grip/)
   await assert.rejects(applyPreset('../../etc/passwd', to, dir), /Unknown preset/)

@@ -98,7 +98,7 @@ Grip goes online only to download the speech model once (about 670 MB), to check
 
 | Anywhere | |
 | --- | --- |
-| **⌥⌘↩︎** | Start or stop recording |
+| **⌥⌘↩︎** | Start or stop recording (change it in Settings) |
 | **⌥⇧⌘P** | Pause or resume |
 | **⌥⇧⌘⌫** | Discard the recording |
 | **⌥⌘.** | Show or hide speaker notes |

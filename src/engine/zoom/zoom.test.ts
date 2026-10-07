@@ -172,7 +172,7 @@ test('vertical output: the screen covers the frame and the camera follows the cu
   const events = moves([[0, 100, 900], [4, 2780, 900], [6, 1400, 1700], [10, 1400, 1700]])
   const { p, view, screen, covered } = setup([zoom({ start: 4.5, end: 5.5 }), zoom({ start: 7, end: 9, level: 5 })], events, { width: W, height: H, duration: 10 })
   const base = view(3).scale
-  assert.ok(base >= H / screen(0).h && base < (H / screen(0).h) * 1.05, `base ${base}`)
+  assert.ok(base >= (H / screen(0).h) * (1 - 1e-6) && base < (H / screen(0).h) * 1.05, `base ${base}`) // samples are float32
   near(view(5.3).scale, base, 1e-3) // level 2 is less than the base view already magnifies
   near(view(8.5).scale, 5, 0.05)
   for (const t of frames(0, 10)) {

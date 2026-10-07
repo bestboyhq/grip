@@ -2,7 +2,7 @@
 <script lang="ts" module>
   export type IconName =
     | 'display' | 'window' | 'area' | 'device' | 'camera' | 'camera-off' | 'mic' | 'mic-off' | 'speaker' | 'speaker-off'
-    | 'gear' | 'chevron' | 'close' | 'pause' | 'play' | 'stop' | 'restart' | 'trash' | 'check' | 'screen' | 'keyboard' | 'accessibility'
+    | 'gear' | 'chevron' | 'close' | 'pause' | 'play' | 'stop' | 'restart' | 'trash' | 'check' | 'screen' | 'accessibility'
     | 'pen'
 
   /** Drawing boxes other than 24 x 24. Toolbar glyphs are drawn in points (1 unit = 1 pt at their size). */
@@ -101,9 +101,6 @@
     <rect x="2" y="3.5" width="20" height="14" rx="2.6" />
     <circle cx="12" cy="10.5" r="2.6" fill="currentColor" stroke="none" />
     <path d="M8.5 21h7" />
-  {:else if name === 'keyboard'}
-    <rect x="1.5" y="5" width="21" height="14" rx="2.6" />
-    <path d="M5.5 9h1M9.5 9h1M13.5 9h1M17.5 9h1M5.5 12.5h1M9.5 12.5h1M13.5 12.5h1M17.5 12.5h1M8 16h8" />
   {:else if name === 'accessibility'}
     <circle cx="12" cy="12" r="9.5" />
     <circle cx="12" cy="7.4" r="1.4" fill="currentColor" stroke="none" />

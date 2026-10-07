@@ -18,6 +18,7 @@ import { registerSettings, settings } from './shell/settings.ts'
 import { command, editorsDone, isQuitting, openFilesOrAlert, openOnboarding, openProject, recordingStatus, registerRecorder, setQuitting, showPicker, stopAndWait, warmUp } from './shell/recorder.ts'
 import { setAppMenu } from './shell/menu.ts'
 import { createTray } from './shell/tray.ts'
+import { registerGrant } from './shell/grant.ts'
 import { startUpdates } from './shell/update.ts'
 import { inTurn, parseLaunch, parseGripUrl } from './shell/url.ts'
 import { plainError } from './shell/errors.ts'
@@ -99,6 +100,7 @@ app.whenReady().then(() => {
   if (!app.isPackaged && process.env.STUDIO_FAKE_RECORDING) registerFakeRecording(process.env.STUDIO_FAKE_RECORDING)
   registerSettings()
   registerRecorder()
+  registerGrant()
   watchDisplays()
   setAppMenu()
   if (!hidden) createTray() // agent runs, one per worktree, stay out of the menu bar

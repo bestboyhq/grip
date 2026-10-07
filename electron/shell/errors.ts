@@ -4,7 +4,7 @@
 // what to do in one line. Pure: no electron imports.
 
 /** Same names as the capture engine's permissions (recording:permissions). */
-export type Permission = 'screen' | 'accessibility' | 'inputMonitoring' | 'microphone' | 'camera'
+export type Permission = 'screen' | 'accessibility' | 'microphone' | 'camera'
 
 export interface PlainError {
   message: string

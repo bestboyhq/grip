@@ -7,6 +7,7 @@
   const MACOS = 'macOS'
   const COLLECTIONS = [...new Set(WALLPAPERS.map((w) => w.collection))]
   const COLS = 7
+  const FRAME = 80 // padding a picked background brings when none would show
   const GAP = 8 // --gutter
 
   // The macOS collection (electron/wallpapers.ts): installed system wallpapers with their previews.
@@ -140,7 +141,11 @@
     tick().then(() => pillRow?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus())
   }
 
-  const setBg = (b: Background, merge?: string) => edit((p) => { p.style.background = b }, merge)
+  // A background picked while the screen fills the output edge to edge would not show: frame it.
+  const setBg = (b: Background, merge?: string) => edit((p) => {
+    p.style.background = b
+    if (p.style.padding === 0 && p.style.aspect === 'auto') p.style.padding = FRAME
+  }, merge)
   const set = <K extends keyof Style>(k: K) => (v: Style[K], merge?: string) => edit((p) => { p.style[k] = v }, merge)
 
   const stops = $derived(bg.kind === 'gradient' ? bg.stops : (GRADIENTS[0].stops))
@@ -228,7 +233,7 @@
           {#if missing !== bg.file}
             <img class="preview" src={fileUrl(`${doc.path}/${bg.file}`)} alt="Current background" onerror={() => (missing = bg.kind === 'image' ? bg.file : '')} />
           {:else}
-            <p class="preview missing" role="alert">The background image is missing from this project, so the default wallpaper shows. Choose another image.</p>
+            <p class="preview missing" role="alert">The background image is missing from this project, so the default background shows. Choose another image.</p>
           {/if}
         {/key}
       {/if}

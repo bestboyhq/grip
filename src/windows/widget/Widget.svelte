@@ -6,6 +6,7 @@
   import { invoke } from '../../lib/ipc.ts'
   import Icon from '../recorder/Icon.svelte'
   import { formatTime, shell } from '../recorder/shell.svelte.ts'
+  import { symbols } from '../../shared/shortcut.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
@@ -14,6 +15,7 @@
 
   const paused = $derived(shell.status === 'paused')
   const saving = $derived(shell.status === 'stopping')
+  const finishKeys = $derived(symbols(shell.settings?.recordShortcut ?? ''))
   const seconds = $derived(shell.elapsed + (shell.at ? Math.max(0, now - shell.at) / 1000 : 0))
   const run = (cmd: string) => invoke('shell:command', cmd)
 
@@ -57,7 +59,7 @@
       <Icon name={paused ? 'play' : 'pause'} size={18} />
     </button>
     <button aria-label="Restart" title="Restart" disabled={saving} onclick={() => (confirm = 'restart')}><Icon name="restart" size={18} stroke={1.8} /></button>
-    <button class="stop" aria-label="Finish recording" title="Finish (⌥⌘↩)" disabled={saving} onclick={() => run('stop')}><Icon name="stop" size={20} /></button>
+    <button class="stop" aria-label="Finish recording" title={finishKeys ? `Finish (${finishKeys})` : 'Finish'} disabled={saving} onclick={() => run('stop')}><Icon name="stop" size={20} /></button>
     <button aria-label="Delete recording" title="Delete (⌥⇧⌘⌫)" disabled={saving} onclick={() => (confirm = 'cancel')}><Icon name="trash" size={18} stroke={1.7} /></button>
   {/if}
 </main>
