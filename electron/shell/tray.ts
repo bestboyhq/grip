@@ -1,11 +1,12 @@
 // Menu bar icon. A click starts a capture (the area picker: record it or copy a screenshot); while
 // recording a click finishes. Right-click opens the menu: new recording, recent projects, open,
 // import, settings, updates, quit; while recording finish, pause, draw, delete. Dropped .grip
-// bundles open; dropped videos import as new projects.
+// bundles open; dropped videos import as new projects. A blue dot marks an update waiting for a restart.
 import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
+import { native } from '../native.ts'
 import { recentProjects } from '../projects.ts'
-import { updateMenuItems } from './update.ts'
+import { readyVersion, updateListeners, updateMenuItems } from './update.ts'
 import { settings } from './settings.ts'
 import { cancelRecording, command, importDialog, openFilesOrAlert, openOnboarding, openProject, openProjectDialog, recordingStatus, SHORTCUTS, showPicker, statusListeners, toggleDrawing } from './recorder.ts'
 
@@ -13,7 +14,7 @@ let tray: Tray | null = null // module scope: a collected Tray disappears from t
 
 function icon(name: string) {
   const img = nativeImage.createFromPath(join(import.meta.dirname, 'assets', name))
-  img.setTemplateImage(true)
+  img.setTemplateImage(name.endsWith('Template.png')) // macOS tints those to match the menu bar
   return img
 }
 
@@ -57,8 +58,18 @@ export function createTray() {
   tray.on('click', (e) => (e.ctrlKey ? pop() : running() ? command('stop') : showPicker()))
   tray.on('right-click', pop)
   tray.on('drop-files', (_e, files) => openFilesOrAlert(files))
-  statusListeners.push((s) => {
-    tray?.setImage(icon(s === 'idle' ? 'trayTemplate.png' : 'trayRecordingTemplate.png'))
-    tray?.setToolTip(s === 'idle' ? 'Record or take a screenshot' : 'Finish recording')
-  })
+  let shown = 'trayTemplate.png'
+  const paint = () => {
+    const idle = recordingStatus() === 'idle'
+    const update = readyVersion()
+    // The blue dot rules out a template image: the update icon matches the menu bar's appearance itself.
+    const name = !idle ? 'trayRecordingTemplate.png' : !update ? 'trayTemplate.png' : native.menuBarDark() ? 'trayUpdateDark.png' : 'trayUpdateLight.png'
+    if (name !== shown) tray?.setImage(icon((shown = name)))
+    tray?.setToolTip(!idle ? 'Finish recording' : update ? `Record or take a screenshot\nGrip ${update} is ready to install` : 'Record or take a screenshot')
+  }
+  statusListeners.push(paint)
+  updateListeners.push(paint)
+  // ponytail: polls while an update waits, since the menu bar turns light or dark with the wallpaper
+  // too and says nothing; observe its window's effectiveAppearance natively if the lag ever shows.
+  setInterval(() => readyVersion() && paint(), 3000)
 }

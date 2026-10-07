@@ -1,7 +1,8 @@
 // Renders the app icon and the menu bar icons:
 //   npx electron build/icons.ts
 // Outputs: build/icon.png (1024 px, the dev dock icon and the onboarding logo) and
-// electron/shell/assets/tray{,Recording}Template{,@2x}.png (macOS template images, black + alpha).
+// electron/shell/assets/tray{,Recording}Template{,@2x}.png (macOS template images, black + alpha) and
+// trayUpdate{Dark,Light}{,@2x}.png (in color, per menu bar appearance).
 // The packaged app's icon is build/Grip.icon itself; electron-builder compiles it.
 import { app, BrowserWindow, nativeImage } from 'electron'
 import { execFileSync } from 'node:child_process'
@@ -14,22 +15,30 @@ const assets = join(here, '../electron/shell/assets')
 
 // Menu bar icon, 18 pt: the app mark, two crop corners around a record dot. While recording it
 // inverts to a filled tile with the mark cut out, so the state reads at a glance in a monochrome menu bar.
+// An update waiting for a restart adds a blue badge in the empty top left corner. Color rules out a
+// template image, so that one comes twice, its glyph in the white or the black of the menu bar's own icons.
 // Two crop corners (top right, bottom left) on the square lo..hi: arm length a, corner radius r.
 const mark = (lo: number, hi: number, a: number, r: number) =>
   `M${hi - a} ${lo}H${hi - r}A${r} ${r} 0 0 1 ${hi} ${lo + r}V${lo + a}M${lo + a} ${hi}H${lo + r}A${r} ${r} 0 0 1 ${lo} ${hi - r}V${hi - a}`
-const tray = (recording: boolean) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
-  ${
-    recording
-      ? `<defs><mask id="m"><rect width="18" height="18" fill="#fff"/><path d="${mark(3.6, 14.4, 4.4, 2.2)}" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round"/><circle cx="9" cy="9" r="2.2" fill="#000"/></mask></defs><rect x="0.5" y="0.5" width="17" height="17" rx="4.2" fill="#000" mask="url(#m)"/>`
-      : `<path d="${mark(1.8, 16.2, 5.8, 2.9)}" fill="none" stroke="#000" stroke-width="1.7" stroke-linecap="round"/><circle cx="9" cy="9" r="2.6" fill="#000"/>`
-  }
-</svg>`
+const glyph = (color: string) =>
+  `<path d="${mark(1.8, 16.2, 5.8, 2.9)}" fill="none" stroke="${color}" stroke-width="1.7" stroke-linecap="round"/><circle cx="9" cy="9" r="2.6" fill="${color}"/>`
+const svg = (body: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">${body}</svg>`
+const idle = svg(glyph('#000'))
+const recording = svg(
+  `<defs><mask id="m"><rect width="18" height="18" fill="#fff"/><path d="${mark(3.6, 14.4, 4.4, 2.2)}" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round"/><circle cx="9" cy="9" r="2.2" fill="#000"/></mask></defs><rect x="0.5" y="0.5" width="17" height="17" rx="4.2" fill="#000" mask="url(#m)"/>`,
+)
+// macOS draws template icons in labelColor and badges in systemBlue, each per appearance.
+const update = (dark: boolean) => svg(`${glyph(dark ? '#fff' : 'rgb(0 0 0 / 0.85)')}<circle cx="3.6" cy="3.6" r="2.6" fill="${dark ? '#0a84ff' : '#007aff'}"/>`)
 
 const jobs: Array<[svg: string, px: number, out: string]> = [
-  [tray(false), 18, join(assets, 'trayTemplate.png')],
-  [tray(false), 36, join(assets, 'trayTemplate@2x.png')],
-  [tray(true), 18, join(assets, 'trayRecordingTemplate.png')],
-  [tray(true), 36, join(assets, 'trayRecordingTemplate@2x.png')],
+  [idle, 18, join(assets, 'trayTemplate.png')],
+  [idle, 36, join(assets, 'trayTemplate@2x.png')],
+  [recording, 18, join(assets, 'trayRecordingTemplate.png')],
+  [recording, 36, join(assets, 'trayRecordingTemplate@2x.png')],
+  [update(true), 18, join(assets, 'trayUpdateDark.png')],
+  [update(true), 36, join(assets, 'trayUpdateDark@2x.png')],
+  [update(false), 18, join(assets, 'trayUpdateLight.png')],
+  [update(false), 36, join(assets, 'trayUpdateLight@2x.png')],
 ]
 
 // build/icon.png as macOS draws Grip.icon (Liquid Glass, Display P3): compile it with actool into a

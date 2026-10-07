@@ -72,6 +72,13 @@ export declare function listMicrophones(): Array<Microphone>
 
 export declare function listWindows(): Promise<Array<Window>>
 
+/**
+ * Whether the menu bar draws its icons white. It follows the wallpaper as well as the system
+ * appearance, so it is read off the window of Grip's own menu bar icon, the app's appearance until
+ * there is one.
+ */
+export declare function menuBarDark(): boolean
+
 export interface MicLevel {
   /** Linear 0..1 over the last ~33 ms. */
   peak: number
