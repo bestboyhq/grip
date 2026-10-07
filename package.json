@@ -75,6 +75,7 @@
       "icon": "build/Grip.icon",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
+      "signIgnore": "\\.pak$",
       "minimumSystemVersion": "15.0",
       "extendInfo": {
         "NSCameraUsageDescription": "Grip records your camera next to your screen when you pick a camera.",
