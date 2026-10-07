@@ -14,10 +14,12 @@ import { setAppMenu } from './menu.ts'
 import { plainError } from './errors.ts'
 
 const { autoUpdater } = electronUpdater
-const EVERY = 4 * 60 * 60 * 1000 // a menu bar app runs for weeks: check again every few hours
+const EVERY = Number(process.env.STUDIO_UPDATE_EVERY) || 4 * 60 * 60 * 1000 // a menu bar app runs for weeks: check again every few hours
 
 let state: 'idle' | 'checking' | 'downloading' | 'ready' = 'idle'
-let version = ''
+let version = '' // the update waiting for a restart
+let next = '' // the release downloading, until Squirrel stages it
+let busy = false // a check or download in flight; they go on while an update waits, for a newer one
 let asked = false // the user clicked Check for Updates: answer them, even "up to date"
 let requested = false // Restart to Update started the next quit
 let restarting = false // the quit in progress ends in installing and relaunching
@@ -38,24 +40,32 @@ function say(message: string, detail: string) {
 }
 
 async function check() {
-  if (state !== 'idle') return
-  set('checking')
+  if (busy) return
+  busy = true
+  if (state === 'idle') set('checking')
   try {
     const result = await autoUpdater.checkForUpdates()
-    if (!result?.isUpdateAvailable) {
-      set('idle')
-      if (asked) say('You’re up to date.', `Grip ${app.getVersion()} is the latest version.`)
-      asked = false
+    const latest = result?.isUpdateAvailable ? result.updateInfo.version : ''
+    // A release newer than the update waiting for a restart replaces it: a restart lands on the latest.
+    if (latest && latest !== readyVersion()) {
+      next = latest
+      if (state === 'checking') set('downloading')
+      autoUpdater.downloadUpdate().catch(() => {}) // then Squirrel verifies and stages it: 'update-downloaded' below, or 'error'
       return
     }
-    version = result.updateInfo.version
-    set('downloading') // then Squirrel verifies and stages it: 'update-downloaded' below
-    result.downloadPromise?.catch(() => {}) // a failed download or install arrives as 'error' too
+    if (asked) say('You’re up to date.', `Grip ${app.getVersion()} is the latest version.`)
   } catch (err) {
-    set('idle')
     if (asked) say('Grip couldn’t check for updates.', plainError(err).message)
-    asked = false
   }
+  settle()
+}
+
+/** A check or download ended without staging anything: an update already waiting still waits. */
+function settle() {
+  busy = false
+  next = ''
+  asked = false
+  if (state !== 'ready') set('idle')
 }
 
 export function restartToUpdate() {
@@ -91,16 +101,19 @@ export function startUpdates(log: (err: unknown) => void) {
     }
   }
   autoUpdater.logger = null
+  autoUpdater.autoDownload = false // check() downloads, and never the update already waiting
   // Every error is logged (without a listener it would crash the main process). One while checking
   // is check()'s to answer; one while downloading ends the download.
   autoUpdater.on('error', (err) => {
     log(err)
-    if (state !== 'downloading') return
-    set('idle')
+    if (!next) return
     if (asked) say('Grip couldn’t download the update.', plainError(err).message)
-    asked = false
+    settle()
   })
   squirrel.on('update-downloaded', () => {
+    version = next
+    next = ''
+    busy = false
     set('ready')
     if (!asked || hidden) return
     asked = false
