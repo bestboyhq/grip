@@ -9,7 +9,7 @@
 //
 // IPC (all windows of this flow):
 //   shell:state -> { status, mode, picking, counting, area, drawing, inkDisplay, elapsed, at, update }, pushed as
-//                                 "shell:state" on change (update: a downloaded version waiting for a restart, or '';
+//                                 "shell:state" on change (update: a downloaded version waiting for a restart, or '' also while put off;
 //                                 drawing: the pen is on, on display inkDisplay)
 //   shell:command(cmd)            widget -> controller: stop, pause, resume, toggle-pause, cancel, restart
 //   shell:warn(message)           an engine warning (disk low, a device lost), shown as a notification
@@ -53,7 +53,7 @@ import { plainError, type Permission } from './errors.ts'
 import { editorCloser, type Choice } from './closing.ts'
 import { hold, release, type Held } from './session.ts'
 import { setSettings, settings, settingsListeners } from './settings.ts'
-import { readyVersion, updateListeners } from './update.ts'
+import { toolbarUpdate, updateListeners } from './update.ts'
 import { setAppMenu } from './menu.ts'
 import { symbols } from '../../src/shared/shortcut.ts'
 import type { Mode } from './url.ts'
@@ -150,7 +150,7 @@ function alert(message: string, detail: string) {
   return dialog.showMessageBox({ type: 'warning', message, detail })
 }
 
-const state = () => ({ status, mode, picking, counting, area, drawing, inkDisplay: recDisplay, ...clock, update: readyVersion() })
+const state = () => ({ status, mode, picking, counting, area, drawing, inkDisplay: recDisplay, ...clock, update: toolbarUpdate() })
 const broadcast = () => sendAll('shell:state', state())
 
 // ---- Toolbar (controller) ----
