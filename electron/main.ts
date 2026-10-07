@@ -5,7 +5,7 @@ import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { release } from 'node:os'
 import { registerMediaProtocol } from './media.ts'
-import { hidden, openWindow, watchDisplays } from './windows.ts'
+import { hidden, openWindow, updateDock, watchDisplays } from './windows.ts'
 import { registerRecording } from './recording.ts'
 import { registerProjects } from './projects.ts'
 import { activeExports, registerExport } from './export.ts'
@@ -19,7 +19,7 @@ import { command, editorsDone, isQuitting, openFilesOrAlert, openOnboarding, ope
 import { setAppMenu } from './shell/menu.ts'
 import { createTray } from './shell/tray.ts'
 import { registerGrant } from './shell/grant.ts'
-import { startUpdates } from './shell/update.ts'
+import { startUpdates, updatedWhileAway } from './shell/update.ts'
 import { inTurn, parseLaunch, parseGripUrl } from './shell/url.ts'
 import { plainError } from './shell/errors.ts'
 import { registerFakeRecording } from './shell/fake-recording.ts'
@@ -107,10 +107,13 @@ app.whenReady().then(() => {
   warmUp()
   ready = true
 
+  const away = updatedWhileAway()
   const queued = early.splice(0)
   const acted = launch(process.argv)
   for (const item of queued) /^grip:/i.test(item) ? openUrl(item) : openFilesOrAlert([item])
-  if (!acted && !queued.length) settings().onboarded ? showPicker() : openOnboarding(settings().welcomed ? 'page=permissions' : '')
+  // Updated while the user was away: back in the menu bar only, its dock icon gone too (no window hides it).
+  if (away) updateDock()
+  else if (!acted && !queued.length) settings().onboarded ? showPicker() : openOnboarding(settings().welcomed ? 'page=permissions' : '')
   startUpdates(logError)
 })
 

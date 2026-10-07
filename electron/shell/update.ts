@@ -5,19 +5,26 @@
 // where Cancel still cancels), then relaunches into the new version. A downloaded update also shows
 // on the recording toolbar (shell:state `update`, electron/shell/recorder.ts) and as a blue dot on the menu
 // bar icon (electron/shell/tray.ts).
+// A menu bar app is rarely quit, so a waiting update also installs while the user is away (screen
+// locked, or no input for a while), when that loses and hides nothing: no recording or export, and no
+// window open. The new version then starts in the menu bar only (updatedWhileAway, at launch).
 //
 // IPC: update:restart   the toolbar's Restart to Update
 //      update:later     the toolbar's Later: off the toolbar for a day
-import { app, autoUpdater as squirrel, dialog, ipcMain, powerMonitor, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, autoUpdater as squirrel, dialog, ipcMain, powerMonitor, type MenuItemConstructorOptions } from 'electron'
 import electronUpdater from 'electron-updater'
-import { hidden } from '../windows.ts'
-import { isQuitting } from './recorder.ts'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { hidden, kindOf } from '../windows.ts'
+import { activeExports } from '../export.ts'
+import { isQuitting, recordingStatus } from './recorder.ts'
 import { setAppMenu } from './menu.ts'
 import { plainError } from './errors.ts'
 
 const { autoUpdater } = electronUpdater
 const EVERY = Number(process.env.STUDIO_UPDATE_EVERY) || 4 * 60 * 60 * 1000 // a menu bar app runs for weeks: check again every few hours
 const DAY = 24 * 60 * 60 * 1000
+const AWAY = Number(process.env.STUDIO_UPDATE_AWAY) || 15 * 60 // seconds without input that mean the user is away
 
 let state: 'idle' | 'checking' | 'downloading' | 'ready' = 'idle'
 let version = '' // the update waiting for a restart
@@ -27,6 +34,8 @@ let asked = false // the user clicked Check for Updates: answer them, even "up t
 let requested = false // Restart to Update started the next quit
 let restarting = false // the quit in progress ends in installing and relaunching
 let later = 0 // the toolbar's Later keeps the update off it until then
+let away = false // the restart in progress installs while the user is away
+let failed = false // one did and came back as this version: no second try this run
 /** Main-process reactions to a state change (the recording toolbar's shell:state). */
 export const updateListeners: Array<() => void> = []
 
@@ -77,6 +86,33 @@ function settle() {
 export function restartToUpdate() {
   requested = true
   app.quit()
+}
+
+/** The relaunched app's cue, holding the version it should come back as. */
+const marker = () => join(app.getPath('userData'), 'updated-while-away')
+
+function restartWhileAway() {
+  if (state !== 'ready' || failed || isQuitting() || !['idle', 'locked'].includes(powerMonitor.getSystemIdleState(AWAY))) return
+  // Only the recording controller, hidden: no window of the user's goes away.
+  if (recordingStatus() !== 'idle' || activeExports() || !BrowserWindow.getAllWindows().every((w) => kindOf(w) === 'recorder' && !w.isVisible())) return
+  try {
+    writeFileSync(marker(), version)
+  } catch {
+    return // without it, the new version would open the picker on its own
+  }
+  away = true
+  restartToUpdate()
+}
+
+/** At launch: whether a restart while the user was away started this run, which then opens nothing. */
+export function updatedWhileAway(): boolean {
+  try {
+    failed = readFileSync(marker(), 'utf8') !== app.getVersion()
+    rmSync(marker())
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function updateMenuItems(): MenuItemConstructorOptions[] {
@@ -139,7 +175,11 @@ export function startUpdates(log: (err: unknown) => void) {
     if (!restarting) return
     restarting = false
     e.preventDefault()
-    autoUpdater.once('error', () => app.quit()) // Squirrel refused: still quit, it was asked for
+    // Squirrel refused: still quit, it was asked for; unasked, come back as this version (the marker says so).
+    autoUpdater.once('error', () => {
+      if (away) app.relaunch()
+      app.quit()
+    })
     autoUpdater.quitAndInstall()
   })
   ipcMain.handle('update:restart', restartToUpdate)
@@ -149,5 +189,6 @@ export function startUpdates(log: (err: unknown) => void) {
   })
   void check()
   setInterval(check, EVERY)
+  setInterval(restartWhileAway, Math.min(EVERY, 60_000))
   powerMonitor.on('resume', check) // the interval stops while the Mac sleeps: a laptop opened each morning checks then
 }
