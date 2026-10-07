@@ -25,6 +25,7 @@ const { autoUpdater } = electronUpdater
 const EVERY = Number(process.env.STUDIO_UPDATE_EVERY) || 4 * 60 * 60 * 1000 // a menu bar app runs for weeks: check again every few hours
 const DAY = 24 * 60 * 60 * 1000
 const AWAY = Number(process.env.STUDIO_UPDATE_AWAY) || 15 * 60 // seconds without input that mean the user is away
+const HELPERS = ['recorder', 'area'] // window kinds Grip keeps open, hidden, for itself
 
 let state: 'idle' | 'checking' | 'downloading' | 'ready' = 'idle'
 let version = '' // the update waiting for a restart
@@ -93,8 +94,9 @@ const marker = () => join(app.getPath('userData'), 'updated-while-away')
 
 function restartWhileAway() {
   if (state !== 'ready' || failed || isQuitting() || !['idle', 'locked'].includes(powerMonitor.getSystemIdleState(AWAY))) return
-  // Only the recording controller, hidden: no window of the user's goes away.
-  if (recordingStatus() !== 'idle' || activeExports() || !BrowserWindow.getAllWindows().every((w) => kindOf(w) === 'recorder' && !w.isVisible())) return
+  // Only Grip's own helpers, hidden (the recording controller and the picker's overlays, loaded
+  // ahead): no window of the user's goes away, not even a hidden one.
+  if (recordingStatus() !== 'idle' || activeExports() || !BrowserWindow.getAllWindows().every((w) => HELPERS.includes(kindOf(w)!) && !w.isVisible())) return
   try {
     writeFileSync(marker(), version)
   } catch {
