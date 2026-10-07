@@ -13,7 +13,8 @@ Screen, window, area, and device recording.
 - Plan the downscale for sources above the encoder's maximum dimensions (ultrawide, 5K+) at capture setup.
 - Our own UI stays out of the capture: recording widget, speaker notes and prompter, camera preview, area picker.
   System notifications and, optionally, desktop icons stay out too.
-- Screenshots come from the same area picker: ⌘C copies the area as it is, with nothing on screen changing first; a drawing tool freezes it to annotate, and drawn shapes drag to another place.
+- The picker freezes every display the moment it opens (shortcut or menu bar click), before any of our UI shows, so menus and hover states stay; the freeze ends when a countdown starts.
+- Screenshots come from the same area picker and are cut from that frozen frame: ⌘C copies the area, a drawing tool annotates it first, and drawn shapes drag to another place.
   They leave out our UI and the cursor like recordings do, and carry their pixel density (144 dpi on Retina) so they paste at on-screen size.
 - The camera preview sits in the corner of the recorded area where the video will put the camera; moving it moves the camera.
 - One recording session exists at a time.

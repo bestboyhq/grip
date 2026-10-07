@@ -169,6 +169,7 @@ async function enqueue(parent: BrowserWindow | null, reqs: ExportRequest[]): Pro
       if (typeof r?.bundle !== 'string' || !isAbsolute(r.bundle)) throw new Error('Export needs the absolute path of a project.')
       if (r.path !== undefined && (typeof r.path !== 'string' || !isAbsolute(r.path))) throw new Error('Export paths must be absolute.')
       const project = r.project ?? (await readProject(r.bundle))
+      if (r.plain === true) project.style = { ...project.style, aspect: 'auto', background: { kind: 'color', color: '#000000' }, padding: 0, radius: 0, inset: 0, shadow: 0, device: 'none' }
       const dest = DESTINATIONS.includes(r.dest) ? r.dest : 'file'
       const options = jobOptions(dest, r.options)
       return { project, options, dest, bundle: r.bundle, name: project.name || basename(r.bundle, '.grip'), ext: options.format, path: r.path }

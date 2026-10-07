@@ -14,6 +14,8 @@
 //   shell:command(cmd)            widget -> controller: stop, pause, resume, toggle-pause, cancel, restart
 //   shell:warn(message)           an engine warning (disk low, a device lost), shown as a notification
 //   shell:pick(mode | null)       enter or leave a picking mode (opens overlays per display)
+//   shell:still(displayId) -> PNG | null   overlay: its display frozen as it was when the picker opened (taken once)
+//   shell:ready                   overlay: painted (its still too), show it
 //   shell:close-picker            hide toolbar, overlays, and the idle camera bubble
 //   shell:countdown(on)           a countdown runs (Esc cancels it: "shell:escape")
 //   shell:start(opts)             overlay -> controller: start recording with these options
@@ -41,7 +43,7 @@ import { existsSync, statSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, resolve } from 'node:path'
 import { importVideo, recoveredAtLaunch } from '../projects.ts'
-import { recordingEvents, recordingName } from '../recording.ts'
+import { capture, recordingEvents, recordingName } from '../recording.ts'
 import { DRAW_FADE, DRAW_HOLD } from '../../src/engine/overlays/drawings.ts'
 import type { CameraPosition } from '../../src/shared/project.ts'
 import { activeDisplay, hidden, openWindow, reveal, sendAll, setRecordingDock, windowsOf } from '../windows.ts'
@@ -180,15 +182,17 @@ function controller(): BrowserWindow {
   return (toolbar = win)
 }
 
-/** Open the picker on the display under the mouse, in area mode unless told otherwise: the last area
- *  comes back selected, ready to record (↩) or to copy as a screenshot (⌘C). While recording, bring
- *  back the controls. */
+/** Open the picker on the display under the mouse, in area mode unless told otherwise: the screen
+ *  freezes, and the last area comes back selected, ready to record (↩) or to copy as a screenshot
+ *  (⌘C). While recording, bring back the controls. */
 export function showPicker(m: Mode = 'area') {
   if (status !== 'idle') return showWidget()
   const win = controller()
   win.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))
   picking = true
-  reveal(win)
+  // New overlays bring the toolbar with the frozen screen (showOverlay). Otherwise it shows now, before
+  // pick() gives the keyboard back to the area overlay.
+  if (m === 'device' || windowsOf('area').length) reveal(win)
   pick(m)
   updateHelpers()
 }
@@ -256,10 +260,12 @@ function pick(m: Mode | null) {
   const overlays = m === 'display' || m === 'window' || m === 'area'
   // While recording: the backdrop around an area, the pen, and strokes still fading out.
   const backdrop = status !== 'idle' && (!!area || drawing || Date.now() < inkUntil)
-  if (!overlays && !backdrop) for (const w of windowsOf('area')) w.destroy()
-  else if (!windowsOf('area').length) openOverlays()
+  if (!overlays && !backdrop) {
+    for (const w of windowsOf('area')) w.destroy()
+    stills.clear()
+  } else if (!windowsOf('area').length) openOverlays()
   else if (m === 'area') {
-    // Switched to area mode: the overlay under the mouse takes the keyboard (openOverlays does it for new ones).
+    // Switched to area mode: the overlay under the mouse takes the keyboard (showOverlay does it for new ones).
     const here = windowsOf('area').find((w) => screen.getDisplayMatching(w.getBounds()).id === activeDisplay().id)
     if (here?.isVisible()) reveal(here)
   }
@@ -276,8 +282,15 @@ function pick(m: Mode | null) {
 const displays = () => arrangement(screen.getAllDisplays())
 let covered = ''
 
+/** Each display as it was when its overlay opened to pick (PNG, null if the capture failed), until
+ *  the overlay takes it (shell:still): the overlays show it frozen, and screenshots are cut from it. */
+const stills = new Map<number, Promise<Uint8Array | null>>()
+
 function openOverlays() {
-  for (const d of screen.getAllDisplays()) {
+  const all = screen.getAllDisplays()
+  // Picking: freeze every display now, before anything of ours shows (a menu or a hover stays open).
+  if (status === 'idle') for (const d of all) stills.set(d.id, capture.screenshot(d.id, { x: 0, y: 0, w: d.bounds.width, h: d.bounds.height }).catch(() => null))
+  for (const d of all) {
     const w = openWindow(`area?display=${d.id}`, {
       ...floating,
       ...d.bounds,
@@ -289,10 +302,17 @@ function openOverlays() {
     })
     protect(w, 0)
     w.setBounds(d.bounds) // over the menu bar too
-    // Picking an area: the overlay under the mouse takes the keyboard (↩ records, ⌘C copies, A arrow...).
-    // A panel: it takes key focus without bringing Grip forward.
-    w.once('ready-to-show', () => reveal(w, mode === 'area' && d.id === activeDisplay().id))
+    // It shows once it has painted its still (shell:ready); one that never does can't hold the picker back.
+    setTimeout(() => showOverlay(w), 2000)
   }
+}
+
+/** An overlay on screen, after the toolbar: picking an area, the overlay under the mouse takes the
+ *  keyboard (↩ records, ⌘C copies, A arrow...). A panel: it takes key focus without bringing Grip forward. */
+function showOverlay(w: BrowserWindow) {
+  if (w.isDestroyed() || w.isVisible()) return
+  if (picking && !counting && toolbar && !toolbar.isVisible()) reveal(toolbar)
+  reveal(w, mode === 'area' && screen.getDisplayMatching(w.getBounds()).id === activeDisplay().id)
 }
 
 function escape(on: boolean) {
@@ -658,6 +678,15 @@ export function registerRecorder() {
   ipcMain.handle('shell:state', state)
   ipcMain.handle('shell:pick', (_e, m: Mode | null) => pick(['display', 'window', 'area', 'device'].includes(m as string) ? m : null))
   ipcMain.handle('shell:close-picker', () => closePicker())
+  ipcMain.handle('shell:still', (_e, id: unknown) => {
+    const still = stills.get(Number(id)) ?? null
+    stills.delete(Number(id))
+    return still
+  })
+  ipcMain.handle('shell:ready', (e) => {
+    const w = BrowserWindow.fromWebContents(e.sender)
+    if (w && windowsOf('area').includes(w)) showOverlay(w)
+  })
   ipcMain.handle('shell:warn', (_e, message: string) => notify(String(message)))
   ipcMain.handle('shell:relaunch', () => {
     app.relaunch()

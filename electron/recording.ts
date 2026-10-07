@@ -38,6 +38,10 @@ import { createBundle, projectEvents, projectsDir, readProject, writeNewRecordin
  *  Settings opened at its pane). */
 export const recordingEvents = new EventEmitter()
 
+/** A still of `r` (points, relative to its display) without Grip's windows or the cursor, as PNG:
+ *  recording:screenshot, and the frozen screen while picking. The dev stand-in replaces it. */
+export const capture = { screenshot: (displayId: number, r: Rect): Promise<Uint8Array> => native.captureScreenshot(displayId, r) }
+
 const PERMISSIONS: Permission[] = ['screen', 'accessibility', 'microphone', 'camera']
 // macOS reports these as denied before Grip ever asked; Grip remembers asking instead.
 const UNTOLD: Permission[] = ['screen', 'accessibility']
@@ -177,7 +181,7 @@ export function registerRecording() {
   ipcMain.handle('recording:cancel', () => native.cancelRecording())
   ipcMain.handle('recording:restart', () => native.restartRecording())
   ipcMain.handle('recording:screenshot', (_e, displayId: unknown, r: Partial<Rect>) =>
-    native.captureScreenshot(Number(displayId), { x: Number(r?.x), y: Number(r?.y), w: Number(r?.w), h: Number(r?.h) }),
+    capture.screenshot(Number(displayId), { x: Number(r?.x), y: Number(r?.y), w: Number(r?.w), h: Number(r?.h) }),
   )
   ipcMain.handle('recording:draw', (_e, phase: unknown, x: unknown, y: unknown, color?: unknown, width?: unknown) =>
     native.recordDraw(String(phase), Number(x), Number(y), typeof color === 'string' ? color : undefined, typeof width === 'number' ? width : undefined),

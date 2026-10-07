@@ -55,6 +55,9 @@ const box = (a: P, b: P) => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: 
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
 
+/** Screenshots are Display P3, like the screen they come from: canvases that paint them keep it. */
+export const P3: CanvasRenderingContext2DSettings = { colorSpace: 'display-p3' }
+
 /** Paint `shapes` over `image` (the frozen area, already drawn at 0,0 in output px). `k`: output px
  *  per point. The pixelate tool reads from `image`, so it hides what was captured, not other shapes. */
 export function paintShapes(ctx: Ctx, shapes: Shape[], image: HTMLImageElement | ImageBitmap, k: number): void {
@@ -66,7 +69,7 @@ export function paintShapes(ctx: Ctx, shapes: Shape[], image: HTMLImageElement |
       const r = box(s.a, s.b)
       if (r.w >= 1 && r.h >= 1) {
         const small = new OffscreenCanvas(Math.max(1, Math.round(r.w / BLOCK)), Math.max(1, Math.round(r.h / BLOCK)))
-        small.getContext('2d')!.drawImage(image, r.x * ik, r.y * ik, r.w * ik, r.h * ik, 0, 0, small.width, small.height)
+        small.getContext('2d', P3)!.drawImage(image, r.x * ik, r.y * ik, r.w * ik, r.h * ik, 0, 0, small.width, small.height)
         ctx.imageSmoothingEnabled = false
         ctx.drawImage(small, r.x, r.y, r.w, r.h)
       }

@@ -1,4 +1,5 @@
-<!-- Picking overlay, one transparent window per display (#/area?display=<id>).
+<!-- Picking overlay, one transparent window per display (#/area?display=<id>). The display shows
+     frozen as it was when the picker opened, until a countdown starts.
      Display mode: highlight the hovered display. Window mode: highlight the window under the mouse,
      with preset sizes. Area mode: drag out a rectangle, resize it by its handles, type its size, lock
      an aspect; the last area is remembered. Then record it (↩, a 3-2-1 countdown over the region), or
@@ -9,7 +10,7 @@
      it; with the pen on (shell:draw), the recorded display's overlay takes the mouse and every stroke
      goes into the recording, fading out on screen like it will in the video. -->
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import logoDot from '../../../build/Grip.icon/Assets/dot.svg'
   import { invoke, on } from '../../lib/ipc.ts'
   import Icon from '../recorder/Icon.svelte'
@@ -17,7 +18,7 @@
   import { paintStroke, visibleStrokes, type Stroke } from '../../engine/overlays/drawings.ts'
   import { fromEngine, setSettings, shell, startRequest, toEngine, windowList, type Rect, type StartRequest, type WindowSource } from '../recorder/shell.svelte.ts'
   import { ASPECTS, constrain, formAt, presetFrame, presetSize, PRESETS, resize, toolsAt, type Handle } from './geometry.ts'
-  import { COLORS, FONT, FONT_FAMILY, moved, paintShapes, shapeAt, tiny, TOOLS, type P, type Shape, type Tool } from './annotate.ts'
+  import { COLORS, FONT, FONT_FAMILY, moved, P3, paintShapes, shapeAt, tiny, TOOLS, type P, type Shape, type Tool } from './annotate.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
@@ -49,8 +50,32 @@
   const toGlobal = (r: Rect): Rect => ({ ...r, x: r.x + (display?.bounds.x ?? 0), y: r.y + (display?.bounds.y ?? 0) })
   const inside = (r: Rect, p: { x: number; y: number }) => p.x >= r.x && p.x < r.x + r.width && p.y >= r.y && p.y < r.y + r.height
 
+  /** The display as it was when the picker opened, shown under everything while picking; screenshots
+   *  are cut from it. */
+  let still = $state<HTMLImageElement | null>(null)
+  async function decode(png: Uint8Array | null) {
+    if (!png) return null
+    const image = new Image()
+    image.src = URL.createObjectURL(new Blob([png as BlobPart], { type: 'image/png' }))
+    await image.decode()
+    return image
+  }
+  // A countdown or a recording shows the screen live from then on.
+  $effect(() => {
+    if (!still || !(target || shell.counting || shell.status !== 'idle')) return
+    URL.revokeObjectURL(still.src)
+    still = null
+  })
+
   onMount(() => {
-    invoke('shell:display', Number(params.get('display'))).then((d) => (display = d))
+    const id = Number(params.get('display'))
+    // The overlay shows (shell:ready) once it has painted its display and still, frozen from the first frame.
+    Promise.all([invoke('shell:display', id), invoke('shell:still', id).then(decode).catch(() => null)]).then(async ([d, s]) => {
+      display = d
+      still = s
+      await tick()
+      invoke('shell:ready')
+    })
     const offs = [
       on('shell:escape', () => {
         target = null
@@ -127,7 +152,7 @@
 
   // ---- Screenshot: the area frozen into an image, drawn on, then copied or saved ----
 
-  type Shot = { image: HTMLImageElement; png: Uint8Array; rect: Rect }
+  type Shot = { image: ImageBitmap; png?: Uint8Array; rect: Rect }
   let shot = $state<Shot | null>(null) // frozen to draw on
   let tool = $state<Tool | null>(null)
   let color = $state(COLORS[0].value)
@@ -138,19 +163,22 @@
   let capturing: Promise<Shot | null> | null = null
   let finishing = false // a copy or save is on its way: ⌘C spam makes one screenshot
 
-  /** The selected area as it is now (without Grip's own windows), or as it was frozen. */
+  /** The selected area: cut from the still, else as it is now (without Grip's own windows). */
   function capture(): Promise<Shot | null> {
     if (shot) return Promise.resolve(shot)
     if (!sel || !display) return Promise.resolve(null)
     const rect = $state.snapshot(sel)
     const id = display.id
+    const from = still
     return (capturing ??= (async () => {
       try {
+        if (from) {
+          const k = from.naturalWidth / W // still px per point
+          const [x, y, w, h] = [rect.x, rect.y, rect.width, rect.height].map((v) => Math.round(v * k))
+          return { image: await createImageBitmap(from, x, y, w, h), rect }
+        }
         const png: Uint8Array = await invoke('recording:screenshot', id, toEngine(rect))
-        const image = new Image()
-        image.src = URL.createObjectURL(new Blob([png as BlobPart], { type: 'image/png' }))
-        await image.decode()
-        return { image, png, rect }
+        return { image: await createImageBitmap(new Blob([png as BlobPart], { type: 'image/png' })), png, rect }
       } catch (e) {
         invoke('shell:fail', e instanceof Error ? e.message : String(e), 'Grip couldn’t take the screenshot.')
         return null
@@ -185,24 +213,23 @@
     typing = null
   }
 
-  /** Copy (or save) the screenshot: the frozen image with its drawings, else the area as it is now.
-   *  An area copied at once is never frozen: nothing on screen changes before the picker goes. */
+  /** Copy (or save) the screenshot: the area as it was frozen, with its drawings. */
   async function finishShot(save: boolean) {
     if (finishing) return
     finishing = true
     commitText()
     const s = await capture()
     if (!s) return void (finishing = false)
+    const { image } = s
     let png = s.png
-    if (shapes.length) {
-      const { image } = s
-      const c = new OffscreenCanvas(image.naturalWidth, image.naturalHeight)
-      const ctx = c.getContext('2d')!
+    if (shapes.length || !png) {
+      const c = new OffscreenCanvas(image.width, image.height)
+      const ctx = c.getContext('2d', P3)!
       ctx.drawImage(image, 0, 0)
-      paintShapes(ctx, $state.snapshot(shapes), image, image.naturalWidth / s.rect.width)
+      paintShapes(ctx, $state.snapshot(shapes), image, image.width / s.rect.width)
       png = new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer())
     }
-    invoke('shell:shot', png, s.image.naturalWidth / s.rect.width, save).catch(() => (finishing = false))
+    invoke('shell:shot', png, image.width / s.rect.width, save).catch(() => (finishing = false))
   }
 
   /** The drawing board over the frozen area: the image and every shape, painted with the code that
@@ -213,7 +240,7 @@
     const w = Math.round(shot.rect.width * k)
     const h = Math.round(shot.rect.height * k)
     if (canvas.width !== w || canvas.height !== h) [canvas.width, canvas.height] = [w, h] // a resize reallocates: only once
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d', P3)!
     ctx.drawImage(shot.image, 0, 0, w, h)
     paintShapes(ctx, draft ? [...shapes, draft] : shapes, shot.image, k)
   }
@@ -375,6 +402,8 @@
 </script>
 
 <svelte:window onkeydown={key} />
+
+{#if still}<img class="still" src={still.src} alt="" />{/if}
 <svelte:body onpointermove={move} onpointerup={up} onpointerleave={() => drag || (mouse = null)} />
 
 {#snippet startButton(onclick: () => void)}
@@ -543,6 +572,14 @@
 <style>
   :global(body) {
     background: transparent;
+  }
+  .still {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    user-select: none;
   }
   main {
     position: fixed;

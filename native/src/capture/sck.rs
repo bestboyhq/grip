@@ -21,7 +21,7 @@ use objc2_core_foundation::{CFArray, CFDictionary, CFRetained, CFString, CFType,
 use objc2_core_graphics::{
     CGDisplayBounds, CGDisplayCopyDisplayMode, CGDisplayIsBuiltin, CGDisplayIsMain, CGDisplayIsOnline, CGDisplayMode,
     CGGetActiveDisplayList, CGImage, CGPreflightScreenCaptureAccess, CGRectMakeWithDictionaryRepresentation,
-    CGWindowListCopyWindowInfo, CGWindowListOption, kCGColorSpaceSRGB, kCGDisplayStreamYCbCrMatrix_ITU_R_709_2,
+    CGWindowListCopyWindowInfo, CGWindowListOption, kCGColorSpaceDisplayP3, kCGColorSpaceSRGB, kCGDisplayStreamYCbCrMatrix_ITU_R_709_2,
     kCGWindowBounds, kCGWindowLayer, kCGWindowOwnerPID,
 };
 use objc2_core_media::{CMSampleBuffer, CMTime};
@@ -619,7 +619,8 @@ pub fn windows() -> Result<Vec<Window>, String> {
 }
 
 /// A still of `r` (points relative to the display's top-left corner) at the display's pixel
-/// density, as PNG, without the cursor. Kept out like in recordings: our own windows (the picker,
+/// density, as a Display P3 PNG like the ones macOS takes (sRGB would dull wide-gamut colors), without
+/// the cursor. Kept out like in recordings: our own windows (the picker,
 /// its tools, the camera bubble) and notification banners.
 pub fn screenshot(display_id: u32, r: Rect) -> Result<Vec<u8>, String> {
     let content = content(false)?;
@@ -644,7 +645,7 @@ pub fn screenshot(display_id: u32, r: Rect) -> Result<Vec<u8>, String> {
         config.setHeight((h * scale).round() as usize);
         config.setShowsCursor(false);
         config.setCaptureResolution(SCCaptureResolutionType::Best);
-        config.setColorSpaceName(kCGColorSpaceSRGB);
+        config.setColorSpaceName(kCGColorSpaceDisplayP3);
     }
     let (tx, rx) = mpsc::channel();
     let done = RcBlock::new(move |img: *mut CGImage, e: *mut NSError| {

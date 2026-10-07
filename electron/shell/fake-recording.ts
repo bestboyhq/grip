@@ -10,7 +10,7 @@
 //   recording:micMonitor(micId) | micMonitorStop; broadcasts recording:micLevel({ peak, rms })
 //   recording:start({ target, cameraId?, micId?, systemAudio }) -> RecState; rejects with a reason
 //   recording:pause | resume | cancel | restart -> RecState; recording:stop -> sources | null
-//   recording:screenshot(displayId, rect) -> PNG (the stand-in's thumbnail, at the rect's pixel size)
+//   capture.screenshot(displayId, rect) -> PNG (the stand-in's thumbnail, at the rect's pixel size)
 //   recording:draw(phase, x, y, color?, width?): pen strokes land in the take's events.jsonl
 //   broadcasts recording:state(state), recording:finished(bundle, { reason }); recordingEvents too
 //   camera:list -> [{ id, name, kind: 'built-in' | 'external' | 'continuity' | 'ios', formats }]
@@ -20,7 +20,7 @@ import { appendFile, cp, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Project } from '../../src/shared/project.ts'
 import { sendAll } from '../windows.ts'
-import { recordingEvents, recordingName } from '../recording.ts'
+import { capture, recordingEvents, recordingName } from '../recording.ts'
 import { createBundle, projectsDir, writeNewRecording } from '../projects.ts'
 import { settings } from './settings.ts'
 
@@ -76,14 +76,14 @@ export function registerFakeRecording(bundle: string) {
     }, 33)
   })
   handle('recording:micMonitorStop', () => clearInterval(meter))
-  handle('recording:screenshot', (id: number, r: { w: number; h: number }) => {
+  capture.screenshot = async (id, r) => {
     const scale = screen.getAllDisplays().find((d) => d.id === Number(id))?.scaleFactor ?? 2
     const size = { width: Math.round(r.w * scale), height: Math.round(r.h * scale), quality: 'best' as const }
     const thumbnail = nativeImage.createFromPath(join(bundle, 'thumbnail.png'))
     // A bundle never opened in the editor has no thumbnail: a gradient of four BGRA pixels stands in.
     const image = thumbnail.isEmpty() ? nativeImage.createFromBitmap(Buffer.from([200, 120, 40, 255, 80, 160, 240, 255, 60, 200, 120, 255, 230, 230, 230, 255]), { width: 2, height: 2 }) : thumbnail
     return image.resize(size).toPNG()
-  })
+  }
   // Pen strokes in the stand-in's screen pixels, as if the primary display were the screen source.
   let t0 = 0
   let ink: string[] = []
