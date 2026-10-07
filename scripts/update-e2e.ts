@@ -6,7 +6,7 @@
 // Needs the Developer ID identity (Squirrel installs only signed updates) and Accessibility for the
 // terminal (it clicks the menu). It builds under its own name and app id, so an installed Grip, its
 // settings, and its update cache stay untouched.
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { homedir } from 'node:os'
@@ -124,6 +124,12 @@ try {
   await sleep(5000) // a launch that opens onboarding has it on screen by now
   if (windows() || appType() !== 'UIElement') throw new Error(`0.0.4 came back with ${windows()} windows, as a ${appType()} app`)
   console.log(`ok: 0.0.3 updated itself to ${version()} while away and came back to the menu bar only`)
+} catch (e) {
+  // Why it did not install or relaunch, before cleanup deletes the evidence.
+  for (const p of [`Library/Caches/${ID}.ShipIt/ShipIt_stderr.log`, `Library/Caches/${ID}.ShipIt/ShipIt_stdout.log`, `Library/Logs/${NAME}/main.log`])
+    if (existsSync(join(homedir(), p))) console.error(`--- ~/${p}\n${readFileSync(join(homedir(), p), 'utf8').slice(-8000)}`)
+  console.error(`--- processes\n${spawnSync('pgrep', ['-lf', NAME], { encoding: 'utf8' }).stdout}`)
+  throw e
 } finally {
   feed.close()
   // A failed cleanup must not hide why the run failed; the next run cleans up first anyway.
