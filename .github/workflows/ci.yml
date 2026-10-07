@@ -46,7 +46,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-          key: macos-26 # build scripts cache Xcode paths: a new runner image needs a new cache
+          shared-key: macos-26-release # one cache for every release build; build scripts cache Xcode paths: a new runner image needs a new cache
       - run: npm ci
       - if: steps.native.outputs.cache-hit != 'true'
         run: npm run build:native
@@ -132,7 +132,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-          key: macos-26 # build scripts cache Xcode paths: a new runner image needs a new cache
+          shared-key: macos-26-release # one cache for every release build; build scripts cache Xcode paths: a new runner image needs a new cache
       - run: npm ci
       - &keychain
         name: Import the Developer ID certificate
@@ -181,7 +181,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-          key: macos-26 # build scripts cache Xcode paths: a new runner image needs a new cache
+          shared-key: macos-26-release # one cache for every release build; build scripts cache Xcode paths: a new runner image needs a new cache
       - run: npm ci
       - *keychain
       - run: node scripts/update-e2e.ts
