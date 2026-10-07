@@ -107,6 +107,7 @@ export interface MenuItem {
   enabled?: boolean
   separator?: boolean
   accelerator?: string
+  icon?: Uint8Array // PNG at 2x
   submenu?: MenuItem[]
 }
 

@@ -32,6 +32,7 @@ import { parseEvents } from '../src/shared/events.ts'
 import { generateAutoZooms } from '../src/engine/zoom/index.ts'
 import { registerPresets } from './presets.ts'
 import { plainError } from './shell/errors.ts'
+import { moveCapture } from './shell/captures.ts'
 
 export interface Recovered {
   path: string
@@ -543,7 +544,10 @@ export function registerProjects() {
     if (typeof name !== 'string' || !name.trim()) throw new Error('A project needs a name.')
     const from = bundleArg(path)
     const to = await renameBundle(from, name)
-    if (to !== from) await updateRecent((l) => l.map((p) => (p === from ? to : p)))
+    if (to !== from) {
+      await updateRecent((l) => l.map((p) => (p === from ? to : p)))
+      moveCapture(from, to)
+    }
     return { path: to, name: basename(to, '.grip') }
   })
   ipcMain.handle('projects:reveal', (_e, path: unknown) => shell.showItemInFolder(bundleArg(path)))

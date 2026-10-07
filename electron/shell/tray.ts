@@ -1,14 +1,16 @@
 // Menu bar icon. A click starts a capture (the area picker: record it or copy a screenshot); while
-// recording a click finishes. Right-click opens the menu: new recording, recent projects, open,
-// import, settings, updates, quit; while recording finish, pause, draw, delete. Dropped .grip
-// bundles open; dropped videos import as new projects. A blue dot marks an update waiting for a restart.
+// recording a click finishes. Right-click opens the menu: new recording, recent captures (each
+// reopens its result card), recent projects, open, import, settings, updates, quit; while
+// recording finish, pause, draw, delete. Dropped .grip bundles open; dropped videos import as new
+// projects. A blue dot marks an update waiting for a restart.
 import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { native } from '../native.ts'
 import { recentProjects } from '../projects.ts'
 import { readyVersion, updateListeners, updateMenuItems } from './update.ts'
 import { settings } from './settings.ts'
-import { cancelRecording, command, importDialog, openFilesOrAlert, openOnboarding, openProject, openProjectDialog, recordingStatus, SHORTCUTS, showPicker, statusListeners, toggleDrawing } from './recorder.ts'
+import { captureRows } from './captures.ts'
+import { cancelRecording, command, importDialog, openFilesOrAlert, openOnboarding, openProject, openProjectDialog, recordingStatus, reopenCapture, SHORTCUTS, showPicker, statusListeners, toggleDrawing } from './recorder.ts'
 
 let tray: Tray | null = null // module scope: a collected Tray disappears from the menu bar
 
@@ -21,7 +23,13 @@ function icon(name: string) {
 async function template(): Promise<MenuItemConstructorOptions[]> {
   const s = recordingStatus()
   const recent = (await recentProjects().catch(() => [])).slice(0, 10) // only bundles that still exist
+  const captures = await captureRows().catch(() => [])
   const common: MenuItemConstructorOptions[] = [
+    {
+      label: 'Recent Captures',
+      enabled: captures.length > 0,
+      submenu: captures.map((c) => ({ label: c.label, icon: c.icon, click: () => reopenCapture(c.path) })),
+    },
     {
       label: 'Recent Projects',
       enabled: recent.length > 0,

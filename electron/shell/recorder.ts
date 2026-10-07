@@ -26,11 +26,13 @@
 //   shell:reveal(path)            the result card: show its file in Finder
 //   shell:shot-copy(path)         the result card: a screenshot onto the clipboard again
 //   shell:shot-save(path) -> path the result card: a screenshot into a file on the Desktop
+//   shell:captures -> [{ id, label, icon }]   Recent Captures as menu items (id: the path; icon: PNG at 2x)
+//   shell:reopen(path)            a recent capture's result card again (the picker closes first)
 //   shell:fail(error, title?)     a recording (or screenshot) call failed: plain-language message or permission fix
 //   shell:shortcut(keys | null) -> ok   Settings: the record shortcut becomes `keys` (an accelerator), false if
 //                                 macOS won't give it to Grip; null pauses it while the user types a new one
 //   shell:display(id)             display geometry for an overlay, and where the toolbar sits on it
-//   shell:popup(items, x, y)      native menu at (x, y) in the sender window -> picked id | null
+//   shell:popup(items, x, y)      native menu at (x, y) in the sender window -> picked id | null (icon: PNG at 2x)
 //   shell:open-project(path?)     open a bundle in the editor (no path: Open dialog)
 //   shell:open-files(paths)       dropped files: bundles open, videos import first; rejects with a reason
 //   shell:open-settings           the settings window (onboarding route, settings page)
@@ -41,7 +43,7 @@
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, shell, type BrowserWindowConstructorOptions, type MenuItemConstructorOptions, type Rectangle } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { basename, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { importVideo, recoveredAtLaunch } from '../projects.ts'
 import { capture, recordingEvents, recordingName } from '../recording.ts'
 import { DRAW_FADE, DRAW_HOLD } from '../../src/engine/overlays/drawings.ts'
@@ -53,6 +55,7 @@ import { plainError, type Permission } from './errors.ts'
 import { editorCloser, type Choice } from './closing.ts'
 import { hold, release, type Held } from './session.ts'
 import { setSettings, settings, settingsListeners } from './settings.ts'
+import { addCapture, captureRows, captures, moveCapture, shotsDir } from './captures.ts'
 import { toolbarUpdate, updateListeners } from './update.ts'
 import { setAppMenu } from './menu.ts'
 import { symbols } from '../../src/shared/shortcut.ts'
@@ -446,8 +449,9 @@ function showResult(query: string) {
   setTimeout(() => w.isDestroyed() || w.isVisible() || reveal(w, false), 1500)
 }
 
-/** Screenshot files Grip wrote (temp and Desktop). The result card may copy, save, reveal, or drag
- *  these, and exports in Grip's temp folder. */
+/** Screenshot files Grip wrote (its Screenshots folder and the Desktop), this session or listed in
+ *  Recent Captures. The result card may copy, save, reveal, or drag these, and exports in Grip's
+ *  temp folder. */
 const shots = new Set<string>()
 const ours = (path: unknown): path is string =>
   typeof path === 'string' && isAbsolute(path) && existsSync(path) && (shots.has(path) || resolve(path).startsWith(join(app.getPath('temp'), 'Grip ')))
@@ -466,10 +470,22 @@ const copyImage = (png: Uint8Array) => clipboard.write([new ClipboardItem({ 'ima
 /** A finished screenshot: onto the clipboard, or into a file on the Desktop. Then the card. */
 async function finishShot(png: Uint8Array, scale: number, save: boolean) {
   png = withScale(png, scale) // pastes and opens as big as it was on screen
-  const file = await writeShot(save ? app.getPath('desktop') : join(app.getPath('temp'), 'Grip Screenshots'), png)
+  const file = await writeShot(save ? app.getPath('desktop') : shotsDir(), png)
+  addCapture({ kind: 'shot', path: file, at: Date.now() })
   if (!save) await copyImage(png)
   closePicker()
   showResult(`shot=${encodeURIComponent(file)}${save ? '&saved' : ''}`)
+}
+
+/** A recent capture's card again (menu bar and gear menus), saying nothing was copied or saved yet.
+ *  The picker's overlays float above everything: it closes first. */
+export function reopenCapture(path: string) {
+  const c = captures().find((c) => c.path === path)
+  if (!c) return
+  if (picking) closePicker()
+  if (c.kind === 'recording') return showResult(`bundle=${encodeURIComponent(c.path)}`)
+  shots.add(c.path)
+  showResult(`shot=${encodeURIComponent(c.path)}${dirname(c.path) === shotsDir() ? '' : '&saved'}&reopened`)
 }
 
 /** Speaker notes: a prompter under the menu bar, near the camera, while picking and recording. */
@@ -693,7 +709,7 @@ export function openOnboarding(query = '') {
 
 // ---- IPC ----
 
-type PopupItem = { id?: string; label?: string; checked?: boolean; enabled?: boolean; separator?: boolean; accelerator?: string; submenu?: PopupItem[] }
+type PopupItem = { id?: string; label?: string; checked?: boolean; enabled?: boolean; separator?: boolean; accelerator?: string; icon?: Uint8Array; submenu?: PopupItem[] }
 
 export function registerRecorder() {
   ipcMain.handle('shell:state', state)
@@ -758,7 +774,14 @@ export function registerRecorder() {
   ipcMain.handle('shell:shot-copy', async (_e, path: unknown) => {
     if (ours(path) && shots.has(path)) await copyImage(await readFile(path))
   })
-  ipcMain.handle('shell:shot-save', async (_e, path: unknown) => (ours(path) && shots.has(path) ? writeShot(app.getPath('desktop'), await readFile(path)) : null))
+  ipcMain.handle('shell:shot-save', async (_e, path: unknown) => {
+    if (!ours(path) || !shots.has(path)) return null
+    const file = await writeShot(app.getPath('desktop'), await readFile(path))
+    moveCapture(path, file) // Recent Captures follows it to the Desktop; Grip's copy goes
+    return file
+  })
+  ipcMain.handle('shell:captures', async () => (await captureRows()).map((r) => ({ id: r.path, label: r.label, icon: r.icon.toPNG({ scaleFactor: 2 }) })))
+  ipcMain.handle('shell:reopen', (_e, path: unknown) => typeof path === 'string' && reopenCapture(path))
   ipcMain.handle('shell:fail', async (_e, error: unknown, title?: unknown) => {
     const plain = plainError(error)
     counting = false
@@ -799,6 +822,7 @@ export function registerRecorder() {
                 enabled: i.enabled ?? true,
                 accelerator: i.accelerator,
                 registerAccelerator: false,
+                icon: i.icon instanceof Uint8Array ? nativeImage.createFromBuffer(Buffer.from(i.icon), { scaleFactor: 2 }) : undefined,
                 submenu: i.submenu && build(i.submenu),
                 click: () => (picked = i.id ?? null),
               },
@@ -827,6 +851,7 @@ export function registerRecorder() {
   recordingEvents.on('state', setStatus)
   recordingEvents.on('finished', (bundle: string, end?: { reason?: string; message?: string }) => {
     for (const done of waiters.splice(0)) done(bundle)
+    addCapture({ kind: 'recording', path: bundle, at: Date.now() })
     if (quitting) return
     showResult(`bundle=${encodeURIComponent(bundle)}`)
     // It stopped on its own (disk full, display unplugged, a write failed): say why.

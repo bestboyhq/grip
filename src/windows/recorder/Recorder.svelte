@@ -160,11 +160,19 @@
       ['speakerNotes', 'Show Speaker Notes'],
       ['hideDesktopIcons', 'Hide Desktop Icons'],
     ]
+    const captures: MenuItem[] = await invoke('shell:captures').catch(() => [])
     const id = await popup(
-      [...toggles.map(([id, label]) => ({ id, label, checked: !!s[id] })), { separator: true }, { id: 'open', label: 'Open Project…' }, { id: 'settings', label: 'Settings…' }],
+      [
+        ...toggles.map(([id, label]) => ({ id, label, checked: !!s[id] })),
+        { separator: true },
+        { label: 'Recent Captures', enabled: captures.length > 0, submenu: captures },
+        { id: 'open', label: 'Open Project…' },
+        { id: 'settings', label: 'Settings…' },
+      ],
       el,
     )
-    if (id === 'open') invoke('shell:open-project')
+    if (captures.some((c) => c.id === id)) invoke('shell:reopen', id)
+    else if (id === 'open') invoke('shell:open-project')
     else if (id === 'settings') invoke('shell:open-settings')
     else if (id) setSettings({ [id]: !s[id as keyof Settings] })
   }
