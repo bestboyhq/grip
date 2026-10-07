@@ -14,21 +14,18 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject, NSObjectProtocol, ProtocolObject};
 use objc2::{AllocAnyThread, DefinedClass, MainThreadMarker, define_class, msg_send};
 use objc2_app_kit::{
-    NSApplicationActivationOptions, NSBitmapImageFileType, NSBitmapImageRep, NSImageCompressionFactor,
-    NSRunningApplication, NSScreen,
+    NSApplicationActivationOptions, NSBitmapImageFileType, NSBitmapImageRep, NSRunningApplication, NSScreen,
 };
 use objc2_core_foundation::{CFArray, CFDictionary, CFRetained, CFString, CFType, CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGColorSpace, CGContext, CGDisplayBounds, CGDisplayCopyDisplayMode, CGDisplayIsBuiltin,
     CGDisplayIsMain, CGDisplayIsOnline, CGDisplayMode, CGGetActiveDisplayList, CGImage, CGImageAlphaInfo, CGImageByteOrderInfo, CGPreflightScreenCaptureAccess, CGRectMakeWithDictionaryRepresentation,
     CGWindowListCopyWindowInfo, CGWindowListOption, kCGColorSpaceDisplayP3, kCGColorSpaceSRGB, kCGDisplayStreamYCbCrMatrix_ITU_R_709_2,
-    kCGWindowBounds, kCGWindowLayer, kCGWindowOwnerPID,
+    kCGWindowAlpha, kCGWindowBounds, kCGWindowLayer, kCGWindowNumber, kCGWindowOwnerPID,
 };
 use objc2_core_media::{CMSampleBuffer, CMTime};
 use objc2_core_video::kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
-use objc2_foundation::{
-    NSArray, NSBundle, NSData, NSDataBase64EncodingOptions, NSDictionary, NSError, NSNumber, NSString,
-};
+use objc2_foundation::{NSArray, NSBundle, NSDictionary, NSError, NSNumber, NSString};
 use objc2_screen_capture_kit::{
     SCCaptureResolutionType, SCContentFilter, SCDisplay, SCFrameStatus, SCRunningApplication, SCScreenshotManager,
     SCShareableContent, SCStream, SCStreamConfiguration, SCStreamDelegate, SCStreamFrameInfoContentRect,
@@ -71,8 +68,6 @@ pub struct Window {
     pub bundle_id: String,
     /// Global points, origin top-left of the main display.
     pub frame: Rect,
-    /// Small JPEG as a data URL; absent when the window could not be captured.
-    pub thumbnail: Option<String>,
 }
 
 fn rect(r: CGRect) -> Rect {
@@ -220,6 +215,20 @@ pub fn front_window(pid: i32) -> Option<CGRect> {
     let (owner, layer) = unsafe { (cf_ns(kCGWindowOwnerPID), cf_ns(kCGWindowLayer)) };
     let info = list.iter().find(|w| number(w, owner) == Some(pid as f64) && number(w, layer) == Some(0.0))?;
     cg_rect(&info, cf_ns(unsafe { kCGWindowBounds }))
+}
+
+/// Ids of the windows on screen, front to back, minus fully transparent ones: the window server's
+/// stacking order, which ScreenCaptureKit's window list does not keep. No permission needed.
+fn stacking() -> Vec<u32> {
+    let opts = CGWindowListOption::OptionOnScreenOnly | CGWindowListOption::ExcludeDesktopElements;
+    let Some(list) = CGWindowListCopyWindowInfo(opts, 0) else { return Vec::new() };
+    // SAFETY: as in window_info.
+    let list: &NSArray<NSDictionary<NSString, AnyObject>> = unsafe { &*(&*list as *const CFArray).cast() };
+    let (id, alpha) = unsafe { (cf_ns(kCGWindowNumber), cf_ns(kCGWindowAlpha)) };
+    list.iter()
+        .filter(|w| number(w, alpha).is_some_and(|a| a > 0.0))
+        .filter_map(|w| Some(number(&w, id)? as u32))
+        .collect()
 }
 
 fn cf_ns(s: &CFString) -> &NSString {
@@ -561,16 +570,18 @@ impl Stream {
     }
 }
 
-/// On-screen app windows, front to back, with small thumbnails.
+/// On-screen app windows, front to back: the picker takes the first one under the mouse.
 pub fn windows() -> Result<Vec<Window>, String> {
     let content = content(true)?;
     let own: Vec<i32> = excluded(&content, false).0.iter().map(|a| unsafe { a.processID() }).collect();
-    let found: Vec<(Retained<SCWindow>, Window)> = unsafe { content.windows() }
+    let order = stacking();
+    let mut found: Vec<Window> = unsafe { content.windows() }
         .iter()
         .filter_map(|w| unsafe {
             let app = w.owningApplication()?;
             let frame = w.frame();
             if w.windowLayer() != 0
+                || !order.contains(&w.windowID())
                 || own.contains(&app.processID())
                 || frame.size.width < 64.0
                 || frame.size.height < 64.0
@@ -579,42 +590,16 @@ pub fn windows() -> Result<Vec<Window>, String> {
             }
             let name = app.applicationName().to_string();
             let title = w.title().map(|t| t.to_string()).filter(|t| !t.is_empty()).unwrap_or_else(|| name.clone());
-            let info = Window {
+            Some(Window {
                 id: w.windowID(),
                 title,
                 app: name,
                 bundle_id: app.bundleIdentifier().to_string(),
                 frame: rect(frame),
-                thumbnail: None,
-            };
-            Some((w, info))
+            })
         })
         .collect();
-    let (tx, rx) = mpsc::channel();
-    for (i, (w, info)) in found.iter().enumerate() {
-        let filter = unsafe { SCContentFilter::initWithDesktopIndependentWindow(SCContentFilter::alloc(), w) };
-        let config = unsafe { SCStreamConfiguration::new() };
-        let k = (480.0 / info.frame.w).min(300.0 / info.frame.h);
-        unsafe {
-            config.setWidth((info.frame.w * k).round().max(2.0) as usize);
-            config.setHeight((info.frame.h * k).round().max(2.0) as usize);
-            config.setShowsCursor(false);
-            config.setIgnoreShadowsSingleWindow(true);
-        }
-        let tx = tx.clone();
-        let done = RcBlock::new(move |img: *mut CGImage, _e: *mut NSError| {
-            let _ = tx.send((i, unsafe { img.as_ref() }.and_then(jpeg_data_url)));
-        });
-        unsafe {
-            SCScreenshotManager::captureImageWithFilter_configuration_completionHandler(&filter, &config, Some(&done))
-        };
-    }
-    drop(tx);
-    let mut found: Vec<Window> = found.into_iter().map(|(_, w)| w).collect();
-    let deadline = std::time::Instant::now() + Duration::from_secs(3);
-    while let Ok((i, t)) = rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
-        found[i].thumbnail = t;
-    }
+    found.sort_by_key(|w| order.iter().position(|&id| id == w.id));
     Ok(found)
 }
 
@@ -691,22 +676,21 @@ fn rgba(img: &CGImage) -> Option<(u32, u32, Vec<u8>)> {
     Some((w as u32, h as u32, data))
 }
 
-fn jpeg_data_url(img: &CGImage) -> Option<String> {
-    let rep = NSBitmapImageRep::initWithCGImage(NSBitmapImageRep::alloc(), img);
-    let props =
-        NSDictionary::from_slices(&[unsafe { NSImageCompressionFactor }], &[&*NSNumber::new_f64(0.8) as &AnyObject]);
-    let data: Retained<NSData> =
-        unsafe { rep.representationUsingType_properties(NSBitmapImageFileType::JPEG, &props) }?;
-    Some(format!(
-        "data:image/jpeg;base64,{}",
-        data.base64EncodedStringWithOptions(NSDataBase64EncodingOptions::empty())
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use objc2_core_graphics::CGBitmapContextCreateImage;
+
+    /// The picker takes the first listed window under the mouse: a window behind another must come later.
+    #[test]
+    fn windows_list_front_to_back() {
+        if !CGPreflightScreenCaptureAccess() {
+            return; // nothing to list here
+        }
+        let order = stacking();
+        let z: Vec<_> = windows().unwrap().iter().map(|w| order.iter().position(|&id| id == w.id)).collect();
+        assert!(z.iter().all(Option::is_some) && z.is_sorted(), "{z:?}");
+    }
 
     #[test]
     fn still_pixels_are_packed_rgba() {

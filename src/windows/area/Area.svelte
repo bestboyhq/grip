@@ -1,7 +1,7 @@
 <!-- Picking overlay, one transparent window per display (#/area?display=<id>). The display shows
      frozen as it was when the picker opened, until a countdown starts.
-     Display mode: highlight the hovered display. Window mode: highlight the window under the mouse,
-     with preset sizes. Area mode: drag out a rectangle, resize it by its handles, type its size, lock
+     Display mode: highlight the hovered display. Window mode: highlight the window under the mouse
+     (a click keeps it), with preset sizes. Area mode: drag out a rectangle, resize it by its handles, type its size, lock
      an aspect; the last area is remembered. Then record it (↩, a 3-2-1 countdown over the region), or
      take a screenshot of it: ⌘C copies it at once, a tool from the strip beside it (or its key)
      freezes it to draw on first (a drawn shape drags to another place), then ⌘C copies or ⌘S
@@ -34,6 +34,7 @@
   let windows = $state<WindowSource[]>([])
   let mouse = $state<{ x: number; y: number } | null>(null) // local points
   let locked = $state<WindowSource | null>(null) // keeps the window while the mouse is on its card
+  let picked = $state<WindowSource | null>(null) // the window clicked: kept until a click elsewhere
   let choice = $state({ id: 0, preset: 'current' }) // preset size picked for window `id`
   let target = $state<Rect | null>(null) // region being counted down, local points
   let count = $state(0)
@@ -89,7 +90,9 @@
   $effect(() => {
     if (shell.mode === 'window') windowList().then((list) => (windows = list))
   })
-  const hovered = $derived(locked ?? (mouse && display ? (windows.find((w) => inside(toLocal(fromEngine(w.frame)), mouse!)) ?? null) : null))
+  /** The frontmost window at `p`: what shows there. */
+  const windowAt = (p: { x: number; y: number }) => windows.find((w) => inside(toLocal(fromEngine(w.frame)), p)) ?? null
+  const hovered = $derived(locked ?? picked ?? (mouse && display ? windowAt(mouse) : null))
   const preset = $derived(hovered && choice.id === hovered.id ? choice.preset : 'current')
   const frame = $derived(hovered && display ? toLocal(presetFrame(fromEngine(hovered.frame), preset, display.workArea)) : null)
 
@@ -101,6 +104,8 @@
   const save = () => setSettings({ area: sel && display ? { display: display.id, rect: $state.snapshot(sel), aspect } : null })
 
   function down(e: PointerEvent, kind: 'new' | 'move' | Handle) {
+    // Window mode: a click picks the window under it (recording waits for Start or ↩); off any window, it lets go.
+    if (shell.mode === 'window' && !target && e.button === 0) picked = windowAt({ x: e.clientX, y: e.clientY })
     if (shell.mode !== 'area' || target || shot || e.button !== 0) return
     e.stopPropagation()
     ;(document.body as Element).setPointerCapture(e.pointerId)
@@ -449,6 +454,7 @@
         style:top="{Math.min(Math.max(frame.y + frame.height / 2, 120), floor - 120)}px"
         onpointerenter={() => (locked = hovered)}
         onpointerleave={() => (locked = null)}
+        onpointerdown={(e) => e.stopPropagation()}
       >
         <div class="title">{hovered.app}</div>
         {#if hovered.title}<div class="sub ellipsis">{hovered.title}</div>{/if}
@@ -491,7 +497,7 @@
             ></textarea>
           {/if}
         {:else}
-          {#if drag && drag.kind !== 'move'}<div class="grid"></div>{/if}
+          {#if drag && drag.kind !== 'move'}<div class="plus"></div>{/if}
           {#each HANDLES as h (h)}
             <span class="handle {h}" role="presentation" onpointerdown={(e) => down(e, h)}></span>
           {/each}
@@ -600,7 +606,7 @@
     place-items: center;
   }
   .display:has(.card) {
-    background: color-mix(in oklab, var(--accent) 12%, transparent);
+    background: color-mix(in oklab, var(--accent) 5%, transparent);
     box-shadow: inset 0 0 0 3px color-mix(in oklab, var(--accent) 90%, transparent);
   }
   .card {
@@ -668,7 +674,7 @@
   .frame {
     position: absolute;
     border-radius: 10px;
-    background: color-mix(in oklab, var(--accent) 12%, transparent);
+    background: color-mix(in oklab, var(--accent) 5%, transparent);
     box-shadow: inset 0 0 0 3px color-mix(in oklab, var(--accent) 90%, transparent);
     transition:
       left 120ms ease-out,
@@ -739,41 +745,65 @@
     inset: 0;
     background: rgb(0 0 0 / 0.42);
   }
-  /* Thirds while resizing: faint hairlines that fade in, there to compose by, not to look at. */
-  .grid {
-    --line: rgb(255 255 255 / 0.16);
-    --thirds: transparent calc(100% / 3 - 0.5px), var(--line) 0 calc(100% / 3 + 0.5px), transparent 0 calc(200% / 3 - 0.5px), var(--line) 0 calc(200% / 3 + 0.5px), transparent 0;
+  /* Center mark while resizing: a small plus, solid at the crossing and fading toward its tips,
+     there to compose by, not to look at. The soft dark edge keeps it visible over white content. */
+  .plus {
+    --fade: transparent, #fff, transparent;
     position: absolute;
     inset: 0;
-    background: linear-gradient(90deg, var(--thirds)), linear-gradient(var(--thirds));
+    background: linear-gradient(var(--fade)) center / 1px 40px no-repeat, linear-gradient(90deg, var(--fade)) center / 40px 1px no-repeat;
+    filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.5));
     pointer-events: none;
-    animation: grid-in 200ms ease-out;
+    animation: plus-in 200ms ease-out;
   }
-  @keyframes grid-in {
+  @keyframes plus-in {
     from { opacity: 0; }
   }
+  /* Crop handles: the hairline thickens into brackets at the corners and bars mid-edge, centered
+     on the hairline so they reach as far inside the region as outside it. */
   .handle {
+    --t: 4px; /* thickness */
+    --o: calc(var(--t) / -2 - 0.5px); /* centers it on the 1 px hairline just outside the box */
     position: absolute;
-    width: 10px;
-    height: 10px;
-    margin: -5px 0 0 -5px;
-    border-radius: 50%;
     background: #fff;
-    box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
+    border-radius: calc(var(--t) / 2);
+    filter: drop-shadow(0 0 0.5px rgb(0 0 0 / 0.6)) drop-shadow(0 1px 2px rgb(0 0 0 / 0.3));
   }
   .handle::before {
     content: '';
     position: absolute;
     inset: -7px; /* a bigger target than it looks */
   }
-  .nw { left: 0; top: 0; cursor: nwse-resize; }
-  .n { left: 50%; top: 0; cursor: ns-resize; }
-  .ne { left: 100%; top: 0; cursor: nesw-resize; }
-  .e { left: 100%; top: 50%; cursor: ew-resize; }
-  .se { left: 100%; top: 100%; cursor: nwse-resize; }
-  .s { left: 50%; top: 100%; cursor: ns-resize; }
-  .sw { left: 0; top: 100%; cursor: nesw-resize; }
-  .w { left: 0; top: 50%; cursor: ew-resize; }
+  /* A corner is two rounded bars: the element runs along the top or bottom edge, ::after down the side. */
+  .nw, .ne, .se, .sw { width: 20px; height: var(--t); }
+  .nw::after, .ne::after, .se::after, .sw::after {
+    content: '';
+    position: absolute;
+    width: var(--t);
+    height: 20px;
+    background: inherit;
+    border-radius: inherit;
+  }
+  .nw, .ne { top: var(--o); }
+  .nw::before, .ne::before { bottom: calc(var(--t) - 27px); }
+  .nw::after, .ne::after { top: 0; }
+  .sw, .se { bottom: var(--o); }
+  .sw::before, .se::before { top: calc(var(--t) - 27px); }
+  .sw::after, .se::after { bottom: 0; }
+  .nw, .sw { left: var(--o); }
+  .nw::after, .sw::after { left: 0; }
+  .ne, .se { right: var(--o); }
+  .ne::after, .se::after { right: 0; }
+  .n, .s { left: 50%; width: 24px; height: var(--t); margin-left: -12px; }
+  .e, .w { top: 50%; width: var(--t); height: 24px; margin-top: -12px; }
+  .n { top: var(--o); }
+  .s { bottom: var(--o); }
+  .e { right: var(--o); }
+  .w { left: var(--o); }
+  .nw, .se { cursor: nwse-resize; }
+  .ne, .sw { cursor: nesw-resize; }
+  .n, .s { cursor: ns-resize; }
+  .e, .w { cursor: ew-resize; }
   .form {
     position: absolute;
     display: flex;
@@ -841,7 +871,7 @@
     to { transform: scale(0.96); opacity: 0.2; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .count, .grid { animation: none; }
+    .count, .plus { animation: none; }
     .frame { transition: none; }
   }
   /* Secondary action beside the accent one: same height, a control on the panel. */
