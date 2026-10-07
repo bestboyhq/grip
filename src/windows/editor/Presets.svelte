@@ -5,6 +5,7 @@
   import { doc, edit } from '../../lib/doc.svelte.ts'
   import { invoke } from '../../lib/ipc.ts'
   import type { Style } from '../../shared/project.ts'
+  import { setAutoZoom } from '../../engine/zoom/index.ts'
   import Icon from '../../ui/Icon.svelte'
   import Popover from '../../ui/Popover.svelte'
   import { tooltip } from '../../ui/tooltip.ts'
@@ -59,7 +60,10 @@
       const r = (await invoke('projects:presets:apply', p.id, doc.path)) as unknown
       const style = isStyle(r) ? r : isStyle((r as { style?: unknown })?.style) ? (r as { style: Style }).style : null
       if (!style) throw new Error(`“${p.name}” is not a valid preset.`)
-      edit((pr) => { pr.style = style })
+      edit((pr) => {
+        setAutoZoom(pr, doc.events, style.autoZoom) // the auto zooms follow the preset's auto zoom
+        pr.style = style
+      })
       close()
     })
 

@@ -300,6 +300,7 @@
       ['showWidget', 'Show Recording Controls'],
       ['speakerNotes', 'Show Speaker Notes'],
       ['hideDesktopIcons', 'Hide Desktop Icons'],
+      ['autoZoom', 'Auto Zoom'],
     ]
     const captures: MenuItem[] = await invoke('shell:captures').catch(() => [])
     const id = await popup(

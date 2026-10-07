@@ -16,6 +16,8 @@ export interface Settings {
   showCamera: boolean // camera bubble on screen while picking and recording
   /** The corner of the recorded area the camera bubble sits in; new recordings put the camera there. */
   cameraCorner: CameraPosition
+  /** New recordings zoom in on clicks and typing; each project can still turn it on or off. */
+  autoZoom: boolean
   hideDesktopIcons: boolean
   /** Speaker notes on screen while picking and recording; only the user sees them. */
   speakerNotes: boolean
@@ -44,6 +46,7 @@ const defaults: Settings = {
   showWidget: true,
   showCamera: true,
   cameraCorner: 'bottom-right',
+  autoZoom: true,
   hideDesktopIcons: false,
   speakerNotes: false,
   notes: '',

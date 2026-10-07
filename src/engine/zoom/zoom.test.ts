@@ -7,7 +7,7 @@ import { parseEvents, type InputEvent } from '../../shared/events.ts'
 import { prepare, sceneAt, type View } from '../scene.ts'
 import { layoutAt } from '../layout.ts'
 import { cursorPoint as cursorAt } from '../motion/index.ts'
-import { autoZoomOnce, generateAutoZooms, loupeAt, viewAt } from './index.ts'
+import { autoZoomOnce, generateAutoZooms, loupeAt, setAutoZoom, viewAt } from './index.ts'
 
 const SCREEN = { file: 'sources/screen.mp4', width: 2880, height: 1800, fps: 30, scale: 2 }
 const CAMERA = { file: 'sources/camera.mp4', width: 1280, height: 720, fps: 30, scale: 1 }
@@ -272,6 +272,23 @@ test('autoZoomOnce: auto zooms on the first open only, never again after the use
   off.style.autoZoom.enabled = false
   assert.equal(autoZoomOnce(off, events), true)
   assert.ok(off.autoZoomed && off.zooms.length === 0, 'auto zoom off: marked, nothing generated')
+})
+
+test('setAutoZoom: auto zooms follow the toggle and level, a manual zoom and a hand-set level stay', () => {
+  const events: InputEvent[] = [{ t: 3, type: 'down', x: 1400, y: 900, button: 'left' }]
+  const p = createProject('t', { duration: 20, screen: SCREEN })
+  p.style.autoZoom.enabled = false
+  const manual = { id: 'm', start: 10, end: 12, level: 1.5, target: { kind: 'cursor' as const }, enabled: true }
+  p.zooms = [manual]
+  setAutoZoom(p, events, { enabled: true, level: 2 })
+  const auto = p.zooms.find((z) => z.auto)!
+  assert.ok(p.style.autoZoom.enabled && auto.enabled && p.zooms.length === 2, 'turned on with none: generated')
+  auto.level = 2.5 // set by hand on the timeline
+  setAutoZoom(p, events, { enabled: false, level: 2 }) // a preset with auto zoom off
+  assert.ok(!p.style.autoZoom.enabled && !auto.enabled && manual.enabled && auto.level === 2.5, 'off: only auto zooms, level untouched')
+  setAutoZoom(p, events, { enabled: true, level: 3 })
+  assert.ok(auto.enabled && manual.level === 1.5 && p.zooms.length === 2, 'back on: no duplicates')
+  assert.equal(auto.level, 3, 'back on: the new level')
 })
 
 const FIXTURE = join(import.meta.dirname, '../../../.context/fixtures/Demo #1 ✨ café.grip')
