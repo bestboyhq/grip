@@ -38,7 +38,7 @@ jobs:
         run: echo "id=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
       # The addon is a function of its sources and the runner image (Xcode, SDK): rebuilt only when they change.
       - id: native
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: native/studio.darwin-arm64.node
           key: native-${{ steps.image.outputs.id }}-${{ hashFiles('native/src/**', 'native/Cargo.*', 'native/build.rs') }}
@@ -51,14 +51,14 @@ jobs:
       - if: steps.native.outputs.cache-hit != 'true'
         run: npm run build:native
       - run: brew install ffmpeg
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/Library/Caches/electron
           key: electron-${{ hashFiles('node_modules/electron/package.json') }}
       # The synthetic recording takes a minute to render: regenerated only when its generator changes.
       # Saved without the bundle's cache/ (waveforms the tests write), so every run tests writing it.
       - id: fixture
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             .context/fixtures
@@ -77,7 +77,7 @@ jobs:
       # The addon's tests take two minutes (an hour of video through the encoder): a green run of the same
       # sources on the same image leaves a marker, and later runs skip them.
       - id: tested
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: native/.tested
           key: rust-tested-${{ steps.image.outputs.id }}-${{ hashFiles('native/src/**', 'native/Cargo.*', 'native/build.rs') }}
@@ -93,7 +93,7 @@ jobs:
         run: cargo test && touch .tested
         working-directory: native
       - if: steps.tested.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: native/.tested
           key: ${{ steps.tested.outputs.cache-primary-key }}
