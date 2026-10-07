@@ -14,7 +14,8 @@
 //   shell:command(cmd)            widget -> controller: stop, pause, resume, toggle-pause, cancel, restart
 //   shell:warn(message)           an engine warning (disk low, a device lost), shown as a notification
 //   shell:pick(mode | null)       enter or leave a picking mode (opens overlays per display)
-//   shell:still(displayId) -> PNG | null   overlay: its display frozen as it was when the picker opened (taken once)
+//   shell:still(displayId) -> Still | null   overlay: its display frozen as it was when the picker opened (raw
+//                                 RGBA); a loaded overlay asks ahead and gets it when a pick opens
 //   shell:ready                   overlay: painted (its still too), show it
 //   shell:close-picker            hide toolbar, overlays, and the idle camera bubble
 //   shell:countdown(on)           a countdown runs (Esc cancels it: "shell:escape")
@@ -46,6 +47,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { importVideo, recoveredAtLaunch } from '../projects.ts'
 import { capture, recordingEvents, recordingName } from '../recording.ts'
+import { native } from '../native.ts'
 import { DRAW_FADE, DRAW_HOLD } from '../../src/engine/overlays/drawings.ts'
 import type { CameraPosition } from '../../src/shared/project.ts'
 import { activeDisplay, hidden, openWindow, reveal, sendAll, setRecordingDock, updateDock, windowsOf } from '../windows.ts'
@@ -60,7 +62,7 @@ import { toolbarUpdate, updateListeners } from './update.ts'
 import { setAppMenu } from './menu.ts'
 import { symbols } from '../../src/shared/shortcut.ts'
 import type { Mode } from './url.ts'
-import type { Rect, StartOptions } from '../../native/index.d.ts'
+import type { Rect, StartOptions, Still } from '../../native/index.d.ts'
 
 export type Status = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping'
 export type Command = 'start' | 'stop' | 'pause' | 'resume' | 'toggle-pause' | 'cancel' | 'restart'
@@ -168,6 +170,7 @@ function controller(): BrowserWindow {
     webPreferences: { backgroundThrottling: false },
   })
   protect(win, 2)
+  native.disableWindowAnimation(win.getNativeWindowHandle()) // shows at once, with the frozen screen
   loaded = new Promise<void>((r) => win.webContents.once('did-finish-load', () => r()))
   win.on('close', (e) => {
     if (quitting) return
@@ -193,9 +196,9 @@ export function showPicker(m: Mode = 'area') {
   const win = controller()
   win.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))
   picking = true
-  // New overlays bring the toolbar with the frozen screen (showOverlay). Otherwise it shows now, before
-  // pick() gives the keyboard back to the area overlay.
-  if (m === 'device' || windowsOf('area').length) reveal(win)
+  // Overlays bring the toolbar with the frozen screen (showOverlay). Ones on screen already: it shows
+  // now, before pick() gives the keyboard back to the area overlay.
+  if (m === 'device' || windowsOf('area').some((w) => w.isVisible())) reveal(win)
   pick(m)
   updateHelpers()
 }
@@ -223,8 +226,11 @@ export async function command(cmd: Command, opts?: unknown) {
   win.webContents.send('shell:do', cmd, opts)
 }
 
-/** Load the controller ahead of first use (tray menu, shortcuts). */
-export const warmUp = () => void controller()
+/** Load the controller and the overlays ahead of first use (tray menu, shortcuts). */
+export function warmUp() {
+  controller()
+  loadOverlays()
+}
 
 /** Ask, then delete the recording in progress. The shortcut held down or pressed again while the
  *  question is open asks once. */
@@ -257,6 +263,11 @@ export function stopAndWait(): Promise<string | null> {
 }
 
 // ---- Overlays: one per display, for display, window, and area picking and the countdown ----
+// They load ahead, hidden, so a pick only captures the stills and hands them over. Used ones go with
+// their state (a drawn screenshot, a countdown), and fresh ones load for the next pick.
+
+/** The overlays are in use: picking, or the backdrop of a recording. */
+let overlaysOpen = false
 
 function pick(m: Mode | null) {
   mode = m
@@ -264,9 +275,8 @@ function pick(m: Mode | null) {
   // While recording: the backdrop around an area, the pen, and strokes still fading out.
   const backdrop = status !== 'idle' && (!!area || drawing || Date.now() < inkUntil)
   if (!overlays && !backdrop) {
-    for (const w of windowsOf('area')) w.destroy()
-    stills.clear()
-  } else if (!windowsOf('area').length) openOverlays()
+    if (overlaysOpen) closeOverlays()
+  } else if (!overlaysOpen) openOverlays()
   else if (m === 'area') {
     // Switched to area mode: the overlay under the mouse takes the keyboard (showOverlay does it for new ones).
     const here = windowsOf('area').find((w) => screen.getDisplayMatching(w.getBounds()).id === activeDisplay().id)
@@ -285,15 +295,41 @@ function pick(m: Mode | null) {
 const displays = () => arrangement(screen.getAllDisplays())
 let covered = ''
 
-/** Each display as it was when its overlay opened to pick (PNG, null if the capture failed), until
- *  the overlay takes it (shell:still): the overlays show it frozen, and screenshots are cut from it. */
-const stills = new Map<number, Promise<Uint8Array | null>>()
+/** Each display as it was when the overlays opened to pick (null while recording, or if the capture
+ *  failed), for its overlay, which asks ahead (shell:still): the overlays show it frozen, and
+ *  screenshots are cut from it. */
+const stills = new Map<number, PromiseWithResolvers<Still | null>>()
+const stillOf = (id: number) => stills.get(id) ?? stills.set(id, Promise.withResolvers()).get(id)!
+/** Every display is frozen. Nothing of ours shows before: the capture leaves out only what is on screen. */
+let frozen: Promise<unknown> = Promise.resolve()
 
 function openOverlays() {
-  const all = screen.getAllDisplays()
+  overlaysOpen = true
+  const idle = status === 'idle'
   // Picking: freeze every display now, before anything of ours shows (a menu or a hover stays open).
-  if (status === 'idle') for (const d of all) stills.set(d.id, capture.screenshot(d.id, { x: 0, y: 0, w: d.bounds.width, h: d.bounds.height }).catch(() => null))
-  for (const d of all) {
+  frozen = Promise.all(
+    screen.getAllDisplays().map(async (d) => {
+      const { resolve } = stillOf(d.id) // this pick's: a capture done after it closed goes nowhere
+      resolve(idle ? await capture.still(d.id).catch(() => null) : null)
+    }),
+  )
+  if (windowsOf('area').some((w) => w.webContents.isCrashed())) for (const w of windowsOf('area')) w.destroy() // gone while waiting
+  if (!windowsOf('area').length) loadOverlays()
+  // Each shows once it has painted its still (shell:ready); one that never does can't hold the picker back.
+  for (const w of windowsOf('area')) setTimeout(() => showOverlay(w), 2000)
+}
+
+/** The overlays go with their stills; fresh ones load for the next pick. */
+function closeOverlays() {
+  overlaysOpen = false
+  for (const w of windowsOf('area')) w.destroy()
+  stills.clear()
+  loadOverlays()
+}
+
+/** One overlay per display, hidden until a pick hands it its still. */
+function loadOverlays() {
+  for (const d of screen.getAllDisplays()) {
     const w = openWindow(`area?display=${d.id}`, {
       ...floating,
       ...d.bounds,
@@ -305,8 +341,7 @@ function openOverlays() {
     })
     protect(w, 0)
     w.setBounds(d.bounds) // over the menu bar too
-    // It shows once it has painted its still (shell:ready); one that never does can't hold the picker back.
-    setTimeout(() => showOverlay(w), 2000)
+    native.disableWindowAnimation(w.getNativeWindowHandle()) // the frozen screen shows at once, without a zoom
   }
 }
 
@@ -394,7 +429,7 @@ function updateBubble() {
   }
   const w = openWindow('camera', { ...floating, ...(placed = b), transparent: true, hasShadow: false, movable: true })
   protect(w, 1)
-  w.once('ready-to-show', () => reveal(w, false))
+  w.once('ready-to-show', () => frozen.then(() => w.isDestroyed() || reveal(w, false)))
   // Dropped after a drag: it snaps to the nearest corner, which the next recording keeps.
   w.on('moved', () => {
     const r = w.getBounds()
@@ -510,7 +545,7 @@ function updateNotes() {
     visualEffectState: 'active',
   })
   protect(w, 1)
-  w.once('ready-to-show', () => reveal(w, false))
+  w.once('ready-to-show', () => frozen.then(() => w.isDestroyed() || reveal(w, false)))
   // Start or stop the prompter from any app, the one being recorded included.
   shortcut(SHORTCUTS.prompter, () => w.isDestroyed() || w.webContents.send('notes:prompter'))
 }
@@ -715,11 +750,7 @@ export function registerRecorder() {
   ipcMain.handle('shell:state', state)
   ipcMain.handle('shell:pick', (_e, m: Mode | null) => pick(['display', 'window', 'area', 'device'].includes(m as string) ? m : null))
   ipcMain.handle('shell:close-picker', () => closePicker())
-  ipcMain.handle('shell:still', (_e, id: unknown) => {
-    const still = stills.get(Number(id)) ?? null
-    stills.delete(Number(id))
-    return still
-  })
+  ipcMain.handle('shell:still', (_e, id: unknown) => stillOf(Number(id)).promise)
   ipcMain.handle('shell:ready', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender)
     if (w && windowsOf('area').includes(w)) showOverlay(w)
@@ -739,7 +770,7 @@ export function registerRecorder() {
   })
   ipcMain.handle('shell:countdown', (_e, on: boolean) => {
     counting = !!on
-    escape(counting || windowsOf('area').length > 0)
+    escape(counting || overlaysOpen)
     if (counting) toolbar?.hide()
     broadcast()
   })
@@ -868,9 +899,10 @@ export function registerRecorder() {
       if (displays() === covered) return
       covered = displays()
       if (picking && toolbar) toolbar.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))
-      if (windowsOf('area').length && !counting) {
-        for (const w of windowsOf('area')) w.destroy()
-        pick(mode) // the picker, or the backdrop of the area being recorded
+      if (!counting) {
+        const was = overlaysOpen
+        closeOverlays() // fresh ones for the new arrangement
+        if (was) pick(mode) // the picker, or the backdrop of the area being recorded
       }
     })
   }

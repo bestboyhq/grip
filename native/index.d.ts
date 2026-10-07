@@ -51,6 +51,15 @@ export declare function cancelRecording(): Promise<RecState>
  */
 export declare function captureScreenshot(displayId: number, rect: Rect): Promise<Buffer>
 
+/** The display frozen for the picker: the screenshot without its PNG round trip. */
+export declare function captureStill(displayId: number): Promise<Still>
+
+/**
+ * No zoom when the window shows: AppKit scales a window in over 150 ms, which would set the
+ * picker's frozen screen moving. `handle`: BrowserWindow.getNativeWindowHandle(), its NSView.
+ */
+export declare function disableWindowAnimation(handle: Buffer): void
+
 export interface Display {
   id: number
   name: string
@@ -196,6 +205,13 @@ export interface StartOptions {
  * `onEvent` receives state changes, warnings, and the finished recording (also when it ends on its own).
  */
 export declare function startRecording(options: StartOptions, onEvent: ((arg: RecordingEvent) => void)): Promise<RecState>
+
+/** A whole display as the screenshot sees it, in raw pixels: `data` is RGBA, Display P3. */
+export interface Still {
+  width: number
+  height: number
+  data: Buffer
+}
 
 export declare function stopMicMonitor(): void
 

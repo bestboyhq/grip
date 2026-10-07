@@ -19,8 +19,8 @@ use objc2_app_kit::{
 };
 use objc2_core_foundation::{CFArray, CFDictionary, CFRetained, CFString, CFType, CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{
-    CGDisplayBounds, CGDisplayCopyDisplayMode, CGDisplayIsBuiltin, CGDisplayIsMain, CGDisplayIsOnline, CGDisplayMode,
-    CGGetActiveDisplayList, CGImage, CGPreflightScreenCaptureAccess, CGRectMakeWithDictionaryRepresentation,
+    CGBitmapContextCreate, CGColorSpace, CGContext, CGDisplayBounds, CGDisplayCopyDisplayMode, CGDisplayIsBuiltin,
+    CGDisplayIsMain, CGDisplayIsOnline, CGDisplayMode, CGGetActiveDisplayList, CGImage, CGImageAlphaInfo, CGImageByteOrderInfo, CGPreflightScreenCaptureAccess, CGRectMakeWithDictionaryRepresentation,
     CGWindowListCopyWindowInfo, CGWindowListOption, kCGColorSpaceDisplayP3, kCGColorSpaceSRGB, kCGDisplayStreamYCbCrMatrix_ITU_R_709_2,
     kCGWindowBounds, kCGWindowLayer, kCGWindowOwnerPID,
 };
@@ -623,7 +623,21 @@ pub fn windows() -> Result<Vec<Window>, String> {
 /// the cursor. Kept out like in recordings: our own windows (the picker,
 /// its tools, the camera bubble) and notification banners.
 pub fn screenshot(display_id: u32, r: Rect) -> Result<Vec<u8>, String> {
-    let content = content(false)?;
+    grab(display_id, r, png)
+}
+
+/// The whole display as `screenshot` sees it, as raw RGBA the picker paints at once: a PNG to
+/// encode here and decode there took longer than the capture.
+pub fn still(display_id: u32) -> Result<(u32, u32, Vec<u8>), String> {
+    let b = CGDisplayBounds(display_id);
+    grab(display_id, Rect { x: 0.0, y: 0.0, w: b.size.width, h: b.size.height }, rgba)
+}
+
+/// Capture `r` of the display, turned into `T` by `encode` on the capture queue.
+fn grab<T: Send + 'static>(display_id: u32, r: Rect, encode: fn(&CGImage) -> Option<T>) -> Result<T, String> {
+    // On-screen windows only: listing those on every Space took up to seconds on a busy Mac. What it
+    // keeps out is on screen, or shows only after the capture (the picker waits for its stills).
+    let content = content(true)?;
     let display = find_display(&content, display_id).ok_or("That display is no longer connected.")?;
     let (apps, keep) = excluded(&content, false);
     let filter = unsafe {
@@ -649,11 +663,11 @@ pub fn screenshot(display_id: u32, r: Rect) -> Result<Vec<u8>, String> {
     }
     let (tx, rx) = mpsc::channel();
     let done = RcBlock::new(move |img: *mut CGImage, e: *mut NSError| {
-        let png = match unsafe { img.as_ref() } {
-            Some(img) => png(img).ok_or_else(|| "Could not encode the screenshot.".to_string()),
+        let out = match unsafe { img.as_ref() } {
+            Some(img) => encode(img).ok_or_else(|| "Could not encode the screenshot.".to_string()),
             None => Err(unsafe { e.as_ref() }.map_or("The screenshot failed.".into(), ns_error)),
         };
-        let _ = tx.send(png);
+        let _ = tx.send(out);
     });
     unsafe { SCScreenshotManager::captureImageWithFilter_configuration_completionHandler(&filter, &config, Some(&done)) };
     rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "Timed out taking the screenshot.".to_string())?
@@ -663,6 +677,18 @@ fn png(img: &CGImage) -> Option<Vec<u8>> {
     let rep = NSBitmapImageRep::initWithCGImage(NSBitmapImageRep::alloc(), img);
     let data = unsafe { rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new()) }?;
     Some(data.to_vec())
+}
+
+/// Width, height, and tightly packed RGBA in Display P3 (premultiplied; a screen is opaque).
+fn rgba(img: &CGImage) -> Option<(u32, u32, Vec<u8>)> {
+    let (w, h) = (CGImage::width(Some(img)), CGImage::height(Some(img)));
+    let mut data = vec![0u8; w * h * 4];
+    let space = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceDisplayP3 }))?;
+    let info = CGImageAlphaInfo::PremultipliedLast.0 | CGImageByteOrderInfo::Order32Big.0;
+    let ctx = unsafe { CGBitmapContextCreate(data.as_mut_ptr().cast(), w, h, 8, w * 4, Some(&space), info) }?;
+    CGContext::draw_image(Some(&ctx), CGRect::new(CGPoint::ZERO, CGSize::new(w as f64, h as f64)), Some(img));
+    drop(ctx);
+    Some((w as u32, h as u32, data))
 }
 
 fn jpeg_data_url(img: &CGImage) -> Option<String> {
@@ -675,4 +701,26 @@ fn jpeg_data_url(img: &CGImage) -> Option<String> {
         "data:image/jpeg;base64,{}",
         data.base64EncodedStringWithOptions(NSDataBase64EncodingOptions::empty())
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use objc2_core_graphics::CGBitmapContextCreateImage;
+
+    #[test]
+    fn still_pixels_are_packed_rgba() {
+        // Like a ScreenCaptureKit image: BGRA (blue = x, green = y, red 200), Display P3, rows padded.
+        let (w, h, stride) = (3, 2, 16);
+        let mut bgra = vec![7u8; h * stride];
+        for (y, x) in (0..h).flat_map(|y| (0..w).map(move |x| (y, x))) {
+            bgra[y * stride + x * 4..][..4].copy_from_slice(&[x as u8, y as u8, 200, 255]);
+        }
+        let space = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceDisplayP3 })).unwrap();
+        let info = CGImageAlphaInfo::PremultipliedFirst.0 | CGImageByteOrderInfo::Order32Little.0;
+        let ctx = unsafe { CGBitmapContextCreate(bgra.as_mut_ptr().cast(), w, h, 8, stride, Some(&space), info) };
+        let img = CGBitmapContextCreateImage(ctx.as_deref()).unwrap();
+        let want: Vec<u8> = (0..h).flat_map(|y| (0..w).flat_map(move |x| [200, y as u8, x as u8, 255])).collect();
+        assert_eq!(rgba(&img), Some((3, 2, want)));
+    }
 }

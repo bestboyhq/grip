@@ -11,6 +11,7 @@
 //   recording:start({ target, cameraId?, micId?, systemAudio }) -> RecState; rejects with a reason
 //   recording:pause | resume | cancel | restart -> RecState; recording:stop -> sources | null
 //   capture.screenshot(displayId, rect) -> PNG (the stand-in's thumbnail, at the rect's pixel size)
+//   capture.still(displayId) -> { width, height, data: RGBA } (the same, of the whole display)
 //   recording:draw(phase, x, y, color?, width?): pen strokes land in the take's events.jsonl
 //   broadcasts recording:state(state), recording:finished(bundle, { reason }); recordingEvents too
 //   camera:list -> [{ id, name, kind: 'built-in' | 'external' | 'continuity' | 'ios', formats }]
@@ -83,6 +84,13 @@ export function registerFakeRecording(bundle: string) {
     // A bundle never opened in the editor has no thumbnail: a gradient of four BGRA pixels stands in.
     const image = thumbnail.isEmpty() ? nativeImage.createFromBitmap(Buffer.from([200, 120, 40, 255, 80, 160, 240, 255, 60, 200, 120, 255, 230, 230, 230, 255]), { width: 2, height: 2 }) : thumbnail
     return image.resize(size).toPNG()
+  }
+  capture.still = async (id) => {
+    const { width, height } = screen.getAllDisplays().find((d) => d.id === Number(id))?.bounds ?? screen.getPrimaryDisplay().bounds
+    const image = nativeImage.createFromBuffer(Buffer.from(await capture.screenshot(id, { x: 0, y: 0, w: width, h: height })))
+    const data = image.toBitmap() // BGRA: swap to RGBA
+    for (let i = 0; i < data.length; i += 4) [data[i], data[i + 2]] = [data[i + 2], data[i]]
+    return { ...image.getSize(), data }
   }
   // Pen strokes in the stand-in's screen pixels, as if the primary display were the screen source.
   let t0 = 0

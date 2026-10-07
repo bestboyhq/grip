@@ -27,7 +27,7 @@ import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Permission, PermissionStatus, RecordingEvent, RecordingSources, Rect, StartOptions } from '../native/index.d.ts'
+import type { Permission, PermissionStatus, RecordingEvent, RecordingSources, Rect, StartOptions, Still } from '../native/index.d.ts'
 import { analyzeCamera } from './camera.ts'
 import { native } from './native.ts'
 import { setSettings, settings } from './shell/settings.ts'
@@ -38,9 +38,13 @@ import { createBundle, projectEvents, projectsDir, readProject, writeNewRecordin
  *  Settings opened at its pane). */
 export const recordingEvents = new EventEmitter()
 
-/** A still of `r` (points, relative to its display) without Grip's windows or the cursor, as PNG:
- *  recording:screenshot, and the frozen screen while picking. The dev stand-in replaces it. */
-export const capture = { screenshot: (displayId: number, r: Rect): Promise<Uint8Array> => native.captureScreenshot(displayId, r) }
+/** screenshot: a still of `r` (points, relative to its display) without Grip's windows or the cursor,
+ *  as PNG (recording:screenshot). still: the same of a whole display in raw RGBA, the frozen screen
+ *  while picking. The dev stand-in replaces both. */
+export const capture = {
+  screenshot: (displayId: number, r: Rect): Promise<Uint8Array> => native.captureScreenshot(displayId, r),
+  still: (displayId: number): Promise<Still> => native.captureStill(displayId),
+}
 
 const PERMISSIONS: Permission[] = ['screen', 'accessibility', 'microphone', 'camera']
 // macOS reports these as denied before Grip ever asked; Grip remembers asking instead.
