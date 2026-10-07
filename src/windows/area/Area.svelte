@@ -491,7 +491,7 @@
             ></textarea>
           {/if}
         {:else}
-          {#if drag}<div class="grid"></div>{/if}
+          {#if drag && drag.kind !== 'move'}<div class="grid"></div>{/if}
           {#each HANDLES as h (h)}
             <span class="handle {h}" role="presentation" onpointerdown={(e) => down(e, h)}></span>
           {/each}
@@ -739,17 +739,18 @@
     inset: 0;
     background: rgb(0 0 0 / 0.42);
   }
+  /* Thirds while resizing: faint hairlines that fade in, there to compose by, not to look at. */
   .grid {
+    --line: rgb(255 255 255 / 0.16);
+    --thirds: transparent calc(100% / 3 - 0.5px), var(--line) 0 calc(100% / 3 + 0.5px), transparent 0 calc(200% / 3 - 0.5px), var(--line) 0 calc(200% / 3 + 0.5px), transparent 0;
     position: absolute;
     inset: 0;
-    background:
-      linear-gradient(90deg, transparent calc(25% - 0.5px), rgb(255 255 255 / 0.35) calc(25% - 0.5px) calc(25% + 0.5px), transparent calc(25% + 0.5px)),
-      linear-gradient(90deg, transparent calc(50% - 0.5px), rgb(255 255 255 / 0.5) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-      linear-gradient(90deg, transparent calc(75% - 0.5px), rgb(255 255 255 / 0.35) calc(75% - 0.5px) calc(75% + 0.5px), transparent calc(75% + 0.5px)),
-      linear-gradient(transparent calc(25% - 0.5px), rgb(255 255 255 / 0.35) calc(25% - 0.5px) calc(25% + 0.5px), transparent calc(25% + 0.5px)),
-      linear-gradient(transparent calc(50% - 0.5px), rgb(255 255 255 / 0.5) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-      linear-gradient(transparent calc(75% - 0.5px), rgb(255 255 255 / 0.35) calc(75% - 0.5px) calc(75% + 0.5px), transparent calc(75% + 0.5px));
+    background: linear-gradient(90deg, var(--thirds)), linear-gradient(var(--thirds));
     pointer-events: none;
+    animation: grid-in 200ms ease-out;
+  }
+  @keyframes grid-in {
+    from { opacity: 0; }
   }
   .handle {
     position: absolute;
@@ -840,7 +841,7 @@
     to { transform: scale(0.96); opacity: 0.2; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .count { animation: none; }
+    .count, .grid { animation: none; }
     .frame { transition: none; }
   }
   /* Secondary action beside the accent one: same height, a control on the panel. */
