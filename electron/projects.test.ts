@@ -196,10 +196,15 @@ test('a finished recording opens already directed: auto zooms from its clicks', 
   const bundle = await createBundle('Take #1 ✨', join(root, 'new'))
   const lines = [{ t: 0, type: 'move', x: 100, y: 100 }]
   for (const t of [1, 1.4, 1.8]) lines.push({ t, type: 'down', x: 320, y: 200, button: 'left' } as never, { t: t + 0.05, type: 'up', x: 320, y: 200, button: 'left' } as never)
-  await writeFile(join(bundle, 'sources', 'events.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n'))
+  const jsonl = lines.map((l) => JSON.stringify(l)).join('\n')
+  await writeFile(join(bundle, 'sources', 'events.jsonl'), jsonl)
   const p = await writeNewRecording(bundle, { ...sources, events: 'sources/events.jsonl' })
   assert.ok(p.zooms.length >= 1 && p.zooms.every((z) => z.auto && z.enabled && z.start < 1 && z.end > 1.8), JSON.stringify(p.zooms))
   assert.deepEqual((await readProject(bundle)).zooms, p.zooms)
+  const offBundle = await createBundle('Off', join(root, 'new'))
+  await writeFile(join(offBundle, 'sources', 'events.jsonl'), jsonl)
+  const off = await writeNewRecording(offBundle, { ...sources, events: 'sources/events.jsonl' }, { autoZoom: false })
+  assert.ok(!off.style.autoZoom.enabled && !off.zooms.length, 'auto zoom turned off in settings: no zooms')
   const quiet = await writeNewRecording(await createBundle('Quiet', join(root, 'new')), sources) // no events: no zooms, no error
   assert.deepEqual(quiet.zooms, [])
 })

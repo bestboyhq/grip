@@ -100,7 +100,7 @@ function finish(dir: string, sources: RecordingSources, reason = 'user', message
         broadcast('recording:error', message ?? 'Nothing was recorded.')
         return
       }
-      await writeNewRecording(dir, sources, { camera: settings().cameraCorner })
+      await writeNewRecording(dir, sources, { camera: settings().cameraCorner, autoZoom: settings().autoZoom })
       if (sources.camera) analyzeCamera(dir).catch((err) => console.error('analyzeCamera', dir, err))
       broadcast('recording:finished', dir, { reason, message })
       recordingEvents.emit('finished', dir, { reason, message })

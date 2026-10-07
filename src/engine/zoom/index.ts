@@ -423,6 +423,19 @@ export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZo
     .map((g): Zoom => ({ id: uid(), start: g.start, end: g.end, level, target: { kind: 'cursor' }, auto: true, enabled: true }))
 }
 
+/** Set the auto zoom defaults (the inspector, a preset) and bring the auto zooms along: turned on or
+ *  off (generated when turned on with none), and moved to a new level. Mutates `p`. */
+export function setAutoZoom(p: Project, events: InputEvent[], autoZoom: Style['autoZoom']) {
+  const was = p.style.autoZoom
+  p.style.autoZoom = { ...autoZoom }
+  const autos = p.zooms.filter((z) => z.auto)
+  if (autoZoom.enabled && !was.enabled && !autos.length) p.zooms.push(...generateAutoZooms(events, p.sources, autoZoom))
+  for (const z of autos) {
+    if (autoZoom.enabled !== was.enabled) z.enabled = autoZoom.enabled
+    if (autoZoom.level !== was.level) z.level = autoZoom.level
+  }
+}
+
 /** The first open after recording or import: generate the auto zooms once (when auto zoom is on
  *  and the project has no zooms yet), then mark the project so zooms the user deletes never come
  *  back. Mutates `p`; returns whether it changed. */

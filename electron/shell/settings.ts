@@ -16,14 +16,14 @@ export interface Settings {
   showCamera: boolean // camera bubble on screen while picking and recording
   /** The corner of the recorded area the camera bubble sits in; new recordings put the camera there. */
   cameraCorner: CameraPosition
+  /** New recordings zoom in on clicks and typing; each project can still turn it on or off. */
+  autoZoom: boolean
   hideDesktopIcons: boolean
   /** Speaker notes on screen while picking and recording; only the user sees them. */
   speakerNotes: boolean
   notes: string
   /** Prompter scroll speed in lines per minute, and text size in points. */
   prompter: { speed: number; size: number }
-  /** The picker mode last chosen; the picker opens in it. */
-  mode: 'display' | 'window' | 'area'
   /** Last recording area: display id and rect in points relative to that display. */
   area: { display: number; rect: Rect; aspect: string } | null
   /** Past the welcome page: granting a permission can relaunch Grip, and onboarding resumes at permissions. */
@@ -46,11 +46,11 @@ const defaults: Settings = {
   showWidget: true,
   showCamera: true,
   cameraCorner: 'bottom-right',
+  autoZoom: true,
   hideDesktopIcons: false,
   speakerNotes: false,
   notes: '',
   prompter: { speed: 20, size: 24 }, // about 150 words a minute
-  mode: 'area',
   area: null,
   welcomed: false,
   onboarded: false,

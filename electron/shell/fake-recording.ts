@@ -132,7 +132,7 @@ export function registerFakeRecording(bundle: string) {
     const dir = await createBundle(recordingName(new Date(), (n) => existsSync(join(projectsDir(), `${n}.grip`))))
     await cp(join(bundle, 'sources'), join(dir, 'sources'), { recursive: true, mode: constants.COPYFILE_FICLONE })
     if (ink.length && sources.events) await appendFile(join(dir, sources.events), ink.join('\n') + '\n')
-    await writeNewRecording(dir, sources, { camera: settings().cameraCorner })
+    await writeNewRecording(dir, sources, { camera: settings().cameraCorner, autoZoom: settings().autoZoom })
     set('idle')
     sendAll('recording:finished', dir, { reason: 'user' })
     recordingEvents.emit('finished', dir, { reason: 'user' })

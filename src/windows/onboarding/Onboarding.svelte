@@ -30,6 +30,7 @@
     ['showCamera', 'Camera preview', 'Your camera in a bubble while you record.'],
     ['speakerNotes', 'Speaker notes', 'A prompter only you can see while you record.'],
     ['hideDesktopIcons', 'Hide desktop icons', 'Keeps a busy desktop out of your recordings.'],
+    ['autoZoom', 'Auto zoom', 'New recordings zoom in where you click and type.'],
   ]
   const SHORTCUTS = [
     ['Pause or resume', '⌥⇧⌘P'],

@@ -3,7 +3,7 @@
   import { doc, edit, selection } from '../../../lib/doc.svelte.ts'
   import type { Zoom } from '../../../shared/project.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
-  import { generateAutoZooms } from '../../../engine/zoom/index.ts'
+  import { setAutoZoom } from '../../../engine/zoom/index.ts'
   import Section from '../../../ui/Section.svelte'
   import Segmented from '../../../ui/Segmented.svelte'
   import Slider from '../../../ui/Slider.svelte'
@@ -15,22 +15,8 @@
   const z = $derived(selected[0])
   const screen = $derived(project.sources.screen)
 
-  // Turning auto zoom on brings back the automatic zooms, generating them if there are none.
-  function setAuto(enabled: boolean) {
-    edit((p) => {
-      p.style.autoZoom.enabled = enabled
-      const autos = p.zooms.filter((x) => x.auto)
-      if (enabled && !autos.length) p.zooms.push(...generateAutoZooms(doc.events, p.sources, p.style.autoZoom))
-      for (const x of autos) x.enabled = enabled
-    })
-  }
-
-  function setAutoLevel(level: number, merge?: string) {
-    edit((p) => {
-      p.style.autoZoom.level = level
-      for (const x of p.zooms) if (x.auto) x.level = level
-    }, merge)
-  }
+  const setAuto = (enabled: boolean) => edit((p) => setAutoZoom(p, doc.events, { ...p.style.autoZoom, enabled }))
+  const setAutoLevel = (level: number, merge?: string) => edit((p) => setAutoZoom(p, doc.events, { ...p.style.autoZoom, level }), merge)
 
   /** Apply a change to every selected zoom. */
   function each(fn: (x: Zoom) => void, merge?: string) {
@@ -118,7 +104,7 @@
 {/if}
 
 <Section title="Auto zoom">
-  <Toggle label="Zoom on clicks and typing" hint="Automatic zooms are ordinary timeline items you can edit or turn off one by one." checked={auto.enabled} onchange={setAuto} />
+  <Toggle label="Zoom on clicks and typing" hint="Automatic zooms are ordinary timeline items you can edit or turn off one by one. Settings turns it off for new recordings." checked={auto.enabled} onchange={setAuto} />
   <Slider label="Default level" value={auto.level} min={1.25} max={4} step={0.05} initial={2} disabled={!auto.enabled} format={(v) => `${v.toFixed(1)}×`} onchange={setAutoLevel} />
 </Section>
 

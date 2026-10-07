@@ -188,17 +188,17 @@ function controller(): BrowserWindow {
   return (toolbar = win)
 }
 
-/** Open the picker on the display under the mouse, in the last mode unless told otherwise: the
- *  screen freezes, and the last area comes back selected, ready to record (↩) or to copy as a
- *  screenshot (⌘C). While recording, bring back the controls. */
-export function showPicker(m: Mode = settings().mode) {
+/** Open the picker on the display under the mouse: the toolbar alone, the user picks a mode there.
+ *  Given a mode (grip://record?mode=), the screen freezes, and in area mode the last area comes back
+ *  selected, ready to record (↩) or to copy as a screenshot (⌘C). While recording, bring back the controls. */
+export function showPicker(m: Mode | null = null) {
   if (status !== 'idle') return showWidget()
   const win = controller()
   win.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))
   picking = true
   // Overlays bring the toolbar with the frozen screen (showOverlay). Ones on screen already: it shows
   // now, before pick() gives the keyboard back to the area overlay.
-  if (m === 'device' || windowsOf('area').some((w) => w.isVisible())) reveal(win)
+  if (m === null || m === 'device' || windowsOf('area').some((w) => w.isVisible())) reveal(win)
   pick(m)
   updateHelpers()
 }
@@ -272,7 +272,6 @@ let overlaysOpen = false
 function pick(m: Mode | null) {
   mode = m
   const overlays = m === 'display' || m === 'window' || m === 'area'
-  if (overlays && m !== settings().mode) setSettings({ mode: m }) // the next picker opens in it
   // While recording: the backdrop around an area, the pen, and strokes still fading out.
   const backdrop = status !== 'idle' && (!!area || drawing || Date.now() < inkUntil)
   if (!overlays && !backdrop) {
@@ -820,7 +819,7 @@ export function registerRecorder() {
     if (status === 'idle') area = null // it never started
     sendAll('shell:escape') // reset countdowns
     if (plain.permission) return openOnboarding(`page=permissions&need=${plain.permission satisfies Permission}`)
-    if (picking) showPicker()
+    if (picking) showPicker(mode)
     broadcast()
     await alert(typeof title === 'string' ? title : 'Grip couldn’t record.', plain.message)
   })
