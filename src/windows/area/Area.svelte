@@ -411,6 +411,16 @@
 {#if still}<canvas class="still" width={still.width} height={still.height} {@attach paint}></canvas>{/if}
 <svelte:body onpointermove={move} onpointerup={up} onpointerleave={() => drag || (mouse = null)} />
 
+<!-- The dim around a region: four solid layers, edges on device pixels so they meet without seams.
+     The GPU draws a solid layer at any size without rasterizing it, so a resize repaints only the
+     region's edges; a 100vmax box-shadow repainted the whole screen on every frame. -->
+{#snippet shade(r: Rect)}
+  {@const [x0, y0, x1, y1] = [r.x, r.y, r.x + r.width, r.y + r.height].map((v) => px(v) / scale)}
+  {#each [[0, 0, W, y0], [0, y1, W, H - y1], [0, y0, x0, y1 - y0], [x1, y0, W - x1, y1 - y0]] as [x, y, w, h], i (i)}
+    <div class="shade" style:left="{x}px" style:top="{y}px" style:width="{w}px" style:height="{h}px"></div>
+  {/each}
+{/snippet}
+
 {#snippet startButton(onclick: () => void)}
   <button class="start" {onclick}><span class="dot" style:background-image="url({logoDot})"></span>Start recording</button>
 {/snippet}
@@ -420,11 +430,13 @@
     <!-- Recording an area: everything else stays dim, every display (click-through, main process). -->
     {@const r = shell.area.display === display.id ? fromEngine(shell.area.rect) : null}
     {#if r}
+      {@render shade(r)}
       <div class="target" style:left="{r.x}px" style:top="{r.y}px" style:width="{r.width}px" style:height="{r.height}px"></div>
     {:else}
       <div class="dim"></div>
     {/if}
   {:else if target}
+    {@render shade(target)}
     <div class="target" style:left="{target.x}px" style:top="{target.y}px" style:width="{target.width}px" style:height="{target.height}px">
       {#if count > 0}
         {#key count}<div class="count" role="status" aria-live="assertive">{count}</div>{/key}
@@ -472,6 +484,7 @@
     {/if}
   {:else if shell.mode === 'area'}
     {#if sel}
+      {@render shade(sel)}
       <div class="sel" class:dragging={drag} class:frozen={!!shot} style:left="{sel.x}px" style:top="{sel.y}px" style:width="{sel.width}px" style:height="{sel.height}px" role="presentation" onpointerdown={(e) => down(e, 'move')}>
         {#if shot}
           <canvas class="board" class:pointing={!!tool && tool !== 'text'} class:typing={tool === 'text'} class:over {@attach board} onpointerdown={boardDown} onpointermove={boardMove} onpointerup={boardUp}></canvas>
@@ -499,7 +512,7 @@
         {:else}
           {#if drag && drag.kind !== 'move'}<div class="plus"></div>{/if}
           {#each HANDLES as h (h)}
-            <span class="handle {h}" role="presentation" onpointerdown={(e) => down(e, h)}></span>
+            <span class="handle {h}" role="presentation" onpointerdown={(e) => down(e, h)}><i></i></span>
           {/each}
         {/if}
       </div>
@@ -729,13 +742,17 @@
     font-size: 13px;
     pointer-events: none;
   }
-  /* The region to record: clear, with a hairline, and everything around it dim. */
+  /* The region to record: clear, with a hairline, and everything around it dim (shade). */
   .sel,
   .target {
     position: absolute;
-    box-shadow:
-      0 0 0 1px rgb(255 255 255 / 0.95),
-      0 0 0 100vmax rgb(0 0 0 / 0.42);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.95);
+  }
+  .shade {
+    position: absolute;
+    background: rgb(0 0 0 / 0.42);
+    pointer-events: none; /* a click on the dim draws a new area */
+    will-change: transform; /* its own layer: resizing it repaints nothing else */
   }
   .sel {
     cursor: move;
@@ -750,7 +767,11 @@
   .plus {
     --fade: transparent, #fff, transparent;
     position: absolute;
-    inset: 0;
+    left: 50%;
+    top: 50%;
+    width: 40px;
+    height: 40px;
+    margin: -20px 0 0 -20px; /* its own size, not the region's: a resize repaints 40 px, not the region */
     background: linear-gradient(var(--fade)) center / 1px 40px no-repeat, linear-gradient(90deg, var(--fade)) center / 40px 1px no-repeat;
     filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.5));
     pointer-events: none;
@@ -760,11 +781,18 @@
     from { opacity: 0; }
   }
   /* Crop handles: the hairline thickens into brackets at the corners and bars mid-edge, centered
-     on the hairline so they reach as far inside the region as outside it. */
+     on the hairline so they reach as far inside the region as outside it. Each is its own layer,
+     painted once: a resize only moves it. The shadow sits on the bars (i) so it is painted into
+     that layer; a filter on the layer itself the GPU redraws every frame. */
   .handle {
     --t: 4px; /* thickness */
     --o: calc(var(--t) / -2 - 0.5px); /* centers it on the 1 px hairline just outside the box */
     position: absolute;
+    will-change: transform;
+  }
+  .handle i {
+    position: absolute;
+    inset: 0;
     background: #fff;
     border-radius: calc(var(--t) / 2);
     filter: drop-shadow(0 0 0.5px rgb(0 0 0 / 0.6)) drop-shadow(0 1px 2px rgb(0 0 0 / 0.3));
@@ -774,9 +802,9 @@
     position: absolute;
     inset: -7px; /* a bigger target than it looks */
   }
-  /* A corner is two rounded bars: the element runs along the top or bottom edge, ::after down the side. */
+  /* A corner is two rounded bars: i runs along the top or bottom edge, its ::after down the side. */
   .nw, .ne, .se, .sw { width: 20px; height: var(--t); }
-  .nw::after, .ne::after, .se::after, .sw::after {
+  .nw i::after, .ne i::after, .se i::after, .sw i::after {
     content: '';
     position: absolute;
     width: var(--t);
@@ -786,14 +814,14 @@
   }
   .nw, .ne { top: var(--o); }
   .nw::before, .ne::before { bottom: calc(var(--t) - 27px); }
-  .nw::after, .ne::after { top: 0; }
+  .nw i::after, .ne i::after { top: 0; }
   .sw, .se { bottom: var(--o); }
   .sw::before, .se::before { top: calc(var(--t) - 27px); }
-  .sw::after, .se::after { bottom: 0; }
+  .sw i::after, .se i::after { bottom: 0; }
   .nw, .sw { left: var(--o); }
-  .nw::after, .sw::after { left: 0; }
+  .nw i::after, .sw i::after { left: 0; }
   .ne, .se { right: var(--o); }
-  .ne::after, .se::after { right: 0; }
+  .ne i::after, .se i::after { right: 0; }
   .n, .s { left: 50%; width: 24px; height: var(--t); margin-left: -12px; }
   .e, .w { top: 50%; width: var(--t); height: 24px; margin-top: -12px; }
   .n { top: var(--o); }
