@@ -58,6 +58,14 @@ type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
 /** Screenshots are Display P3, like the screen they come from: canvases that paint them keep it. */
 export const P3: CanvasRenderingContext2DSettings = { colorSpace: 'display-p3' }
 
+/** Sizes from w x h down to tw x th, at most halving per step. One big drawImage samples a few
+ *  pixels per block, so text pixelates to stray dots; a bilinear draw up to 2:1 averages every pixel in. */
+export function halvings(w: number, h: number, tw: number, th: number): Array<[number, number]> {
+  const steps: Array<[number, number]> = []
+  while (w > tw || h > th) steps.push([(w = Math.max(tw, Math.ceil(w / 2))), (h = Math.max(th, Math.ceil(h / 2)))])
+  return steps
+}
+
 /** Paint `shapes` over `image` (the frozen area, already drawn at 0,0 in output px). `k`: output px
  *  per point. The pixelate tool reads from `image`, so it hides what was captured, not other shapes. */
 export function paintShapes(ctx: Ctx, shapes: Shape[], image: HTMLImageElement | ImageBitmap, k: number): void {
@@ -68,10 +76,15 @@ export function paintShapes(ctx: Ctx, shapes: Shape[], image: HTMLImageElement |
     if (s.kind === 'blur') {
       const r = box(s.a, s.b)
       if (r.w >= 1 && r.h >= 1) {
-        const small = new OffscreenCanvas(Math.max(1, Math.round(r.w / BLOCK)), Math.max(1, Math.round(r.h / BLOCK)))
-        small.getContext('2d', P3)!.drawImage(image, r.x * ik, r.y * ik, r.w * ik, r.h * ik, 0, 0, small.width, small.height)
+        let src: CanvasImageSource = image
+        let [x, y, w, h] = [r.x * ik, r.y * ik, r.w * ik, r.h * ik]
+        for (const [nw, nh] of halvings(w, h, Math.max(1, Math.round(r.w / BLOCK)), Math.max(1, Math.round(r.h / BLOCK)))) {
+          const step = new OffscreenCanvas(nw, nh)
+          step.getContext('2d', P3)!.drawImage(src, x, y, w, h, 0, 0, nw, nh)
+          ;[src, x, y, w, h] = [step, 0, 0, nw, nh]
+        }
         ctx.imageSmoothingEnabled = false
-        ctx.drawImage(small, r.x, r.y, r.w, r.h)
+        ctx.drawImage(src, x, y, w, h, r.x, r.y, r.w, r.h)
       }
     } else if (s.kind === 'pen') {
       paintStroke(ctx, s.points, s.color, LINE, 1)

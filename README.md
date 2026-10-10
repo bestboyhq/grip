@@ -44,6 +44,7 @@ The same keystroke grabs one, lets you mark it up, and puts it on your clipboard
 ## Why Grip
 
 - **Free and open source.** No subscription, no account, no watermark.
+- **A screenshot tool built in.** Freeze the screen, draw arrows, boxes, ink, and text on top, pixelate what's private, and paste.
 - **Everything runs on your Mac.** Recording, editing, transcription, background removal, and face tracking.
 - **Nothing is baked in.** Raw tracks stay untouched, and every zoom, cut, and caption is an edit you can undo.
 - **What you preview is what you export.** One GPU renderer and one audio graph draw both, frame for frame.
@@ -69,13 +70,23 @@ Grip designs them out from the first commit instead of patching them later.
 ## Capture in one keystroke
 
 Press **⌥⌘↩︎** or click the menu bar icon.
-The screen freezes, and the picker opens in the mode you used last, with your last area still selected.
+The screen freezes under Grip's overlay, in the mode you used last, with your last area still selected.
+Draw right on top of the frozen screen, then copy it, save it, or record it.
+
+<p align="center">
+  <img src=".github/readme/capture.webp" width="100%" alt="Grip's capture overlay on a frozen screen: a selected area of a web app with a red box around the Project name field, a red arrow and the label 'Name it, then create' pointing at the Create project button, a yellow pen underline under the heading, and two pixelated project names. A tool strip with arrow, rectangle, pen, text, pixelate, and six colors sits beside the area, and a bar below it offers Save ⌘S and Copy ⌘C.">
+</p>
+
+<p align="center">
+  <sub>One keystroke, a few marks, and ⌘C puts it on your clipboard.</sub>
+</p>
 
 - **Record it.** Press **↩︎** for a 3-2-1 countdown, then record.
   Or pick a whole display, one window, or an iPhone or iPad over USB.
 - **Or screenshot it.** **⌘C** copies the area at once, **⌘S** saves it to the Desktop.
   Screenshots keep the Display P3 colors macOS uses.
 - **Mark it up first.** Arrow, rectangle, pen, text, and pixelate, each on one key (**A R P T B**), in six colors.
+  The pen draws smooth ink that thins with speed, or with pressure on a stylus.
   Drag any shape to move it, and undo covers every stroke.
 - **Size it exactly.** Drag the handles, type a size, lock 16:9, 4:3, 1:1, or 9:16, or snap a window to a preset size.
 

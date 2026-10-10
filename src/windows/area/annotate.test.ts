@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { arrowOutline, LINE, moved, shapeAt, tiny, type Shape } from './annotate.ts'
+import { arrowOutline, halvings, LINE, moved, shapeAt, tiny, type Shape } from './annotate.ts'
 
 test('an arrow is one outline: a tapered shaft and a swept-back head, smaller on short arrows', () => {
   const [tip, left, neckL, tailL, tailR, neckR, right] = arrowOutline({ x: 0, y: 0 }, { x: 200, y: 0 })
@@ -41,4 +41,16 @@ test('a drawn shape is picked up where it shows, topmost first, and moves whole'
   assert.deepEqual(moved(shapes[4], 10, -5), { kind: 'pen', color: '#fff', points: [{ x: 10, y: 295 }, { x: 60, y: 295 }] })
   assert.deepEqual(moved(shapes[2], 1, 2), { kind: 'text', color: '#fff', at: { x: 401, y: 12 }, text: 'Hi\nthere' })
   assert.deepEqual(moved(shapes[0], 1, 1), { kind: 'rect', color: '#fff', a: { x: 101, y: 101 }, b: { x: 301, y: 201 } })
+})
+
+test('pixelate shrinks at most 2:1 per step, so every pixel counts toward its block', () => {
+  const steps = halvings(1880.4, 50, 104, 3)
+  assert.deepEqual(steps.at(-1), [104, 3], 'ends at the block grid')
+  let [w, h] = [1880.4, 50]
+  for (const [nw, nh] of steps) {
+    assert.ok(nw >= w / 2 && nh >= h / 2 && nw >= 104 && nh >= 3)
+    ;[w, h] = [nw, nh]
+  }
+  assert.deepEqual(halvings(5, 300, 10, 20), [[10, 150], [10, 75], [10, 38], [10, 20]], 'a side already small stays at its target')
+  assert.deepEqual(halvings(8, 8, 8, 8), [])
 })
