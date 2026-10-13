@@ -136,6 +136,13 @@
         }}
         onerror={pictureSized}
       ></video>
+      <!-- A recording's actions sit over its picture, shown while the pointer is on the card. -->
+      <div class="overlay">
+        <button class="btn primary" disabled={active} onclick={() => run('clipboard', PRESETS.mp4)} title="Copy an MP4 under 20 MB, to paste anywhere"><Icon name="copy" size={16} />Copy</button>
+        <button class="btn" disabled={active} onclick={() => run('clipboard', PRESETS.gif)} title="Copy a GIF under 10 MB"><Icon name="image" size={16} />GIF</button>
+        <button class="btn" disabled={active} onclick={() => run('share', defaultOptions())} title="Upload and copy a link"><Icon name="link" size={16} />Link</button>
+        <button class="btn" onclick={edit} title="Open in the editor"><Icon name="edit" size={16} />Edit</button>
+      </div>
     {/if}
     <button class="close" aria-label="Close" onclick={close}><Icon name="close" size={14} /></button>
   </div>
@@ -160,26 +167,18 @@
         <button class="btn" onclick={saveShot}><Icon name="download" size={16} />Save to Desktop</button>
       {/if}
     </div>
-  {:else}
-    <div class="actions">
-      <button class="btn primary" disabled={active} onclick={() => run('clipboard', PRESETS.mp4)} title="Copy an MP4 under 20 MB, to paste anywhere"><Icon name="copy" size={16} />Copy</button>
-      <button class="btn" disabled={active} onclick={() => run('clipboard', PRESETS.gif)} title="Copy a GIF under 10 MB"><span class="gif">GIF</span></button>
-      <button class="btn" disabled={active} onclick={() => run('share', defaultOptions())} title="Upload and copy a link"><Icon name="link" size={16} />Link</button>
-      <button class="btn" onclick={edit} title="Open in the editor"><Icon name="edit" size={16} />Edit</button>
+  {:else if job}
+    <div class="status" class:failed={job.state === 'failed'} role="status">
+      {#if active}<div class="bar"><span style:width="{Math.max(2, job.progress * 100)}%"></span></div>{/if}
+      <span class="text">
+        {#if job.state === 'done'}<Icon name="check" size={14} />{/if}
+        {#if job.state === 'done' && job.url}
+          Link copied ·<a href={job.url} target="_blank" rel="noreferrer">{job.url.replace(/^https?:\/\//, '')}</a>
+        {:else}
+          {status(job)}
+        {/if}
+      </span>
     </div>
-    {#if job}
-      <div class="status" class:failed={job.state === 'failed'} role="status">
-        {#if active}<div class="bar"><span style:width="{Math.max(2, job.progress * 100)}%"></span></div>{/if}
-        <span class="text">
-          {#if job.state === 'done'}<Icon name="check" size={14} />{/if}
-          {#if job.state === 'done' && job.url}
-            Link copied ·<a href={job.url} target="_blank" rel="noreferrer">{job.url.replace(/^https?:\/\//, '')}</a>
-          {:else}
-            {status(job)}
-          {/if}
-        </span>
-      </div>
-    {/if}
   {/if}
 </main>
 
@@ -209,6 +208,9 @@
   }
   .picture.grab {
     cursor: grab;
+  }
+  .picture:has(.overlay) {
+    min-height: 100px; /* room for the actions over a very wide recording */
   }
   img,
   video {
@@ -270,10 +272,36 @@
     padding: 0 8px;
     gap: 5px;
   }
-  .gif {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(2, 100px);
+    place-content: center;
+    gap: 8px;
+    background: rgb(0 0 0 / 0.5);
+    opacity: 0;
+    transition: opacity 150ms var(--ease-out);
+  }
+  .card:hover .overlay,
+  .overlay:has(:focus-visible) {
+    opacity: 1;
+  }
+  .overlay .btn {
+    height: 30px;
+    gap: 5px;
+  }
+  /* Dark like the close button, so they read over any picture, and opaque while disabled too. */
+  .overlay .btn:is(:not(.primary), :disabled) {
+    opacity: 1;
+    background: rgb(20 20 22 / 0.8);
+    box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.18);
+  }
+  .overlay .btn:disabled {
+    color: var(--text-faint);
+  }
+  .overlay .btn:not(.primary):hover {
+    background: rgb(40 40 44 / 0.9);
   }
   .status {
     display: flex;

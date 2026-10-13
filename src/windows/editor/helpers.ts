@@ -1,5 +1,5 @@
 // Pure helpers for the editor window: playhead restore, preview hit-testing, time display.
-import type { CameraPosition, Clip, Project } from '../../shared/project.ts'
+import type { CameraPosition, Clip, Project, Rect } from '../../shared/project.ts'
 import type { Scene } from '../../engine/scene.ts'
 import { timeMap, toOutput } from '../../shared/timemap.ts'
 
@@ -20,16 +20,15 @@ export function resumeAt(clips: Clip[], src: number): number {
   return best
 }
 
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
-
-/** Normalized screen point (0..1, clamped) under output pixel (x, y) of a possibly zoomed frame. */
+/** Normalized screen point under output pixel (x, y) of a possibly zoomed frame, clamped to the
+ *  shown part of the screen (all of it, or the crop). */
 export function screenPoint(scene: Scene, x: number, y: number): { x: number; y: number } | null {
-  const r = scene.screen?.rect
-  if (!r) return null
+  if (!scene.screen) return null
+  const { rect: r, visible: v } = scene.screen
   const { center, scale } = scene.view
-  const ux = (x - scene.width / 2) / scale + center.x
-  const uy = (y - scene.height / 2) / scale + center.y
-  return { x: clamp01((ux - r.x) / r.w), y: clamp01((uy - r.y) / r.h) }
+  const ux = Math.min(Math.max((x - scene.width / 2) / scale + center.x, v.x), v.x + v.w)
+  const uy = Math.min(Math.max((y - scene.height / 2) / scale + center.y, v.y), v.y + v.h)
+  return { x: (ux - r.x) / r.w, y: (uy - r.y) / r.h }
 }
 
 /** Output pixel where normalized screen point (nx, ny) lands in the (possibly zoomed) frame. */
@@ -38,6 +37,48 @@ export function outputPoint(scene: Scene, nx: number, ny: number): { x: number; 
   if (!r) return null
   const { center, scale } = scene.view
   return { x: (r.x + nx * r.w - center.x) * scale + scene.width / 2, y: (r.y + ny * r.h - center.y) * scale + scene.height / 2 }
+}
+
+/** A crop handle: an edge or corner by compass point, or the whole crop. */
+export type CropHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw' | 'move'
+
+/** Crop `r0` (recording px) with `handle` dragged by (dx, dy): moved, or resized from the opposite
+ *  edge or corner (from the center with `center`), keeping w/h = `ratio` when it is set, at least
+ *  `min` px a side, inside the W x H recording. Whole px. */
+export function dragCrop(r0: Rect, handle: CropHandle, dx: number, dy: number, o: { W: number; H: number; ratio: number; center: boolean; min: number }): Rect {
+  const { W, H, ratio, center } = o
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, hi))
+  const whole = (r: Rect) => {
+    const w = clamp(Math.round(r.w), 1, W), h = clamp(Math.round(r.h), 1, H)
+    return { x: clamp(Math.round(r.x), 0, W - w), y: clamp(Math.round(r.y), 0, H - h), w, h }
+  }
+  if (handle === 'move') return whole({ ...r0, x: r0.x + dx, y: r0.y + dy })
+  const sx = handle.includes('e') ? 1 : handle.includes('w') ? -1 : 0
+  const sy = handle.includes('s') ? 1 : handle.includes('n') ? -1 : 0
+  // The anchor stays put: the opposite edge, or the center along an axis that resizes both ways.
+  const ax = sx && !center ? (sx > 0 ? r0.x : r0.x + r0.w) : r0.x + r0.w / 2
+  const ay = sy && !center ? (sy > 0 ? r0.y : r0.y + r0.h) : r0.y + r0.h / 2
+  const k = center ? 2 : 1
+  let w = sx ? r0.w + k * sx * dx : r0.w
+  let h = sy ? r0.h + k * sy * dy : r0.h
+  if (ratio > 0) {
+    // A corner follows the axis the pointer moved further along; an edge drives the other side.
+    if (sx && (!sy || Math.abs(w - r0.w) >= Math.abs(h - r0.h) * ratio)) h = w / ratio
+    else w = h * ratio
+  }
+  const room = (a: number, s: number, size: number) => (s && !center ? (s > 0 ? size - a : a) : 2 * Math.min(a, size - a))
+  const maxW = ratio > 0 || sx ? room(ax, sx, W) : W
+  const maxH = ratio > 0 || sy ? room(ay, sy, H) : H
+  const min = Math.min(o.min, W, H)
+  if (ratio > 0) {
+    w = clamp(w, Math.max(min, min * ratio), Math.min(maxW, maxH * ratio))
+    h = w / ratio
+  } else {
+    w = clamp(w, Math.min(min, maxW), maxW)
+    h = clamp(h, Math.min(min, maxH), maxH)
+  }
+  const pos = (a: number, s: number, size: number, from: number, fixed: boolean) => (fixed ? from : s && !center ? (s > 0 ? a : a - size) : a - size / 2)
+  return whole({ x: pos(ax, sx, w, r0.x, !sx && !(ratio > 0)), y: pos(ay, sy, h, r0.y, !sy && !(ratio > 0)), w, h })
 }
 
 /** Background removal or face follow is on, but the camera analysis they need (matte and face track)

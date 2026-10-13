@@ -8,8 +8,9 @@
 // lands mid-animation blends into the next state.
 //
 // Screen rect assumption (layout.ts belongs to the compositor): layoutAt(...).screen.rect is where
-// the recording sits, in unzoomed output px. It may change over time and may be larger than
-// the output. Zoomed views stay inside it, so they never show background past the screen edge.
+// the recording sits, in unzoomed output px, and .visible the part of it that shows (all of it, or
+// the crop). They may change over time and may be larger than the output. Zoomed views stay inside
+// the visible part, so they never show background past the screen edge or past the crop.
 // On outputs narrower than that rect (9:16, or 1:1 from a landscape screen) the rest view scales up
 // until the screen covers the output height and follows the cursor. If the layout already makes the
 // screen cover the output, that base scale is 1 and the camera only pans.
@@ -223,7 +224,7 @@ let last: { events: InputEvent[]; cursor: Float32Array; key: string; path: ZoomP
 // preview's worker); resume from the first changed second if zoom edits must land faster.
 export function zoomPath(input: SceneInput, map: TimeMap, layout: ReturnType<typeof prepareLayout>, cursor: ReturnType<typeof prepareCursor>) {
   const { project, events, width, height } = input
-  const screens = Object.values(layout.targets).map((s) => [s.screen, s.screenRadius, s.viewport, s.camera, s.pip, s.cameraOpacity])
+  const screens = Object.values(layout.targets).map((s) => [s.screen, s.visible, s.screenRadius, s.viewport, s.camera, s.pip, s.cameraOpacity])
   const camera = !!project.sources.camera && [project.style.camera.position, project.style.camera.visible]
   const key = JSON.stringify([width, height, project.sources.screen ?? null, project.style.screenAnimation, project.zooms, map.clips.map((c) => [c.start, c.end, c.speed]), layout.changes, screens, camera])
   if (last?.events !== events || last.cursor !== cursor.x || last.key !== key) last = { events, cursor: cursor.x, key, path: simulate(input, map, layout, cursor) }
@@ -247,12 +248,13 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   if (!screen) return { n, data: new Float32Array(0), jumps: new Map<number, number>() }
 
   // The screen layer at t; where the layout hides the screen, the last one seen.
-  let layer: ScreenPlace = screenAt(layout, 0) ?? { screen: { x: 0, y: 0, w: W, h: H }, screenRadius: 0, viewport: { x: 0, y: 0, w: W, h: H } }
+  const full = { x: 0, y: 0, w: W, h: H }
+  let layer: ScreenPlace = screenAt(layout, 0) ?? { screen: full, visible: full, screenRadius: 0, viewport: full }
   const layerAt = (t: number) => (layer = screenAt(layout, t) ?? layer)
   const toPx = (r: Rect, x: number, y: number): Pt => ({ x: r.x + (x * r.w) / screen.width, y: r.y + (y * r.h) / screen.height })
   const cursorPt = (t: number, r: Rect): Pt | null => {
     const c = cursorPoint(cur, clamp(t, 0, map.duration))
-    // Off the captured area (another display): nothing to follow.
+    // Off the shown area (another display, or cropped away): nothing to follow.
     return c && c.x >= r.x && c.x <= r.x + r.w && c.y >= r.y && c.y <= r.y + r.h ? { x: c.x, y: c.y } : null
   }
 
@@ -280,13 +282,13 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   let fi = 0
   for (let k = 0; k <= n; k++) {
     const t = k * DT
-    const { screen: r, screenRadius: radius, viewport: vp } = layerAt(t)
-    const bounds = inner(r, radius)
+    const { screen: r, visible: shown, screenRadius: radius, viewport: vp } = layerAt(t)
+    const bounds = inner(shown, radius)
     const ts = clamp(t, AT_START, map.duration - 1e-6) // a zoom starting at 0 or running to the end covers that frame
     while (si < cam.length && cam[si].b <= ts) si++
     const span = si < cam.length && cam[si].a <= ts ? cam[si] : null
     const zoom = span?.zoom
-    const b0 = baseScale(vp, r, bounds)
+    const b0 = baseScale(vp, shown, bounds)
     const s = Math.max(b0, zoom ? zoom.level : 1)
 
     let c: Pt = { x: vp.x + vp.w / 2, y: vp.y + vp.h / 2 }
@@ -297,7 +299,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
       // picture-in-picture camera, and the cursor stays in frame above all.
       // Everything is read lag ahead so the trailing spring lands on time.
       const tl = t + lag
-      const cp = cursorPt(tl, r)
+      const cp = cursorPt(tl, shown)
       while (fi < frames.length && frames[fi].b < tl) fi++
       if (span && span !== prev) {
         // Entering a zoom: aim at its first click or typing place, else at the cursor.
@@ -305,7 +307,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
       }
       const hw = vp.w / (2 * s)
       const hh = vp.h / (2 * s)
-      c = aim ?? { x: r.x + r.w / 2, y: r.y + r.h / 2 }
+      c = aim ?? { x: shown.x + shown.w / 2, y: shown.y + shown.h / 2 }
       if (cp) c = keep(c, cp, DEAD_ZONE * hw, DEAD_ZONE * hh)
       for (let i = fi; i < frames.length && frames[i].a <= tl; i++) if (frames[i].b >= tl) c = keep(c, frames[i].p, FOCUS_ZONE * hw, FOCUS_ZONE * hh)
       // The camera as it will sit once the view gets there (it steps back while zoomed in).
@@ -327,7 +329,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
       if (k > 0) jumps.set(k - 1, zoom ? span!.a : prev!.b)
       for (let i = 0; i < 3; i++) (pos[i] = target[i]), (vel[i] = 0)
     }
-    const now = follow ? cursorPt(t, r) : null
+    const now = follow ? cursorPt(t, shown) : null
     if (now) {
       const v = Math.exp(pos[2])
       const w = clampCenter(keep({ x: pos[0], y: pos[1] }, now, (WALL_ZONE * vp.w) / (2 * v), (WALL_ZONE * vp.h) / (2 * v)), bounds, v, vp)
@@ -369,27 +371,28 @@ export function viewAt(z: ReturnType<typeof prepareZoom>, t: number): View {
 export function zoomAmount(z: ReturnType<typeof prepareZoom>, t: number, v: View): number {
   const s = screenAt(z.layout, t)
   if (!s) return 0
-  return magnified(v.scale, baseScale(s.viewport, s.screen, inner(s.screen, s.screenRadius)))
+  return magnified(v.scale, baseScale(s.viewport, s.visible, inner(s.visible, s.screenRadius)))
 }
 
 export function loupeAt(z: ReturnType<typeof prepareZoom>, t: number): Loupe | null {
   const piece = z.loupes.findLast((p) => p.a <= t && t < p.b + (p.zoom.instant ? 0 : LOUPE_FADE))
-  const r = piece && screenAt(z.layout, t)?.screen
-  if (!piece || !r) return null
+  const s = piece && screenAt(z.layout, t)
+  if (!piece || !s) return null
+  const { screen: r, visible: v } = s
   const { a, b, zoom } = piece
   const fadeIn = zoom.instant || a < AT_START ? 1 : springProgress(t - a, LOUPE_SPRING)
   const fadeOut = t < b ? 0 : springProgress(t - b, LOUPE_SPRING)
   const p = fadeIn * (1 - fadeOut)
   const radius = (LOUPE_RADIUS * Math.min(z.W, z.H)) / 1080
-  let c: Pt = { x: r.x + r.w / 2, y: r.y + r.h / 2 }
+  let c: Pt = { x: v.x + v.w / 2, y: v.y + v.h / 2 }
   if (zoom.target.kind === 'point') c = { x: r.x + zoom.target.x * r.w, y: r.y + zoom.target.y * r.h }
   else {
     const cur = cursorPoint(z.cursor, t)
     if (cur) c = cur
   }
-  // Keep the lens over the screen, so it never magnifies background.
-  const inside = (v: number, lo: number, size: number) => (2 * radius <= size ? clamp(v, lo + radius, lo + size - radius) : lo + size / 2)
-  return { x: inside(c.x, r.x, r.w), y: inside(c.y, r.y, r.h), radius, scale: mix(1, Math.max(1, zoom.level), p), opacity: p }
+  // Keep the lens over the shown screen, so it never magnifies background.
+  const inside = (p: number, lo: number, size: number) => (2 * radius <= size ? clamp(p, lo + radius, lo + size - radius) : lo + size / 2)
+  return { x: inside(c.x, v.x, v.w), y: inside(c.y, v.y, v.h), radius, scale: mix(1, Math.max(1, zoom.level), p), opacity: p }
 }
 
 /** Auto zooms (source time) from clicks and typing: merge activity close in time, start LEAD before

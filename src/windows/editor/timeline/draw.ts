@@ -320,9 +320,15 @@ function clipBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, c: Clip, b
   const len = (c.end - c.start) / c.speed
   const meta: Seg[] = [{ text: M.span(len), font: F_META, color: C.clipMeta }]
   meta.push({ icon: gauge, text: `${c.speed}×`, font: F_META, color: c.speed === 1 ? C.clipMeta : C.clipText, pill: c.speed === 1 ? undefined : C.pill })
-  if (c.muted || c.volume !== 1) {
-    meta.push({ icon: c.muted || c.volume === 0 ? mute : speaker, text: c.muted ? '' : `${Math.round(c.volume * 100)}%`, font: F_META, color: C.clipText, pill: C.pill })
+  const pct = (v: number) => `${Math.round(v * 100)}%`
+  const sys = c.systemVolume ?? 1
+  if (c.muted) meta.push({ icon: mute, text: '', font: F_META, color: C.clipText, pill: C.pill })
+  else {
+    if (s.mic && c.volume !== 1) meta.push({ icon: c.volume === 0 ? mute : speaker, text: pct(c.volume), font: F_META, color: C.clipText, pill: C.pill })
+    if (s.system && sys !== 1) meta.push({ icon: monitor, text: pct(sys), font: F_META, color: C.clipText, pill: C.pill })
   }
+  if (c.rawCursor) meta.push({ icon: arrow, text: 'Raw', font: F_META, color: C.clipText, pill: C.pill })
+  if (c.hideCursor) meta.push({ icon: noArrow, text: '', font: F_META, color: C.clipText, pill: C.pill })
   if (w > 20) {
     ctx.save()
     ctx.beginPath()
@@ -359,8 +365,8 @@ function wave(ctx: CanvasRenderingContext2D, s: Scene, c: Clip, b: M.Block, xa: 
   const x0 = Math.max(Math.floor(xa), 0)
   const x1 = Math.min(Math.ceil(xb), v.W)
   // Mic behind, system audio in front: each a translucent body under a crisp edge.
-  for (const [src, color, edge] of [[s.mic, C.wave, C.waveEdge], [s.system, C.waveSys, C.waveSysEdge]] as const) {
-    const gain = src ? src.gain * (c.muted ? 0 : c.volume) : 0
+  for (const [src, volume, color, edge] of [[s.mic, c.volume, C.wave, C.waveEdge], [s.system, c.systemVolume ?? 1, C.waveSys, C.waveSysEdge]] as const) {
+    const gain = src ? src.gain * (c.muted ? 0 : volume) : 0
     if (!src || gain <= 0) continue
     const top = new Path2D()
     for (let x = x0; x <= x1; x++) {
@@ -743,6 +749,12 @@ const mute: Icon = (ctx, x, y, s) => {
     ctx.lineTo(x + s * 0.7, y + s * 0.65)
   })
 }
+const monitor: Icon = (ctx, x, y, s) =>
+  line(ctx, () => {
+    ctx.roundRect(x + 0.5, y + s * 0.12, s - 1, s * 0.6, 1.5)
+    ctx.moveTo(x + s * 0.3, y + s * 0.92)
+    ctx.lineTo(x + s * 0.7, y + s * 0.92)
+  })
 const magnifier: Icon = (ctx, x, y, s) =>
   line(ctx, () => {
     ctx.arc(x + s * 0.42, y + s * 0.42, s * 0.32, 0, Math.PI * 2)
@@ -760,6 +772,13 @@ const arrow: Icon = (ctx, x, y, s) =>
     ctx.lineTo(x + s * 0.82, y + s * 0.6)
     ctx.closePath()
   })
+const noArrow: Icon = (ctx, x, y, s) => {
+  arrow(ctx, x, y, s)
+  line(ctx, () => {
+    ctx.moveTo(x + s * 0.02, y + s * 0.12)
+    ctx.lineTo(x + s * 0.98, y + s * 0.92)
+  }, 1.4)
+}
 const target: Icon = (ctx, x, y, s) =>
   line(ctx, () => {
     ctx.arc(x + s / 2, y + s / 2, s * 0.3, 0, Math.PI * 2)

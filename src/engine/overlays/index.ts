@@ -406,12 +406,20 @@ export function drawOverlays(ctx: Ctx, scene: Scene): void {
     ctx.translate(-v.center.x, -v.center.y)
     if (s && scene.drawings.length) {
       // Ink stays on the recording: never on the inset band, the padding, or past rounded corners.
+      const r = s.visible
       ctx.save()
       ctx.beginPath()
-      ctx.roundRect(s.rect.x, s.rect.y, s.rect.w, s.rect.h, Math.max(0, s.radius - s.inset))
+      ctx.roundRect(r.x, r.y, r.w, r.h, Math.max(0, s.radius - s.inset))
       ctx.clip()
       for (const d of scene.drawings) paintStroke(ctx, d.points, d.color, d.width, d.opacity)
       ctx.restore()
+    }
+    if (s?.cropped) {
+      // A crop hides clicks past the shown part, like the content under them.
+      const r = s.visible
+      ctx.beginPath()
+      ctx.roundRect(r.x - s.inset, r.y - s.inset, r.w + 2 * s.inset, r.h + 2 * s.inset, s.radius)
+      ctx.clip()
     }
     for (const c of scene.clicks) drawClick(ctx, c, scene.unit)
     ctx.restore()

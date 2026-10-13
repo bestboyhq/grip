@@ -5,7 +5,7 @@
 </script>
 
 <script lang="ts">
-  import { selection } from '../../../lib/doc.svelte.ts'
+  import { doc, selection } from '../../../lib/doc.svelte.ts'
   import * as A from './actions.svelte.ts'
 
   let { x, y, t, target, onclose }: { x: number; y: number; t: number; target: Target; onclose: () => void } = $props()
@@ -19,6 +19,10 @@
   const uniform = <T,>(xs: T[]) => (xs.length && xs.every((x) => x === xs[0]) ? xs[0] : undefined)
   const speed = $derived(uniform(clips.map((c) => c.speed)))
   const volume = $derived(uniform(clips.map((c) => (c.muted ? 0 : c.volume))))
+  const systemVolume = $derived(uniform(clips.map((c) => (c.muted ? 0 : (c.systemVolume ?? 1)))))
+  const sources = $derived(doc.project?.sources)
+  const cursor = $derived(doc.project?.style.cursor)
+  const volumes = A.VOLUMES.map((v) => [v, v ? `${v * 100}%` : 'Mute'] as [number, string])
   const level = $derived(uniform(zooms.map((z) => z.level)))
   const layout = $derived(uniform(layouts.map((l) => l.kind)))
   const mask = $derived(uniform(masks.map((m) => m.kind)))
@@ -75,14 +79,25 @@
 <div class="menu" role="menu" tabindex="-1" {@attach place} {onkeydown}>
   {#if target.kind === 'clips'}
     {@render choices('Speed', A.SPEEDS.map((s) => [s, `${s}×`]), speed, A.setSpeed)}
-    {@render choices('Volume', A.VOLUMES.map((v) => [v, v ? `${v * 100}%` : 'Mute']), volume, A.setVolume)}
+    {#if sources?.mic}
+      {@render choices(sources.system ? 'Mic volume' : 'Volume', volumes, volume, A.setVolume)}
+    {/if}
+    {#if sources?.system}
+      {@render choices(sources.mic ? 'System audio volume' : 'Volume', volumes, systemVolume, A.setSystemVolume)}
+    {/if}
     <hr />
     {@render item('Split here', () => A.cut(t), 'C')}
     {@render item(many ? 'Duplicate clips' : 'Duplicate clip', A.duplicate, '⌘D')}
     {@render item('Copy', A.copy, '⌘C')}
+    {@render item('Reset trim', A.resetTrim, '', !A.canResetTrim())}
     {@render item('Merge with previous', () => A.merge(-1), '', !A.canMerge(-1))}
     {@render item('Merge with next', () => A.merge(1), '', !A.canMerge(1))}
     {@render item('Apply speed to all clips', A.speedToAll, '', speed === undefined)}
+    {#if A.hasCursor() && cursor}
+      <hr />
+      {@render item(clips.every((c) => c.rawCursor) ? 'Enable cursor smoothing' : 'Disable cursor smoothing', () => A.toggleClips('rawCursor'), '', cursor.animation === 'none')}
+      {@render item(clips.every((c) => c.hideCursor) ? 'Show cursor' : 'Hide cursor', () => A.toggleClips('hideCursor'), '', !cursor.visible)}
+    {/if}
     <hr />
     {@render item(many ? 'Delete clips' : 'Delete clip', A.remove, '⌫')}
   {:else if target.kind === 'zooms'}

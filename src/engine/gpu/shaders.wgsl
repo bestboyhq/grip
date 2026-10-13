@@ -7,7 +7,7 @@
 struct Frame {
   a: vec4f,        // output w, h, unit (px per style unit), view samples
   viewT: vec4f,    // view at t: center x, y, scale; viewport corner radius
-  scr: vec4f,      // recording rect (unzoomed px); the frame is this grown by dev.w
+  scr: vec4f,      // rect of the whole recording (unzoomed px)
   scr2: vec4f,     // screen radius, has screen, mask count, shadow strength
   scr3: vec4f,     // screen source w, h (px), pixelate block (source px), blur mip level
   dev: vec4f,      // device parts, first part drawn over the screen, shadow casters, inset (px)
@@ -17,7 +17,7 @@ struct Frame {
   masks: array<vec4f, 32>,  // rect (screen source px), (kind 0 blur 1 pixelate 2 highlight, opacity, radius)
   cur: vec4f,      // cursor samples, opacity, samples per pixel, has cursor
   curImg: vec4f,   // image w, h, hotspot x, y (image px)
-  curTex: vec4f,   // texture px per image px
+  curTex: vec4f,   // texture px per image px, clipped to the screen frame (a cropped recording)
   curBox: vec4f,   // swept bounds x0, y0, x1, y1 (output px)
   curS: array<vec4f, 16>,   // shutter samples of the cursor: x, y (unzoomed), unzoomed px per image px, angle
   loupe: vec4f,    // center x, y (unzoomed), radius (unzoomed px), magnification
@@ -31,6 +31,7 @@ struct Frame {
   lutMax: vec4f,
   fin: vec4f,      // has overlay
   vp: vec4f,       // viewport (output px): the zoom view shows through it, everything outside is unzoomed
+  vis: vec4f,      // shown part of the recording (unzoomed px): all of scr, or its crop; the frame is this grown by dev.w
 }
 
 @group(0) @binding(0) var<uniform> F: Frame;
@@ -225,6 +226,12 @@ fn masked(c0: vec3f, uv: vec2f, m: f32) -> vec4f {
   return vec4f(c, mark);
 }
 
+// Coverage of the screen frame at unzoomed point u: the shown recording grown by the inset, rounded.
+fn frameCover(u: vec2f, aa: f32) -> f32 {
+  let half = F.vis.zw * 0.5;
+  return cover(sdBox(u - F.vis.xy - half, half + F.dev.w, vec4f(F.scr2.x)), aa);
+}
+
 // Everything under the zoom view except the cursor, at unzoomed point u. rgb + dither mark.
 fn zoomed(u: vec2f, aa: f32) -> vec4f {
   var c = background(u);
@@ -235,10 +242,9 @@ fn zoomed(u: vec2f, aa: f32) -> vec4f {
   for (var i = 0; i < over; i++) { c = part(c, u, i, aa); }
   var mark = 1.0;
   let r = F.scr;
-  let half = r.zw * 0.5;
-  let cv = cover(sdBox(u - r.xy - half, half + F.dev.w, vec4f(F.scr2.x)), aa);
+  let cv = frameCover(u, aa);
   if (cv > 0.0) {
-    let uv = (u - r.xy) / r.zw; // outside 0..1 in the inset: the sampler clamps to the edge color
+    let uv = (clamp(u, F.vis.xy, F.vis.xy + F.vis.zw) - r.xy) / r.zw; // held to the shown part: the inset takes its edge color
     let m = F.scr3.x / r.z * aa;
     let s = masked(screenSample(uv, m), uv, m);
     c = mix(c, s.rgb, cv);
@@ -286,6 +292,7 @@ fn zoomed(u: vec2f, aa: f32) -> vec4f {
 
 // ---- Cursor ----
 
+// vs: output px per unzoomed px.
 fn cursorAt(u: vec2f, s: vec4f, vs: f32) -> vec4f {
   let d = u - s.xy;
   let ca = cos(s.w);
@@ -294,7 +301,9 @@ fn cursorAt(u: vec2f, s: vec4f, vs: f32) -> vec4f {
   let uv = q / F.curImg.xy;
   if (any(uv < vec2f(0.0)) || any(uv > vec2f(1.0))) { return vec4f(0.0); }
   let lod = log2(max(F.curTex.x / (s.z * vs), 1e-4));
-  return textureSampleLevel(cursorTex, samp, uv, max(lod - 0.5, 0.0)); // slight sharpening bias: the art is 8x supersampled
+  let c = textureSampleLevel(cursorTex, samp, uv, max(lod - 0.5, 0.0)); // slight sharpening bias: the art is 8x supersampled
+  // A crop hides the cursor past the shown part, like the content under it.
+  return select(c, c * frameCover(u, 1.0 / vs), F.curTex.y > 0.5);
 }
 
 @vertex fn vs_cursor(@builtin(vertex_index) i: u32) -> VO { return box(i, F.curBox); }

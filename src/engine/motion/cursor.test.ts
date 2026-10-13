@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createProject, type Project } from '../../shared/project.ts'
-import { removeSourceRange, setSpeed, timeMap } from '../../shared/timemap.ts'
+import { removeSourceRange, setSpeed, splitAt, timeMap } from '../../shared/timemap.ts'
 import type { InputEvent } from '../../shared/events.ts'
 import { layoutAt, prepareLayout } from '../layout.ts'
 import { cursorAt, cursorPoint, prepareCursor } from './index.ts'
@@ -285,4 +285,29 @@ test('cursor animation styles smooth progressively less: smooth > medium > rapid
   const off = (a: string) => path(a as 'smooth').reduce((m, p, i) => m + Math.hypot(p.x - raw[i].x, p.y - raw[i].y), 0)
   const [s, m, r] = ['smooth', 'medium', 'rapid'].map(off)
   assert.ok(s > m && m > r && r > 0, `deviation from raw: smooth ${s}, medium ${m}, rapid ${r}`)
+})
+
+test('per clip: raw clips follow the raw path without tilt, hidden clips fade the cursor out and back', () => {
+  const events = stream(30, 7, false)
+  const still = (p: Project) => (p.style.cursor.hideIdle = false)
+  const raw = setup(events, 30, (p) => (still(p), (p.style.cursor.animation = 'none')))
+  const s = setup(events, 30, (p) => {
+    still(p)
+    p.clips = splitAt(splitAt(splitAt(p.clips, 10), 20), 25)
+    p.clips[1].rawCursor = true
+    p.clips[2].hideCursor = true
+  })
+  const off = (t: number) => Math.hypot(cursorPoint(s.c, t)!.x - cursorPoint(raw.c, t)!.x, cursorPoint(s.c, t)!.y - cursorPoint(raw.c, t)!.y)
+  for (let t = 10.15; t < 19.85; t += 0.05) assert.ok(off(t) < 0.1, `raw at ${t}: ${off(t)} px`)
+  assert.ok(Math.max(...Array.from({ length: 900 }, (_, i) => off(i / 100))) > 2, 'smoothed before the raw clip')
+  for (let t = 11; t < 20; t += 0.05) assert.ok(Math.abs(cursorAt(s.c, t)!.angle) < 0.01, `no tilt at ${t}`)
+  assert.equal(cursorAt(s.c, 19.99)!.opacity, 1)
+  const fading = cursorAt(s.c, 20.075)!.opacity
+  assert.ok(fading > 0.3 && fading < 0.7, `fades out from the clip start: ${fading}`)
+  assert.equal(cursorAt(s.c, 20.2), null)
+  assert.equal(cursorAt(s.c, 24.99), null)
+  const back = cursorAt(s.c, 25.075)!.opacity
+  assert.ok(back > 0.3 && back < 0.7, `fades in from the clip end: ${back}`)
+  assert.equal(cursorAt(s.c, 25.2)!.opacity, 1)
+  assert.ok(cursorPoint(s.c, 22), 'zoom follow still sees the hidden cursor')
 })

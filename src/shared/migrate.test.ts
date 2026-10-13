@@ -107,3 +107,12 @@ test('v1 motion switches become v2 presets, in projects and presets', () => {
     assert.deepEqual(normalizeStyle(roundTrip(v1.style)), p.style)
   }
 })
+
+test('v2 clip volume drove both tracks: v3 copies it to systemVolume so system audio keeps its level', () => {
+  const v2 = roundTrip(project())
+  v2.version = 2
+  v2.clips = [{ id: 'a', start: 0, end: 10, speed: 1, volume: 0.5 }, { id: 'b', start: 10, end: 24, speed: 1, volume: 1 }]
+  const p = migrate(v2)
+  assert.deepEqual(p.clips.map((c) => c.systemVolume), [0.5, undefined])
+  assert.throws(() => migrate({ ...roundTrip(project()), clips: [{ id: 'a', start: 0, end: 1, speed: 1, volume: 1, systemVolume: '1' }] }), /clips\[0\]/)
+})

@@ -14,8 +14,10 @@
   import logoDot from '../../../build/Grip.icon/Assets/dot.svg'
   import { invoke, on } from '../../lib/ipc.ts'
   import Icon from '../recorder/Icon.svelte'
+  import ZoomHint from '../recorder/ZoomHint.svelte'
   import UiIcon from '../../ui/Icon.svelte'
   import { paintStroke, visibleStrokes, type Stroke } from '../../engine/overlays/drawings.ts'
+  import { springDuration, springProgress, type SpringConfig } from '../../engine/motion/spring.ts'
   import { fromEngine, setSettings, shell, startRequest, toEngine, windowList, type Rect, type StartRequest, type WindowSource } from '../recorder/shell.svelte.ts'
   import { ASPECTS, constrain, formAt, presetFrame, presetSize, PRESETS, resize, toolsAt, type Handle } from './geometry.ts'
   import { COLORS, FONT, FONT_FAMILY, moved, P3, paintShapes, shapeAt, tiny, TOOLS, type P, type Shape, type Tool } from './annotate.ts'
@@ -357,6 +359,43 @@
     }
   })
 
+  // The countdown: the circle pops in, each number drops in on a spring while the one before falls out
+  // under it, and the circle beats as it lands. Reduced motion keeps the fades only.
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches
+  const DROP: SpringConfig = { stiffness: 380, damping: 22, mass: 1 } // ~12% overshoot: the number lands
+  const POP: SpringConfig = { stiffness: 420, damping: 24, mass: 1 }
+  const easeOut = (u: number) => 1 - (1 - u) ** 3
+  /** A spring as a transition: `css` gets its progress (past 1 while it overshoots) and linear time. */
+  const sprung = (c: SpringConfig, css: (p: number, t: number) => string) => (_: Element) => {
+    const d = springDuration(c)
+    return { duration: d * 1000, css: (t: number) => css(springProgress(t * d, c), t) }
+  }
+  const pop = sprung(POP, (p, t) => (calm ? `opacity: ${t}` : `opacity: ${Math.min(1, t * 3)}; transform: scale(${0.82 + 0.18 * p})`))
+  const drop = sprung(DROP, (p, t) =>
+    calm ? `opacity: ${t}` : `opacity: ${Math.min(1, t * 4)}; transform: translateY(${-60 * (1 - p)}%) scale(${1 + 0.45 * (1 - p)}); filter: blur(${Math.max(0, 8 * (1 - p))}px)`,
+  )
+  // Outros run t from 1 to 0; easing the elapsed part gives them a fast start.
+  const fall = (_: Element) => ({
+    duration: 280,
+    css: (t: number) => {
+      const e = easeOut(1 - t)
+      return calm ? `opacity: ${t}` : `opacity: ${1 - e}; transform: translateY(${55 * e}%) scale(${1 - 0.3 * e}); filter: blur(${6 * e}px)`
+    },
+  })
+  // Recording starts: the circle bursts. Esc (no target left): it just fades.
+  const burst = (_: Element) => ({
+    duration: target ? 260 : 150,
+    css: (t: number) => {
+      const e = easeOut(1 - t)
+      return calm || !target ? `opacity: ${t}` : `opacity: ${1 - e}; transform: scale(${1 + 0.2 * e}); filter: blur(${4 * e}px)`
+    },
+  })
+  /** The circle beats as each number after the first lands. */
+  function beat(el: HTMLElement) {
+    if (count < 3 && !calm)
+      el.animate([{ scale: 1, easing: 'cubic-bezier(0.2, 0, 0, 1)' }, { scale: 1.06, offset: 0.3, easing: 'cubic-bezier(0.3, 0, 0.2, 1)' }, { scale: 1 }], 450)
+  }
+
   let takes = 0 // countdowns started; a newer one (Esc, then start again) ends the older loop
   async function begin(req: StartRequest, region: Rect) {
     if (target) return
@@ -437,11 +476,7 @@
     {/if}
   {:else if target}
     {@render shade(target)}
-    <div class="target" style:left="{target.x}px" style:top="{target.y}px" style:width="{target.width}px" style:height="{target.height}px">
-      {#if count > 0}
-        {#key count}<div class="count" role="status" aria-live="assertive">{count}</div>{/key}
-      {/if}
-    </div>
+    <div class="target" style:left="{target.x}px" style:top="{target.y}px" style:width="{target.width}px" style:height="{target.height}px"></div>
   {:else if shell.counting}
     <!-- Another display is counting down. -->
   {:else if shell.mode === 'display'}
@@ -579,6 +614,15 @@
     {:else}
       <div class="hint">Drag to select an area · Esc to cancel</div>
     {/if}
+  {/if}
+  <!-- Outside the branches above, so it bursts away even as the recording's backdrop replaces them. -->
+  {#if count > 0 && target}
+    <div class="countdown" style:left="{target.x + target.width / 2}px" style:top="{target.y + target.height / 2}px" in:pop out:burst>
+      <div class="count" role="status" aria-live="assertive" {@attach beat}>
+        {#key count}<span class="digit" class:one={count === 1} in:drop|global out:fall>{count}</span>{/key}
+      </div>
+      <div class="zoom"><ZoomHint /></div>
+    </div>
   {/if}
   {#if pen && display}
     <canvas class="ink" class:live={shell.drawing} bind:this={inkCanvas} onpointerdown={penDown} onpointermove={penMove} onpointerup={penUp}></canvas>
@@ -874,32 +918,40 @@
   .size input::-webkit-inner-spin-button {
     display: none;
   }
-  .target {
-    display: grid;
-    place-items: center;
+  /* The circle sits on the region's center; the auto zoom hint hangs under it. */
+  .countdown {
+    position: absolute;
+    translate: -50% -50%;
+    pointer-events: none;
   }
   .count {
     display: grid;
-    place-items: center;
     width: 132px;
     height: 132px;
+    overflow: hidden; /* numbers fly in and out through its edge */
     border-radius: 50%;
     background: rgb(20 20 22 / 0.78);
+    box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.2);
     color: #fff;
     font-size: 68px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    box-shadow: 0 20px 60px rgb(0 0 0 / 0.45);
-    animation: tick 1s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    font-weight: 600; /* proportional figures: each centers on its own width */
   }
-  @keyframes tick {
-    from { transform: scale(0.82); opacity: 0; }
-    18% { transform: scale(1); opacity: 1; }
-    82% { transform: scale(1); opacity: 1; }
-    to { transform: scale(0.96); opacity: 0.2; }
+  .digit {
+    grid-area: 1 / 1; /* the falling number and the landing one overlap */
+    place-self: center;
+    translate: 0 -1px; /* figures sit low in their line box: this centers the ink */
+  }
+  .digit.one {
+    translate: -2px -1px; /* its flag pulls its box left of the stem the eye centers on */
+  }
+  .zoom {
+    position: absolute;
+    top: calc(100% + 16px);
+    left: 50%;
+    translate: -50% 0;
   }
   @media (prefers-reduced-motion: reduce) {
-    .count, .plus { animation: none; }
+    .plus { animation: none; }
     .frame { transition: none; }
   }
   /* Secondary action beside the accent one: same height, a control on the panel. */

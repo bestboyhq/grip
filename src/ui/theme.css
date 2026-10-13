@@ -40,7 +40,7 @@
   --text-dim: #a0a0a8;
   --text-faint: #6c6c75;
 
-  /* Grayscale UI: the logo's orange record dot is the only color. */
+  /* Grayscale UI: color comes only from the logo dot, its orange for recording, its blue for auto zoom. */
   --accent: #e8e8ec; /* primary buttons, toggles, sliders, progress, selection */
   --accent-hover: #f6f6f8;
   --accent-ink: #111113; /* text and knobs on --accent */
@@ -54,6 +54,8 @@
   --warning-text: #ffe58a;
   --record: #ff453a; /* recording */
   --record-hover: #ff6961;
+  --zoom: #1957fa; /* auto zoom on: the logo dot's blue */
+  --zoom-text: #86a8ff; /* the same blue, legible on dark surfaces */
   --focus-ring: rgb(255 255 255 / 0.55);
 
   /* Concentric corners: a box nested in another with padding p has radius (outer - p), so the gap
