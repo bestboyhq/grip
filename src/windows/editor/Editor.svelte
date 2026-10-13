@@ -17,6 +17,7 @@
   import Inspector from './Inspector.svelte'
   import Presets from './Presets.svelte'
   import AspectPicker from './AspectPicker.svelte'
+  import CropDialog from './CropDialog.svelte'
   import Timeline from './timeline/Timeline.svelte'
   import ExportDialog, { exportVideo } from './export/ExportDialog.svelte'
   import ShareButton from './share/ShareButton.svelte'
@@ -28,6 +29,7 @@
 
   let error = $state('')
   let exportOpen = $state(false)
+  let cropOpen = $state(false)
   let notice = $state('')
   let gone = false // moved to the Trash: nothing may write to the bundle any more
 
@@ -91,6 +93,7 @@
     registerCommands([
       { id: 'project.export', group: 'Project', title: 'Export…', keys: ['⌘E'], run: () => (exportOpen = true), enabled: () => !!doc.project },
       { id: 'project.reveal', group: 'Project', title: 'Show in Finder', run: reveal, enabled: () => !!doc.project },
+      { id: 'project.crop', group: 'Project', title: 'Crop…', run: () => (cropOpen = true), enabled: () => !!doc.project?.sources.screen },
     ]),
   )
 
@@ -237,6 +240,9 @@
       <section class="stage">
         <div class="toolbar">
           <AspectPicker />
+          {#if doc.project.sources.screen}
+            <button class="btn ghost crop" onclick={() => (cropOpen = true)} {@attach tooltip('Crop the recording')}><Icon name="crop" size={16} />Crop</button>
+          {/if}
           {#if aiming}<span class="aim-hint"><Icon name="target" size={15} /><span>Click the preview to aim the selected zoom</span></span>
           {:else if masking}<span class="aim-hint"><Icon name="target" size={15} /><span>Drag on the preview to place the mask</span></span>{/if}
         </div>
@@ -246,6 +252,7 @@
     </main>
     <div class="timeline"><Timeline /></div>
     <ExportDialog bind:open={exportOpen} />
+    <CropDialog bind:open={cropOpen} />
   {/if}
 </div>
 
@@ -280,6 +287,8 @@
   .body { flex: 1; min-height: 0; display: flex; }
   .stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .toolbar { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; }
+  .crop { height: 28px; padding: 0 10px 0 8px; }
+  .crop :global(.icon) { color: var(--text-dim); }
   .aim-hint { display: flex; align-items: center; gap: 6px; min-width: 0; margin-left: auto; color: var(--text-faint); font-size: 12px; white-space: nowrap; }
   .aim-hint span { overflow: hidden; text-overflow: ellipsis; }
 

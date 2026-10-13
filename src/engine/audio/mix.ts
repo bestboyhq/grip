@@ -18,6 +18,7 @@ export interface PlanTrack {
   label: string // bundle-relative path, for error messages
   volume: number
   voice?: boolean // enhance: noise reduction + a static loudness gain, which the mixer measures
+  system?: boolean // follows the clips' systemVolume instead of their volume
 }
 
 /** Everything the mixer needs, as plain data (it crosses into the audio worker). */
@@ -39,13 +40,15 @@ export function planOf(project: Project, events: InputEvent[], bundle: string): 
   if (src.mic && !mic.muted && mic.volume > 0) {
     tracks.push({ url: url(src.mic.file), label: src.mic.file, volume: mic.volume, ...(mic.enhance ? { voice: true } : {}) })
   }
-  if (src.system && !system.muted && system.volume > 0) tracks.push({ url: url(src.system.file), label: src.system.file, volume: system.volume })
+  if (src.system && !system.muted && system.volume > 0) tracks.push({ url: url(src.system.file), label: src.system.file, volume: system.volume, system: true })
   const clicks = project.style.cursor.clickSound
     ? events.flatMap((e) => (e.type === 'down' ? [toOutput(map, e.t)] : [])).filter((t): t is number => t !== null).sort((a, b) => a - b)
     : []
   return {
     duration: map.duration,
-    clips: project.clips.map(({ id, start, end, speed, volume, muted }) => ({ id, start, end, speed, volume, ...(muted ? { muted } : {}) })),
+    clips: project.clips.map(({ id, start, end, speed, volume, systemVolume, muted }) => ({
+      id, start, end, speed, volume, ...(systemVolume !== undefined ? { systemVolume } : {}), ...(muted ? { muted } : {}),
+    })),
     tracks,
     music: music && music.volume > 0 ? { url: url(music.file), label: music.file, volume: music.volume } : null,
     clicks,
@@ -67,6 +70,9 @@ const MUSIC_FADE = 2 * SR // music fades out over the last 2 s
 
 /** Smooth step centered on boundary b: 0 before b-H, 1 after b+H. Neighbors sum to exactly 1. */
 const step = (n: number, b: number) => (n <= b - H ? 0 : n >= b + H ? 1 : (n - b + H) / (2 * H))
+
+/** One clip's volume over its output samples. */
+type GainSeg = { o0: number; o1: number; v: number; first: boolean; last: boolean }
 
 /** A stretch of output with one linear source mapping (merged clips: contiguous source, same speed). */
 interface Seg {
@@ -324,9 +330,8 @@ export class Mixer {
   private plan: Plan | null = null
   private key = ''
   private ready: Promise<void> | null = null
-  private tracks: Array<{ t: Track; voice: Voice | null; gain: number }> = []
+  private tracks: Array<{ t: Track; voice: Voice | null; gain: number; segs: GainSeg[] }> = []
   private music: { t: Loop; volume: number } | null = null
-  private gainSegs: Array<{ o0: number; o1: number; v: number; first: boolean; last: boolean }> = []
   private clicks: number[] = []
   private total = 0
   private limiter = new Limiter()
@@ -363,18 +368,19 @@ export class Mixer {
     this.total = Math.round(plan.duration * SR)
     const segs = segsOf(plan.clips)
     const m = timeMap(plan.clips)
-    this.gainSegs = plan.clips.map((c, i) => ({
-      o0: m.outStarts[i] * SR,
-      o1: (m.outStarts[i] + (c.end - c.start) / c.speed) * SR,
-      v: c.muted ? 0 : c.volume,
-      first: i === 0,
-      last: i === plan.clips.length - 1,
-    }))
+    const gainSegs = (system: boolean): GainSeg[] =>
+      plan.clips.map((c, i) => ({
+        o0: m.outStarts[i] * SR,
+        o1: (m.outStarts[i] + (c.end - c.start) / c.speed) * SR,
+        v: c.muted ? 0 : system ? (c.systemVolume ?? 1) : c.volume,
+        first: i === 0,
+        last: i === plan.clips.length - 1,
+      }))
     this.tracks = await Promise.all(
       plan.tracks.map(async (p) => {
         const t = new Track(await openFile(this.env, p.url, p.label), segs)
         const voice = p.voice ? new Voice(t, await this.denoiser(t.ch)) : null
-        return { t, voice, gain: p.volume * (p.voice ? await voiceGainOf(this.env, t.file) : 1) }
+        return { t, voice, gain: p.volume * (p.voice ? await voiceGainOf(this.env, t.file) : 1), segs: gainSegs(!!p.system) }
       }),
     )
     if (plan.music) {
@@ -414,8 +420,8 @@ export class Mixer {
     if (b <= a) return [L, R]
     const len = b - a
     const off = a - pos
-    const G = this.gain(a, len)
-    for (const { t, voice, gain } of this.tracks) {
+    for (const { t, voice, gain, segs } of this.tracks) {
+      const G = this.gain(segs, a, len)
       const chs = voice ? await voice.read(a, len) : await t.assemble(a, len)
       const l = chs[0]
       const r = chs[1] ?? chs[0] // a mono source plays centered on both channels
@@ -460,10 +466,9 @@ export class Mixer {
     return [L, R]
   }
 
-  /** Clip volume (0 when muted) over output samples [a, a+n), ramped at clip boundaries. */
-  private gain(a: number, n: number): Float32Array {
+  /** A track's clip volume (0 when muted) over output samples [a, a+n), ramped at clip boundaries. */
+  private gain(segs: GainSeg[], a: number, n: number): Float32Array {
     const G = new Float32Array(n)
-    const segs = this.gainSegs
     let lo = 0
     let hi = segs.length
     while (lo < hi) {

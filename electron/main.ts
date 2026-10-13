@@ -111,8 +111,9 @@ app.whenReady().then(() => {
   const queued = early.splice(0)
   const acted = launch(process.argv)
   for (const item of queued) /^grip:/i.test(item) ? openUrl(item) : openFilesOrAlert([item])
-  // Updated while the user was away: back in the menu bar only, its dock icon gone too (no window hides it).
-  if (away) updateDock()
+  // Updated while the user was away, or opened at login: back in the menu bar only, its dock icon gone
+  // too (no window hides it). The picker waits for the user to ask.
+  if (away || app.getLoginItemSettings().wasOpenedAtLogin) updateDock()
   else if (!acted && !queued.length) settings().onboarded ? showPicker() : openOnboarding(settings().welcomed ? 'page=permissions' : '')
   startUpdates(logError)
 })

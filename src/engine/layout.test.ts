@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createProject, type Project, type Rect } from '../shared/project.ts'
 import { mapRange, timeMap } from '../shared/timemap.ts'
+import { outputSize } from './scene.ts'
 import { prepareLayout, layoutAt, fitScreen, deviceGeometry, deviceBounds, cameraCrop, faceAt, silentRanges, voiceRanges } from './layout.ts'
 
 const W = 1920, H = 1080
@@ -154,6 +155,23 @@ test('masks are locked to the screen and fade outside their range, never inside 
   assert.ok(at(p, 4.9).masks[0].opacity > 0 && at(p, 4.9).masks[0].opacity < 1)
   assert.equal(at(p, 4).masks.length, 0)
   assert.equal(at(p, 8).masks[0].opacity, 1)
+})
+
+test('a crop fits only its part of the recording; recording px still map through the whole rect', () => {
+  const p = project((p) => {
+    p.crop = { x: 0.25, y: 0.5, w: 0.5, h: 0.25 } // 1440 x 450 of 2880 x 1800
+    p.masks = [{ id: 'm', start: 0, end: 30, kind: 'blur', rect: { x: 0.25, y: 0.5, w: 0.5, h: 0.25 } }]
+  })
+  const out = outputSize(p, 1080)
+  assert.deepEqual(out, { width: 3456, height: 1080 }, 'auto aspect is the crop’s')
+  const l = at(p, 1, out.width, out.height)
+  const s = l.screen!
+  close(s.visible, { x: 0, y: 0, w: 3456, h: 1080 })
+  close(s.rect, { x: -1728, y: -2160, w: 6912, h: 4320 })
+  assert.ok(s.cropped && !at(project(), 1).screen!.cropped)
+  close(l.masks[0].rect, s.visible, 1e-6) // a mask over the cropped part covers what shows
+  const wide = project((p) => (p.crop = { x: 0, y: 0, w: 1, h: 0.05 }))
+  assert.deepEqual(outputSize(wide, 1080), { width: 5400, height: 1080 }, 'auto stops at 5:1')
 })
 
 test('masks around t are found by index: same layers, in project order, as a scan over every mask', () => {

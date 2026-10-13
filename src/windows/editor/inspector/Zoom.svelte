@@ -1,7 +1,7 @@
 <!-- Auto zoom defaults, and the zooms selected on the timeline (edits apply to every selected zoom). -->
 <script lang="ts">
   import { doc, edit, selection } from '../../../lib/doc.svelte.ts'
-  import type { Zoom } from '../../../shared/project.ts'
+  import { screenCrop, type Zoom } from '../../../shared/project.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
   import { setAutoZoom } from '../../../engine/zoom/index.ts'
   import Section from '../../../ui/Section.svelte'
@@ -14,6 +14,7 @@
   const selected = $derived(project.zooms.filter((z) => selection.ids.includes(z.id)))
   const z = $derived(selected[0])
   const screen = $derived(project.sources.screen)
+  const crop = $derived(screenCrop(project)) // the picker shows the part of the screen the video does
 
   const setAuto = (enabled: boolean) => edit((p) => setAutoZoom(p, doc.events, { ...p.style.autoZoom, enabled }))
   const setAutoLevel = (level: number, merge?: string) => edit((p) => setAutoZoom(p, doc.events, { ...p.style.autoZoom, level }), merge)
@@ -31,22 +32,23 @@
   let gesture = 0
   function aimAt(e: PointerEvent, el: HTMLElement) {
     const r = el.getBoundingClientRect()
-    const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
-    const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
+    const x = crop.x + Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * crop.w
+    const y = crop.y + Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) * crop.h
     each((s) => { s.target = { kind: 'point', x, y } }, `target:${gesture}`)
   }
   function nudge(e: KeyboardEvent) {
     if (z?.target.kind !== 'point') return
     const d = e.shiftKey ? 0.1 : 0.02
-    const dx = e.key === 'ArrowLeft' ? -d : e.key === 'ArrowRight' ? d : 0
-    const dy = e.key === 'ArrowUp' ? -d : e.key === 'ArrowDown' ? d : 0
+    const dx = e.key === 'ArrowLeft' ? -d * crop.w : e.key === 'ArrowRight' ? d * crop.w : 0
+    const dy = e.key === 'ArrowUp' ? -d * crop.h : e.key === 'ArrowDown' ? d * crop.h : 0
     if (!dx && !dy) return
     e.preventDefault()
     const { x, y } = z.target
-    const c = (v: number) => Math.min(1, Math.max(0, v))
-    each((s) => { s.target = { kind: 'point', x: c(x + dx), y: c(y + dy) } })
+    const c = (v: number, lo: number, size: number) => Math.min(lo + size, Math.max(lo, v))
+    each((s) => { s.target = { kind: 'point', x: c(x + dx, crop.x, crop.w), y: c(y + dy, crop.y, crop.h) } })
   }
   const pct = (v: number) => `${Math.round(v * 100)}%`
+  const css = (v: number) => `${v * 100}%`
 </script>
 
 {#if z}
@@ -68,7 +70,7 @@
   <Section title="Target">
     <Segmented
       value={z.target.kind}
-      onchange={(v) => each((s) => { s.target = v === 'cursor' ? { kind: 'cursor' } : { kind: 'point', x: 0.5, y: 0.5 } })}
+      onchange={(v) => each((s) => { s.target = v === 'cursor' ? { kind: 'cursor' } : { kind: 'point', x: crop.x + crop.w / 2, y: crop.y + crop.h / 2 } })}
       options={[
         { value: 'cursor', label: 'Follow cursor', icon: 'cursor' },
         { value: 'point', label: 'Fixed point', icon: 'target' },
@@ -77,14 +79,14 @@
     {#if z.target.kind === 'point' && screen}
       <div
         class="picker"
-        style:aspect-ratio="{screen.width} / {screen.height}"
+        style:aspect-ratio="{screen.width * crop.w} / {screen.height * crop.h}"
         role="slider"
         tabindex="0"
         aria-label="Zoom target"
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={Math.round(z.target.x * 100)}
-        aria-valuetext="{pct(z.target.x)} across, {pct(z.target.y)} down"
+        aria-valuenow={Math.round(((z.target.x - crop.x) / crop.w) * 100)}
+        aria-valuetext="{pct((z.target.x - crop.x) / crop.w)} across, {pct((z.target.y - crop.y) / crop.h)} down"
         onpointerdown={(e) => {
           gesture++
           e.currentTarget.setPointerCapture(e.pointerId)
@@ -93,8 +95,8 @@
         onpointermove={(e) => e.buttons === 1 && aimAt(e, e.currentTarget)}
         onkeydown={nudge}
       >
-        <video {@attach showMiddle} src={fileUrl(`${doc.path}/${screen.file}`)} muted playsinline preload="auto" aria-hidden="true"></video>
-        <span class="dot" style:left={pct(z.target.x)} style:top={pct(z.target.y)}></span>
+        <video {@attach showMiddle} src={fileUrl(`${doc.path}/${screen.file}`)} style:object-view-box="inset({css(crop.y)} {css(1 - crop.x - crop.w)} {css(1 - crop.y - crop.h)} {css(crop.x)})" muted playsinline preload="auto" aria-hidden="true"></video>
+        <span class="dot" style:left={css((z.target.x - crop.x) / crop.w)} style:top={css((z.target.y - crop.y) / crop.h)}></span>
       </div>
       <p class="hint">Drag the dot, or click anywhere on the preview.</p>
     {/if}

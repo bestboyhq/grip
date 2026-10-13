@@ -2,10 +2,13 @@
 // the screen (padding, aspect fit, device mockup), the camera per CameraLayout item (pip,
 // fullscreen, hidden, split) with spring transitions in output time, face-follow crop, hide when
 // silent, and masks locked to the screen. Pure: prepareLayout precomputes, layoutAt evaluates.
+// A crop (project.crop) fits only the shown part of the recording: `visible` is where that part
+// sits, and `screen` stays where the whole recording would sit, reaching past it, so recording px
+// (events, masks, zoom targets) map onto the output the same way with or without a crop.
 // The screen's viewport is where the zoom view shows it: the whole output, or in split layouts the
 // screen's own panel, so a zoom magnifies inside the panel and the split stays a split.
 
-import type { CameraLayoutKind, Mask, Rect, Style, Word } from '../shared/project.ts'
+import { screenCrop, type CameraLayoutKind, type Mask, type NRect, type Rect, type Style, type Word } from '../shared/project.ts'
 import { mapRange, toSource, type TimeMap } from '../shared/timemap.ts'
 import { springDuration, springProgress, type SpringConfig } from './motion/spring.ts'
 import type { CameraLayer, FaceSample, MaskLayer, ScreenLayer, SceneInput } from './scene.ts'
@@ -27,7 +30,8 @@ type Kind = CameraLayoutKind
 const KINDS: Kind[] = ['pip', 'fullscreen', 'hidden', 'split']
 
 interface State {
-  screen: Rect
+  screen: Rect // the whole recording
+  visible: Rect // its shown part
   screenRadius: number
   viewport: Rect
   viewportRadius: number
@@ -60,15 +64,16 @@ export type PreparedLayout = ReturnType<typeof prepareLayout>
 export function screenAt(l: PreparedLayout, t: number): ScreenPlace | null {
   return l.input.project.sources.screen ? stateAt(l, t, lastChange(l.changes, t)) : null
 }
-export type ScreenPlace = Pick<State, 'screen' | 'screenRadius' | 'viewport'>
+export type ScreenPlace = Pick<State, 'screen' | 'visible' | 'screenRadius' | 'viewport'>
 
 /** `zoom`: how far the view is zoomed in past its rest framing at t (zoomAmount), 0..1. */
 export function layoutAt(l: PreparedLayout, t: number, zoom = 0): { screen: ScreenLayer | null; camera: CameraLayer | null; masks: MaskLayer[] } {
   const { project } = l.input
   const st = project.style
   const s = stateAt(l, t, lastChange(l.changes, t))
+  const c = screenCrop(project)
   const screen: ScreenLayer | null = project.sources.screen
-    ? { rect: s.screen, inset: insetPx(st, l.unit), radius: s.screenRadius, shadow: st.shadow, device: st.device, viewport: s.viewport, viewportRadius: s.viewportRadius }
+    ? { rect: s.screen, visible: s.visible, cropped: c.w < 1 || c.h < 1, inset: insetPx(st, l.unit), radius: s.screenRadius, shadow: st.shadow, device: st.device, viewport: s.viewport, viewportRadius: s.viewportRadius }
     : null
   const cs = project.sources.camera
   let camera: CameraLayer | null = null
@@ -118,6 +123,8 @@ function target(input: SceneInput, unit: number, kind: Kind): State {
   const st = project.style
   const c = st.camera
   const src = project.sources.screen ?? { width: 16, height: 9 }
+  const crop = screenCrop(project)
+  const shownW = src.width * crop.w, shownH = src.height * crop.h
   const pad = Math.max(0, st.padding * unit)
   const area = { x: pad, y: pad, w: Math.max(1, W - 2 * pad), h: Math.max(1, H - 2 * pad) }
   const inset = insetPx(st, unit)
@@ -128,7 +135,7 @@ function target(input: SceneInput, unit: number, kind: Kind): State {
   }
 
   if (kind === 'split' && project.sources.camera) {
-    const b = deviceBounds(st.device, { x: 0, y: 0, w: src.width, h: src.height })
+    const b = deviceBounds(st.device, { x: 0, y: 0, w: shownW, h: shownH })
     const aspect = b.w / b.h
     const gap = Math.max(pad / 2, 16 * unit)
     let screenBox: Rect, cam: Rect
@@ -151,12 +158,13 @@ function target(input: SceneInput, unit: number, kind: Kind): State {
       screenBox = { x, y: first ? y + ch + gap : y, w, h: sh }
       cam = { x, y: first ? y : y + sh + gap, w, h: ch }
     }
-    const screen = fitScreen(screenBox, src.width, src.height, st.device, inset)
+    const visible = fitScreen(screenBox, shownW, shownH, st.device, inset)
     return {
-      screen,
-      screenRadius: radius(screen),
-      viewport: grow(screen, inset), // the frame: zooms stay inside it
-      viewportRadius: radius(screen),
+      screen: uncrop(visible, crop),
+      visible,
+      screenRadius: radius(visible),
+      viewport: grow(visible, inset), // the frame: zooms stay inside it
+      viewportRadius: radius(visible),
       camera: cam,
       cameraRadius: c.shape === 'square' ? 0 : Math.min(Math.max(st.radius, 12) * unit, cam.w / 2, cam.h / 2),
       cameraOpacity: 1,
@@ -165,8 +173,8 @@ function target(input: SceneInput, unit: number, kind: Kind): State {
     }
   }
 
-  const screen = fitScreen(area, src.width, src.height, st.device, inset)
-  const base = { screen, screenRadius: radius(screen), viewport: { x: 0, y: 0, w: W, h: H }, viewportRadius: 0 }
+  const visible = fitScreen(area, shownW, shownH, st.device, inset)
+  const base = { screen: uncrop(visible, crop), visible, screenRadius: radius(visible), viewport: { x: 0, y: 0, w: W, h: H }, viewportRadius: 0 }
   const cw = Math.max(1, c.size * unit)
   const ch = cw / Math.max(c.aspect, 0.05)
   const edge = c.inset * unit
@@ -175,6 +183,12 @@ function target(input: SceneInput, unit: number, kind: Kind): State {
   if (kind === 'fullscreen') return { ...base, camera: { x: 0, y: 0, w: W, h: H }, cameraRadius: 0, cameraOpacity: 1, cameraShadow: 0, pip: 0 }
   const corner: State = { ...base, camera: pip, cameraRadius: pipRadius, cameraOpacity: 1, cameraShadow: c.shadow, pip: 1 }
   return kind === 'hidden' ? { ...corner, ...hiddenCamera(corner) } : corner
+}
+
+/** Where the whole recording sits when its part `crop` (normalized) sits at `visible`. */
+const uncrop = (visible: Rect, crop: NRect): Rect => {
+  const w = visible.w / crop.w, h = visible.h / crop.h
+  return { x: visible.x - crop.x * w, y: visible.y - crop.y * h, w, h }
 }
 
 /** Largest recording rect whose frame (the recording plus `inset` px on every side) fits centered
@@ -289,6 +303,7 @@ function stateAt(l: PreparedLayout, t: number, i: number, depth = 0): State {
   const rect = (a: Rect, b: Rect) => ({ x: mix(a.x, b.x), y: mix(a.y, b.y), w: mix(a.w, b.w), h: mix(a.h, b.h) })
   return {
     screen: rect(from.screen, to.screen),
+    visible: rect(from.visible, to.visible),
     screenRadius: mix(from.screenRadius, to.screenRadius),
     viewport: rect(from.viewport, to.viewport),
     viewportRadius: mix(from.viewportRadius, to.viewportRadius),

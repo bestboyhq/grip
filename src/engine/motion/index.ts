@@ -6,11 +6,12 @@
 //   2. Smooth each run of contiguous clips with a zero-phase Gaussian (3 box passes) measured in
 //      output seconds: no lag, and sped-up clips move faster as they should.
 //   3. During a drag (button held and moved) the path eases onto the raw position, so the cursor
-//      sticks to whatever it drags.
+//      sticks to whatever it drags. Clips with smoothing off (rawCursor) ease onto it the same way.
 //   4. Across a cut (the next clip does not continue the previous one in source time) the cursor
 //      springs from where it was to its new position instead of teleporting.
 //   5. Loop: over the last second the cursor glides back to its position at t = 0.
-//   6. Tilt: a springy angle follows the horizontal velocity, clamped.
+//   6. Tilt: a springy angle follows the horizontal velocity, clamped; it settles to 0 in raw clips.
+//   7. Clips with hideCursor fade the cursor out from their start and back in from their end.
 // cursorAt / cursorPoint then only interpolate (O(log n), pure), so a frame evaluated alone equals
 // the same frame evaluated in sequence. Clicks (down and up) are pinned analytically on top: each
 // adds a raised-cosine bump carrying its residual, and no bump reaches a neighbor click, so the
@@ -37,6 +38,7 @@ const LOOP = 1 // glide back to the start over the last second
 const IDLE = 1.5 // still this long, then fade out
 const FADE_OUT = 0.3
 const FADE_IN = 0.15 // fade in ends when the movement starts
+const HIDE = 0.15 // fade when a clip hides or shows the cursor
 const FLICKER = 0.08 // cursor images shown shorter than this are skipped
 const STILL = 3 // screen points of travel that count as moving (ignores hand tremor)
 const TILT_MAX = 0.3 // radians the velocity can ask for
@@ -61,13 +63,14 @@ export function prepareCursor(input: SceneInput, map: TimeMap, layout: ReturnTyp
 
 let last: { events: InputEvent[]; key: string; path: CursorPath } | null = null
 
-/** The baked path: plain data, a function of the events, the clips' timing, and the cursor style
- *  that shapes the path (not its size, visibility, idle hiding, or click effect: cursorAt applies
- *  those). Edits that leave all of that alone reuse the last path. Events are replaced, never edited
- *  in place, so the same array means the same events. */
+/** The baked path: plain data, a function of the events, the clips' timing and cursor flags, and the
+ *  cursor style that shapes the path (not its size, visibility, idle hiding, or click effect: cursorAt
+ *  applies those). Edits that leave all of that alone reuse the last path. Events are replaced, never
+ *  edited in place, so the same array means the same events. */
 export function cursorPath(input: SceneInput, map: TimeMap) {
   const { set, animation, loop } = input.project.style.cursor
-  const key = JSON.stringify([input.project.sources.screen ?? null, set, animation, loop, map.clips.map((c) => [c.start, c.end, c.speed])])
+  const clips = map.clips.map((c) => [c.start, c.end, c.speed, !!c.rawCursor, !!c.hideCursor])
+  const key = JSON.stringify([input.project.sources.screen ?? null, set, animation, loop, clips])
   if (last?.events !== input.events || last.key !== key) last = { events: input.events, key, path: bakePath(input, map) }
   return last.path
 }
@@ -111,6 +114,8 @@ function bakePath(input: SceneInput, map: TimeMap) {
   const n = ok ? Math.floor(map.duration * RATE) + 2 : 0
   const x = new Float32Array(n)
   const y = new Float32Array(n)
+  const raw = clips.some((c) => c.rawCursor) ? new Uint8Array(n) : null // 1 = grid sample in a raw clip
+  const vis = clips.some((c) => c.hideCursor) ? new Float32Array(n) : null // cursor opacity from hidden clips
 
   const builtin = (k: BuiltinName): Img => ({ image: k, hotX: CURSORS[k].hotX, hotY: CURSORS[k].hotY, scale: 1 / pt })
   const imgOf = (e: CursorEvent | undefined): Img =>
@@ -153,6 +158,9 @@ function bakePath(input: SceneInput, map: TimeMap) {
       if (segI.at(-1) !== i0) segI.push(i0)
       segT[segI.length - 1] = o0
     }
+    raw?.fill(clip.rawCursor ? 1 : 0, i0, i1)
+    vis?.fill(clip.hideCursor ? 0 : 1, i0, i1)
+    if (clip.rawCursor) holds.push(o0, o1)
     let p = bisect(posT, clip.start) - 1
     for (let i = i0; i < i1; i++) {
       const s = Math.min(clip.start + (i / RATE - o0) * clip.speed, clip.end)
@@ -265,12 +273,15 @@ function bakePath(input: SceneInput, map: TimeMap) {
     let w = 0
     for (let i = 0; i < n; i++) {
       const vx = ((x[Math.min(i + 1, n - 1)] - x[Math.max(i - 1, 0)]) * RATE) / 2 / pt
-      const target = TILT_MAX * Math.tanh(vx / TILT_SPEED) // moving right: clockwise, the body trails
+      const target = raw?.[i] ? 0 : TILT_MAX * Math.tanh(vx / TILT_SPEED) // moving right: clockwise, the body trails
       w += (TILT_K * (target - th) - TILT_C * w) / RATE
       th += w / RATE
       angle[i] = Math.max(-TILT_CLAMP, Math.min(TILT_CLAMP, th))
     }
   }
+
+  // 7. Hidden clips: opacity steps toward 0 or 1 at a fixed rate, so a fade starts at the clip edge.
+  for (let i = 1; vis && i < n; i++) vis[i] = Math.max(vis[i - 1] - 1 / (HIDE * RATE), Math.min(vis[i - 1] + 1 / (HIDE * RATE), vis[i]))
 
   // Click pins: residual against the finished grid, reach limited to the neighbors and the run.
   const kept = pins.filter((q, k) => k === 0 || q.t - pins[k - 1].t > 1e-6)
@@ -305,6 +316,7 @@ function bakePath(input: SceneInput, map: TimeMap) {
     x,
     y,
     angle,
+    vis,
     pinT,
     pinX,
     pinY,
@@ -332,7 +344,7 @@ export function cursorAt(c: PreparedCursor, t: number): CursorLayer | null {
   const p = locate(c, t)
   if (!p) return null
   t = clampT(c, t)
-  const opacity = st.hideIdle ? opacityAt(c, t) : 1
+  const opacity = (st.hideIdle ? opacityAt(c, t) : 1) * (c.vis ? lerp(c.vis, t) : 1)
   if (opacity <= 0) return null
   const img = c.imgV[Math.max(bisect(c.imgT, t) - 1, 0)]
   return {

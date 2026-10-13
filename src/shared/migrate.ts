@@ -8,6 +8,8 @@ import { PROJECT_VERSION, createProject, defaultStyle, type Project, type Style 
  *  bump. Purely additive changes need no step: missing fields are filled from the defaults. */
 export const MIGRATIONS: Record<number, (p: any) => any> = {
   1: (p) => (isObj(p.style) ? { ...p, style: upgradeStyle(p.style) } : p),
+  // v2 clip volume drove mic and system audio; v3 splits it, so system audio keeps its level.
+  2: (p) => (Array.isArray(p.clips) ? { ...p, clips: p.clips.map((c: any) => (isObj(c) && c.volume !== 1 ? { ...c, systemVolume: c.volume } : c)) } : p),
 }
 
 /** v1 on/off switches -> v2 presets and amounts (shared with presets saved by v1). */
@@ -65,11 +67,13 @@ export function validateProject(x: unknown, version = PROJECT_VERSION): Project 
   }
   for (const k of ['events', 'transcript']) if (s[k] !== undefined && !rel(s[k])) fail(`sources.${k}`)
 
-  timed(p.clips, 'clips', (c) => c.end > c.start && pos(c.speed) && num(c.volume) && c.volume >= 0)
+  timed(p.clips, 'clips', (c) => c.end > c.start && pos(c.speed) && num(c.volume) && c.volume >= 0 && (c.systemVolume === undefined || (num(c.systemVolume) && c.systemVolume >= 0)))
   timed(p.zooms, 'zooms', (z) => pos(z.level) && typeof z.enabled === 'boolean' && isObj(z.target) &&
     (z.target.kind === 'cursor' || (z.target.kind === 'point' && num(z.target.x) && num(z.target.y))))
   timed(p.layouts, 'layouts', (l) => typeof l.kind === 'string')
   timed(p.masks, 'masks', (m) => typeof m.kind === 'string' && isObj(m.rect) && ['x', 'y', 'w', 'h'].every((k) => num(m.rect[k])))
+  const c = p.crop
+  if (c !== undefined && !(isObj(c) && ['x', 'y', 'w', 'h'].every((k) => num(c[k])) && c.x >= 0 && c.y >= 0 && c.w > 0 && c.h > 0 && c.x + c.w <= 1 + 1e-9 && c.y + c.h <= 1 + 1e-9)) fail('crop')
   if (!isObj(p.captionEdits) || !Object.values(p.captionEdits).every((v) => typeof v === 'string')) fail('captionEdits')
   checkStyle(p.style)
   shape(p.audio, createProject('', { duration: 0 }).audio, 'audio.')

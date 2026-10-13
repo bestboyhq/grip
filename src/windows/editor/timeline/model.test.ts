@@ -41,6 +41,17 @@ test('cut markers show removed source and restore it', () => {
   near(m.cuts[1].t, 8)
   const restored = M.restoreCut(M.restoreCut(clips, 0, 30), -1, 30)
   assert.deepEqual(restored.map((c) => [c.start, c.end]), [[0, 30]]) // seamless and alike: merged back into one
+  const hidden = M.restoreCut([clips[0], { ...clips[1], hideCursor: true }], 0, 30)
+  assert.equal(hidden.length, 2, 'a clip with other settings stays its own')
+})
+
+test('reset trim grows clips over the free source on both sides', () => {
+  const clips = [clip(2, 8), clip(12, 20), clip(25, 28)]
+  assert.deepEqual(M.resetTrim(clips, new Set(['c12']), 30).map((c) => [c.start, c.end]), [[2, 8], [8, 25], [25, 28]])
+  assert.deepEqual(M.resetTrim(clips, new Set(['c2', 'c25']), 30).map((c) => [c.start, c.end]), [[0, 12], [12, 20], [20, 30]])
+  const all = M.resetTrim(clips, new Set(clips.map((c) => c.id)), 30)
+  assert.deepEqual(all.map((c) => [c.start, c.end]), [[0, 12], [12, 25], [25, 30]], 'each grows into what the earlier ones left')
+  assert.equal(M.resetTrim(all, new Set(['c2', 'c12']), 30), all, 'nothing to grow: same array, no undo step')
 })
 
 test('a dragged clip edge lands exactly under the pointer on a sped-up clip', () => {

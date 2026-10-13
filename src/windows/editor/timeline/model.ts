@@ -221,9 +221,25 @@ export function restoreCut(clips: Clip[], after: number, duration: number): Clip
   const n = clips[after + 1]
   const end = n ? Math.min(n.start, clipLimits(clips, after, duration).hi) : clipLimits(clips, after, duration).hi
   next[after] = { ...c, end }
-  if (n && Math.abs(end - n.start) < EPS && n.speed === c.speed && n.volume === c.volume && !!n.muted === !!c.muted) {
+  if (n && Math.abs(end - n.start) < EPS && alike(c, n)) {
     next.splice(after, 2, { ...c, end: n.end })
   }
+  return next
+}
+
+/** Same settings, so joining them changes nothing but the split. */
+const alike = (a: Clip, b: Clip) =>
+  a.speed === b.speed && a.volume === b.volume && (a.systemVolume ?? 1) === (b.systemVolume ?? 1) &&
+  !!a.muted === !!b.muted && !!a.hideCursor === !!b.hideCursor && !!a.rawCursor === !!b.rawCursor
+
+/** Grow the clips in `ids` back over the free source on both sides, in output order. */
+export function resetTrim(clips: Clip[], ids: Set<string>, duration: number): Clip[] {
+  let next = clips
+  clips.forEach((c, i) => {
+    if (!ids.has(c.id)) return
+    const { lo, hi } = clipLimits(next, i, duration)
+    if (lo < c.start - EPS || hi > c.end + EPS) (next = next.slice())[i] = { ...c, start: lo, end: hi }
+  })
   return next
 }
 

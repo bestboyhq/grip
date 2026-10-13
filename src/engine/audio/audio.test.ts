@@ -175,6 +175,18 @@ test('clip volume and mute apply with ramps; muted clips are silent', async () =
   near(L[2 * SR + SR / 2], 0, 1e-6)
 })
 
+test('clip volume drives the mic, systemVolume the system audio', async () => {
+  const c = [{ ...clip(0, 1), volume: 0.5 }, { ...clip(1, 2), systemVolume: 0 }, { ...clip(2, 3), volume: 0, systemVolume: 2, muted: true }]
+  const mic = { url: 'dc1', label: 'dc1.wav', volume: 1 }
+  const [L] = await render(plan(c, [mic]))
+  const [S] = await render(plan(c, [{ ...mic, system: true }]))
+  near(L[SR / 2], 0.2, 1e-6)
+  near(S[SR / 2], 0.4, 1e-6)
+  near(L[SR + SR / 2], 0.4, 1e-6)
+  near(S[SR + SR / 2], 0, 1e-6)
+  near(S[2 * SR + SR / 2], 0, 1e-6) // muted silences both
+})
+
 test('the limiter holds the true-peak ceiling', async () => {
   files.set('loud', wav([tone(1, 3000, 0.9), tone(1, 3000, 0.9)]))
   const t = { url: 'loud', label: 'loud.wav', volume: 2 }

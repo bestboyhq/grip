@@ -35,9 +35,9 @@ function setup(zooms: Zoom[], events: InputEvent[] = [], o: { width?: number; he
   const p = prepare({ project, events, transcript: null, width: o.width ?? 1920, height: o.height ?? 1200 })
   const view = (t: number) => viewAt(p.zoom, t)
   const screen = (t: number) => layoutAt(p.layout, t).screen!.rect
-  /** No background shows: every corner of the view lies inside the screen's rounded rect. */
+  /** No background shows: every corner of the view lies inside the shown screen's rounded rect. */
   const covered = (t: number, W = 1920, H = 1200) => {
-    const { rect: r, radius } = layoutAt(p.layout, t).screen!
+    const { visible: r, radius } = layoutAt(p.layout, t).screen!
     const v = visible(view(t), W, H)
     return [[v.x0, v.y0], [v.x1, v.y0], [v.x0, v.y1], [v.x1, v.y1]].every(([x, y]) => {
       const cx = Math.min(Math.max(x, r.x + radius), r.x + r.w - radius)
@@ -130,6 +130,14 @@ test('clamped: a zoomed view never shows background past the screen edge', () =>
       near(view(4).scale, level, 0.02)
       assert.ok(covered(4), `level ${level} at ${x},${y}`)
     }
+  }
+  // Cropped: aimed anywhere on the recording, the view stays inside the crop.
+  const project = createProject('t', { duration: 20, screen: SCREEN })
+  project.crop = { x: 0.5, y: 0.25, w: 0.4, h: 0.5 }
+  for (const [x, y] of [[0, 0], [1, 1], [0.1, 0.9], [0.7, 0.5]]) {
+    const { view, covered } = setup([zoom({ start: 1, end: 5, level: 2, target: point(x, y) })], [], { project })
+    near(view(4).scale, 2, 0.02)
+    assert.ok(covered(4), `cropped, at ${x},${y}`)
   }
 })
 

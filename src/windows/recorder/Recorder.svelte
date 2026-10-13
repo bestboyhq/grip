@@ -8,6 +8,7 @@
   import { blur, fade } from 'svelte/transition'
   import { dropFiles, invoke, on } from '../../lib/ipc.ts'
   import Icon from './Icon.svelte'
+  import ZoomHint from './ZoomHint.svelte'
   import { springProgress, type SpringConfig } from '../../engine/motion/spring.ts'
   import {
     ensurePermission,
@@ -38,7 +39,7 @@
 
   let lists = $state<{ cameras: Device[]; mics: Device[]; devices: Device[] }>({ cameras: [], mics: [], devices: [] })
   let level = $state(0)
-  let countdown = $state<{ n: number; name: string } | null>(null)
+  let countdown = $state<{ n: number; name: string; zoom: boolean } | null>(null)
 
   const s = $derived(shell.settings)
   const camera = $derived(lists.cameras.find((c) => c.id === s?.camera))
@@ -261,7 +262,7 @@
   async function record(name: string, target: Target) {
     if (s?.countdown) {
       hover.to(null) // its button goes with the countdown
-      countdown = { n: 3, name }
+      countdown = { n: 3, name, zoom: target.kind !== 'device' } // an iPhone has no cursor to zoom on
       const mine = countdown // canceled, or replaced by a newer countdown: this one stops
       while (countdown === mine && mine.n > 0) {
         await new Promise((r) => setTimeout(r, 1000))
@@ -343,6 +344,7 @@
     <div class="countdown" role="status">
       <span class="n">{countdown.n}</span>
       <span>Recording {countdown.name}…</span>
+      {#if countdown.zoom}<ZoomHint />{/if}
       <button class="action" onclick={() => (countdown = null)}>Cancel</button>
     </div>
   {:else}

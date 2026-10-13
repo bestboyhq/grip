@@ -55,8 +55,8 @@ export interface Motion {
 // `struct Frame` in shaders.wgsl, in vec4 slots.
 const A = 0, VIEWT = 1, SCR = 2, SCR2 = 3, SCR3 = 4, DEV = 5, SH = 6, VIEWS = 10, PARTS = 26, MASKS = 74
 const CUR = 106, CURIMG = 107, CURTEX = 108, CURBOX = 109, CURS = 110, LOUPE = 126, LOUPE2 = 127
-const CAM = 128, CAM1 = 129, CAM2 = 130, CAM3 = 131, CAM4 = 132, LUTMIN = 133, LUTMAX = 134, FIN = 135, VP = 136
-const FRAME_SLOTS = 137
+const CAM = 128, CAM1 = 129, CAM2 = 130, CAM3 = 131, CAM4 = 132, LUTMIN = 133, LUTMAX = 134, FIN = 135, VP = 136, VIS = 137
+const FRAME_SLOTS = 138
 const PASS_SLOTS = 27 // `struct Pass`
 const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12
 const MASK_KIND = { blur: 0, pixelate: 1, highlight: 2 } as const
@@ -377,10 +377,12 @@ export class Renderer {
       const masks = scene.masks.slice(0, MAX_MASKS) // ponytail: 16 masks on screen at once; a storage buffer if anyone needs more
       const big = Math.max(srcW, srcH)
       const inset = Math.max(0, s.inset)
-      const frame = { x: s.rect.x - inset, y: s.rect.y - inset, w: s.rect.w + 2 * inset, h: s.rect.h + 2 * inset }
+      const v = s.visible
+      const frame = { x: v.x - inset, y: v.y - inset, w: v.w + 2 * inset, h: v.h + 2 * inset }
       set(SCR2, Math.min(s.radius, frame.w / 2, frame.h / 2), 1, masks.length, s.shadow)
       set(SCR3, srcW, srcH, Math.max(8, Math.round(big / 72)), Math.max(0, Math.log2(big / 400)))
       rect(SCR, s.rect)
+      rect(VIS, v)
       const kx = srcW / s.rect.w, ky = srcH / s.rect.h
       masks.forEach((m, i) => {
         set(MASKS + i * 2, (m.rect.x - s.rect.x) * kx, (m.rect.y - s.rect.y) * ky, m.rect.w * kx, m.rect.h * ky)
@@ -409,7 +411,7 @@ export class Renderer {
       const cs = even(moving.length > 1 ? moving : [c0], MAX_SAMPLES)
       const [hx, hy] = cursor.hot ?? [c0.hotX, c0.hotY]
       set(CURIMG, cursor.w, cursor.h, hx, hy)
-      set(CURTEX, cursor.res)
+      set(CURTEX, cursor.res, scene.screen?.cropped ? 1 : 0)
       cs.forEach((c, i) => set(CURS + i, c.x, c.y, c.scale, c.angle))
       // Swept bounds and samples per pixel, walking the shutter the way the shader does.
       const n = Math.max(cs.length, views.length)

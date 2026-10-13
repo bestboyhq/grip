@@ -4,7 +4,7 @@
 // Lengths in Style are in "units": 1 unit = min(outputWidth, outputHeight) / 1080 px,
 // so preview (small canvas) and export (full size) lay out identically.
 
-export const PROJECT_VERSION = 2
+export const PROJECT_VERSION = 3
 
 export type Rect = { x: number; y: number; w: number; h: number }
 /** Normalized rect, 0..1 relative to the screen source frame. */
@@ -48,8 +48,11 @@ export interface Clip {
   start: number // source seconds
   end: number // source seconds, > start
   speed: number // 1 = normal, 2 = twice as fast
-  volume: number // 0..2, 1 = unchanged
-  muted?: boolean
+  volume: number // mic (an imported video's own audio too), 0..2, 1 = unchanged
+  systemVolume?: number // system audio, 0..2; absent = 1
+  muted?: boolean // both tracks, keeping their volumes
+  hideCursor?: boolean
+  rawCursor?: boolean // no cursor smoothing in this clip
 }
 
 export type ZoomTarget = { kind: 'cursor' } | { kind: 'point'; x: number; y: number } // x,y normalized 0..1
@@ -177,6 +180,8 @@ export interface Project {
   zooms: Zoom[]
   layouts: CameraLayout[]
   masks: Mask[]
+  /** The part of the screen recording the video shows; absent = all of it. */
+  crop?: NRect
   /** Caption text fixes keyed by word index; the transcript itself stays immutable. */
   captionEdits: Record<number, string>
   style: Style
@@ -230,6 +235,8 @@ export const defaultStyle = (): Style => ({
 })
 
 export const uid = () => crypto.randomUUID().slice(0, 8)
+
+export const screenCrop = (p: Project): NRect => p.crop ?? { x: 0, y: 0, w: 1, h: 1 }
 
 export function createProject(name: string, sources: Sources): Project {
   return {

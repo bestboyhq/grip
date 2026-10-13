@@ -3,7 +3,7 @@
 // keep the source time, seek through toOutput afterwards.
 
 import { tick } from 'svelte'
-import { uid, type CameraLayout, type CameraLayoutKind, type Clip, type Mask, type Project, type Zoom } from '../../../shared/project.ts'
+import { screenCrop, uid, type CameraLayout, type CameraLayoutKind, type Clip, type Mask, type Project, type Zoom } from '../../../shared/project.ts'
 import { clipAt, splitAt, timeMap, toSource } from '../../../shared/timemap.ts'
 import { canRedo, canUndo, doc, edit, redo, selection, undo } from '../../../lib/doc.svelte.ts'
 import { player, seek, toggle } from '../../../lib/player.svelte.ts'
@@ -25,6 +25,9 @@ const project = () => doc.project as Project
 const list = (k: Kind) => project()[k] as M.Item[]
 const mapNow = () => timeMap(project().clips)
 const plain = <T>(x: T): T => JSON.parse(JSON.stringify(x))
+
+/** Recorded cursor data: the cursor is redrawn, so it can be hidden or smoothed (imported videos have none). */
+export const hasCursor = () => !!doc.project?.sources.events
 
 export const selected = <K extends Kind>(k: K): Items[K] =>
   (doc.project ? (doc.project[k] as M.Item[]).filter((x) => selection.ids.includes(x.id)) : []) as Items[K]
@@ -86,13 +89,22 @@ export function setSpeed(speed: number) {
   keepingPlayhead(() => each('clips', target, (c) => ({ ...c, speed })))
 }
 
-export const setVolume = (volume: number) => each('clips', targetClips(), (c) => ({ ...c, volume, muted: false }))
+// A muted clip shows both volumes at 0, so setting one unmutes it with the other still at 0.
+export const setVolume = (volume: number) => each('clips', targetClips(), (c) => ({ ...c, volume, ...(c.muted ? { systemVolume: 0 } : {}), muted: false }))
+export const setSystemVolume = (systemVolume: number) => each('clips', targetClips(), (c) => ({ ...c, systemVolume, ...(c.muted ? { volume: 0 } : {}), muted: false }))
 
-export function toggleMute() {
+/** Turn a clip flag on for every target clip unless all of them have it already. */
+export function toggleClips(flag: 'muted' | 'hideCursor' | 'rawCursor') {
   const target = targetClips()
-  const muted = !project().clips.filter((c) => target.has(c.id)).every((c) => c.muted)
-  each('clips', target, (c) => ({ ...c, muted }))
+  const on = !project().clips.filter((c) => target.has(c.id)).every((c) => c[flag])
+  each('clips', target, ({ [flag]: _, ...c }) => (on ? { ...c, [flag]: true } : c))
 }
+
+export function resetTrim() {
+  const next = M.resetTrim(project().clips, targetClips(), project().sources.duration)
+  if (next !== project().clips) keepingPlayhead(() => set('clips', next))
+}
+export const canResetTrim = () => !!doc.project && M.resetTrim(project().clips, targetClips(), project().sources.duration) !== project().clips
 
 export function speedToAll() {
   const speed = selected('clips')[0]?.speed
@@ -153,7 +165,8 @@ export function make(track: M.ItemTrack, start: number, end: number): Zoom | Cam
   const id = uid()
   if (track === 'zooms') return { id, start, end, level: project().style.autoZoom.level || 2, target: { kind: 'cursor' }, enabled: true } satisfies Zoom
   if (track === 'layouts') return { id, start, end, kind: 'fullscreen' } satisfies CameraLayout
-  return { id, start, end, kind: 'blur', rect: { x: 0.3, y: 0.3, w: 0.4, h: 0.3 } } satisfies Mask
+  const c = screenCrop(project()) // over the shown part of the screen
+  return { id, start, end, kind: 'blur', rect: { x: c.x + 0.3 * c.w, y: c.y + 0.3 * c.h, w: 0.4 * c.w, h: 0.3 * c.h } } satisfies Mask
 }
 
 /** Add an item about 3 output seconds long at output time t, fitted into free space; selects it. */
@@ -277,11 +290,15 @@ export function timelineCommands(view: { zoom: (f: number) => void; fit: () => v
 
     ...SPEEDS.map((s) => c(`speed${s}`, 'Clip', `Set speed ${s}×`, () => setSpeed(s), clipTarget)),
     c('speedAll', 'Clip', 'Apply speed to all clips', speedToAll, () => open() && has('clips')),
-    ...VOLUMES.map((v) => c(`volume${v}`, 'Clip', `Set volume ${v * 100}%`, () => setVolume(v), clipTarget)),
-    c('mute', 'Clip', 'Mute / unmute clip', toggleMute, clipTarget, ['M']),
+    ...VOLUMES.map((v) => c(`volume${v}`, 'Clip', `Set mic volume ${v * 100}%`, () => setVolume(v), () => clipTarget() && !!project().sources.mic)),
+    ...VOLUMES.map((v) => c(`systemVolume${v}`, 'Clip', `Set system audio volume ${v * 100}%`, () => setSystemVolume(v), () => clipTarget() && !!project().sources.system)),
+    c('mute', 'Clip', 'Mute / unmute clip', () => toggleClips('muted'), clipTarget, ['M']),
     c('mergePrev', 'Clip', 'Merge with previous clip', () => merge(-1), () => open() && canMerge(-1)),
     c('mergeNext', 'Clip', 'Merge with next clip', () => merge(1), () => open() && canMerge(1)),
+    c('resetTrim', 'Clip', 'Reset trim', resetTrim, canResetTrim, [], { hint: 'grows the clip over the source cut next to it' }),
     c('restoreCut', 'Clip', 'Restore the nearest cut', () => restore(nearestCut()!.after), () => open() && !!nearestCut(), [], { hint: 'brings back what was cut there' }),
+    c('hideCursor', 'Clip', 'Hide / show cursor in clip', () => toggleClips('hideCursor'), () => clipTarget() && hasCursor() && project().style.cursor.visible),
+    c('rawCursor', 'Clip', 'Cursor smoothing on / off in clip', () => toggleClips('rawCursor'), () => clipTarget() && hasCursor() && project().style.cursor.animation !== 'none'),
 
     c('addZoom', 'Zoom', 'Add zoom at playhead', () => add('zooms'), open, ['Z']),
     ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((d) =>
