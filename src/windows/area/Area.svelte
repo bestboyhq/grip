@@ -1,7 +1,8 @@
 <!-- Picking overlay, one transparent window per display (#/area?display=<id>). The display shows
      frozen as it was when the picker opened, until a countdown starts.
      Display mode: highlight the hovered display. Window mode: highlight the window under the mouse
-     (a click keeps it), with preset sizes. Area mode: drag out a rectangle, resize it by its handles, type its size, lock
+     (a click keeps it), with preset sizes. Either records (↩) or copies a screenshot (⌘C), the window
+     alone with clear corners, as macOS takes it. Area mode: drag out a rectangle, resize it by its handles, type its size, lock
      an aspect; the last area is remembered. Then record it (↩, a 3-2-1 countdown over the region), or
      take a screenshot of it: ⌘C copies it at once, a tool from the strip beside it (or its key)
      freezes it to draw on first (a drawn shape drags to another place), then ⌘C copies or ⌘S
@@ -125,6 +126,9 @@
       sel = { ...orig, x, y }
     } else sel = resize(orig, kind === 'new' ? 'new' : kind, e.clientX, e.clientY, ASPECTS[aspect], W, H)
   }
+  /** Picking a display or window, the keys (↩, ⌘C) go to the display the pointer is on. An area keeps
+   *  the keyboard on its own display. */
+  const takeKeys = () => (shell.mode === 'display' || shell.mode === 'window') && !target && invoke('shell:focus')
   function up() {
     if (!drag) return
     const wasNew = drag.kind === 'new'
@@ -170,22 +174,28 @@
   let capturing: Promise<Shot | null> | null = null
   let finishing = false // a copy or save is on its way: ⌘C spam makes one screenshot
 
-  /** The selected area: cut from the still, else as it is now (without Grip's own windows). */
+  /** The selected area or the display under the mouse: cut from the still, else as it is now (without
+   *  Grip's own windows). The window: alone, with nothing in front of it and clear corners, as macOS
+   *  takes them; at its preset size, if one is picked. */
   function capture(): Promise<Shot | null> {
     if (shot) return Promise.resolve(shot)
-    if (!sel || !display) return Promise.resolve(null)
-    const rect = $state.snapshot(sel)
+    if (!display) return Promise.resolve(null)
+    const win = shell.mode === 'window' && hovered && frame ? { id: hovered.id, frame: preset === 'current' ? null : toEngine(toGlobal(frame)) } : null
+    const rect = shell.mode === 'area' ? sel && $state.snapshot(sel) : shell.mode === 'display' ? mouse && { x: 0, y: 0, width: W, height: H } : win && frame
+    if (!rect) return Promise.resolve(null)
     const id = display.id
     const from = still
     return (capturing ??= (async () => {
       try {
-        if (from) {
+        if (from && !win) {
           const k = from.width / W // still px per point
           const [x, y, w, h] = [rect.x, rect.y, rect.width, rect.height].map((v) => Math.round(v * k))
           return { image: await createImageBitmap(from, x, y, w, h), rect }
         }
-        const png: Uint8Array = await invoke('recording:screenshot', id, toEngine(rect))
-        return { image: await createImageBitmap(new Blob([png as BlobPart], { type: 'image/png' })), png, rect }
+        const png: Uint8Array = win ? await invoke('recording:windowScreenshot', win.id, win.frame) : await invoke('recording:screenshot', id, toEngine(rect))
+        const image = await createImageBitmap(new Blob([png as BlobPart], { type: 'image/png' }))
+        // A window's size is what the app made it: its pixel density is the display's.
+        return { image, png, rect: win ? { ...rect, width: image.width / scale, height: image.height / scale } : rect }
       } catch (e) {
         invoke('shell:fail', e instanceof Error ? e.message : String(e), 'Grip couldn’t take the screenshot.')
         return null
@@ -424,20 +434,25 @@
     if (sel && display) begin(startRequest({ kind: 'area', displayId: display.id, rect: toEngine(sel) }), sel)
   }
   function key(e: KeyboardEvent) {
-    const field = ['INPUT', 'TEXTAREA'].includes((e.target as Element).tagName)
-    if (shell.mode === 'area' && sel && !target && !field) {
-      // Shortcuts by letter, on any layout: the typed Latin letter, else the key's place (QWERTY).
-      const k = /^[a-z]$/i.test(e.key) ? e.key.toLowerCase() : e.code.replace(/^Key/, '').toLowerCase()
+    if (target || ['INPUT', 'TEXTAREA'].includes((e.target as Element).tagName)) return
+    // Shortcuts by letter, on any layout: the typed Latin letter, else the key's place (QWERTY).
+    const k = /^[a-z]$/i.test(e.key) ? e.key.toLowerCase() : e.code.replace(/^Key/, '').toLowerCase()
+    const cmd = e.metaKey && !e.ctrlKey && !e.altKey
+    if (shell.mode === 'area' && sel) {
       const shortcut = { c: () => finishShot(false), s: () => finishShot(true), z: undo }[k]
-      if (e.metaKey && !e.ctrlKey && !e.altKey && shortcut) {
+      if (cmd && shortcut) {
         e.preventDefault()
         return shortcut()
       }
       const t = TOOLS.find((t) => t.key === k)
       if (!e.metaKey && !e.ctrlKey && !e.altKey && t) return pickTool(t.id)
       if (e.key === 'Enter' && shot) return finishShot(false)
+    } else if (cmd && k === 'c') {
+      // The display or the window: straight onto the clipboard, no drawing.
+      e.preventDefault()
+      return finishShot(false)
     }
-    if (e.key !== 'Enter' || target || field) return
+    if (e.key !== 'Enter') return
     if (shell.mode === 'area') startArea()
     else if (shell.mode === 'window') startWindow()
     else if (shell.mode === 'display' && mouse) startDisplay()
@@ -448,7 +463,7 @@
 <svelte:window onkeydown={key} />
 
 {#if still}<canvas class="still" width={still.width} height={still.height} {@attach paint}></canvas>{/if}
-<svelte:body onpointermove={move} onpointerup={up} onpointerleave={() => drag || (mouse = null)} />
+<svelte:body onpointerenter={takeKeys} onpointermove={move} onpointerup={up} onpointerleave={() => drag || (mouse = null)} />
 
 <!-- The dim around a region: four solid layers, edges on device pixels so they meet without seams.
      The GPU draws a solid layer at any size without rasterizing it, so a resize repaints only the
@@ -460,8 +475,12 @@
   {/each}
 {/snippet}
 
-{#snippet startButton(onclick: () => void)}
-  <button class="start" {onclick}><span class="dot" style:background-image="url({logoDot})"></span>Start recording</button>
+<!-- A display or window card's actions, like the area's: a screenshot onto the clipboard, or record it. -->
+{#snippet actions(record: () => void)}
+  <div class="actions">
+    <button class="action" onclick={() => finishShot(false)}><UiIcon name="copy" size={16} />Screenshot<kbd>⌘C</kbd></button>
+    <button class="start" onclick={record}><span class="dot" style:background-image="url({logoDot})"></span>Record<kbd>↩</kbd></button>
+  </div>
 {/snippet}
 
 <main class:area={shell.mode === 'area' && !target} onpointerdown={(e) => down(e, 'new')}>
@@ -486,7 +505,7 @@
           <Icon name="display" width={34} height={26} stroke={1.4} />
           <div class="title">{display?.label || 'Display'}</div>
           <div class="sub">{px(W)} × {px(H)}</div>
-          {@render startButton(startDisplay)}
+          {@render actions(startDisplay)}
         </div>
       {/if}
     </div>
@@ -496,7 +515,7 @@
       <div
         class="card window-card"
         role="group"
-        aria-label="Record {hovered.app}"
+        aria-label={hovered.app}
         style:left="{Math.min(Math.max(frame.x + frame.width / 2, 170), W - 170)}px"
         style:top="{Math.min(Math.max(frame.y + frame.height / 2, 120), floor - 120)}px"
         onpointerenter={() => (locked = hovered)}
@@ -512,7 +531,7 @@
           {/each}
         </div>
         <div class="sub">{px(frame.width)} × {px(frame.height)}</div>
-        {@render startButton(startWindow)}
+        {@render actions(startWindow)}
       </div>
     {:else}
       <div class="hint">Move the pointer over a window to record it</div>
@@ -700,7 +719,6 @@
     text-overflow: ellipsis;
   }
   .start {
-    margin-top: 10px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -888,9 +906,13 @@
     color: var(--text);
     cursor: default;
   }
-  .form .segmented,
-  .form .start {
+  .form .segmented {
     margin-top: 0;
+  }
+  .actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
   }
   .size {
     display: flex;

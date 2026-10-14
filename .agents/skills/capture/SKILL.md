@@ -15,6 +15,8 @@ Screen, window, area, and device recording.
   System notifications and, optionally, desktop icons stay out too.
 - The picker freezes every display the moment it opens (shortcut or menu bar click), before any of our UI shows, so menus and hover states stay; the freeze ends when a countdown starts.
 - Screenshots come from the same area picker and are cut from that frozen frame: ⌘C copies the area, a drawing tool annotates it first, and drawn shapes drag to another place.
+  Picking a display or a window, ⌘C copies it without drawing; a window comes alone, as macOS takes it: nothing in front of it, clear corners, no shadow.
+  The overlay under the pointer holds the keyboard, so ↩ and ⌘C reach the display the user is looking at.
   They leave out our UI and the cursor like recordings do, and carry their pixel density (144 dpi on Retina) so they paste at on-screen size.
 - The camera preview sits in the corner of the recorded area where the video will put the camera; moving it moves the camera.
 - One recording session exists at a time.

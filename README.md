@@ -84,6 +84,7 @@ Draw right on top of the frozen screen, then copy it, save it, or record it.
 - **Record it.** Press **↩︎** for a 3-2-1 countdown, then record.
   Or pick a whole display, one window, or an iPhone or iPad over USB.
 - **Or screenshot it.** **⌘C** copies the area at once, **⌘S** saves it to the Desktop.
+  Picking a display or a window, **⌘C** copies that; a window comes alone, with clear corners.
   Screenshots keep the Display P3 colors macOS uses.
 - **Mark it up first.** Arrow, rectangle, pen, text, and pixelate, each on one key (**A R P T B**), in six colors.
   The pen draws smooth ink that thins with speed, or with pressure on a stylus.

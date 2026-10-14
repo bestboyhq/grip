@@ -17,6 +17,7 @@
 //   shell:still(displayId) -> Still | null   overlay: its display frozen as it was when the picker opened (raw
 //                                 RGBA); a loaded overlay asks ahead and gets it when a pick opens
 //   shell:ready                   overlay: painted (its still too), show it
+//   shell:focus                   overlay: the pointer is on it, picking a display or window: it takes the keyboard
 //   shell:close-picker            hide toolbar, overlays, and the idle camera bubble
 //   shell:countdown(on)           a countdown runs (Esc cancels it: "shell:escape")
 //   shell:start(opts)             overlay -> controller: start recording with these options
@@ -346,12 +347,12 @@ function loadOverlays() {
   }
 }
 
-/** An overlay on screen, after the toolbar: picking an area, the overlay under the mouse takes the
- *  keyboard (↩ records, ⌘C copies, A arrow...). A panel: it takes key focus without bringing Grip forward. */
+/** An overlay on screen, after the toolbar: the overlay under the mouse takes the keyboard (↩ records,
+ *  ⌘C copies, A arrow...). A panel: it takes key focus without bringing Grip forward. */
 function showOverlay(w: BrowserWindow) {
   if (w.isDestroyed() || w.isVisible()) return
   if (picking && !counting && toolbar && !toolbar.isVisible()) reveal(toolbar)
-  reveal(w, mode === 'area' && screen.getDisplayMatching(w.getBounds()).id === activeDisplay().id)
+  reveal(w, screen.getDisplayMatching(w.getBounds()).id === activeDisplay().id)
 }
 
 /** Esc is a global shortcut while picking, counting down, or drawing, but not while one of our menus is
@@ -755,6 +756,10 @@ export function registerRecorder() {
   ipcMain.handle('shell:ready', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender)
     if (w && windowsOf('area').includes(w)) showOverlay(w)
+  })
+  ipcMain.handle('shell:focus', (e) => {
+    const w = BrowserWindow.fromWebContents(e.sender)
+    if (w?.isVisible() && !w.isFocused() && picking && !counting && windowsOf('area').includes(w)) reveal(w)
   })
   ipcMain.handle('shell:warn', (_e, message: string) => notify(String(message)))
   ipcMain.handle('shell:relaunch', () => {

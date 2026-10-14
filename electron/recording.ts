@@ -13,6 +13,7 @@
 //   recording:pause | recording:resume | recording:cancel | recording:restart -> RecState
 //   recording:stop -> RecordingSources | null
 //   recording:screenshot(displayId, rect) -> PNG bytes   a still of rect (points, relative to the display), without Grip's windows
+//   recording:windowScreenshot(windowId, frame?) -> PNG bytes   the window alone (frame?: move and resize it there first)
 //   recording:draw(phase, x, y, color?, width?) -> boolean   a pen stroke point (global points) into the event stream
 // Calls in the wrong state are no-ops that return the current state.
 // Broadcast to every window:
@@ -39,10 +40,11 @@ import { createBundle, projectEvents, projectsDir, readProject, writeNewRecordin
 export const recordingEvents = new EventEmitter()
 
 /** screenshot: a still of `r` (points, relative to its display) without Grip's windows or the cursor,
- *  as PNG (recording:screenshot). still: the same of a whole display in raw RGBA, the frozen screen
- *  while picking. The dev stand-in replaces both. */
+ *  as PNG (recording:screenshot). windowScreenshot: one window alone, as PNG. still: a whole display
+ *  in raw RGBA, the frozen screen while picking. The dev stand-in replaces all three. */
 export const capture = {
   screenshot: (displayId: number, r: Rect): Promise<Uint8Array> => native.captureScreenshot(displayId, r),
+  windowScreenshot: (windowId: number, frame?: Rect): Promise<Uint8Array> => native.captureWindowScreenshot(windowId, frame),
   still: (displayId: number): Promise<Still> => native.captureStill(displayId),
 }
 
@@ -186,6 +188,9 @@ export function registerRecording() {
   ipcMain.handle('recording:restart', () => native.restartRecording())
   ipcMain.handle('recording:screenshot', (_e, displayId: unknown, r: Partial<Rect>) =>
     capture.screenshot(Number(displayId), { x: Number(r?.x), y: Number(r?.y), w: Number(r?.w), h: Number(r?.h) }),
+  )
+  ipcMain.handle('recording:windowScreenshot', (_e, windowId: unknown, f?: Partial<Rect> | null) =>
+    capture.windowScreenshot(Number(windowId), f ? { x: Number(f.x), y: Number(f.y), w: Number(f.w), h: Number(f.h) } : undefined),
   )
   ipcMain.handle('recording:draw', (_e, phase: unknown, x: unknown, y: unknown, color?: unknown, width?: unknown) =>
     native.recordDraw(String(phase), Number(x), Number(y), typeof color === 'string' ? color : undefined, typeof width === 'number' ? width : undefined),
