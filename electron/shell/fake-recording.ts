@@ -11,6 +11,7 @@
 //   recording:start({ target, cameraId?, micId?, systemAudio }) -> RecState; rejects with a reason
 //   recording:pause | resume | cancel | restart -> RecState; recording:stop -> sources | null
 //   capture.screenshot(displayId, rect) -> PNG (the stand-in's thumbnail, at the rect's pixel size)
+//   capture.windowScreenshot(windowId, frame?) -> PNG (the same, at the window's pixel size)
 //   capture.still(displayId) -> { width, height, data: RGBA } (the same, of the whole display)
 //   recording:draw(phase, x, y, color?, width?): pen strokes land in the take's events.jsonl
 //   broadcasts recording:state(state), recording:finished(bundle, { reason }); recordingEvents too
@@ -53,13 +54,14 @@ export function registerFakeRecording(bundle: string) {
   handle('recording:permissions', permissions)
   handle('recording:requestPermission', (kind: keyof ReturnType<typeof permissions>) => permissions()[kind]) // no prompts in dev
   handle('recording:openPermissionSettings', (kind: string) => console.log('[fake recording] open settings for', kind))
-  handle('recording:windows', () => {
+  const windows = () => {
     const { x, y } = screen.getPrimaryDisplay().workArea
     return [
       { id: 11, app: 'Safari', bundleId: 'com.apple.Safari', title: 'Grip - Release Notes', frame: { x: x + 80, y: y + 60, w: 980, h: 680 } },
       { id: 12, app: 'Xcode', bundleId: 'com.apple.dt.Xcode', title: 'Grip — Recorder.swift', frame: { x: x + 520, y: y + 200, w: 860, h: 600 } },
     ]
-  })
+  }
+  handle('recording:windows', windows)
   handle('recording:microphones', () => [
     { id: 'fake-mic', name: 'MacBook Pro Microphone', isDefault: true, isBuiltIn: true },
     { id: 'fake-usb', name: 'Shure MV7+ USB Microphone', isDefault: false, isBuiltIn: false },
@@ -84,6 +86,11 @@ export function registerFakeRecording(bundle: string) {
     // A bundle never opened in the editor has no thumbnail: a gradient of four BGRA pixels stands in.
     const image = thumbnail.isEmpty() ? nativeImage.createFromBitmap(Buffer.from([200, 120, 40, 255, 80, 160, 240, 255, 60, 200, 120, 255, 230, 230, 230, 255]), { width: 2, height: 2 }) : thumbnail
     return image.resize(size).toPNG()
+  }
+  capture.windowScreenshot = async (id, frame) => {
+    const w = windows().find((w) => w.id === id)
+    if (!w) throw new Error('That window is no longer open.')
+    return capture.screenshot(screen.getPrimaryDisplay().id, frame ?? w.frame)
   }
   capture.still = async (id) => {
     const { width, height } = screen.getAllDisplays().find((d) => d.id === Number(id))?.bounds ?? screen.getPrimaryDisplay().bounds

@@ -55,6 +55,12 @@ export declare function captureScreenshot(displayId: number, rect: Rect): Promis
 export declare function captureStill(displayId: number): Promise<Still>
 
 /**
+ * PNG of window `window_id` alone (clear corners, nothing in front of it, no shadow or cursor) at
+ * its pixel density. A `frame` (global points) moves and resizes it there first (Accessibility).
+ */
+export declare function captureWindowScreenshot(windowId: number, frame?: Rect | undefined | null): Promise<Buffer>
+
+/**
  * No zoom when the window shows: AppKit scales a window in over 150 ms, which would set the
  * picker's frozen screen moving. `handle`: BrowserWindow.getNativeWindowHandle(), its NSView.
  */

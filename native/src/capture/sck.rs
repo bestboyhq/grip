@@ -618,6 +618,21 @@ pub fn still(display_id: u32) -> Result<(u32, u32, Vec<u8>), String> {
     grab(display_id, Rect { x: 0.0, y: 0.0, w: b.size.width, h: b.size.height }, rgba)
 }
 
+/// Window `id` alone, like macOS window screenshots: nothing in front of it, clear rounded corners,
+/// no shadow or cursor. A `frame` (global points) moves and resizes it there first, as for recording.
+pub fn window_screenshot(id: u32, frame: Option<Rect>) -> Result<Vec<u8>, String> {
+    let content = content(true)?;
+    let window = find_window(&content, id).ok_or("That window is no longer open.")?;
+    let r = match frame {
+        Some(f) => place_window(id, f)?,
+        None => unsafe { window.frame() },
+    };
+    let filter = unsafe { SCContentFilter::initWithDesktopIndependentWindow(SCContentFilter::alloc(), &window) };
+    let config = shot_config(&filter, r.size.width, r.size.height);
+    unsafe { config.setIgnoreShadowsSingleWindow(true) };
+    shoot(&filter, &config, png)
+}
+
 /// Capture `r` of the display, turned into `T` by `encode` on the capture queue.
 fn grab<T: Send + 'static>(display_id: u32, r: Rect, encode: fn(&CGImage) -> Option<T>) -> Result<T, String> {
     // On-screen windows only: listing those on every Space took up to seconds on a busy Mac. What it
@@ -635,17 +650,31 @@ fn grab<T: Send + 'static>(display_id: u32, r: Rect, encode: fn(&CGImage) -> Opt
     if w < 1.0 || h < 1.0 {
         return Err("The selected area is empty.".into());
     }
-    let scale = unsafe { SCShareableContent::infoForFilter(&filter).pointPixelScale() } as f64;
+    let config = shot_config(&filter, w, h);
+    unsafe { config.setSourceRect(CGRect::new(CGPoint::new(x, y), CGSize::new(w, h))) };
+    shoot(&filter, &config, encode)
+}
+
+/// A screenshot of `w` x `h` points at the filter's pixel density, in Display P3, without the cursor.
+fn shot_config(filter: &SCContentFilter, w: f64, h: f64) -> Retained<SCStreamConfiguration> {
+    let scale = unsafe { SCShareableContent::infoForFilter(filter).pointPixelScale() } as f64;
     let scale = if scale > 0.0 { scale } else { 2.0 };
     let config = unsafe { SCStreamConfiguration::new() };
     unsafe {
-        config.setSourceRect(CGRect::new(CGPoint::new(x, y), CGSize::new(w, h)));
         config.setWidth((w * scale).round() as usize);
         config.setHeight((h * scale).round() as usize);
         config.setShowsCursor(false);
         config.setCaptureResolution(SCCaptureResolutionType::Best);
         config.setColorSpaceName(kCGColorSpaceDisplayP3);
     }
+    config
+}
+
+fn shoot<T: Send + 'static>(
+    filter: &SCContentFilter,
+    config: &SCStreamConfiguration,
+    encode: fn(&CGImage) -> Option<T>,
+) -> Result<T, String> {
     let (tx, rx) = mpsc::channel();
     let done = RcBlock::new(move |img: *mut CGImage, e: *mut NSError| {
         let out = match unsafe { img.as_ref() } {
@@ -654,7 +683,7 @@ fn grab<T: Send + 'static>(display_id: u32, r: Rect, encode: fn(&CGImage) -> Opt
         };
         let _ = tx.send(out);
     });
-    unsafe { SCScreenshotManager::captureImageWithFilter_configuration_completionHandler(&filter, &config, Some(&done)) };
+    unsafe { SCScreenshotManager::captureImageWithFilter_configuration_completionHandler(filter, config, Some(&done)) };
     rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "Timed out taking the screenshot.".to_string())?
 }
 

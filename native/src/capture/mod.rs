@@ -827,6 +827,13 @@ pub async fn capture_screenshot(display_id: u32, rect: Rect) -> napi::Result<nap
     blocking(move || sck::screenshot(display_id, rect)).await.map(Into::into)
 }
 
+/// PNG of window `window_id` alone (clear corners, nothing in front of it, no shadow or cursor) at
+/// its pixel density. A `frame` (global points) moves and resizes it there first (Accessibility).
+#[napi]
+pub async fn capture_window_screenshot(window_id: u32, frame: Option<Rect>) -> napi::Result<napi::bindgen_prelude::Buffer> {
+    blocking(move || sck::window_screenshot(window_id, frame)).await.map(Into::into)
+}
+
 /// A whole display as the screenshot sees it, in raw pixels: `data` is RGBA, Display P3.
 #[napi(object)]
 pub struct Still {
