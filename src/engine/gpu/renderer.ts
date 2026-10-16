@@ -16,7 +16,7 @@
 import { defaultStyle, type Background, type Rect } from '../../shared/project.ts'
 import type { CursorLayer, Scene, View } from '../scene.ts'
 import { deviceGeometry } from '../layout.ts'
-import { CLICK_LIFE, WAVES, drawOverlays } from '../overlays/index.ts'
+import { WAVES, drawOverlays } from '../overlays/index.ts'
 import { oklab, parseColor, wallpaper, DEFAULT_WALLPAPER } from '../backgrounds/index.ts'
 import { CURSORS, CURSOR_RES, type BuiltinName } from '../../assets/cursors.ts'
 import { GRADE, gradeLut, parseCube, type Lut } from './lut.ts'
@@ -56,8 +56,8 @@ export interface Motion {
 const A = 0, VIEWT = 1, SCR = 2, SCR2 = 3, SCR3 = 4, DEV = 5, SH = 6, VIEWS = 10, PARTS = 26, MASKS = 74
 const CUR = 106, CURIMG = 107, CURTEX = 108, CURBOX = 109, CURS = 110, LOUPE = 126, LOUPE2 = 127
 const CAM = 128, CAM1 = 129, CAM2 = 130, CAM3 = 131, CAM4 = 132, LUTMIN = 133, LUTMAX = 134, FIN = 135, VP = 136, VIS = 137
-const CLK = 138, WAVE = 142, WAVE2 = 143, WAVE3 = 144, WAVE4 = 145
-const FRAME_SLOTS = 146
+const CLK = 138, WAVE = 142, WAVE2 = 143, WAVE3 = 144
+const FRAME_SLOTS = 145
 const PASS_SLOTS = 27 // `struct Pass`
 const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12, MAX_CLICKS = 4
 const MASK_KIND = { blur: 0, pixelate: 1, highlight: 2 } as const
@@ -456,11 +456,13 @@ export class Renderer {
     if (wave) {
       const live = scene.clicks.slice(-MAX_CLICKS) // ponytail: the 4 newest clicks ripple at once; a storage buffer if rapid clicking needs more
       const k = slopePeak(wave.crests) // shift and tilt mean the same at any crest count
-      live.forEach((c, i) => set(CLK + i, c.x, c.y, c.age))
-      set(WAVE, wave.reach, wave.width, wave.crests, CLICK_LIFE[live[0].style])
+      live.forEach((c, i) => {
+        const p = c.age / wave.motion.life
+        set(CLK + i, c.x, c.y, wave.reach * scene.unit * wave.motion.front(p), wave.motion.strength(p))
+      })
+      set(WAVE, wave.width, wave.crests, wave.spec, live.length)
       set(WAVE2, wave.shift / k, wave.shade, wave.tilt / k, wave.dispersion)
-      set(WAVE3, wave.ease, wave.decay, wave.spec, live.length)
-      set(WAVE4, ...(wave.tint ?? [0, 0, 0, 0]))
+      set(WAVE3, ...(wave.tint ?? [0, 0, 0, 0]))
     }
 
     const cam = scene.camera

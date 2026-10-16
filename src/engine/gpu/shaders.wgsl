@@ -32,11 +32,10 @@ struct Frame {
   fin: vec4f,      // has overlay
   vp: vec4f,       // viewport (output px): the zoom view shows through it, everything outside is unzoomed
   vis: vec4f,      // shown part of the recording (unzoomed px): all of scr, or its crop; the frame is this grown by dev.w
-  clicks: array<vec4f, 4>, // click waves: x, y (unzoomed px), age (s)
-  wave: vec4f,     // reach, width (units), crests, life (s)
+  clicks: array<vec4f, 4>, // click waves: x, y, front radius (unzoomed px), strength
+  wave: vec4f,     // width (units), crests, specular, click count
   wave2: vec4f,    // shift (units), shade, tilt, dispersion
-  wave3: vec4f,    // front ease, decay, specular, click count
-  wave4: vec4f,    // crest tint rgb, strength
+  wave3: vec4f,    // crest tint rgb, strength
 }
 
 @group(0) @binding(0) var<uniform> F: Frame;
@@ -247,8 +246,8 @@ fn screenAt(u: vec2f, aa: f32) -> vec4f {
 
 // ---- Click waves: a ripple on the screen's glass, refracting the recording under it ----
 // Each click's surface is h(r) = g((r - f) / w) + g((-r - f) / w) with g(x) = cos(crests x) exp(-x^2):
-// a wave packet whose front f runs out from the click, mirrored so the surface stays smooth at its
-// center. The recording is sampled along the slope, so a crest magnifies what is under it like a
+// a wave packet whose front f runs out from the click (its easing lives in overlays/index.ts),
+// mirrored so the surface stays smooth at its center. The recording is sampled along the slope, so a crest magnifies what is under it like a
 // small lens, and lit by the loupe's key light so the wave still shows over flat UI. The cursor,
 // drawn later, floats above the water.
 
@@ -259,20 +258,16 @@ fn gd(x: f32, k: f32) -> vec2f { // g(x), g'(x)
 
 // All live click waves at unzoomed point u: slope (dimensionless, outward is uphill), height.
 fn clickWaves(u: vec2f) -> vec3f {
-  let reach = F.wave.x * F.a.z;
-  let w = F.wave.y * F.a.z;
+  let w = F.wave.x * F.a.z;
   var v = vec3f(0.0);
-  for (var i = 0; i < i32(F.wave3.w); i++) {
+  for (var i = 0; i < i32(F.wave.w); i++) {
     let c = F.clicks[i];
     let q = u - c.xy;
     let r = length(q);
-    let p = clamp(c.z / F.wave.w, 0.0, 1.0);
-    let f = reach * (1.0 - pow(1.0 - p, F.wave3.x));
-    if (r > f + 3.0 * w) { continue; } // ahead of the front: still water
-    let a = pow(1.0 - p, F.wave3.y) * smoothstep(0.0, 0.08, p);
-    let g1 = gd((r - f) / w, F.wave.z);
-    let g2 = gd((-r - f) / w, F.wave.z);
-    v += vec3f(q / max(r, 1e-3) * (g1.y - g2.y), g1.x + g2.x) * a;
+    if (r > c.z + 3.0 * w) { continue; } // ahead of the front: still water
+    let g1 = gd((r - c.z) / w, F.wave.y);
+    let g2 = gd((-r - c.z) / w, F.wave.y);
+    v += vec3f(q / max(r, 1e-3) * (g1.y - g2.y), g1.x + g2.x) * c.w;
   }
   return v;
 }
@@ -286,8 +281,8 @@ fn rippled(u: vec2f, w: vec3f, aa: f32) -> vec4f {
   let n = normalize(vec3f(-v * F.wave2.z, 1.0));
   let L = normalize(KEY);
   let lit = dot(n, L) / L.z - 1.0; // 0 on still water, > 0 facing the light
-  let spec = pow(max(dot(n, normalize(L + vec3f(0.0, 0.0, 1.0))), 0.0), 90.0) * F.wave3.z;
-  let rgb = mix(s.rgb, F.wave4.rgb, clamp(w.z, 0.0, 1.0) * F.wave4.w); // a tinted crest shows over any UI
+  let spec = pow(max(dot(n, normalize(L + vec3f(0.0, 0.0, 1.0))), 0.0), 90.0) * F.wave.z;
+  let rgb = mix(s.rgb, F.wave3.rgb, clamp(w.z, 0.0, 1.0) * F.wave3.w); // a tinted crest shows over any UI
   return vec4f(max(rgb * (1.0 + F.wave2.y * lit), vec3f(0.0)) + spec, max(s.a, min(length(v) * F.wave2.z * 4.0, 1.0)));
 }
 

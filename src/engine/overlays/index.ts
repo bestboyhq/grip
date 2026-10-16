@@ -33,19 +33,40 @@ function upper(a: Array<{ start: number }>, t: number): number {
 
 // ---- Tuning (seconds, and lengths in units: 1 unit = min(w, h) / 1080 px). ----
 
-export const CLICK_LIFE: Record<Click['style'], number> = { none: 0, ripple: 0.6, circle: 0.45, shockwave: 0.55, 'wave-pond': 1.1, 'wave-drop': 0.8, 'wave-shock': 0.6, 'wave-quake': 1.4, 'wave-glow': 0.7 }
+const CLICK_LIFE: Partial<Record<Click['style'], number>> = { ripple: 0.6, circle: 0.45, shockwave: 0.55 }
+/** Seconds a click effect shows. */
+export const clickLife = (style: Click['style']) => WAVES[style]?.motion.life ?? CLICK_LIFE[style] ?? 0
+
+/** How a click wave moves, at p = age / life in 0..1: its front as a fraction of the reach, and its strength. */
+export interface WaveMotion { life: number; front: (p: number) => number; strength: (p: number) => number }
+const ramp = (p: number, e = 0.08) => { const x = clamp01(p / e); return x * x * (3 - 2 * x) } // eases the strength in: the wave never pops
+const powerOut = (life: number, ease: number, decay: number): WaveMotion => ({ life, front: (p) => 1 - (1 - p) ** ease, strength: (p) => (1 - p) ** decay * ramp(p) })
+const expoOut = (x: number) => (1 - 2 ** (-9 * x)) / (1 - 2 ** -9)
+const HOLD = 0.13 // press: share of the life the click point swells before the wave leaves
+const JELLY = { stiffness: 120, damping: 11, mass: 1 } // 16% overshoot
+
+/** Easing trials for the shock wave (temporary: one ships, the rest go). */
+export const WAVE_MOTIONS: Record<string, WaveMotion> = {
+  cubic: powerOut(0.6, 3, 1.2),
+  linear: { life: 0.6, front: (p) => p, strength: (p) => (1 - p) ** 1.2 * ramp(p) },
+  quint: { life: 0.7, front: (p) => 1 - (1 - p) ** 5, strength: (p) => (1 - p ** 2.5) * ramp(p) },
+  expo: { life: 0.9, front: expoOut, strength: (p) => (1 - p) ** 1.6 * ramp(p) },
+  blast: { life: 0.8, front: (p) => p ** 0.4, strength: (p) => (1 - p) ** 1.5 * ramp(p) },
+  spring: { life: 0.9, front: (p) => 0.87 * springProgress(p * 0.9, JELLY), strength: (p) => (1 - p) ** 1.3 * ramp(p) },
+  inout: { life: 0.7, front: (p) => 0.5 - 0.5 * Math.cos(Math.PI * p), strength: (p) => (1 - p) ** 1.2 * ramp(p, 0.3) },
+  press: { life: 0.9, front: (p) => (p < HOLD ? 0 : expoOut((p - HOLD) / (1 - HOLD))), strength: (p) => (p < HOLD ? (p / HOLD) ** 2 : (1 - (p - HOLD) / (1 - HOLD)) ** 1.5) },
+}
 
 /** Click styles the compositor draws as a wave refracting the screen (shaders.wgsl, clickWaves).
- *  reach, width, shift in units; crests = cos frequency of the packet (0: one crest); ease, decay =
- *  exponents of the front's ease-out and of the fade; shade, tilt, spec light the surface; tint =
- *  sRGB + strength mixed into the crest. */
-export interface Wave { reach: number; width: number; crests: number; shift: number; shade: number; tilt: number; dispersion: number; ease: number; decay: number; spec: number; tint?: [number, number, number, number] }
+ *  reach, width, shift in units; crests = cos frequency of the packet (0: one crest); shade, tilt,
+ *  spec light the surface; tint = sRGB + strength mixed into the crest. */
+export interface Wave { reach: number; width: number; crests: number; shift: number; shade: number; tilt: number; dispersion: number; spec: number; motion: WaveMotion; tint?: [number, number, number, number] }
 export const WAVES: Partial<Record<Click['style'], Wave>> = {
-  'wave-pond': { reach: 140, width: 20, crests: 5.5, shift: 4.5, shade: 0.11, tilt: 0.5, dispersion: 0, ease: 1.3, decay: 1.6, spec: 0.6 },
-  'wave-drop': { reach: 100, width: 16, crests: 2.2, shift: 9, shade: 0.13, tilt: 0.6, dispersion: 0.12, ease: 1.8, decay: 1.4, spec: 0.7 },
-  'wave-shock': { reach: 220, width: 10, crests: 0, shift: 8, shade: 0.15, tilt: 0.6, dispersion: 0.6, ease: 3, decay: 1.2, spec: 1 },
-  'wave-quake': { reach: 520, width: 60, crests: 3.5, shift: 9, shade: 0.05, tilt: 0.25, dispersion: 0, ease: 1.5, decay: 1.6, spec: 0 },
-  'wave-glow': { reach: 170, width: 9, crests: 0, shift: 6, shade: 0.14, tilt: 0.8, dispersion: 0.15, ease: 2.2, decay: 1.1, spec: 1, tint: [134 / 255, 118 / 255, 1, 0.45] },
+  'wave-pond': { reach: 140, width: 20, crests: 5.5, shift: 4.5, shade: 0.11, tilt: 0.5, dispersion: 0, spec: 0.6, motion: powerOut(1.1, 1.3, 1.6) },
+  'wave-drop': { reach: 100, width: 16, crests: 2.2, shift: 9, shade: 0.13, tilt: 0.6, dispersion: 0.12, spec: 0.7, motion: powerOut(0.8, 1.8, 1.4) },
+  'wave-shock': { reach: 220, width: 10, crests: 0, shift: 8, shade: 0.15, tilt: 0.6, dispersion: 0.6, spec: 1, motion: WAVE_MOTIONS.cubic },
+  'wave-quake': { reach: 520, width: 60, crests: 3.5, shift: 9, shade: 0.05, tilt: 0.25, dispersion: 0, spec: 0, motion: powerOut(1.4, 1.5, 1.6) },
+  'wave-glow': { reach: 170, width: 9, crests: 0, shift: 6, shade: 0.14, tilt: 0.8, dispersion: 0.15, spec: 1, motion: powerOut(0.7, 2.2, 1.1), tint: [134 / 255, 118 / 255, 1, 0.45] },
 }
 
 const KEY_H = 78 // keycap height incl. its side
@@ -128,7 +149,7 @@ export function clicksAt(o: Prepared, t: number): Click[] {
   const s = o.input.project.sources.screen
   const hi = upper(o.clicks, t)
   let lo = hi
-  while (lo > 0 && t - o.clicks[lo - 1].start < CLICK_LIFE[style]) lo--
+  while (lo > 0 && t - o.clicks[lo - 1].start < clickLife(style)) lo--
   const live = o.clicks.slice(lo, hi)
   const r = live.length && s ? screenAt(o.layout, t)?.screen : null
   if (!r || !s) return []
@@ -453,7 +474,7 @@ function ring(ctx: Ctx, x: number, y: number, r: number, width: number, color: s
 }
 
 function drawClick(ctx: Ctx, c: Click, u: number) {
-  const p = c.age / CLICK_LIFE[c.style]
+  const p = c.age / clickLife(c.style)
   if (p < 0 || p >= 1) return
   const fade = 1 - p
   ctx.save()
