@@ -25,6 +25,17 @@ test('an item spanning a cut shows each surviving piece; only the outer pieces o
   assert.equal(sped.keys.blocks.length, 1)
 })
 
+test('lanes stack as the frame is built and show once they have items, then stay', () => {
+  const m = M.buildModel(parts([clip(0, 10)], [zoom('z', 1, 2)]), [{ start: 1, end: 2, label: '⌘A' }], [])
+  const shown = new Set<M.ItemTrack>()
+  assert.deepEqual(M.tracks(m, true, shown), ['zooms', 'clips', 'keys'])
+  const all = { ...m, layouts: { items: [{}] }, masks: { items: [{}] } }
+  assert.deepEqual(M.tracks(all, false, shown), ['zooms', 'masks', 'clips', 'keys']) // no camera: no layouts lane
+  assert.deepEqual(M.tracks(all, true, shown), ['layouts', 'zooms', 'masks', 'clips', 'keys'])
+  assert.deepEqual(M.tracks({ ...m, zooms: { items: [] } }, true, shown), ['layouts', 'zooms', 'masks', 'clips', 'keys']) // last item deleted: still there
+  assert.deepEqual(M.tracks(M.buildModel(parts([clip(0, 10)]), [], []), true, new Set()), ['clips']) // a new session starts bare
+})
+
 test('lanes are reused while their inputs keep identity', () => {
   const p = parts([clip(0, 10)], [zoom('z', 1, 2)])
   const a = M.buildModel(p, [], [])

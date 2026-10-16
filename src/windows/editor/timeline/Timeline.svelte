@@ -57,6 +57,8 @@
   let ghost: { track: M.ItemTrack; a: number; b: number } | null = null
   let mic: Audio | null = null
   let system: Audio | null = null
+  let shown = new Set<M.ItemTrack>() // item lanes shown so far, for the project in `lanesFor`
+  let lanesFor = ''
   let fitted = ''
   let raf = 0
   let last = 0
@@ -68,7 +70,7 @@
   let splitTool = $state(false)
   let alt = $state(false)
   let cursor = $state('default')
-  let menu: { x: number; y: number; t: number; target: Target } | null = $state(null)
+  let menu: { x: number; y: number; t: number; target: Target; from?: HTMLElement } | null = $state(null) // from: the button that opened it
 
   const waves = $derived(new Waveforms(peaks, requestDraw))
   const armed = () => splitTool || alt
@@ -153,18 +155,17 @@
     }
     model = M.buildModel(draft ? { ...base, ...draft } : base, keys, words, model ?? undefined)
     if (draft) return requestDraw() // lanes and fit stay as they were while dragging
-    const ids: M.TrackId[] = ['clips', 'zooms']
-    if (camera) ids.push('layouts')
-    ids.push('masks')
-    if (keys.length) ids.push('keys')
-    if (words.length) ids.push('captions')
-    const r = layoutRows(ids)
+    const key = `${doc.path}|${doc.project?.createdAt}`
+    if (key !== lanesFor) {
+      lanesFor = key
+      shown = new Set()
+    }
+    const r = layoutRows(M.tracks(model, camera, shown))
     view.rows = r.rows
     height = r.height
     const fit = isFit()
     view.duration = duration = model.map.duration
     if (fit) view.pps = target = minPps() // a fitted timeline stays fitted when edits change its length
-    const key = `${doc.path}|${doc.project?.createdAt}`
     if (key !== fitted && view.W) {
       fitted = key
       view.pps = target = minPps()
@@ -546,8 +547,17 @@
   }
 
   function closeMenu() {
+    const back = menu?.from ?? canvas
     menu = null
-    canvas?.focus()
+    back?.focus()
+  }
+
+  /** The add menu, under its button; a second click closes it. */
+  function openAdd(e: MouseEvent) {
+    if (menu?.target.kind === 'add') return closeMenu()
+    const from = e.currentTarget as HTMLElement
+    const r = from.getBoundingClientRect()
+    menu = { x: r.left, y: r.bottom + 4, t: player.time, target: { kind: 'add' }, from }
   }
 </script>
 
@@ -556,10 +566,14 @@
 <section class="timeline" aria-label="Timeline">
   <div class="bar" role="toolbar" aria-label="Timeline tools">
     <div class="left">
-      <button class="commands" onclick={() => run('menu.toggle')}>
+      <button class="labeled" onclick={() => run('menu.toggle')}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5" /><path d="M12.5 12.5L16.5 16.5" /></svg>
         <span>Commands</span>
         <kbd>⌘K</kbd>
+      </button>
+      <button class="labeled" aria-haspopup="menu" aria-expanded={menu?.target.kind === 'add'} onclick={openAdd} {@attach tooltip('Add a zoom, camera layout, or mask at the playhead')}>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" /></svg>
+        <span>Add</span>
       </button>
     </div>
     <div class="center">
@@ -618,7 +632,7 @@
 </section>
 
 {#if menu}
-  <Menu x={menu.x} y={menu.y} t={menu.t} target={menu.target} onclose={closeMenu} />
+  <Menu x={menu.x} y={menu.y} t={menu.t} target={menu.target} trigger={menu.from} onclose={closeMenu} />
 {/if}
 <CommandMenu />
 
@@ -641,6 +655,8 @@
   }
   .left {
     justify-self: start;
+    display: flex;
+    gap: 4px;
   }
   .center {
     display: flex;
@@ -707,7 +723,7 @@
     fill: currentColor;
     stroke: none;
   }
-  .commands {
+  .labeled {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -716,11 +732,12 @@
     border-radius: var(--radius-sm);
     color: var(--text-dim);
   }
-  .commands:hover {
+  .labeled:hover,
+  .labeled[aria-expanded='true'] {
     background: var(--surface-50-hover);
     color: var(--text);
   }
-  .commands svg {
+  .labeled svg {
     width: 15px;
     height: 15px;
   }

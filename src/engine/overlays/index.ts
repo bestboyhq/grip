@@ -1,6 +1,7 @@
 // Owner: compositor (overlays). Click effects, drawn strokes, keystroke groups, and caption pages in
 // OUTPUT time, plus drawOverlays() which paints them with Canvas 2D (text and keycaps get the
-// platform's font rendering) for the GPU compositor to layer on top.
+// platform's font rendering) for the GPU compositor to layer on top. The ripple is the exception:
+// it bends the recording itself, so the compositor draws it (RIPPLE).
 // prepareOverlays maps every item through the one time map once per project revision and output size;
 // clicksAt / drawingsAt / keystrokesAt / captionAt are pure lookups, so any frame renders alone, in any order.
 
@@ -33,7 +34,13 @@ function upper(a: Array<{ start: number }>, t: number): number {
 
 // ---- Tuning (seconds, and lengths in units: 1 unit = min(w, h) / 1080 px). ----
 
-const CLICK_LIFE: Record<Click['style'], number> = { none: 0, ripple: 0.6, circle: 0.45, shockwave: 0.55 }
+const ramp = (p: number) => { const x = clamp01(p / 0.08); return x * x * (3 - 2 * x) } // the ripple never pops in
+/** The ripple, drawn by the compositor (shaders.wgsl, ripples). At p = age / life its front has run
+ *  out front(p) of `reach` units on a quint ease-out that brakes hard, and it keeps its full
+ *  strength until a late fade. */
+export const RIPPLE = { reach: 220, life: 0.7, front: (p: number) => 1 - (1 - p) ** 5, strength: (p: number) => (1 - p ** 2.5) * ramp(p) }
+
+const CLICK_LIFE: Record<Click['style'], number> = { none: 0, ripple: RIPPLE.life, circle: 0.45, shockwave: 0.55 }
 
 const KEY_H = 78 // keycap height incl. its side
 const KEY_GAP = 8 // between keycaps of one shortcut
@@ -444,17 +451,7 @@ function drawClick(ctx: Ctx, c: Click, u: number) {
   if (p < 0 || p >= 1) return
   const fade = 1 - p
   ctx.save()
-  if (c.style === 'ripple') {
-    // A tinted disc spreads out under its rim; a second, fainter rim trails it.
-    const r = (8 + 40 * easeOut(p)) * u
-    ctx.beginPath()
-    ctx.arc(c.x, c.y, r, 0, TAU)
-    ctx.fillStyle = `rgb(${VIOLET} / ${0.22 * fade})`
-    ctx.fill()
-    ring(ctx, c.x, c.y, r, 2.5 * u, `rgb(${VIOLET} / ${0.85 * fade})`)
-    const q = clamp01((p - 0.22) / 0.78)
-    if (q > 0) ring(ctx, c.x, c.y, (8 + 40 * easeOut(q)) * u, 1.5 * u, `rgb(${VIOLET} / ${0.5 * (1 - q)})`)
-  } else if (c.style === 'circle') {
+  if (c.style === 'circle') {
     // A puck pressed under the cursor: pops in, then lets go. White rim with a dark hairline reads on any screen.
     const r = 20 * u * (0.7 + 0.3 * easeOut(p * 4))
     const a = clamp01(fade * 1.6)

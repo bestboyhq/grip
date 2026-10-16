@@ -4,11 +4,11 @@
 //
 // Passes per frame (shaders.wgsl):
 //   small      screen frame -> quarter-res mip pyramid, only while blur/pixelate masks show
-//   main       background, shadow, device mockup, screen, blur/pixelate masks; motion blur over
+//   main       background, shadow, device mockup, screen with click ripples, blur/pixelate masks; motion blur over
 //              the shutter's view samples
 //   cursor     swept quad, motion blur over the shutter's cursor samples
 //   highlight, loupe, camera
-//   final      overlay canvas (clicks, drawings, keystrokes, captions) on top, dithered to the 8-bit canvas
+//   final      overlay canvas (other click effects, drawings, keystrokes, captions) on top, dithered to the 8-bit canvas
 // Composition happens in an rgba16float frame, so soft shadows and gradients never band before
 // the final dither. Steady state allocates no GPU memory: textures live until the output size or
 // an asset changes, and video frames come in zero-copy as external textures.
@@ -16,7 +16,7 @@
 import { defaultStyle, type Background, type Rect } from '../../shared/project.ts'
 import type { CursorLayer, Scene, View } from '../scene.ts'
 import { deviceGeometry } from '../layout.ts'
-import { drawOverlays } from '../overlays/index.ts'
+import { RIPPLE, drawOverlays } from '../overlays/index.ts'
 import { oklab, parseColor, wallpaper, DEFAULT_WALLPAPER } from '../backgrounds/index.ts'
 import { CURSORS, CURSOR_RES, type BuiltinName } from '../../assets/cursors.ts'
 import { GRADE, gradeLut, parseCube, type Lut } from './lut.ts'
@@ -56,9 +56,10 @@ export interface Motion {
 const A = 0, VIEWT = 1, SCR = 2, SCR2 = 3, SCR3 = 4, DEV = 5, SH = 6, VIEWS = 10, PARTS = 26, MASKS = 74
 const CUR = 106, CURIMG = 107, CURTEX = 108, CURBOX = 109, CURS = 110, LOUPE = 126, LOUPE2 = 127
 const CAM = 128, CAM1 = 129, CAM2 = 130, CAM3 = 131, CAM4 = 132, LUTMIN = 133, LUTMAX = 134, FIN = 135, VP = 136, VIS = 137
-const FRAME_SLOTS = 138
+const CLK = 138
+const FRAME_SLOTS = 142
 const PASS_SLOTS = 27 // `struct Pass`
-const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12
+const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12, MAX_CLICKS = 4
 const MASK_KIND = { blur: 0, pixelate: 1, highlight: 2 } as const
 
 // WebGPU flag values (the TS DOM lib has the types but not these namespaces).
@@ -228,7 +229,7 @@ export class Renderer {
       pipe('vs_full', 'fs_main', HDR, scene),
       pipe('vs_cursor', 'fs_cursor', HDR, scene, over(clear)),
       pipe('vs_full', 'fs_highlight', HDR, scene, over(keep)),
-      pipe('vs_loupe', 'fs_loupe', HDR, scene, over(keep)),
+      pipe('vs_full', 'fs_loupe', HDR, scene, over(keep)),
       pipe('vs_camera', 'fs_camera', HDR, scene, over(clear)),
       pipe('vs_full', 'fs_final', canvasFormat, 'auto'),
       pipe('vs_full', 'fs_small', LDR, 'auto'),
@@ -330,7 +331,7 @@ export class Renderer {
     }
     if (has.loupe) {
       pass.setPipeline(this.pipes.loupe)
-      pass.draw(4)
+      pass.draw(3)
     }
     if (has.camera) {
       pass.setPipeline(this.pipes.camera)
@@ -444,9 +445,15 @@ export class Renderer {
     const l = scene.loupe
     if (l && l.opacity > 0 && l.radius > 0) {
       set(LOUPE, l.x, l.y, l.radius, Math.max(l.scale, 1e-3))
-      set(LOUPE2, Math.min(l.opacity, 1), 1)
+      set(LOUPE2, Math.min(l.opacity, 1), 1, l.stretch.x, l.stretch.y)
       has.loupe = true
     }
+
+    // ponytail: the 4 newest clicks ripple at once; a storage buffer if rapid clicking needs more
+    scene.clicks.filter((c) => c.style === 'ripple').slice(-MAX_CLICKS).forEach((c, i) => {
+      const p = c.age / RIPPLE.life
+      set(CLK + i, c.x, c.y, RIPPLE.reach * scene.unit * RIPPLE.front(p), RIPPLE.strength(p))
+    })
 
     const cam = scene.camera
     if (cam && frames.camera && cam.opacity > 0 && cam.rect.w > 0 && cam.rect.h > 0) {
@@ -465,7 +472,7 @@ export class Renderer {
   }
 
   private paintOverlay(scene: Scene): boolean {
-    if (!scene.clicks.length && !scene.drawings.length && !scene.keystrokes.length && !scene.caption) return false
+    if (!scene.clicks.some((c) => c.style !== 'ripple') && !scene.drawings.length && !scene.keystrokes.length && !scene.caption) return false
     const ctx = this.overlayCtx!
     ctx.clearRect(0, 0, this.w, this.h)
     drawOverlays(ctx, scene)

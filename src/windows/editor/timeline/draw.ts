@@ -130,8 +130,9 @@ const C = {
   grid: 'rgba(255,255,255,0.035)',
   lane: 'rgba(0,0,0,0.2)', // wells sunk into the timeline panel (theme.css --surface-25 over --surface-50)
   hint: '#6c6c75',
-  // Tracks follow the logo's gradient top to bottom: blue clips, violet zooms, mauve layouts, red masks,
-  // orange cuts.
+  // Colours follow the logo's gradient: blue clips, violet zooms, mauve layouts, red masks, orange cuts.
+  // The clips are the one solid colour that anchors the timeline; items are greys tinted a fifth of the way
+  // to their colour, which their grips carry in full.
   clip: '#2e49b4',
   clipTop: '#3754cc', // lit from above: the fill fades from this to clipBottom
   clipBottom: '#263d9c',
@@ -146,10 +147,10 @@ const C = {
   waveEdge: 'rgba(232,238,255,0.72)',
   waveSys: 'rgba(249,120,0,0.5)', // system audio, in front of the mic and warm against the clip
   waveSysEdge: 'rgba(255,154,64,0.95)',
-  zooms: ['#6a5cbf', '#8a7ddb', 'rgba(214,206,255,0.6)'], // fill, end caps, top edge
-  zoomOff: ['#34333d', '#46454f', 'rgba(255,255,255,0.14)'],
-  layouts: ['#8a4f86', '#a9679f', 'rgba(248,196,240,0.5)'],
-  masks: ['#b0443a', '#d15b49', 'rgba(255,196,180,0.5)'],
+  zooms: ['#35334a', '#8f80f5', 'rgba(255,255,255,0.12)'], // fill, grips, top edge
+  zoomOff: ['#2a2a2f', '#55555d', 'rgba(255,255,255,0.08)'],
+  layouts: ['#3b3039', '#cf72bf', 'rgba(255,255,255,0.12)'],
+  masks: ['#3c302e', '#e8604c', 'rgba(255,255,255,0.12)'],
   capHot: 'rgba(255,255,255,0.55)',
   text: '#ffffff',
   textOff: 'rgba(255,255,255,0.45)',
@@ -167,6 +168,7 @@ const C = {
   split: '#ff5f57',
   cut: '#f47a1c',
   cutHot: '#ff9a4a',
+  cutGuide: 'rgba(244,122,28,0.45)',
   cutText: '#3a1600',
   marquee: 'rgba(255,255,255,0.08)',
   marqueeEdge: 'rgba(255,255,255,0.6)',
@@ -407,7 +409,7 @@ function itemLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.It
     ctx.fillText(HINTS[track], (la + lb) / 2, row.y + row.h / 2 + 4)
   }
   const [from, to] = M.visible(l, tA, tB)
-  const run = merger(ctx, C[track][0], row)
+  const run = merger(ctx, C[track][1], row) // slivers are all ends, so they take the grip colour, not the grey
   for (let k = from; k < to; k++) {
     const b = l.blocks[k]
     if (b.b < tA) continue
@@ -448,12 +450,13 @@ function itemBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.I
   ctx.fillStyle = fill
   ctx.fill()
   const hv = s.hover?.kind === 'block' && s.hover.block === b ? s.hover.edge : null
-  const cw = Math.min(6, w / 4)
+  const cw = Math.min(9, w / 4)
   if (b.head || b.tail) {
     ctx.save()
     ctx.clip()
-    if (b.head) cap(ctx, xa, y, cw, h, hv === 'start' ? C.capHot : capColor)
-    if (b.tail) cap(ctx, xb - cw, y, cw, h, hv === 'end' ? C.capHot : capColor)
+    const end = cw < 5 ? cap : grip // a narrow block has no room for grips: its ends fill with the colour
+    if (b.head) end(ctx, xa, y, cw, h, hv === 'start' ? C.capHot : capColor)
+    if (b.tail) end(ctx, xb - cw, y, cw, h, hv === 'end' ? C.capHot : capColor)
     ctx.restore()
   }
   topEdge(ctx, v, xa, y, w, h, radii, edge)
@@ -554,13 +557,18 @@ function cutMarks(ctx: CanvasRenderingContext2D, s: Scene, tA: number, tB: numbe
     right = l + w
     pills.push({ x0: l, x1: l + w, cut: c })
     const hot = s.hover?.kind === 'cut' && s.hover.cut === c
+    if (clips.y - 3 > TOP) {
+      // Lanes above the video: a guide carries the pointer down to the clip's notch.
+      ctx.fillStyle = hot ? C.cutHot : C.cutGuide
+      ctx.fillRect(x - 0.5, TOP, 1, clips.y - 3 - TOP)
+    }
     const y = RULER - 14 // clear of the ruler labels above
     ctx.fillStyle = hot ? C.cutHot : C.cut
     ctx.beginPath()
     ctx.roundRect(l, y, w, 14, 7)
-    ctx.moveTo(x - 4, y + 13)
+    ctx.moveTo(x + 4, y + 13) // clockwise like the pill: an opposite winding would punch a hole where they overlap
     ctx.lineTo(x, y + 18)
-    ctx.lineTo(x + 4, y + 13)
+    ctx.lineTo(x - 4, y + 13)
     ctx.fill()
     ctx.strokeStyle = C.cutText
     ctx.fillStyle = C.cutText
@@ -643,6 +651,14 @@ function dot(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
 function cap(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string) {
   ctx.fillStyle = color
   ctx.fillRect(x, y, w, h)
+}
+
+/** A pill centred in a block's end, where dragging trims it. */
+function grip(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string) {
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.roundRect(x + (w - 3) / 2, y + 7, 3, h - 14, 1.5)
+  ctx.fill()
 }
 
 /** Blocks narrower than a few px merge into runs: at most one rect per pixel column per lane. */

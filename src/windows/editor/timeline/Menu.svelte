@@ -1,14 +1,15 @@
-<!-- Right-click menu for timeline items. Acts on the selection (right-click selects what it hits). -->
+<!-- Right-click menu for timeline items, and the Add menu. Acts on the selection (right-click selects what it hits). -->
 <script lang="ts" module>
   import type { ItemTrack } from './model.ts'
-  export type Target = { kind: 'clips' | ItemTrack } | { kind: 'lane'; track: ItemTrack } | { kind: 'empty' }
+  export type Target = { kind: 'clips' | ItemTrack } | { kind: 'lane'; track: ItemTrack } | { kind: 'empty' } | { kind: 'add' }
 </script>
 
 <script lang="ts">
   import { doc, selection } from '../../../lib/doc.svelte.ts'
   import * as A from './actions.svelte.ts'
 
-  let { x, y, t, target, onclose }: { x: number; y: number; t: number; target: Target; onclose: () => void } = $props()
+  // trigger: the button that opened the menu; pressing it again is not an outside press (it toggles)
+  let { x, y, t, target, trigger, onclose }: { x: number; y: number; t: number; target: Target; trigger?: HTMLElement; onclose: () => void } = $props()
 
   let el: HTMLDivElement | undefined
 
@@ -37,9 +38,13 @@
     node.focus() // arrows move into the items; a mouse-opened menu shows no highlight yet
   }
 
+  // Act first: closing unmounts the menu, and its props (t) read the parent's state, gone by then.
   function act(fn: () => void) {
-    onclose()
-    fn()
+    try {
+      fn()
+    } finally {
+      onclose()
+    }
   }
 
   function onkeydown(e: KeyboardEvent) {
@@ -56,7 +61,7 @@
   }
 
   function outside(e: PointerEvent) {
-    if (!el?.contains(e.target as Node)) onclose()
+    if (!el?.contains(e.target as Node) && !trigger?.contains(e.target as Node)) onclose()
   }
 </script>
 
@@ -124,6 +129,12 @@
     {@render item('Copy', A.copy, '⌘C')}
     <hr />
     {@render item('Delete', A.remove, '⌫')}
+  {:else if target.kind === 'add'}
+    {@render item('Zoom', () => A.add('zooms', t), 'Z')}
+    {#if sources?.camera}
+      {@render item('Camera layout', () => A.add('layouts', t), 'L')}
+    {/if}
+    {@render item('Mask', () => A.add('masks', t))}
   {:else if target.kind === 'lane'}
     {@render item({ zooms: 'Add zoom here', layouts: 'Add camera layout here', masks: 'Add mask here' }[target.track], () => A.add(target.track, t))}
     {@render item('Paste at playhead', A.paste, '⌘V', !A.canPaste())}

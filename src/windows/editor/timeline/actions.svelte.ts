@@ -148,6 +148,10 @@ export function toggleLoupe() {
   const mode = selected('zooms').every((z) => z.mode === 'loupe') ? 'zoom' : 'loupe'
   each('zooms', ids('zooms'), (z) => ({ ...z, mode }))
 }
+export function toggleLiquid() {
+  const rigid = !selected('zooms').filter((z) => z.mode === 'loupe').every((z) => z.rigid)
+  each('zooms', ids('zooms'), (z) => (z.mode === 'loupe' ? { ...z, rigid } : z))
+}
 export const followCursor = () => each('zooms', ids('zooms'), (z) => ({ ...z, target: { kind: 'cursor' } }))
 export function levelToAll() {
   const level = selected('zooms')[0]?.level
@@ -307,6 +311,7 @@ export function timelineCommands(view: { zoom: (f: number) => void; fit: () => v
     c('toggleZoom', 'Zoom', 'Enable / disable zoom', toggleZooms, () => open() && has('zooms'), ['E']),
     c('instant', 'Zoom', 'Instant / animated zoom', toggleInstant, () => open() && has('zooms'), [], { hint: 'cut in and out' }),
     c('loupe', 'Zoom', 'Loupe / full zoom', toggleLoupe, () => open() && has('zooms'), [], { hint: 'magnify in place' }),
+    c('liquid', 'Zoom', 'Liquid / rigid loupe', toggleLiquid, () => open() && selected('zooms').some((z) => z.mode === 'loupe'), [], { hint: 'glass stretches as it moves' }),
     c('followCursor', 'Zoom', 'Zoom follows the cursor', followCursor, () => open() && has('zooms'), [], { hint: 'or click the preview to aim' }),
     c('levelAll', 'Zoom', 'Apply zoom level to all zooms', levelToAll, () => open() && has('zooms')),
 

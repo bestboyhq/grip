@@ -1,10 +1,11 @@
-<!-- Compositor lab: renders a real project through the GPU compositor with style overrides.
+<!-- Compositor lab: renders a real project through the GPU compositor with style overrides,
+     starting from a new project's plain style.
      #/dev?lab=Render&project=<absolute .grip path>
      Frames come from <video> elements (new VideoFrame(video)); the media engine replaces this in the app.
      Driven over CDP through window.lab: set(patch), render(), capture(), png(patch), bench(), offscreen(). -->
 <script lang="ts">
   import { onMount } from 'svelte'
-  import type { Aspect, CameraLayoutKind, Mask, Project, Style } from '../../../shared/project.ts'
+  import { defaultStyle, type Aspect, type CameraLayoutKind, type Mask, type Project, type Style } from '../../../shared/project.ts'
   import { parseEvents, type InputEvent } from '../../../shared/events.ts'
   import { outputSize, prepare, sceneAt, type FaceSample, type Scene } from '../../../engine/scene.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
@@ -19,17 +20,18 @@
   let { params }: { params: URLSearchParams } = $props()
   const bundle = $derived(params.get('project') ?? '')
 
+  const plain = defaultStyle() // the lab starts where a new project does: the recording edge to edge
   const s = $state({
     t: 3,
     height: 1080,
     aspect: 'auto' as string,
-    bg: 'wallpaper:dusk',
-    blur: 0,
-    padding: 80,
-    radius: 14,
-    inset: 0,
-    shadow: 0.6,
-    device: 'none' as Style['device'],
+    bg: 'color:#000000', // plain.background
+    blur: plain.backgroundBlur,
+    padding: plain.padding,
+    radius: plain.radius,
+    inset: plain.inset,
+    shadow: plain.shadow,
+    device: plain.device,
     layout: 'pip' as CameraLayoutKind,
     shape: 'rounded' as Style['camera']['shape'],
     position: 'bottom-right' as Style['camera']['position'],
@@ -39,6 +41,12 @@
     zx: 0.5,
     zy: 0.5,
     loupe: false,
+    lx: -1, // loupe target, fraction of the screen; the cursor when < 0
+    ly: -1,
+    lmag: 2,
+    lstart: 0, // source seconds the loupe zoom starts (render just after it to see it appear)
+    lrigid: false,
+    lsize: 260,
     motion: 0, // simulated zoom speed: scale change across the shutter
     cursor: '' as string, // built-in override: arrow, pointer, ibeam, touch
     set: 'system' as NonNullable<Style['cursor']['set']>,
@@ -51,6 +59,8 @@
     followFace: false,
     lut: true,
     overlay: false,
+    click: 'ripple' as Style['cursor']['click'],
+    zooms: true, // the project's own zooms, when no lab loupe replaces them
   })
   let status = $state('loading')
   const thumbs = new SvelteMap<string, string>()
@@ -82,9 +92,12 @@
     Object.assign(st.camera, { shape: s.shape, mirror: s.mirror, position: s.position, removeBackground: s.removeBg, followFace: s.followFace })
     if (!s.lut) st.camera.lut = undefined
     st.cursor.size = s.cursorSize
+    st.cursor.click = s.click
+    if (!s.zooms) p.zooms = []
     const d = p.sources.duration
     p.layouts = s.layout === 'pip' ? [] : [{ id: 'l', start: s.layoutStart, end: d, kind: s.layout }]
     const mask = (kind: Mask['kind'], x: number, y: number, w: number, h: number): Mask => ({ id: kind, start: 0, end: d, kind, rect: { x, y, w, h } })
+    if (s.loupe) p.zooms = [{ id: 'loupe', start: s.lstart, end: d, level: s.lmag, target: s.lx < 0 ? { kind: 'cursor' } : { kind: 'point', x: s.lx, y: s.ly }, mode: 'loupe', rigid: s.lrigid, size: s.lsize, enabled: true }]
     p.masks = s.masks ? [mask('blur', 0.27, 0.19, 0.24, 0.07), mask('pixelate', 0.27, 0.36, 0.36, 0.07), mask('highlight', 0.24, 0.46, 0.5, 0.2)] : []
     return p
   }
@@ -110,7 +123,6 @@
     }
     const art = CURSORS[s.cursor as BuiltinName]
     if (scene.cursor && art) Object.assign(scene.cursor, { image: s.cursor, hotX: art.hotX, hotY: art.hotY })
-    if (s.loupe && scene.cursor) scene.loupe = { x: scene.cursor.x, y: scene.cursor.y, radius: 150 * scene.unit, scale: 2.2, opacity: 1 }
     if (s.overlay) scene.keystrokes = [{ keys: ['⌘', 'K'], opacity: 1, age: 0.2, count: 1, y: height - 80 * scene.unit, size: 1 }]
     if (s.motion) {
       const n = 9
@@ -263,6 +275,7 @@
     <label>height <select bind:value={s.height}><option value={480}>480</option><option value={720}>720</option><option value={1080}>1080</option><option value={2160}>2160</option></select></label>
     <label>aspect <select bind:value={s.aspect}>{#each ['auto', '16:9', '9:16', '4:5', '1:1', '{"w":21,"h":9}'] as a}<option value={a}>{a}</option>{/each}</select></label>
     <label>background <select bind:value={s.bg}>
+      <option value="color:#000000">Black (default)</option>
       {#each WALLPAPERS as w}<option value={'wallpaper:' + w.id}>{w.name}</option>{/each}
       <option value="gradient:#ff7a59,#7b5cff">Gradient</option>
       <option value="color:#202227">Dark color</option>
@@ -281,10 +294,18 @@
     <label><input type="checkbox" bind:checked={s.mirror} /> mirror</label>
     <label><input type="checkbox" bind:checked={s.masks} /> masks</label>
     <label><input type="checkbox" bind:checked={s.loupe} /> loupe</label>
+    <label>loupe x <input type="range" min="-0.01" max="1" step="0.01" bind:value={s.lx} /></label>
+    <label>loupe y <input type="range" min="-0.01" max="1" step="0.01" bind:value={s.ly} /></label>
+    <label>loupe level <input type="range" min="1" max="4" step="0.1" bind:value={s.lmag} /> {s.lmag}</label>
+    <label>loupe start <input type="range" min="0" max="23" step="0.05" bind:value={s.lstart} /> {s.lstart}</label>
+    <label><input type="checkbox" bind:checked={s.lrigid} /> rigid loupe</label>
+    <label>loupe size <input type="range" min="60" max="400" step="10" bind:value={s.lsize} /> {s.lsize}</label>
     <label><input type="checkbox" bind:checked={s.removeBg} /> remove background</label>
     <label><input type="checkbox" bind:checked={s.followFace} /> follow face</label>
     <label><input type="checkbox" bind:checked={s.lut} /> LUT</label>
     <label><input type="checkbox" bind:checked={s.overlay} /> overlay</label>
+    <label>click <select bind:value={s.click}>{#each ['none', 'ripple', 'circle', 'shockwave'] as k}<option>{k}</option>{/each}</select></label>
+    <label><input type="checkbox" bind:checked={s.zooms} /> project zooms</label>
     <label>zoom <input type="range" min="1" max="4" step="0.05" bind:value={s.zoom} /> {s.zoom}</label>
     <label>motion <input type="range" min="0" max="0.3" step="0.01" bind:value={s.motion} /></label>
     <label>cursor set <select bind:value={s.set}><option>system</option><option>builtin</option><option>touch</option></select></label>
