@@ -44,6 +44,7 @@
     lmag: 2,
     lstart: 0, // source seconds the loupe zoom starts (render just after it to see it appear)
     lrigid: false,
+    lsize: 260,
     motion: 0, // simulated zoom speed: scale change across the shutter
     cursor: '' as string, // built-in override: arrow, pointer, ibeam, touch
     set: 'system' as NonNullable<Style['cursor']['set']>,
@@ -90,7 +91,7 @@
     const d = p.sources.duration
     p.layouts = s.layout === 'pip' ? [] : [{ id: 'l', start: s.layoutStart, end: d, kind: s.layout }]
     const mask = (kind: Mask['kind'], x: number, y: number, w: number, h: number): Mask => ({ id: kind, start: 0, end: d, kind, rect: { x, y, w, h } })
-    if (s.loupe) p.zooms = [{ id: 'loupe', start: s.lstart, end: d, level: s.lmag, target: s.lx < 0 ? { kind: 'cursor' } : { kind: 'point', x: s.lx, y: s.ly }, mode: 'loupe', rigid: s.lrigid, enabled: true }]
+    if (s.loupe) p.zooms = [{ id: 'loupe', start: s.lstart, end: d, level: s.lmag, target: s.lx < 0 ? { kind: 'cursor' } : { kind: 'point', x: s.lx, y: s.ly }, mode: 'loupe', rigid: s.lrigid, size: s.lsize, enabled: true }]
     p.masks = s.masks ? [mask('blur', 0.27, 0.19, 0.24, 0.07), mask('pixelate', 0.27, 0.36, 0.36, 0.07), mask('highlight', 0.24, 0.46, 0.5, 0.2)] : []
     return p
   }
@@ -291,6 +292,7 @@
     <label>loupe level <input type="range" min="1" max="4" step="0.1" bind:value={s.lmag} /> {s.lmag}</label>
     <label>loupe start <input type="range" min="0" max="23" step="0.05" bind:value={s.lstart} /> {s.lstart}</label>
     <label><input type="checkbox" bind:checked={s.lrigid} /> rigid loupe</label>
+    <label>loupe size <input type="range" min="60" max="400" step="10" bind:value={s.lsize} /> {s.lsize}</label>
     <label><input type="checkbox" bind:checked={s.removeBg} /> remove background</label>
     <label><input type="checkbox" bind:checked={s.followFace} /> follow face</label>
     <label><input type="checkbox" bind:checked={s.lut} /> LUT</label>

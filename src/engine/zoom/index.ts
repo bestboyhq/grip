@@ -57,7 +57,8 @@ const FAR_JUMPS_PER_S = 0.5 // an auto zoom panning a half view more often than 
 const LOUPE_SPRING: SpringConfig = { stiffness: 300, damping: 2 * Math.sqrt(300), mass: 1 } // ~0.5 s fades
 const LOUPE_FADE = springDuration(LOUPE_SPRING)
 const LOUPE_FOLLOW: SpringConfig = { stiffness: 120, damping: 2 * 0.65 * Math.sqrt(120), mass: 1 } // trails the cursor softly, a little overshoot
-const LOUPE_RADIUS = 240 // units
+/** Loupe lens radius in units (Zoom.size): what fits depends on what it shows, a button or a paragraph. */
+export const LOUPE_SIZE = { min: 60, max: 400, initial: 260 }
 const LOUPE_STRETCH = 0.08 // a liquid lens grows this much longer along its motion per radius/s of speed
 const LOUPE_MAX_STRETCH = 0.35
 const AT_START = 1e-3 // s: a zoom starting this close to output 0 starts zoomed in
@@ -213,9 +214,11 @@ function springStep(dt: number, spring: SpringConfig): [number, number, number, 
 
 export function prepareZoom(input: SceneInput, map: TimeMap, layout: ReturnType<typeof prepareLayout>, cursor: ReturnType<typeof prepareCursor>, path = zoomPath(input, map, layout, cursor)) {
   const { width: W, height: H } = input
-  const radius = (LOUPE_RADIUS * Math.min(W, H)) / 1080
-  const loupes = pieces(input.project.zooms.filter((z) => z.enabled && z.mode === 'loupe'), map).map((p) => ({ ...p, path: loupePath(p, layout, cursor, radius) }))
-  return { W, H, map, layout, cursor, loupes, radius, ...path }
+  const loupes = pieces(input.project.zooms.filter((z) => z.enabled && z.mode === 'loupe'), map).map((p) => {
+    const radius = (clamp(Number(p.zoom.size) || LOUPE_SIZE.initial, LOUPE_SIZE.min, LOUPE_SIZE.max) * Math.min(W, H)) / 1080
+    return { ...p, radius, path: loupePath(p, layout, cursor, radius) }
+  })
+  return { W, H, map, layout, cursor, loupes, ...path }
 }
 
 /** Where the lens of loupe piece p sits, every DT from its start through its fade out: x, y and
@@ -414,7 +417,7 @@ export function zoomAmount(z: ReturnType<typeof prepareZoom>, t: number, v: View
 export function loupeAt(z: ReturnType<typeof prepareZoom>, t: number): Loupe | null {
   const piece = z.loupes.findLast((p) => p.a <= t && t < p.b + (p.zoom.instant ? 0 : LOUPE_FADE))
   if (!piece || !screenAt(z.layout, t)) return null
-  const { a, b, zoom, path } = piece
+  const { a, b, zoom, path, radius } = piece
   const fadeIn = zoom.instant || a < AT_START ? 1 : springProgress(t - a, LOUPE_SPRING)
   const fadeOut = t < b ? 0 : springProgress(t - b, LOUPE_SPRING)
   const p = fadeIn * (1 - fadeOut)
@@ -424,9 +427,9 @@ export function loupeAt(z: ReturnType<typeof prepareZoom>, t: number): Loupe | n
   const at = (o: number) => (n < 2 ? path[o] : mix(path[4 * k + o], path[4 * (k + 1) + o], x - k))
   const vx = at(2), vy = at(3)
   const speed = Math.hypot(vx, vy)
-  const e = zoom.rigid ? 0 : Math.min(LOUPE_MAX_STRETCH, (LOUPE_STRETCH * speed) / z.radius)
+  const e = zoom.rigid ? 0 : Math.min(LOUPE_MAX_STRETCH, (LOUPE_STRETCH * speed) / radius)
   const stretch = speed > 1e-6 ? { x: (vx / speed) * e, y: (vy / speed) * e } : { x: 0, y: 0 }
-  return { x: at(0), y: at(1), radius: z.radius, scale: mix(1, Math.max(1, zoom.level), p), opacity: p, stretch }
+  return { x: at(0), y: at(1), radius, scale: mix(1, Math.max(1, zoom.level), p), opacity: p, stretch }
 }
 
 /** Auto zooms (source time) from clicks and typing: merge activity close in time, start LEAD before

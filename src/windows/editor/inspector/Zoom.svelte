@@ -3,7 +3,7 @@
   import { doc, edit, selection } from '../../../lib/doc.svelte.ts'
   import { screenCrop, type Zoom } from '../../../shared/project.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
-  import { setAutoZoom } from '../../../engine/zoom/index.ts'
+  import { LOUPE_SIZE, setAutoZoom } from '../../../engine/zoom/index.ts'
   import Section from '../../../ui/Section.svelte'
   import Segmented from '../../../ui/Segmented.svelte'
   import Slider from '../../../ui/Slider.svelte'
@@ -65,6 +65,7 @@
       ]}
     />
     {#if z.mode === 'loupe'}
+      <Slider label="Size" value={z.size ?? LOUPE_SIZE.initial} min={LOUPE_SIZE.min} max={LOUPE_SIZE.max} step={10} initial={LOUPE_SIZE.initial} onchange={(v, m) => each((s) => { if (s.mode === 'loupe') s.size = v }, m)} />
       <Toggle label="Liquid" hint="The glass stretches as it moves." checked={!z.rigid} onchange={(v) => each((s) => { if (s.mode === 'loupe') s.rigid = !v })} />
     {/if}
     <Toggle label="Instant" hint="Cuts in and out instead of animating." checked={!!z.instant} onchange={(v) => each((s) => (s.instant = v))} />

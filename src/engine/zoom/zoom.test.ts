@@ -246,6 +246,12 @@ test('loupe fades in and out, magnifies, and follows its target', () => {
   assert.ok(on.stretch.x > 0 && Math.abs(on.stretch.y) < 1e-6, 'liquid: stretches along its motion')
   const rigid = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 2.5, rigid: true })], events, { duration: 10 })
   assert.deepEqual(loupeAt(rigid.p.zoom, 3.5)!.stretch, { x: 0, y: 0 })
+  // Size is the radius in units (px at 1080p; this output is 1200 high), clamped to its range.
+  const sized = (size?: number) => loupeAt(setup([zoom({ start: 2, end: 5, mode: 'loupe', size })], events, { duration: 10 }).p.zoom, 3.5)!.radius
+  near(sized(), (260 * 1200) / 1080, 1e-9)
+  near(sized(100), (100 * 1200) / 1080, 1e-9)
+  near(sized(5000), (400 * 1200) / 1080, 1e-9)
+  near(sized(NaN), (260 * 1200) / 1080, 1e-9)
   const fadeOut = loupeAt(p.zoom, 5.1)!
   assert.ok(fadeOut.opacity > 0 && fadeOut.opacity < 1)
   assert.equal(loupeAt(p.zoom, 6), null)

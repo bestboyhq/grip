@@ -66,6 +66,7 @@ export interface Zoom {
   instant?: boolean // cut in/out instead of animating
   mode?: 'zoom' | 'loupe' // loupe = magnify a region in place (glass), default 'zoom'
   rigid?: boolean // loupe: the glass keeps its round shape instead of stretching like liquid as it moves
+  size?: number // loupe: lens radius in units (px at 1080p), default and range in zoom's LOUPE_SIZE
   auto?: boolean // generated from clicks/typing
   enabled: boolean
 }
