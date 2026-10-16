@@ -566,9 +566,9 @@ function cutMarks(ctx: CanvasRenderingContext2D, s: Scene, tA: number, tB: numbe
     ctx.fillStyle = hot ? C.cutHot : C.cut
     ctx.beginPath()
     ctx.roundRect(l, y, w, 14, 7)
-    ctx.moveTo(x - 4, y + 13)
+    ctx.moveTo(x + 4, y + 13) // clockwise like the pill: an opposite winding would punch a hole where they overlap
     ctx.lineTo(x, y + 18)
-    ctx.lineTo(x + 4, y + 13)
+    ctx.lineTo(x - 4, y + 13)
     ctx.fill()
     ctx.strokeStyle = C.cutText
     ctx.fillStyle = C.cutText
