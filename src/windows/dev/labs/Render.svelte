@@ -39,6 +39,10 @@
     zx: 0.5,
     zy: 0.5,
     loupe: false,
+    lx: -1, // loupe target, fraction of the screen; the cursor when < 0
+    ly: -1,
+    lmag: 2,
+    lstart: 0, // source seconds the loupe zoom starts (render just after it to see it appear)
     motion: 0, // simulated zoom speed: scale change across the shutter
     cursor: '' as string, // built-in override: arrow, pointer, ibeam, touch
     set: 'system' as NonNullable<Style['cursor']['set']>,
@@ -85,6 +89,7 @@
     const d = p.sources.duration
     p.layouts = s.layout === 'pip' ? [] : [{ id: 'l', start: s.layoutStart, end: d, kind: s.layout }]
     const mask = (kind: Mask['kind'], x: number, y: number, w: number, h: number): Mask => ({ id: kind, start: 0, end: d, kind, rect: { x, y, w, h } })
+    if (s.loupe) p.zooms = [{ id: 'loupe', start: s.lstart, end: d, level: s.lmag, target: s.lx < 0 ? { kind: 'cursor' } : { kind: 'point', x: s.lx, y: s.ly }, mode: 'loupe', enabled: true }]
     p.masks = s.masks ? [mask('blur', 0.27, 0.19, 0.24, 0.07), mask('pixelate', 0.27, 0.36, 0.36, 0.07), mask('highlight', 0.24, 0.46, 0.5, 0.2)] : []
     return p
   }
@@ -110,7 +115,6 @@
     }
     const art = CURSORS[s.cursor as BuiltinName]
     if (scene.cursor && art) Object.assign(scene.cursor, { image: s.cursor, hotX: art.hotX, hotY: art.hotY })
-    if (s.loupe && scene.cursor) scene.loupe = { x: scene.cursor.x, y: scene.cursor.y, radius: 150 * scene.unit, scale: 2.2, opacity: 1 }
     if (s.overlay) scene.keystrokes = [{ keys: ['⌘', 'K'], opacity: 1, age: 0.2, count: 1, y: height - 80 * scene.unit, size: 1 }]
     if (s.motion) {
       const n = 9
@@ -281,6 +285,10 @@
     <label><input type="checkbox" bind:checked={s.mirror} /> mirror</label>
     <label><input type="checkbox" bind:checked={s.masks} /> masks</label>
     <label><input type="checkbox" bind:checked={s.loupe} /> loupe</label>
+    <label>loupe x <input type="range" min="-0.01" max="1" step="0.01" bind:value={s.lx} /></label>
+    <label>loupe y <input type="range" min="-0.01" max="1" step="0.01" bind:value={s.ly} /></label>
+    <label>loupe level <input type="range" min="1" max="4" step="0.1" bind:value={s.lmag} /> {s.lmag}</label>
+    <label>loupe start <input type="range" min="0" max="23" step="0.05" bind:value={s.lstart} /> {s.lstart}</label>
     <label><input type="checkbox" bind:checked={s.removeBg} /> remove background</label>
     <label><input type="checkbox" bind:checked={s.followFace} /> follow face</label>
     <label><input type="checkbox" bind:checked={s.lut} /> LUT</label>

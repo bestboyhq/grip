@@ -348,15 +348,51 @@ fn dimAt(u: vec2f, aa: f32) -> f32 {
   return vec4f(0.0, 0.0, 0.0, d);
 }
 
-// ---- Glass loupe: the zoomed layer magnified in place, masks and highlight included ----
+// ---- Glass loupe: a lens over the zoomed layer, masks, cursor and highlight included ----
+// A flat-topped glass disc with a rounded bevel. The flat top magnifies; across the bevel the
+// content compresses back to 1x, so at the rim it meets the content around the lens, the way a
+// drop of water sits on a screen. Lit by one key light from above: a specular crescent on the
+// bevel facing it, a dimmer one where light leaves the far side, Fresnel reflection at grazing
+// angles, a little dispersion where the bevel bends hardest, and a light shadow, since glass
+// passes most of the light that hits it.
+
+const BEVEL = 0.22; // bevel width, fraction of the radius
+const KEY = vec3f(-0.38, -0.82, 0.43); // key light direction (output px axes, z toward the viewer)
 
 fn loupeBox() -> vec4f {
   let c = toOut(F.loupe.xy, F.viewT.xyz);
-  let r = (F.loupe.z + 60.0 * F.a.z) * F.viewT.z;
+  let r = (F.loupe.z + 90.0 * F.a.z) * F.viewT.z; // room for the shadow: 14 down + 3 sigma of 24
   return vec4f(c - r, c + r);
 }
 
 @vertex fn vs_loupe(@builtin(vertex_index) i: u32) -> VO { return box(i, loupeBox()); }
+
+// Radius shown at radius rho (both fractions of the lens radius, from its center), and its
+// derivative: magnified on the flat top, then a monotone cubic across the bevel that ends at the
+// rim on the content just outside it, compressed hardest there. At magnification 1 it is flat glass.
+fn lensMap(rho: f32, mag: f32) -> vec2f {
+  let e = 1.0 - BEVEL;
+  if (rho <= e) { return vec2f(rho / mag, 1.0 / mag); }
+  let s = min((rho - e) / BEVEL, 1.0);
+  let p0 = e / mag;
+  let m0 = BEVEL / mag;
+  let m1 = (1.0 - p0) * (1.0 + 1.8 * clamp(mag - 1.0, 0.0, 1.0)); // under 3x the secant: stays monotone
+  let s2 = s * s;
+  let s3 = s2 * s;
+  let f = (2.0 * s3 - 3.0 * s2 + 1.0) * p0 + (s3 - 2.0 * s2 + s) * m0 + (3.0 * s2 - 2.0 * s3) + (s3 - s2) * m1;
+  let df = (6.0 * s2 - 6.0 * s) * p0 + (3.0 * s2 - 4.0 * s + 1.0) * m0 + (6.0 * s - 6.0 * s2) + (3.0 * s2 - 2.0 * s) * m1;
+  return vec2f(f, df / BEVEL);
+}
+
+// Everything the lens shows at unzoomed point um: the zoomed layer, the cursor, the highlight dim.
+fn underLens(um: vec2f, aa: f32, vs: f32) -> vec3f {
+  var col = zoomed(um, aa).rgb;
+  if (F.cur.w > 0.5) {
+    let k = cursorAt(um, curAt(0.5), vs) * F.cur.y;
+    col = k.rgb + col * (1.0 - k.a);
+  }
+  return col * (1.0 - dimAt(um, aa));
+}
 
 @fragment fn fs_loupe(v: VO) -> @location(0) vec4f {
   let vt = F.viewT.xyz;
@@ -367,26 +403,51 @@ fn loupeBox() -> vec4f {
   let R = F.loupe.z;
   let mag = F.loupe.w;
   let op = F.loupe2.x;
-  let d = length(u - c);
-  let shadow = boxShadow(u - c - vec2f(0.0, 8.0 * unit), vec2f(R), 16.0 * unit, R) * 0.45 * op;
+  let q = u - c;
+  let d = length(q);
+  let key = boxShadow(q - vec2f(0.0, 14.0 * unit), vec2f(R), 24.0 * unit, R) * 0.24;
+  let contact = boxShadow(q - vec2f(0.0, 1.5 * unit), vec2f(R), 2.5 * unit, R) * 0.14;
+  let shadow = (1.0 - (1.0 - key) * (1.0 - contact)) * op;
   let cv = cover(d - R, aa);
   if (cv <= 0.0) { return vec4f(0.0, 0.0, 0.0, shadow); }
+
   let rho = min(d / R, 1.0);
-  let um = c + (u - c) / mag * (1.0 + 0.16 * pow(rho, 4.0)); // a touch of barrel near the rim
-  var col = zoomed(um, aa / mag).rgb;
-  if (F.cur.w > 0.5) {
-    let k = cursorAt(um, curAt(0.5), vt.z * mag) * F.cur.y;
-    col = k.rgb + col * (1.0 - k.a);
+  let dir = q / max(d, 1e-4);
+  let m = lensMap(rho, mag);
+  let foot = aa * max(m.y, m.x / max(rho, 1e-4)); // unzoomed px per output px: the bevel minifies
+  let um = c + dir * (m.x * R);
+  var col = underLens(um, foot, vt.z / foot * aa);
+  let s = clamp((rho - (1.0 - BEVEL)) / BEVEL, 0.0, 1.0); // 0 on the flat top, 1 at the rim
+  if (s > 0.0) {
+    // Dispersion: red bends least, blue most, apart by up to a few output px at the rim.
+    let ca = dir * (1.3 * unit * s * s * m.y * clamp(mag - 1.0, 0.0, 1.0));
+    col = vec3f(underLens(um + ca, foot, vt.z / foot * aa).r, col.g, underLens(um - ca, foot, vt.z / foot * aa).b);
   }
-  col *= 1.0 - dimAt(um, aa / mag);
-  col *= 1.0 - 0.16 * smoothstep(0.72, 1.0, rho); // glass edge falloff
-  let dir = (u - c) / max(d, 1e-4);
-  let sheen = smoothstep(0.25, 1.0, dot(dir, vec2f(-0.7071, -0.7071))) * smoothstep(0.6, 0.97, rho) * 0.22;
-  col = mix(col, vec3f(1.0), sheen);
-  let ring = cover(abs(d - R + 1.25 * unit) - 1.25 * unit, aa);
-  col = mix(col, vec3f(1.0), ring * 0.9);
-  let a = cv * op;
-  return vec4f(col * a, a) + vec4f(0.0, 0.0, 0.0, shadow) * (1.0 - a);
+
+  // Surface normal of the bevel: flat on top, turning to near vertical at the rim.
+  let tilt = 1.5 * pow(s, 2.4);
+  let n = vec3f(dir * sin(tilt), cos(tilt));
+  let L = normalize(KEY);
+  let back = normalize(vec3f(-L.xy, L.z));
+  let spec = pow(max(dot(n, normalize(L + vec3f(0.0, 0.0, 1.0))), 0.0), 260.0);
+  let spec2 = pow(max(dot(n, normalize(back + vec3f(0.0, 0.0, 1.0))), 0.0), 260.0) * 0.5;
+  let fres = 0.04 + 0.96 * pow(1.0 - n.z, 5.0);
+  let env = mix(vec3f(1.0), vec3f(0.55, 0.58, 0.64), smoothstep(-0.7, 0.9, dir.y)); // bright sky above, the room below
+  var g = col * mix(vec3f(1.0), vec3f(0.9, 0.93, 0.96), smoothstep(0.35, 1.0, s) * 0.5); // a longer path through the glass
+  g = mix(g, env, fres * 0.28) + vec3f(spec + spec2);
+  // The rim: a crisp line catching the light where it faces it, and elsewhere the thin dark edge
+  // glass shows where light escapes sideways, so the lens holds its outline on white.
+  let edge = 1.0 - smoothstep(0.0, max(1.5 * unit, aa), R - d);
+  let facing = dot(dir, normalize(L.xy));
+  let lit = 0.15 + 0.85 * pow(max(facing, 0.0), 2.0) + 0.35 * pow(max(-facing, 0.0), 4.0);
+  g = mix(g, vec3f(0.18, 0.2, 0.24), edge * 0.32 * (1.0 - lit));
+  g = mix(g, vec3f(1.0), edge * lit * 0.9);
+
+  // Appearing, the magnification grows from 1, where the lens shows exactly what lies under it, so
+  // the content stays opaque and swells in place while only the glass fades in. Fading the content
+  // too would show it twice, magnified over unmagnified.
+  col = mix(col, g, op);
+  return vec4f(col * cv, cv) + vec4f(0.0, 0.0, 0.0, shadow) * (1.0 - cv);
 }
 
 // ---- Camera ----

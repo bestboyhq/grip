@@ -13,6 +13,7 @@ Turning clicks and typing into camera direction.
 - A zoom that starts on the first frame starts zoomed in.
 - Vertical output follows the cursor continuously, since the frame is narrower than the source.
 - Glass loupe magnifies a region in place when a full zoom would move too much of the screen.
+- A loupe appears by growing its magnification from 1 with its content opaque; fading its content in shows the screen twice, magnified over unmagnified.
 - Zoomed text stays sharp: capture at native resolution, and past the source pixel density upscale with a local super-resolution model trained on UI text.
 
 Done when the zoomed view moves smoothly, keeps the cursor in frame, and keeps every clicked element whole.
