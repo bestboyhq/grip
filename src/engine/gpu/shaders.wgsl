@@ -21,7 +21,7 @@ struct Frame {
   curBox: vec4f,   // swept bounds x0, y0, x1, y1 (output px)
   curS: array<vec4f, 16>,   // shutter samples of the cursor: x, y (unzoomed), unzoomed px per image px, angle
   loupe: vec4f,    // center x, y (unzoomed), radius (unzoomed px), magnification
-  loupe2: vec4f,   // opacity, has loupe
+  loupe2: vec4f,   // opacity, has loupe, stretch (along the motion, length = elongation)
   cam: vec4f,      // rect (output px)
   cam1: vec4f,     // radius, shadow, opacity, mirror
   cam2: vec4f,     // crop (normalized)
@@ -351,17 +351,17 @@ fn dimAt(u: vec2f, aa: f32) -> f32 {
 // ---- Glass loupe: a lens over the zoomed layer, masks, cursor and highlight included ----
 // A flat-topped glass disc with a rounded bevel. The flat top magnifies; across the bevel the
 // content compresses back to 1x, so at the rim it meets the content around the lens, the way a
-// drop of water sits on a screen. Lit by one key light from above: a specular crescent on the
-// bevel facing it, a dimmer one where light leaves the far side, Fresnel reflection at grazing
-// angles, a little dispersion where the bevel bends hardest, and a light shadow, since glass
-// passes most of the light that hits it.
+// drop of water sits on a screen: no outline, no shadow, the bending is the edge. Lit by one key
+// light from above: a specular crescent on the bevel facing it, a dimmer one where light leaves
+// the far side, Fresnel reflection at grazing angles, and a little dispersion where the bevel
+// bends hardest. Moving, the drop stretches along its motion, keeping its area.
 
 const BEVEL = 0.22; // bevel width, fraction of the radius
 const KEY = vec3f(-0.38, -0.82, 0.43); // key light direction (output px axes, z toward the viewer)
 
 fn loupeBox() -> vec4f {
   let c = toOut(F.loupe.xy, F.viewT.xyz);
-  let r = (F.loupe.z + 90.0 * F.a.z) * F.viewT.z; // room for the shadow: 14 down + 3 sigma of 24
+  let r = F.loupe.z * (1.0 + length(F.loupe2.zw)) * F.viewT.z + 2.0;
   return vec4f(c - r, c + r);
 }
 
@@ -404,18 +404,22 @@ fn underLens(um: vec2f, aa: f32, vs: f32) -> vec3f {
   let mag = F.loupe.w;
   let op = F.loupe2.x;
   let q = u - c;
-  let d = length(q);
-  let key = boxShadow(q - vec2f(0.0, 14.0 * unit), vec2f(R), 24.0 * unit, R) * 0.24;
-  let contact = boxShadow(q - vec2f(0.0, 1.5 * unit), vec2f(R), 2.5 * unit, R) * 0.14;
-  let shadow = (1.0 - (1.0 - key) * (1.0 - contact)) * op;
+  // The stretched drop: an ellipse 1 + k long along the motion and 1 / sqrt(1 + k) across it.
+  let k = length(F.loupe2.zw);
+  let ax = select(vec2f(1.0, 0.0), F.loupe2.zw / max(k, 1e-6), k > 1e-6);
+  let along = dot(q, ax);
+  let sq = ax * (along / (1.0 + k)) + (q - ax * along) * sqrt(1.0 + k);
+  let d = length(sq);
   let cv = cover(d - R, aa);
-  if (cv <= 0.0) { return vec4f(0.0, 0.0, 0.0, shadow); }
+  if (cv <= 0.0) { return vec4f(0.0); }
 
   let rho = min(d / R, 1.0);
-  let dir = q / max(d, 1e-4);
+  let gq = ax * (dot(sq, ax) / (1.0 + k)) + (sq - ax * dot(sq, ax)) * sqrt(1.0 + k); // gradient of d: the rim's normal
+  let dir = gq / max(length(gq), 1e-6);
   let m = lensMap(rho, mag);
-  let foot = aa * max(m.y, m.x / max(rho, 1e-4)); // unzoomed px per output px: the bevel minifies
-  let um = c + dir * (m.x * R);
+  let shown = m.x / max(rho, 1e-4); // 1 / mag on the flat top: the magnification stays round when stretched
+  let foot = aa * max(m.y, shown); // unzoomed px per output px: the bevel minifies
+  let um = c + q * shown;
   var col = underLens(um, foot, vt.z / foot * aa);
   let s = clamp((rho - (1.0 - BEVEL)) / BEVEL, 0.0, 1.0); // 0 on the flat top, 1 at the rim
   if (s > 0.0) {
@@ -435,19 +439,12 @@ fn underLens(um: vec2f, aa: f32, vs: f32) -> vec3f {
   let env = mix(vec3f(1.0), vec3f(0.55, 0.58, 0.64), smoothstep(-0.7, 0.9, dir.y)); // bright sky above, the room below
   var g = col * mix(vec3f(1.0), vec3f(0.9, 0.93, 0.96), smoothstep(0.35, 1.0, s) * 0.5); // a longer path through the glass
   g = mix(g, env, fres * 0.28) + vec3f(spec + spec2);
-  // The rim: a crisp line catching the light where it faces it, and elsewhere the thin dark edge
-  // glass shows where light escapes sideways, so the lens holds its outline on white.
-  let edge = 1.0 - smoothstep(0.0, max(1.5 * unit, aa), R - d);
-  let facing = dot(dir, normalize(L.xy));
-  let lit = 0.15 + 0.85 * pow(max(facing, 0.0), 2.0) + 0.35 * pow(max(-facing, 0.0), 4.0);
-  g = mix(g, vec3f(0.18, 0.2, 0.24), edge * 0.32 * (1.0 - lit));
-  g = mix(g, vec3f(1.0), edge * lit * 0.9);
 
   // Appearing, the magnification grows from 1, where the lens shows exactly what lies under it, so
   // the content stays opaque and swells in place while only the glass fades in. Fading the content
   // too would show it twice, magnified over unmagnified.
   col = mix(col, g, op);
-  return vec4f(col * cv, cv) + vec4f(0.0, 0.0, 0.0, shadow) * (1.0 - cv);
+  return vec4f(col * cv, cv);
 }
 
 // ---- Camera ----

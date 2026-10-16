@@ -56,7 +56,16 @@ const MIN_AUTO = 1.2 // s: shorter auto zooms (clipped by the recording's ends) 
 const FAR_JUMPS_PER_S = 0.5 // an auto zoom panning a half view more often than this is erratic: skipped
 const LOUPE_SPRING: SpringConfig = { stiffness: 300, damping: 2 * Math.sqrt(300), mass: 1 } // ~0.5 s fades
 const LOUPE_FADE = springDuration(LOUPE_SPRING)
-const LOUPE_RADIUS = 180 // units
+const LOUPE_FOLLOW: SpringConfig = { stiffness: 120, damping: 2 * 0.65 * Math.sqrt(120), mass: 1 } // soft, a little overshoot
+const LOUPE_LAG = LOUPE_FOLLOW.damping / LOUPE_FOLLOW.stiffness // s a spring trails a moving target by (2 zeta / omega)
+const LOUPE_DEAD_ZONE = 0.4 // the cursor roams this fraction of the radius, as the glass shows it, before the lens moves
+const LOUPE_MAX_STRETCH = 0.35
+
+/** EXPERIMENT, for the Render lab: loupe size and follow behavior under evaluation. Collapse to the
+ *  chosen one once picked. glued = centered on the cursor; spring = trails it on a soft spring;
+ *  deadzone = holds still while the cursor roams inside, then glides; anchor = stays where it appeared.
+ *  stretch = elongation per radius/s of lens speed. */
+export const loupeTuning = { radius: 240, follow: 'deadzone' as 'glued' | 'spring' | 'deadzone' | 'anchor', stretch: 0 }
 const AT_START = 1e-3 // s: a zoom starting this close to output 0 starts zoomed in
 
 type Pt = { x: number; y: number }
@@ -210,8 +219,65 @@ function springStep(dt: number, spring: SpringConfig): [number, number, number, 
 
 export function prepareZoom(input: SceneInput, map: TimeMap, layout: ReturnType<typeof prepareLayout>, cursor: ReturnType<typeof prepareCursor>, path = zoomPath(input, map, layout, cursor)) {
   const { width: W, height: H } = input
-  const loupes = pieces(input.project.zooms.filter((z) => z.enabled && z.mode === 'loupe'), map)
-  return { W, H, map, layout, cursor, loupes, ...path }
+  const radius = (loupeTuning.radius * Math.min(W, H)) / 1080
+  const loupes = pieces(input.project.zooms.filter((z) => z.enabled && z.mode === 'loupe'), map).map((p) => ({ ...p, path: loupePath(p, layout, cursor, radius) }))
+  return { W, H, map, layout, cursor, loupes, radius, ...path }
+}
+
+/** Where the lens of loupe piece p sits, every DT from its start through its fade out: x, y and
+ *  velocity x, y (unzoomed px, px/s), stepped like the camera so any frame reads it in isolation.
+ *  The lens stays over the shown screen, so it never magnifies background. */
+function loupePath(p: Span, layout: ReturnType<typeof prepareLayout>, cursor: ReturnType<typeof prepareCursor>, radius: number): Float32Array {
+  const n = Math.ceil((p.b + LOUPE_FADE - p.a) / DT) + 1
+  const out = new Float32Array(4 * n)
+  const [h, g, dh, dg] = springStep(DT, LOUPE_FOLLOW)
+  const follow = loupeTuning.follow
+  const snap = p.zoom.target.kind === 'point' || follow === 'glued' || follow === 'anchor' // no spring
+  const pos = { x: 0, y: 0 }
+  const vel = { x: 0, y: 0 }
+  let aim: Pt | null = null
+  for (let k = 0; k < n; k++) {
+    const t = p.a + k * DT
+    const s = screenAt(layout, t)
+    if (s) {
+      const { screen: r, visible: v } = s
+      const inside = (c: Pt): Pt => {
+        const axis = (x: number, lo: number, size: number) => (2 * radius <= size ? clamp(x, lo + radius, lo + size - radius) : lo + size / 2)
+        return { x: axis(c.x, v.x, v.w), y: axis(c.y, v.y, v.h) }
+      }
+      const target = p.zoom.target
+      let c: Pt
+      if (target.kind === 'point') c = { x: r.x + target.x * r.w, y: r.y + target.y * r.h }
+      // A dead zone reads the cursor as far ahead as the spring trails it, so a flick stays in the glass.
+      else c = cursorPoint(cursor, follow === 'deadzone' ? t + LOUPE_LAG : t) ?? aim ?? { x: v.x + v.w / 2, y: v.y + v.h / 2 }
+      if (target.kind === 'point' || follow === 'glued') aim = c
+      else if (follow === 'anchor') aim ??= c
+      else if (follow === 'spring' || !aim) aim = c
+      else {
+        // Dead zone: move the aim the least that keeps the cursor within the zone around it.
+        const dx = c.x - aim.x, dy = c.y - aim.y
+        const d = Math.hypot(dx, dy)
+        const zone = (LOUPE_DEAD_ZONE * radius) / Math.max(1, p.zoom.level) // the glass shows the cursor that much farther out
+        if (d > zone) aim = { x: c.x - (dx / d) * zone, y: c.y - (dy / d) * zone }
+      }
+      aim = inside(aim)
+    }
+    if (!aim) continue
+    for (const a of ['x', 'y'] as const) {
+      if (k === 0 || snap) {
+        vel[a] = k === 0 ? 0 : (aim[a] - pos[a]) / DT
+        pos[a] = aim[a]
+      }
+    }
+    out.set([pos.x, pos.y, vel.x, vel.y], 4 * k)
+    if (snap) continue
+    for (const a of ['x', 'y'] as const) {
+      const d = pos[a] - aim[a]
+      pos[a] = aim[a] + d * h + vel[a] * g
+      vel[a] = d * dh + vel[a] * dg
+    }
+  }
+  return out
 }
 
 let last: { events: InputEvent[]; cursor: Float32Array; key: string; path: ZoomPath } | null = null
@@ -376,23 +442,20 @@ export function zoomAmount(z: ReturnType<typeof prepareZoom>, t: number, v: View
 
 export function loupeAt(z: ReturnType<typeof prepareZoom>, t: number): Loupe | null {
   const piece = z.loupes.findLast((p) => p.a <= t && t < p.b + (p.zoom.instant ? 0 : LOUPE_FADE))
-  const s = piece && screenAt(z.layout, t)
-  if (!piece || !s) return null
-  const { screen: r, visible: v } = s
-  const { a, b, zoom } = piece
+  if (!piece || !screenAt(z.layout, t)) return null
+  const { a, b, zoom, path } = piece
   const fadeIn = zoom.instant || a < AT_START ? 1 : springProgress(t - a, LOUPE_SPRING)
   const fadeOut = t < b ? 0 : springProgress(t - b, LOUPE_SPRING)
   const p = fadeIn * (1 - fadeOut)
-  const radius = (LOUPE_RADIUS * Math.min(z.W, z.H)) / 1080
-  let c: Pt = { x: v.x + v.w / 2, y: v.y + v.h / 2 }
-  if (zoom.target.kind === 'point') c = { x: r.x + zoom.target.x * r.w, y: r.y + zoom.target.y * r.h }
-  else {
-    const cur = cursorPoint(z.cursor, t)
-    if (cur) c = cur
-  }
-  // Keep the lens over the shown screen, so it never magnifies background.
-  const inside = (p: number, lo: number, size: number) => (2 * radius <= size ? clamp(p, lo + radius, lo + size - radius) : lo + size / 2)
-  return { x: inside(c.x, v.x, v.w), y: inside(c.y, v.y, v.h), radius, scale: mix(1, Math.max(1, zoom.level), p), opacity: p }
+  const n = path.length / 4
+  const x = clamp((t - a) / DT, 0, n - 1)
+  const k = Math.min(Math.floor(x), n - 2)
+  const at = (o: number) => (n < 2 ? path[o] : mix(path[4 * k + o], path[4 * (k + 1) + o], x - k))
+  const vx = at(2), vy = at(3)
+  const speed = Math.hypot(vx, vy)
+  const e = Math.min(LOUPE_MAX_STRETCH, (loupeTuning.stretch * speed) / z.radius)
+  const stretch = speed > 1e-6 ? { x: (vx / speed) * e, y: (vy / speed) * e } : { x: 0, y: 0 }
+  return { x: at(0), y: at(1), radius: z.radius, scale: mix(1, Math.max(1, zoom.level), p), opacity: p, stretch }
 }
 
 /** Auto zooms (source time) from clicks and typing: merge activity close in time, start LEAD before

@@ -444,7 +444,7 @@ export class Renderer {
     const l = scene.loupe
     if (l && l.opacity > 0 && l.radius > 0) {
       set(LOUPE, l.x, l.y, l.radius, Math.max(l.scale, 1e-3))
-      set(LOUPE2, Math.min(l.opacity, 1), 1)
+      set(LOUPE2, Math.min(l.opacity, 1), 1, l.stretch.x, l.stretch.y)
       has.loupe = true
     }
 

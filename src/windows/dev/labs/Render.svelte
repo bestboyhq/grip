@@ -10,6 +10,7 @@
   import { fileUrl } from '../../../engine/media/index.ts'
   import { Renderer, type Motion } from '../../../engine/gpu/renderer.ts'
   import { motionAt } from '../../../engine/compose.ts'
+  import { loupeTuning } from '../../../engine/zoom/index.ts'
   import { WALLPAPERS } from '../../../engine/backgrounds/index.ts'
   import { wallpaperThumbnail } from '../../../engine/backgrounds/thumbnails.ts'
   import { SvelteMap } from 'svelte/reactivity'
@@ -43,6 +44,9 @@
     ly: -1,
     lmag: 2,
     lstart: 0, // source seconds the loupe zoom starts (render just after it to see it appear)
+    lradius: loupeTuning.radius,
+    lfollow: loupeTuning.follow,
+    lstretch: loupeTuning.stretch,
     motion: 0, // simulated zoom speed: scale change across the shutter
     cursor: '' as string, // built-in override: arrow, pointer, ibeam, touch
     set: 'system' as NonNullable<Style['cursor']['set']>,
@@ -106,6 +110,7 @@
   }
 
   function sceneFor(p: Project, width: number, height: number): { scene: Scene; motion?: Motion } {
+    Object.assign(loupeTuning, { radius: s.lradius, follow: s.lfollow, stretch: s.lstretch })
     const prepared = prepare({ project: p, events, transcript: null, width, height, faces })
     const scene = sceneAt(prepared, s.t)
     let motion = motionAt(prepared, s.t)
@@ -289,6 +294,9 @@
     <label>loupe y <input type="range" min="-0.01" max="1" step="0.01" bind:value={s.ly} /></label>
     <label>loupe level <input type="range" min="1" max="4" step="0.1" bind:value={s.lmag} /> {s.lmag}</label>
     <label>loupe start <input type="range" min="0" max="23" step="0.05" bind:value={s.lstart} /> {s.lstart}</label>
+    <label>loupe radius <input type="range" min="120" max="360" step="10" bind:value={s.lradius} /> {s.lradius}</label>
+    <label>loupe follow <select bind:value={s.lfollow}>{#each ['glued', 'spring', 'deadzone', 'anchor'] as f}<option>{f}</option>{/each}</select></label>
+    <label>loupe stretch <input type="range" min="0" max="0.2" step="0.01" bind:value={s.lstretch} /> {s.lstretch}</label>
     <label><input type="checkbox" bind:checked={s.removeBg} /> remove background</label>
     <label><input type="checkbox" bind:checked={s.followFace} /> follow face</label>
     <label><input type="checkbox" bind:checked={s.lut} /> LUT</label>
