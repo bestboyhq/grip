@@ -117,6 +117,22 @@ export function buildModel(p: Parts, keys: Chip[], words: Chip[], prev?: Model):
   }
 }
 
+/** Lanes top to bottom, in the order the frame is built: camera layouts arrange the whole frame, zooms
+ *  frame the screen, masks sit on its content, then the video itself; keystrokes and captions are read
+ *  from the recording. An item lane shows once it has items and then stays (`shown` holds it for the
+ *  session), so deleting the last item does not pull the lanes out from under the pointer. */
+export function tracks(m: Record<ItemTrack | ChipTrack, { items: unknown[] }>, camera: boolean, shown: Set<ItemTrack>): TrackId[] {
+  const ids: TrackId[] = []
+  for (const t of ['layouts', 'zooms', 'masks'] as const) {
+    if (m[t].items.length) shown.add(t)
+    if (shown.has(t) && (t !== 'layouts' || camera)) ids.push(t)
+  }
+  ids.push('clips')
+  if (m.keys.items.length) ids.push('keys')
+  if (m.captions.items.length) ids.push('captions')
+  return ids
+}
+
 /** Index range [from, to) of blocks overlapping output [t0, t1]. */
 export function visible(l: Lane, t0: number, t1: number): [number, number] {
   const from = lowerBound(l.blocks, t0 - l.maxLen)

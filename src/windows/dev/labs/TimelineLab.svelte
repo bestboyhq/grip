@@ -7,7 +7,8 @@
   import { untrack } from 'svelte'
   import Timeline from '../../editor/timeline/Timeline.svelte'
   import { stressProject } from '../../editor/timeline/stress.ts'
-  import { RULER, stats } from '../../editor/timeline/draw.ts'
+  import { rows, stats } from '../../editor/timeline/draw.ts'
+  import { tracks } from '../../editor/timeline/model.ts'
   import { doc, selection } from '../../../lib/doc.svelte.ts'
   import { player } from '../../../lib/player.svelte.ts'
   import { invoke } from '../../../lib/ipc.ts'
@@ -149,7 +150,11 @@
     lines.push(await scenario('scroll zoomed out', 120, (i) => wheel({ deltaX: i < 60 ? 60 : -60 })))
     for (let i = 0; i < 40; i++) wheel({ deltaY: -10, ctrlKey: true })
     await new Promise((r) => setTimeout(r, 600))
-    const zy = RULER + 4 + 52 + 6 + 18 // zoom lane center
+    const p = doc.project!
+    const none = { items: [] }
+    const ids = tracks({ zooms: { items: p.zooms }, layouts: { items: p.layouts }, masks: { items: p.masks }, keys: none, captions: none }, !!p.sources.camera, new Set())
+    const middle = (id: string) => { const r = rows(ids).rows.find((r) => r.id === id); return r ? r.y + r.h / 2 : -1 } // lanes as the timeline lays them out
+    const zy = middle('zooms')
     const zx = await find(zy, 'grab')
     if (zx > 0) {
       ptr('pointerdown', zx, zy)
@@ -157,7 +162,7 @@
       dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       ptr('pointerup', zx, zy)
     } else lines.push('drag zoom        no zoom block found in view')
-    const cy = RULER + 4 + 26 // clip lane center
+    const cy = middle('clips')
     const cx = await find(cy, 'ew-resize')
     if (cx > 0) {
       ptr('pointerdown', cx, cy)

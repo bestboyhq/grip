@@ -167,6 +167,7 @@ const C = {
   split: '#ff5f57',
   cut: '#f47a1c',
   cutHot: '#ff9a4a',
+  cutGuide: 'rgba(244,122,28,0.45)',
   cutText: '#3a1600',
   marquee: 'rgba(255,255,255,0.08)',
   marqueeEdge: 'rgba(255,255,255,0.6)',
@@ -554,6 +555,11 @@ function cutMarks(ctx: CanvasRenderingContext2D, s: Scene, tA: number, tB: numbe
     right = l + w
     pills.push({ x0: l, x1: l + w, cut: c })
     const hot = s.hover?.kind === 'cut' && s.hover.cut === c
+    if (clips.y - 3 > TOP) {
+      // Lanes above the video: a guide carries the pointer down to the clip's notch.
+      ctx.fillStyle = hot ? C.cutHot : C.cutGuide
+      ctx.fillRect(x - 0.5, TOP, 1, clips.y - 3 - TOP)
+    }
     const y = RULER - 14 // clear of the ruler labels above
     ctx.fillStyle = hot ? C.cutHot : C.cut
     ctx.beginPath()

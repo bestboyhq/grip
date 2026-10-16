@@ -42,12 +42,22 @@ export interface WaveMotion { life: number; front: (p: number) => number; streng
 const ramp = (p: number, e = 0.08) => { const x = clamp01(p / e); return x * x * (3 - 2 * x) } // eases the strength in: the wave never pops
 const powerOut = (life: number, ease: number, decay: number): WaveMotion => ({ life, front: (p) => 1 - (1 - p) ** ease, strength: (p) => (1 - p) ** decay * ramp(p) })
 const expoOut = (x: number) => (1 - 2 ** (-9 * x)) / (1 - 2 ** -9)
+/** CSS cubic-bezier(x1, y1, x2, y2): x(s) is monotone for x1, x2 in 0..1, so bisection finds s. */
+function bezier(x1: number, y1: number, x2: number, y2: number) {
+  const at = (a: number, b: number, s: number) => 3 * a * s * (1 - s) ** 2 + 3 * b * s * s * (1 - s) + s ** 3
+  return (x: number) => {
+    let lo = 0, hi = 1
+    for (let i = 0; i < 30; i++) (at(x1, x2, (lo + hi) / 2) < x ? (lo = (lo + hi) / 2) : (hi = (lo + hi) / 2))
+    return at(y1, y2, (lo + hi) / 2)
+  }
+}
 const HOLD = 0.13 // press: share of the life the click point swells before the wave leaves
 const JELLY = { stiffness: 120, damping: 11, mass: 1 } // 16% overshoot
 
 /** Easing trials for the shock wave (temporary: one ships, the rest go). */
 export const WAVE_MOTIONS: Record<string, WaveMotion> = {
   cubic: powerOut(0.6, 3, 1.2),
+  'ease-out': { life: 0.6, front: bezier(0, 0, 0.58, 1), strength: (p) => (1 - p) ** 1.2 * ramp(p) }, // CSS ease-out, today's fade
   linear: { life: 0.6, front: (p) => p, strength: (p) => (1 - p) ** 1.2 * ramp(p) },
   quint: { life: 0.7, front: (p) => 1 - (1 - p) ** 5, strength: (p) => (1 - p ** 2.5) * ramp(p) },
   expo: { life: 0.9, front: expoOut, strength: (p) => (1 - p) ** 1.6 * ramp(p) },
