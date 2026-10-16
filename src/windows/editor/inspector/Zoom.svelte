@@ -64,6 +64,9 @@
         { value: 'loupe', label: 'Loupe' },
       ]}
     />
+    {#if z.mode === 'loupe'}
+      <Toggle label="Liquid" hint="The glass stretches as it moves." checked={!z.rigid} onchange={(v) => each((s) => { if (s.mode === 'loupe') s.rigid = !v })} />
+    {/if}
     <Toggle label="Instant" hint="Cuts in and out instead of animating." checked={!!z.instant} onchange={(v) => each((s) => (s.instant = v))} />
   </Section>
 

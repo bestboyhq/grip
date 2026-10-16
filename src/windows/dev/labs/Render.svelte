@@ -10,7 +10,6 @@
   import { fileUrl } from '../../../engine/media/index.ts'
   import { Renderer, type Motion } from '../../../engine/gpu/renderer.ts'
   import { motionAt } from '../../../engine/compose.ts'
-  import { loupeTuning } from '../../../engine/zoom/index.ts'
   import { WALLPAPERS } from '../../../engine/backgrounds/index.ts'
   import { wallpaperThumbnail } from '../../../engine/backgrounds/thumbnails.ts'
   import { SvelteMap } from 'svelte/reactivity'
@@ -44,9 +43,7 @@
     ly: -1,
     lmag: 2,
     lstart: 0, // source seconds the loupe zoom starts (render just after it to see it appear)
-    lradius: loupeTuning.radius,
-    lfollow: loupeTuning.follow,
-    lstretch: loupeTuning.stretch,
+    lrigid: false,
     motion: 0, // simulated zoom speed: scale change across the shutter
     cursor: '' as string, // built-in override: arrow, pointer, ibeam, touch
     set: 'system' as NonNullable<Style['cursor']['set']>,
@@ -93,7 +90,7 @@
     const d = p.sources.duration
     p.layouts = s.layout === 'pip' ? [] : [{ id: 'l', start: s.layoutStart, end: d, kind: s.layout }]
     const mask = (kind: Mask['kind'], x: number, y: number, w: number, h: number): Mask => ({ id: kind, start: 0, end: d, kind, rect: { x, y, w, h } })
-    if (s.loupe) p.zooms = [{ id: 'loupe', start: s.lstart, end: d, level: s.lmag, target: s.lx < 0 ? { kind: 'cursor' } : { kind: 'point', x: s.lx, y: s.ly }, mode: 'loupe', enabled: true }]
+    if (s.loupe) p.zooms = [{ id: 'loupe', start: s.lstart, end: d, level: s.lmag, target: s.lx < 0 ? { kind: 'cursor' } : { kind: 'point', x: s.lx, y: s.ly }, mode: 'loupe', rigid: s.lrigid, enabled: true }]
     p.masks = s.masks ? [mask('blur', 0.27, 0.19, 0.24, 0.07), mask('pixelate', 0.27, 0.36, 0.36, 0.07), mask('highlight', 0.24, 0.46, 0.5, 0.2)] : []
     return p
   }
@@ -110,7 +107,6 @@
   }
 
   function sceneFor(p: Project, width: number, height: number): { scene: Scene; motion?: Motion } {
-    Object.assign(loupeTuning, { radius: s.lradius, follow: s.lfollow, stretch: s.lstretch })
     const prepared = prepare({ project: p, events, transcript: null, width, height, faces })
     const scene = sceneAt(prepared, s.t)
     let motion = motionAt(prepared, s.t)
@@ -294,9 +290,7 @@
     <label>loupe y <input type="range" min="-0.01" max="1" step="0.01" bind:value={s.ly} /></label>
     <label>loupe level <input type="range" min="1" max="4" step="0.1" bind:value={s.lmag} /> {s.lmag}</label>
     <label>loupe start <input type="range" min="0" max="23" step="0.05" bind:value={s.lstart} /> {s.lstart}</label>
-    <label>loupe radius <input type="range" min="120" max="360" step="10" bind:value={s.lradius} /> {s.lradius}</label>
-    <label>loupe follow <select bind:value={s.lfollow}>{#each ['glued', 'spring', 'deadzone', 'anchor'] as f}<option>{f}</option>{/each}</select></label>
-    <label>loupe stretch <input type="range" min="0" max="0.2" step="0.01" bind:value={s.lstretch} /> {s.lstretch}</label>
+    <label><input type="checkbox" bind:checked={s.lrigid} /> rigid loupe</label>
     <label><input type="checkbox" bind:checked={s.removeBg} /> remove background</label>
     <label><input type="checkbox" bind:checked={s.followFace} /> follow face</label>
     <label><input type="checkbox" bind:checked={s.lut} /> LUT</label>

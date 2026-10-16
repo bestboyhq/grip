@@ -241,7 +241,11 @@ test('loupe fades in and out, magnifies, and follows its target', () => {
   const on = loupeAt(p.zoom, 3.5)!
   near(on.opacity, 1, 0.01)
   near(on.scale, 2.5, 0.02)
-  assert.ok(Math.abs(on.x - cursorAt(p.cursor, 3.5)!.x) * 2.5 <= 0.4 * on.radius + 2) // the glass shows the cursor in its dead zone, give or take the spring
+  const lag = cursorAt(p.cursor, 3.5)!.x - on.x
+  assert.ok(lag > 0 && lag < 0.05 * on.radius, `trails the cursor on a spring, close behind: ${lag}`)
+  assert.ok(on.stretch.x > 0 && Math.abs(on.stretch.y) < 1e-6, 'liquid: stretches along its motion')
+  const rigid = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 2.5, rigid: true })], events, { duration: 10 })
+  assert.deepEqual(loupeAt(rigid.p.zoom, 3.5)!.stretch, { x: 0, y: 0 })
   const fadeOut = loupeAt(p.zoom, 5.1)!
   assert.ok(fadeOut.opacity > 0 && fadeOut.opacity < 1)
   assert.equal(loupeAt(p.zoom, 6), null)

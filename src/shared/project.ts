@@ -65,6 +65,7 @@ export interface Zoom {
   target: ZoomTarget
   instant?: boolean // cut in/out instead of animating
   mode?: 'zoom' | 'loupe' // loupe = magnify a region in place (glass), default 'zoom'
+  rigid?: boolean // loupe: the glass keeps its round shape instead of stretching like liquid as it moves
   auto?: boolean // generated from clicks/typing
   enabled: boolean
 }
