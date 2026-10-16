@@ -5,6 +5,7 @@
 </script>
 
 <script lang="ts">
+  import { tick } from 'svelte'
   import { doc, selection } from '../../../lib/doc.svelte.ts'
   import * as A from './actions.svelte.ts'
 
@@ -12,6 +13,7 @@
   let { x, y, t, target, trigger, onclose }: { x: number; y: number; t: number; target: Target; trigger?: HTMLElement; onclose: () => void } = $props()
 
   let el: HTMLDivElement | undefined
+  let openSub = $state('') // the submenu showing its choices
 
   const clips = $derived(A.selected('clips'))
   const zooms = $derived(A.selected('zooms'))
@@ -28,6 +30,11 @@
   const layout = $derived(uniform(layouts.map((l) => l.kind)))
   const mask = $derived(uniform(masks.map((m) => m.kind)))
   const many = $derived(selection.ids.length > 1)
+
+  /** Open the flyout to the side with room for it. */
+  function flip(node: HTMLElement) {
+    if (node.getBoundingClientRect().right > innerWidth - 8) Object.assign(node.style, { left: 'auto', right: 'calc(100% - 2px)' })
+  }
 
   /** Open at the pointer, kept inside the window. */
   function place(node: HTMLDivElement) {
@@ -47,11 +54,27 @@
     }
   }
 
+  /** Open a submenu's choices, with the first (or the current) one focused when asked by keyboard. */
+  async function openFlyout(label: string, focus: boolean) {
+    openSub = label
+    if (!focus) return
+    await tick()
+    const f = el!.querySelector<HTMLElement>('.flyout')
+    ;(f?.querySelector<HTMLElement>('[aria-checked="true"]') ?? f?.querySelector<HTMLElement>('button'))?.focus()
+  }
+
   function onkeydown(e: KeyboardEvent) {
-    const items = [...el!.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)')]
-    const i = items.indexOf(document.activeElement as HTMLElement)
-    const move = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key]
-    if (move) items[(i + move + items.length) % items.length]?.focus()
+    const active = document.activeElement as HTMLElement | null
+    const fly = active?.closest('.flyout')
+    // arrows move within the open flyout, or within the menu's own rows
+    const items = [...el!.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)')].filter((b) => (fly ? fly.contains(b) : !b.closest('.flyout')))
+    const i = items.indexOf(active as HTMLElement)
+    if (e.key === 'ArrowRight' && active?.ariaHasPopup) openFlyout(active.dataset.sub!, true)
+    else if (e.key === 'ArrowLeft' && fly) {
+      openSub = ''
+      fly.parentElement!.querySelector<HTMLElement>('[aria-haspopup]')!.focus()
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') return
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
     else if (e.key === 'Home') items[0]?.focus()
     else if (e.key === 'End') items.at(-1)?.focus()
     else if (e.key === 'Escape' || e.key === 'Tab') onclose()
@@ -80,15 +103,29 @@
     </div>
   </div>
 {/snippet}
+{#snippet submenu(label: string, options: Array<[any, string]>, current: unknown, fn: (v: any) => void)}
+  <div class="sub" role="none" onpointerenter={() => openFlyout(label, false)} onpointerleave={() => (openSub = '')}>
+    <button role="menuitem" aria-haspopup="menu" aria-expanded={openSub === label} data-sub={label} onclick={() => openFlyout(label, true)}>
+      <span>{label}</span><kbd>{options.find(([v]) => v === current)?.[1] ?? ''}<i aria-hidden="true">›</i></kbd>
+    </button>
+    {#if openSub === label}
+      <div class="flyout" role="menu" aria-label={label} {@attach flip}>
+        {#each options as [value, text] (text)}
+          <button role="menuitemradio" aria-checked={value === current} class:on={value === current} onclick={() => act(() => fn(value))}>{text}</button>
+        {/each}
+      </div>
+    {/if}
+  </div>
+{/snippet}
 
 <div class="menu" role="menu" tabindex="-1" {@attach place} {onkeydown}>
   {#if target.kind === 'clips'}
-    {@render choices('Speed', A.SPEEDS.map((s) => [s, `${s}×`]), speed, A.setSpeed)}
+    {@render submenu('Speed', A.SPEEDS.map((s) => [s, `${s}×`]), speed, A.setSpeed)}
     {#if sources?.mic}
-      {@render choices(sources.system ? 'Mic volume' : 'Volume', volumes, volume, A.setVolume)}
+      {@render submenu(sources.system ? 'Mic volume' : 'Volume', volumes, volume, A.setVolume)}
     {/if}
     {#if sources?.system}
-      {@render choices(sources.mic ? 'System audio volume' : 'Volume', volumes, systemVolume, A.setSystemVolume)}
+      {@render submenu(sources.mic ? 'System audio volume' : 'Volume', volumes, systemVolume, A.setSystemVolume)}
     {/if}
     <hr />
     {@render item('Split here', () => A.cut(t), 'C')}
@@ -160,7 +197,7 @@
     from { opacity: 0; transform: scale(0.97); }
   }
   @media (prefers-reduced-motion: reduce) {
-    .menu { animation: none; }
+    .menu, .flyout { animation: none; }
   }
   button[role='menuitem'] {
     display: flex;
@@ -197,6 +234,44 @@
     height: 0.5px;
     margin: 6px 10px;
     background: var(--edge-strong);
+  }
+  .sub {
+    position: relative;
+  }
+  .flyout {
+    position: absolute;
+    top: -6px;
+    left: calc(100% - 2px);
+    min-width: 96px;
+    padding: 6px;
+    background: var(--surface-50);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-pop);
+    animation: pop 110ms ease-out;
+  }
+  .flyout button {
+    display: block;
+    width: 100%;
+    height: 26px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    text-align: left;
+    font-variant-numeric: tabular-nums;
+  }
+  .flyout button:hover,
+  .flyout button:focus-visible {
+    background: var(--surface-50-hover);
+    outline: none;
+  }
+  .flyout button.on {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  kbd i {
+    margin-left: 8px;
+    font-style: normal;
   }
   .choices {
     padding: 4px 6px 6px;

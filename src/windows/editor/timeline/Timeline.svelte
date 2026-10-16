@@ -54,7 +54,6 @@
   let hover: Hit | null = null
   let pointer: { x: number; y: number } | null = null
   let drag: Drag | null = null
-  let ghost: { track: M.ItemTrack; a: number; b: number } | null = null
   let mic: Audio | null = null
   let system: Audio | null = null
   let shown = new Set<M.ItemTrack>() // item lanes shown so far, for the project in `lanesFor`
@@ -243,7 +242,7 @@
     }
     if (ctx && view.W) {
       if (model) {
-        draw(ctx, { view, model, time: player.time, sel, hover, pointer, armed: armed(), dragging: !!drag, ghost, marquee: marqueeRect(), mic, system, waves })
+        draw(ctx, { view, model, time: player.time, sel, hover, pointer, armed: armed(), dragging: !!drag, marquee: marqueeRect(), mic, system, waves })
       } else ctx.clearRect(0, 0, canvas!.width, canvas!.height)
     }
     if (again) requestDraw()
@@ -375,7 +374,6 @@
       // synthetic pointers (lab benchmarks) cannot be captured
     }
     pointer = p
-    ghost = null
     player.hover = null // a drag shows what it edits: the playhead's frame
     cursor = dragCursor(drag)
     requestDraw()
@@ -407,7 +405,7 @@
 
   function onpointerleave() {
     if (drag) return
-    pointer = hover = ghost = player.hover = null
+    pointer = hover = player.hover = null
     requestDraw()
   }
 
@@ -456,9 +454,10 @@
 
   function click(d: Drag) {
     if (d.kind === 'cut') A.restore(d.cut.after)
-    else if (d.kind === 'create') A.add(d.track, d.t0)
     else if (d.kind === 'marquee') selection.ids = d.keep // a plain click on empty space deselects
     else if (d.select) selection.ids = [d.select]
+    if (d.kind === 'create') seek(d.t0) // a click on an item lane or item moves the playhead; dragging makes a new item
+    else if (d.kind === 'move') seek(outTime(d.sx))
   }
 
   function cancel() {
@@ -495,15 +494,6 @@
     hover = hit(view, model, pointer.x, pointer.y)
     // Hover scrub: the preview shows the moment under the pointer while paused; the playhead stays put.
     player.hover = player.playing || hover.kind === 'scrollbar' || hover.kind === 'none' ? null : outTime(pointer.x)
-    ghost = null
-    if (hover.kind === 'lane' && isItem(hover.track) && !armed()) {
-      const t = outTime(pointer.x)
-      const r = M.fit(model[hover.track].items, toSource(model.map, t), toSource(model.map, Math.min(t + 3, view.duration)), base!.duration)
-      if (r) {
-        const pieces = M.lane(model.map, [{ start: r[0], end: r[1] }]).blocks
-        if (pieces.length) ghost = { track: hover.track, a: pieces[0].a, b: pieces.at(-1)!.b }
-      }
-    }
     cursor = hoverCursor(hover)
     requestDraw()
   }
@@ -511,8 +501,7 @@
   function hoverCursor(h: Hit): string {
     if (armed() && (h.kind === 'block' || h.kind === 'lane') && h.track === 'clips') return SCISSORS
     if (h.kind === 'block') return h.edge ? 'ew-resize' : isItem(h.track) ? 'grab' : 'default'
-    if (h.kind === 'lane') return isItem(h.track) ? 'copy' : 'default'
-    return h.kind === 'cut' || h.kind === 'ruler' ? 'pointer' : 'default'
+        return h.kind === 'cut' || h.kind === 'ruler' ? 'pointer' : 'default'
   }
   const dragCursor = (d: Drag) => (d.kind === 'move' ? 'grabbing' : d.kind === 'trim' || d.kind === 'resize' ? 'ew-resize' : cursor)
 

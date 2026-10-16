@@ -13,7 +13,7 @@ const TOP = RULER + 4
 const GAP = 6
 const BOTTOM = 16
 const HEIGHTS: Record<M.TrackId, number> = { clips: 40, zooms: 36, layouts: 26, masks: 26, keys: 20, captions: 20 }
-const EDGE = 8 // px of a block's end that grabs the edge
+const EDGE = 12 // px of a block's end that grabs the edge
 
 export interface Row {
   id: M.TrackId
@@ -109,7 +109,6 @@ export interface Scene {
   pointer: { x: number; y: number } | null
   armed: boolean // split tool
   dragging: boolean
-  ghost: { track: M.ItemTrack; a: number; b: number } | null // where a click would add an item
   marquee: { x0: number; y0: number; x1: number; y1: number } | null
   mic: Audio | null
   system: Audio | null
@@ -580,24 +579,6 @@ function cutMarks(ctx: CanvasRenderingContext2D, s: Scene, tA: number, tB: numbe
 
 function overlays(ctx: CanvasRenderingContext2D, s: Scene, bottom: number) {
   const v = s.view
-  if (s.ghost) {
-    const row = v.rows.find((r) => r.id === s.ghost!.track)!
-    const xa = snap(v, xOf(v, s.ghost.a))
-    const xb = snap(v, xOf(v, s.ghost.b))
-    ctx.beginPath()
-    ctx.roundRect(xa + 0.5, row.y + 0.5, xb - xa - 1, row.h - 1, 7)
-    ctx.fillStyle = 'rgba(255,255,255,0.05)'
-    ctx.fill()
-    ctx.setLineDash([3, 3])
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)'
-    ctx.lineWidth = 1
-    ctx.stroke()
-    ctx.setLineDash([])
-    if (xb - xa > 20) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.6)'
-      plus(ctx, (xa + xb) / 2, row.y + row.h / 2, 4)
-    }
-  }
   if (s.marquee) {
     const { x0, y0, x1, y1 } = s.marquee
     ctx.fillStyle = C.marquee
@@ -834,12 +815,4 @@ function scissors(ctx: CanvasRenderingContext2D, x: number, y: number, s: number
     ctx.moveTo(x + s * 0.96, y + s * 0.8)
     ctx.arc(x + s * 0.78, y + s * 0.8, s * 0.18, 0, Math.PI * 2)
   }, 1.3)
-}
-function plus(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
-  line(ctx, () => {
-    ctx.moveTo(x - r, y)
-    ctx.lineTo(x + r, y)
-    ctx.moveTo(x, y - r)
-    ctx.lineTo(x, y + r)
-  }, 1.5)
 }
