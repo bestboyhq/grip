@@ -10,6 +10,7 @@
   import { fileUrl } from '../../../engine/media/index.ts'
   import { Renderer, type Motion } from '../../../engine/gpu/renderer.ts'
   import { motionAt } from '../../../engine/compose.ts'
+  import { CLICK_LIFE } from '../../../engine/overlays/index.ts'
   import { WALLPAPERS } from '../../../engine/backgrounds/index.ts'
   import { wallpaperThumbnail } from '../../../engine/backgrounds/thumbnails.ts'
   import { SvelteMap } from 'svelte/reactivity'
@@ -57,6 +58,8 @@
     followFace: false,
     lut: true,
     overlay: false,
+    click: 'ripple' as Style['cursor']['click'],
+    zooms: true, // the project's own zooms, when no lab loupe replaces them
   })
   let status = $state('loading')
   const thumbs = new SvelteMap<string, string>()
@@ -88,6 +91,8 @@
     Object.assign(st.camera, { shape: s.shape, mirror: s.mirror, position: s.position, removeBackground: s.removeBg, followFace: s.followFace })
     if (!s.lut) st.camera.lut = undefined
     st.cursor.size = s.cursorSize
+    st.cursor.click = s.click
+    if (!s.zooms) p.zooms = []
     const d = p.sources.duration
     p.layouts = s.layout === 'pip' ? [] : [{ id: 'l', start: s.layoutStart, end: d, kind: s.layout }]
     const mask = (kind: Mask['kind'], x: number, y: number, w: number, h: number): Mask => ({ id: kind, start: 0, end: d, kind, rect: { x, y, w, h } })
@@ -297,6 +302,8 @@
     <label><input type="checkbox" bind:checked={s.followFace} /> follow face</label>
     <label><input type="checkbox" bind:checked={s.lut} /> LUT</label>
     <label><input type="checkbox" bind:checked={s.overlay} /> overlay</label>
+    <label>click <select bind:value={s.click}>{#each Object.keys(CLICK_LIFE) as k}<option>{k}</option>{/each}</select></label>
+    <label><input type="checkbox" bind:checked={s.zooms} /> project zooms</label>
     <label>zoom <input type="range" min="1" max="4" step="0.05" bind:value={s.zoom} /> {s.zoom}</label>
     <label>motion <input type="range" min="0" max="0.3" step="0.01" bind:value={s.motion} /></label>
     <label>cursor set <select bind:value={s.set}><option>system</option><option>builtin</option><option>touch</option></select></label>

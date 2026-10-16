@@ -33,7 +33,20 @@ function upper(a: Array<{ start: number }>, t: number): number {
 
 // ---- Tuning (seconds, and lengths in units: 1 unit = min(w, h) / 1080 px). ----
 
-const CLICK_LIFE: Record<Click['style'], number> = { none: 0, ripple: 0.6, circle: 0.45, shockwave: 0.55 }
+export const CLICK_LIFE: Record<Click['style'], number> = { none: 0, ripple: 0.6, circle: 0.45, shockwave: 0.55, 'wave-pond': 1.1, 'wave-drop': 0.8, 'wave-shock': 0.6, 'wave-quake': 1.4, 'wave-glow': 0.7 }
+
+/** Click styles the compositor draws as a wave refracting the screen (shaders.wgsl, clickWaves).
+ *  reach, width, shift in units; crests = cos frequency of the packet (0: one crest); ease, decay =
+ *  exponents of the front's ease-out and of the fade; shade, tilt, spec light the surface; tint =
+ *  sRGB + strength mixed into the crest. */
+export interface Wave { reach: number; width: number; crests: number; shift: number; shade: number; tilt: number; dispersion: number; ease: number; decay: number; spec: number; tint?: [number, number, number, number] }
+export const WAVES: Partial<Record<Click['style'], Wave>> = {
+  'wave-pond': { reach: 140, width: 20, crests: 5.5, shift: 4.5, shade: 0.11, tilt: 0.5, dispersion: 0, ease: 1.3, decay: 1.6, spec: 0.6 },
+  'wave-drop': { reach: 100, width: 16, crests: 2.2, shift: 9, shade: 0.13, tilt: 0.6, dispersion: 0.12, ease: 1.8, decay: 1.4, spec: 0.7 },
+  'wave-shock': { reach: 220, width: 10, crests: 0, shift: 8, shade: 0.15, tilt: 0.6, dispersion: 0.6, ease: 3, decay: 1.2, spec: 1 },
+  'wave-quake': { reach: 520, width: 60, crests: 3.5, shift: 9, shade: 0.05, tilt: 0.25, dispersion: 0, ease: 1.5, decay: 1.6, spec: 0 },
+  'wave-glow': { reach: 170, width: 9, crests: 0, shift: 6, shade: 0.14, tilt: 0.8, dispersion: 0.15, ease: 2.2, decay: 1.1, spec: 1, tint: [134 / 255, 118 / 255, 1, 0.45] },
+}
 
 const KEY_H = 78 // keycap height incl. its side
 const KEY_GAP = 8 // between keycaps of one shortcut

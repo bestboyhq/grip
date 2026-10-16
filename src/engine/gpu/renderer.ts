@@ -16,7 +16,7 @@
 import { defaultStyle, type Background, type Rect } from '../../shared/project.ts'
 import type { CursorLayer, Scene, View } from '../scene.ts'
 import { deviceGeometry } from '../layout.ts'
-import { drawOverlays } from '../overlays/index.ts'
+import { CLICK_LIFE, WAVES, drawOverlays } from '../overlays/index.ts'
 import { oklab, parseColor, wallpaper, DEFAULT_WALLPAPER } from '../backgrounds/index.ts'
 import { CURSORS, CURSOR_RES, type BuiltinName } from '../../assets/cursors.ts'
 import { GRADE, gradeLut, parseCube, type Lut } from './lut.ts'
@@ -56,9 +56,10 @@ export interface Motion {
 const A = 0, VIEWT = 1, SCR = 2, SCR2 = 3, SCR3 = 4, DEV = 5, SH = 6, VIEWS = 10, PARTS = 26, MASKS = 74
 const CUR = 106, CURIMG = 107, CURTEX = 108, CURBOX = 109, CURS = 110, LOUPE = 126, LOUPE2 = 127
 const CAM = 128, CAM1 = 129, CAM2 = 130, CAM3 = 131, CAM4 = 132, LUTMIN = 133, LUTMAX = 134, FIN = 135, VP = 136, VIS = 137
-const FRAME_SLOTS = 138
+const CLK = 138, WAVE = 142, WAVE2 = 143, WAVE3 = 144, WAVE4 = 145
+const FRAME_SLOTS = 146
 const PASS_SLOTS = 27 // `struct Pass`
-const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12
+const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12, MAX_CLICKS = 4
 const MASK_KIND = { blur: 0, pixelate: 1, highlight: 2 } as const
 
 // WebGPU flag values (the TS DOM lib has the types but not these namespaces).
@@ -88,6 +89,9 @@ interface Small {
 }
 
 const mipCount = (w: number, h: number) => Math.floor(Math.log2(Math.max(w, h))) + 1
+
+/** Peak |g'| of the click wave packet g(x) = cos(kx) exp(-x^2) (shaders.wgsl, clickWaves). */
+const slopePeak = (k: number) => Math.max(...Array.from({ length: 121 }, (_, i) => Math.abs((k * Math.sin((k * i) / 40) + (2 * i * Math.cos((k * i) / 40)) / 40) * Math.exp(-((i / 40) ** 2)))))
 
 /** Up to n evenly spaced items, keeping both ends. */
 const even = <T>(a: T[], n: number): T[] => (a.length <= n ? a : Array.from({ length: n }, (_, i) => a[Math.round((i * (a.length - 1)) / (n - 1))]))
@@ -228,7 +232,7 @@ export class Renderer {
       pipe('vs_full', 'fs_main', HDR, scene),
       pipe('vs_cursor', 'fs_cursor', HDR, scene, over(clear)),
       pipe('vs_full', 'fs_highlight', HDR, scene, over(keep)),
-      pipe('vs_loupe', 'fs_loupe', HDR, scene, over(keep)),
+      pipe('vs_full', 'fs_loupe', HDR, scene, over(keep)),
       pipe('vs_camera', 'fs_camera', HDR, scene, over(clear)),
       pipe('vs_full', 'fs_final', canvasFormat, 'auto'),
       pipe('vs_full', 'fs_small', LDR, 'auto'),
@@ -330,7 +334,7 @@ export class Renderer {
     }
     if (has.loupe) {
       pass.setPipeline(this.pipes.loupe)
-      pass.draw(4)
+      pass.draw(3)
     }
     if (has.camera) {
       pass.setPipeline(this.pipes.camera)
@@ -448,6 +452,17 @@ export class Renderer {
       has.loupe = true
     }
 
+    const wave = scene.clicks.length ? WAVES[scene.clicks[0].style] : undefined
+    if (wave) {
+      const live = scene.clicks.slice(-MAX_CLICKS) // ponytail: the 4 newest clicks ripple at once; a storage buffer if rapid clicking needs more
+      const k = slopePeak(wave.crests) // shift and tilt mean the same at any crest count
+      live.forEach((c, i) => set(CLK + i, c.x, c.y, c.age))
+      set(WAVE, wave.reach, wave.width, wave.crests, CLICK_LIFE[live[0].style])
+      set(WAVE2, wave.shift / k, wave.shade, wave.tilt / k, wave.dispersion)
+      set(WAVE3, wave.ease, wave.decay, wave.spec, live.length)
+      set(WAVE4, ...(wave.tint ?? [0, 0, 0, 0]))
+    }
+
     const cam = scene.camera
     if (cam && frames.camera && cam.opacity > 0 && cam.rect.w > 0 && cam.rect.h > 0) {
       rect(CAM, cam.rect)
@@ -465,7 +480,7 @@ export class Renderer {
   }
 
   private paintOverlay(scene: Scene): boolean {
-    if (!scene.clicks.length && !scene.drawings.length && !scene.keystrokes.length && !scene.caption) return false
+    if (!scene.clicks.some((c) => !WAVES[c.style]) && !scene.drawings.length && !scene.keystrokes.length && !scene.caption) return false
     const ctx = this.overlayCtx!
     ctx.clearRect(0, 0, this.w, this.h)
     drawOverlays(ctx, scene)

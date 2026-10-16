@@ -95,7 +95,7 @@ export interface Loupe {
   y: number
   radius: number // px
   scale: number // magnification
-  opacity: number // how much of the glass shows (bevel light, dispersion); the content under it stays opaque
+  opacity: number // how much of the glass (bevel light, dispersion) and the dim around it show; the content under it stays opaque
   stretch: { x: number; y: number } // along the lens's motion; its length is the elongation (0 = round)
 }
 

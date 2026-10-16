@@ -32,6 +32,11 @@ struct Frame {
   fin: vec4f,      // has overlay
   vp: vec4f,       // viewport (output px): the zoom view shows through it, everything outside is unzoomed
   vis: vec4f,      // shown part of the recording (unzoomed px): all of scr, or its crop; the frame is this grown by dev.w
+  clicks: array<vec4f, 4>, // click waves: x, y (unzoomed px), age (s)
+  wave: vec4f,     // reach, width (units), crests, life (s)
+  wave2: vec4f,    // shift (units), shade, tilt, dispersion
+  wave3: vec4f,    // front ease, decay, specular, click count
+  wave4: vec4f,    // crest tint rgb, strength
 }
 
 @group(0) @binding(0) var<uniform> F: Frame;
@@ -232,6 +237,60 @@ fn frameCover(u: vec2f, aa: f32) -> f32 {
   return cover(sdBox(u - F.vis.xy - half, half + F.dev.w, vec4f(F.scr2.x)), aa);
 }
 
+// The recording at unzoomed point u with its masks: rgb + dither mark.
+fn screenAt(u: vec2f, aa: f32) -> vec4f {
+  let r = F.scr;
+  let uv = (clamp(u, F.vis.xy, F.vis.xy + F.vis.zw) - r.xy) / r.zw; // held to the shown part: the inset takes its edge color
+  let m = F.scr3.x / r.z * aa;
+  return masked(screenSample(uv, m), uv, m);
+}
+
+// ---- Click waves: a ripple on the screen's glass, refracting the recording under it ----
+// Each click's surface is h(r) = g((r - f) / w) + g((-r - f) / w) with g(x) = cos(crests x) exp(-x^2):
+// a wave packet whose front f runs out from the click, mirrored so the surface stays smooth at its
+// center. The recording is sampled along the slope, so a crest magnifies what is under it like a
+// small lens, and lit by the loupe's key light so the wave still shows over flat UI. The cursor,
+// drawn later, floats above the water.
+
+fn gd(x: f32, k: f32) -> vec2f { // g(x), g'(x)
+  let e = exp(-x * x);
+  return vec2f(cos(k * x) * e, -(k * sin(k * x) + 2.0 * x * cos(k * x)) * e);
+}
+
+// All live click waves at unzoomed point u: slope (dimensionless, outward is uphill), height.
+fn clickWaves(u: vec2f) -> vec3f {
+  let reach = F.wave.x * F.a.z;
+  let w = F.wave.y * F.a.z;
+  var v = vec3f(0.0);
+  for (var i = 0; i < i32(F.wave3.w); i++) {
+    let c = F.clicks[i];
+    let q = u - c.xy;
+    let r = length(q);
+    let p = clamp(c.z / F.wave.w, 0.0, 1.0);
+    let f = reach * (1.0 - pow(1.0 - p, F.wave3.x));
+    if (r > f + 3.0 * w) { continue; } // ahead of the front: still water
+    let a = pow(1.0 - p, F.wave3.y) * smoothstep(0.0, 0.08, p);
+    let g1 = gd((r - f) / w, F.wave.z);
+    let g2 = gd((-r - f) / w, F.wave.z);
+    v += vec3f(q / max(r, 1e-3) * (g1.y - g2.y), g1.x + g2.x) * a;
+  }
+  return v;
+}
+
+fn rippled(u: vec2f, w: vec3f, aa: f32) -> vec4f {
+  let v = w.xy;
+  let off = v * F.wave2.x * F.a.z;
+  var s = screenAt(u + off, aa);
+  let ca = F.wave2.w;
+  if (ca > 0.0) { s = vec4f(screenAt(u + off * (1.0 - ca), aa).r, s.g, screenAt(u + off * (1.0 + ca), aa).b, s.a); } // red bends least
+  let n = normalize(vec3f(-v * F.wave2.z, 1.0));
+  let L = normalize(KEY);
+  let lit = dot(n, L) / L.z - 1.0; // 0 on still water, > 0 facing the light
+  let spec = pow(max(dot(n, normalize(L + vec3f(0.0, 0.0, 1.0))), 0.0), 90.0) * F.wave3.z;
+  let rgb = mix(s.rgb, F.wave4.rgb, clamp(w.z, 0.0, 1.0) * F.wave4.w); // a tinted crest shows over any UI
+  return vec4f(max(rgb * (1.0 + F.wave2.y * lit), vec3f(0.0)) + spec, max(s.a, min(length(v) * F.wave2.z * 4.0, 1.0)));
+}
+
 // Everything under the zoom view except the cursor, at unzoomed point u. rgb + dither mark.
 fn zoomed(u: vec2f, aa: f32) -> vec4f {
   var c = background(u);
@@ -241,12 +300,10 @@ fn zoomed(u: vec2f, aa: f32) -> vec4f {
   let over = i32(F.dev.y);
   for (var i = 0; i < over; i++) { c = part(c, u, i, aa); }
   var mark = 1.0;
-  let r = F.scr;
   let cv = frameCover(u, aa);
   if (cv > 0.0) {
-    let uv = (clamp(u, F.vis.xy, F.vis.xy + F.vis.zw) - r.xy) / r.zw; // held to the shown part: the inset takes its edge color
-    let m = F.scr3.x / r.z * aa;
-    let s = masked(screenSample(uv, m), uv, m);
+    let v = clickWaves(u);
+    let s = select(screenAt(u, aa), rippled(u, v, aa), dot(v.xy, v.xy) > 1e-8);
     c = mix(c, s.rgb, cv);
     mark = mix(1.0, s.a, cv);
   }
@@ -354,18 +411,12 @@ fn dimAt(u: vec2f, aa: f32) -> f32 {
 // drop of water sits on a screen: no outline, no shadow, the bending is the edge. Lit by one key
 // light from above: a specular crescent on the bevel facing it, a dimmer one where light leaves
 // the far side, Fresnel reflection at grazing angles, and a little dispersion where the bevel
-// bends hardest. Moving, the drop stretches along its motion, keeping its area.
+// bends hardest. Moving, the drop stretches along its motion, keeping its area. The rest of the
+// frame dims evenly, so the magnified piece stands out and the rim still shows over white.
 
 const BEVEL = 0.22; // bevel width, fraction of the radius
 const KEY = vec3f(-0.38, -0.82, 0.43); // key light direction (output px axes, z toward the viewer)
-
-fn loupeBox() -> vec4f {
-  let c = toOut(F.loupe.xy, F.viewT.xyz);
-  let r = F.loupe.z * (1.0 + length(F.loupe2.zw)) * F.viewT.z + 2.0;
-  return vec4f(c - r, c + r);
-}
-
-@vertex fn vs_loupe(@builtin(vertex_index) i: u32) -> VO { return box(i, loupeBox()); }
+const AROUND = 0.25; // how much the frame around the lens dims
 
 // Radius shown at radius rho (both fractions of the lens radius, from its center), and its
 // derivative: magnified on the flat top, then a monotone cubic across the bevel that ends at the
@@ -411,7 +462,8 @@ fn underLens(um: vec2f, aa: f32, vs: f32) -> vec3f {
   let sq = ax * (along / (1.0 + k)) + (q - ax * along) * sqrt(1.0 + k);
   let d = length(sq);
   let cv = cover(d - R, aa);
-  if (cv <= 0.0) { return vec4f(0.0); }
+  let dim = AROUND * op * (1.0 - cv);
+  if (cv <= 0.0) { return vec4f(0.0, 0.0, 0.0, dim); }
 
   let rho = min(d / R, 1.0);
   let gq = ax * (dot(sq, ax) / (1.0 + k)) + (sq - ax * dot(sq, ax)) * sqrt(1.0 + k); // gradient of d: the rim's normal
@@ -441,10 +493,10 @@ fn underLens(um: vec2f, aa: f32, vs: f32) -> vec3f {
   g = mix(g, env, fres * 0.28) + vec3f(spec + spec2);
 
   // Appearing, the magnification grows from 1, where the lens shows exactly what lies under it, so
-  // the content stays opaque and swells in place while only the glass fades in. Fading the content
-  // too would show it twice, magnified over unmagnified.
+  // the content stays opaque and swells in place while only the glass and the dim fade in. Fading
+  // the content too would show it twice, magnified over unmagnified.
   col = mix(col, g, op);
-  return vec4f(col * cv, cv);
+  return vec4f(col * cv, cv + dim);
 }
 
 // ---- Camera ----
