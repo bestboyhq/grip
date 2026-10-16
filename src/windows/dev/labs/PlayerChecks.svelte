@@ -214,7 +214,10 @@
     })
 
     if (fixture) {
-      const project: Project = await (await fetch(fileUrl(`${fixture}/project.json`))).json()
+      // Only the fixture's sources: agents dogfood the fixture in the editor, and its saved edits (a
+      // muted clip, cuts) must not change what these checks measure.
+      const { sources }: Project = await (await fetch(fileUrl(`${fixture}/project.json`))).json()
+      const project = createProject('fixture', sources)
       await check('frameAt picks the right frame on the fixture (30 fps)', async () => {
         const src = await openVideo(fileUrl(`${fixture}/${project.sources.screen!.file}`))
         for (const t of [0, 0.0333, 1 / 30, 5.99, 6, 12.345, 23.95, 23.999, 24]) {

@@ -264,10 +264,10 @@
      it shrinks between them instead of covering their buttons. */
   .titlebar {
     flex: none; display: grid; grid-template-columns: 1fr minmax(0, 420px) 1fr; align-items: center; gap: 12px;
-    height: 52px; padding: 0 12px; -webkit-app-region: drag;
+    height: 40px; padding: 0 12px; -webkit-app-region: drag;
   }
   .titlebar :global(button), .titlebar :global(input), .titlebar :global(a), .titlebar :global([popover]) { -webkit-app-region: no-drag; }
-  .file { display: flex; gap: 2px; margin-left: 72px; /* clear of the traffic lights */ }
+  .file { display: flex; gap: 2px; margin-left: 68px; /* 80 px from the edge, clear of the traffic lights */ }
   .name {
     width: 100%; height: 28px; padding: 0 10px;
     border: 0; border-radius: 6px; background: transparent; text-align: center; font-size: 13px; font-weight: 600; text-overflow: ellipsis;
@@ -300,7 +300,7 @@
   }
 
   .notice {
-    position: fixed; z-index: 10; top: 58px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; margin: 0;
+    position: fixed; z-index: 10; top: 46px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; margin: 0;
     padding: 4px 4px 4px 12px; border-radius: var(--radius-lg); background: var(--surface-50); box-shadow: var(--shadow-pop);
     width: max-content; max-width: calc(100vw - 48px); font-size: 12.5px; line-height: 1.4;
   }

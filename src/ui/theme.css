@@ -121,15 +121,45 @@ button:disabled, select:disabled, input:disabled, label:has(> input:disabled), [
 .icon-btn:hover { color: var(--text); }
 .btn:disabled, .icon-btn:disabled { opacity: 0.35; pointer-events: none; }
 
-/* Shared tooltip bubble (src/ui/tooltip.ts). */
+/* Shared tooltip (src/ui/tooltip.ts). `.tooltip` is a zero-size point at the anchor edge that glides between
+   anchors; the bubble hangs off it, fades and scales in, and morphs its size when the text changes. */
 .tooltip {
-  position: fixed; inset: auto; margin: 0; padding: 4px 8px; border: 0; border-radius: var(--radius-sm);
-  background: var(--surface-150); color: var(--text); font-size: 12px; line-height: 16px; white-space: nowrap;
-  box-shadow: var(--shadow-pop); pointer-events: none;
-  position-anchor: --tooltip; position-area: bottom; margin-top: 6px; position-try-fallbacks: flip-block;
+  position: fixed; inset: 0 auto auto 0; width: 0; height: 0; margin: 0; padding: 0; border: 0; overflow: visible;
+  background: none; pointer-events: none; transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
 }
-.tooltip[data-side='left'] { position-area: left; margin: 0 8px 0 0; position-try-fallbacks: flip-inline; }
+.tooltip.snap { transition: none; }
+.tooltip-bubble {
+  position: absolute; bottom: 0; left: 0; width: max-content; max-width: min(20rem, calc(100vw - 16px));
+  padding: 4px 8px; border-radius: var(--radius-sm); background: var(--surface-150); box-shadow: var(--hairline), var(--shadow-pop);
+  color: var(--text); font-size: 12px; line-height: 16px; white-space: nowrap; text-align: center; user-select: none;
+  transform-origin: bottom center; visibility: hidden; opacity: 0; transform: translateX(-50%) translateY(4px) scale(0.96);
+  transition: opacity 160ms cubic-bezier(0.33, 1, 0.68, 1), transform 160ms cubic-bezier(0.33, 1, 0.68, 1), visibility 0s linear 160ms;
+}
+.tooltip.open .tooltip-bubble { visibility: visible; opacity: 1; transform: translateX(-50%); transition-delay: 0s; }
+.tooltip.below .tooltip-bubble { top: 0; bottom: auto; transform-origin: top center; transform: translateX(-50%) translateY(-4px) scale(0.96); }
+.tooltip.below.open .tooltip-bubble { transform: translateX(-50%); }
+.tooltip.right .tooltip-bubble { top: 0; bottom: auto; transform-origin: left center; transform: translateY(-50%) translateX(-4px) scale(0.96); }
+.tooltip.left .tooltip-bubble { top: 0; bottom: auto; left: auto; right: 0; transform-origin: right center; transform: translateY(-50%) translateX(4px) scale(0.96); }
+.tooltip.right.open .tooltip-bubble, .tooltip.left.open .tooltip-bubble { transform: translateY(-50%); }
+.tooltip-bubble.morph {
+  overflow: hidden;
+  transition: opacity 160ms cubic-bezier(0.33, 1, 0.68, 1), transform 160ms cubic-bezier(0.33, 1, 0.68, 1),
+    width 240ms cubic-bezier(0.32, 0.72, 0, 1), height 240ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.tooltip-view { position: relative; display: block; width: 100%; height: 100%; overflow: hidden; }
+.tooltip-text { display: block; }
+.tooltip-text.enter, .tooltip-ghost { position: absolute; top: 0; left: 50%; }
+.tooltip-text.enter { animation: tooltip-text-in 240ms cubic-bezier(0.33, 1, 0.68, 1) both; }
+.tooltip-ghost { animation: tooltip-text-out 160ms cubic-bezier(0.33, 1, 0.68, 1) both; }
 .tooltip kbd { margin-left: 6px; color: var(--text-dim); font: inherit; }
+@keyframes tooltip-text-in {
+  from { opacity: 0; transform: translate(calc(-50% + var(--dx, 0px)), var(--dy, 0px)); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes tooltip-text-out {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to { opacity: 0; transform: translate(calc(-50% - var(--dx, 0px)), calc(0px - var(--dy, 0px))); }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }

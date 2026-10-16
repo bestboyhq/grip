@@ -178,12 +178,18 @@
     relayout.observe(el)
     return () => relayout.unobserve(el)
   }
-  /** The label box takes its text's width; CSS glides it there. */
+  /** The label box takes its text's width; CSS glides it there. The write waits a frame: resizing the box
+   *  inside this callback resizes its button, which `relayout` observes, and Chromium throws a ResizeObserver
+   *  loop error. */
   function fit(text: HTMLElement) {
     const box = text.parentElement!
-    const ro = new ResizeObserver(([e]) => (box.style.width = `${Math.ceil(e.borderBoxSize[0].inlineSize)}px`))
+    let raf = 0
+    const ro = new ResizeObserver(([e]) => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => (box.style.width = `${Math.ceil(e.borderBoxSize[0].inlineSize)}px`))
+    })
     ro.observe(text)
-    return () => ro.disconnect()
+    return () => (ro.disconnect(), cancelAnimationFrame(raf))
   }
   const SWAP = { amount: 2, duration: 200 }
 
