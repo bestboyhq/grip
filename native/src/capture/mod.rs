@@ -941,18 +941,23 @@ mod tests {
         let dir = bundle("pause");
         let (emit, log) = events();
         assert_eq!(start(synthetic(&dir, true), emit.clone()), Ok(RecState::Recording));
+        // A busy CI VM oversleeps by a few hundred ms, so expect the time that really passed.
+        let started = Instant::now();
         sleep(1.5);
         let paused_at = SESSION.source_secs(clock::now_ns()).unwrap();
         assert_eq!(pause(), RecState::Paused);
+        let paused = Instant::now();
         assert_eq!(pause(), RecState::Paused, "idempotent");
         sleep(1.0);
+        let paused = paused.elapsed();
         assert_eq!(resume(), RecState::Recording);
         sleep(1.0);
+        let recorded = (started.elapsed() - paused).as_secs_f64();
         let s = stop("user", None).expect("stopped");
         assert_eq!(state(), RecState::Idle);
         assert!(stop("user", None).is_none(), "second stop is a no-op");
 
-        assert!((s.duration - 2.5).abs() < 0.25, "pause removed from the timeline: {}", s.duration);
+        assert!((s.duration - recorded).abs() < 0.25, "pause removed from the timeline: {} vs {recorded}", s.duration);
         let screen = dir.join("sources/screen.mp4");
         let system = dir.join("sources/system.m4a");
         assert_eq!(probe(&screen, "stream=codec_name,width,height"), "hevc,1280,720");
