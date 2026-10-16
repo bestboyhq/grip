@@ -223,8 +223,8 @@ export function prepareZoom(input: SceneInput, map: TimeMap, layout: ReturnType<
 
 /** Where the lens of loupe piece p sits, every DT from its start through its fade out: x, y and
  *  velocity x, y (unzoomed px, px/s), stepped like the camera so any frame reads it in isolation.
- *  Following the cursor, it trails it on a soft spring; a fixed point holds still. The lens stays
- *  over the shown screen, so it never magnifies background. */
+ *  Following the cursor, it trails it on a soft spring; a fixed point holds still. It centers on
+ *  the cursor even at the screen's edge, so the lens may overhang into the background. */
 function loupePath(p: Span, layout: ReturnType<typeof prepareLayout>, cursor: ReturnType<typeof prepareCursor>, radius: number): Float32Array {
   const n = Math.ceil((p.b + LOUPE_FADE - p.a) / DT) + 1
   const out = new Float32Array(4 * n)
@@ -239,8 +239,7 @@ function loupePath(p: Span, layout: ReturnType<typeof prepareLayout>, cursor: Re
     if (s) {
       const { screen: r, visible: v } = s
       const c: Pt = target.kind === 'point' ? { x: r.x + target.x * r.w, y: r.y + target.y * r.h } : (cursorPoint(cursor, t) ?? aim ?? { x: v.x + v.w / 2, y: v.y + v.h / 2 })
-      const inside = (x: number, lo: number, size: number) => (2 * radius <= size ? clamp(x, lo + radius, lo + size - radius) : lo + size / 2)
-      aim = { x: inside(c.x, v.x, v.w), y: inside(c.y, v.y, v.h) }
+      aim = { x: clamp(c.x, v.x, v.x + v.w), y: clamp(c.y, v.y, v.y + v.h) }
     }
     if (!aim) continue
     if (k === 0) Object.assign(pos, aim)

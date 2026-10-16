@@ -258,6 +258,15 @@ test('loupe fades in and out, magnifies, and follows its target', () => {
   near(view(3.5).scale, 1, 1e-9) // a loupe never moves the camera
 })
 
+test('loupe centers on the cursor at the screen edge, overhanging the background', () => {
+  const { p, screen } = setup([zoom({ start: 2, end: 5, mode: 'loupe' })], moves([[0, 2870, 1790], [10, 2870, 1790]]), { duration: 10 })
+  const on = loupeAt(p.zoom, 4)!
+  const c = cursorAt(p.cursor, 4)!
+  near(on.x, c.x, 1, 'x')
+  near(on.y, c.y, 1, 'y')
+  assert.ok(on.x + on.radius > screen(4).x + screen(4).w, 'the lens overhangs the screen')
+})
+
 test('generateAutoZooms: merges, leads, holds, covers typing, skips the erratic', () => {
   const click = (t: number, x = 1400, y = 900): InputEvent => ({ t, type: 'down', x, y, button: 'left' })
   const sources = createProject('t', { duration: 45, screen: SCREEN }).sources
