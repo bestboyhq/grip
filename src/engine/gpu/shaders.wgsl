@@ -416,7 +416,7 @@ fn dimAt(u: vec2f, aa: f32) -> f32 {
 
 const BEVEL = 0.22; // bevel width, fraction of the radius
 const KEY = vec3f(-0.38, -0.82, 0.43); // key light direction (output px axes, z toward the viewer)
-const AROUND = 0.25; // how much the frame around the lens dims
+const AROUND = 0.15; // how much the frame around the lens dims
 
 // Radius shown at radius rho (both fractions of the lens radius, from its center), and its
 // derivative: magnified on the flat top, then a monotone cubic across the bevel that ends at the
