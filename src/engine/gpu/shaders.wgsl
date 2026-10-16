@@ -32,10 +32,7 @@ struct Frame {
   fin: vec4f,      // has overlay
   vp: vec4f,       // viewport (output px): the zoom view shows through it, everything outside is unzoomed
   vis: vec4f,      // shown part of the recording (unzoomed px): all of scr, or its crop; the frame is this grown by dev.w
-  clicks: array<vec4f, 4>, // click waves: x, y, front radius (unzoomed px), strength
-  wave: vec4f,     // width (units), crests, specular, click count
-  wave2: vec4f,    // shift (units), shade, tilt, dispersion
-  wave3: vec4f,    // crest tint rgb, strength
+  clicks: array<vec4f, 4>, // click ripples: x, y, front radius (unzoomed px), strength
 }
 
 @group(0) @binding(0) var<uniform> F: Frame;
@@ -244,46 +241,43 @@ fn screenAt(u: vec2f, aa: f32) -> vec4f {
   return masked(screenSample(uv, m), uv, m);
 }
 
-// ---- Click waves: a ripple on the screen's glass, refracting the recording under it ----
-// Each click's surface is h(r) = g((r - f) / w) + g((-r - f) / w) with g(x) = cos(crests x) exp(-x^2):
-// a wave packet whose front f runs out from the click (its easing lives in overlays/index.ts),
-// mirrored so the surface stays smooth at its center. The recording is sampled along the slope, so a crest magnifies what is under it like a
-// small lens, and lit by the loupe's key light so the wave still shows over flat UI. The cursor,
-// drawn later, floats above the water.
+// ---- Click ripple: a shock wave on the screen's glass, refracting the recording under it ----
+// Each click raises one crest, h(r) = g((r - f) / w) + g((-r - f) / w) with g(x) = exp(-x^2), whose
+// front f runs out from the click (RIPPLE in overlays/index.ts eases it), mirrored so the surface
+// stays smooth at its center. The recording is sampled along the slope, so the crest magnifies what
+// it passes like a thin lens, strong dispersion bends the colors around it into a rainbow, and the
+// loupe's key light shades it so it still shows over flat UI. The cursor, drawn later, floats above.
 
-fn gd(x: f32, k: f32) -> vec2f { // g(x), g'(x)
-  let e = exp(-x * x);
-  return vec2f(cos(k * x) * e, -(k * sin(k * x) + 2.0 * x * cos(k * x)) * e);
-}
+const RIPPLE_W = 10.0; // crest width, units
+const SLOPE = 0.857764; // steepest |g'|, sqrt(2 / e)
+const RIPPLE_SHIFT = 8.0 / SLOPE; // refraction at the steepest slope, units
+const RIPPLE_TILT = 0.6 / SLOPE; // surface tilt at the steepest slope, for the light
 
-// All live click waves at unzoomed point u: slope (dimensionless, outward is uphill), height.
-fn clickWaves(u: vec2f) -> vec3f {
-  let w = F.wave.x * F.a.z;
-  var v = vec3f(0.0);
-  for (var i = 0; i < i32(F.wave.w); i++) {
-    let c = F.clicks[i];
+// Slope of every live ripple at unzoomed point u: dimensionless, outward is uphill.
+fn ripples(u: vec2f) -> vec2f {
+  let w = RIPPLE_W * F.a.z;
+  var v = vec2f(0.0);
+  for (var i = 0; i < 4; i++) {
+    let c = F.clicks[i]; // x, y, front, strength
     let q = u - c.xy;
     let r = length(q);
-    if (r > c.z + 3.0 * w) { continue; } // ahead of the front: still water
-    let g1 = gd((r - c.z) / w, F.wave.y);
-    let g2 = gd((-r - c.z) / w, F.wave.y);
-    v += vec3f(q / max(r, 1e-3) * (g1.y - g2.y), g1.x + g2.x) * c.w;
+    if (c.w <= 0.0 || r > c.z + 3.0 * w) { continue; } // gone, or ahead of the front: still glass
+    let a = (r - c.z) / w;
+    let b = (r + c.z) / w;
+    v += q / max(r, 1e-3) * -2.0 * (a * exp(-a * a) + b * exp(-b * b)) * c.w; // g'(a) - g'(-b)
   }
   return v;
 }
 
-fn rippled(u: vec2f, w: vec3f, aa: f32) -> vec4f {
-  let v = w.xy;
-  let off = v * F.wave2.x * F.a.z;
-  var s = screenAt(u + off, aa);
-  let ca = F.wave2.w;
-  if (ca > 0.0) { s = vec4f(screenAt(u + off * (1.0 - ca), aa).r, s.g, screenAt(u + off * (1.0 + ca), aa).b, s.a); } // red bends least
-  let n = normalize(vec3f(-v * F.wave2.z, 1.0));
+fn rippled(u: vec2f, v: vec2f, aa: f32) -> vec4f {
+  let off = v * RIPPLE_SHIFT * F.a.z;
+  let s = screenAt(u + off, aa);
+  let rgb = vec3f(screenAt(u + off * 0.4, aa).r, s.g, screenAt(u + off * 1.6, aa).b); // red bends least, blue most
+  let n = normalize(vec3f(-v * RIPPLE_TILT, 1.0));
   let L = normalize(KEY);
-  let lit = dot(n, L) / L.z - 1.0; // 0 on still water, > 0 facing the light
-  let spec = pow(max(dot(n, normalize(L + vec3f(0.0, 0.0, 1.0))), 0.0), 90.0) * F.wave.z;
-  let rgb = mix(s.rgb, F.wave3.rgb, clamp(w.z, 0.0, 1.0) * F.wave3.w); // a tinted crest shows over any UI
-  return vec4f(max(rgb * (1.0 + F.wave2.y * lit), vec3f(0.0)) + spec, max(s.a, min(length(v) * F.wave2.z * 4.0, 1.0)));
+  let lit = dot(n, L) / L.z - 1.0; // 0 on still glass, > 0 facing the light
+  let spec = pow(max(dot(n, normalize(L + vec3f(0.0, 0.0, 1.0))), 0.0), 90.0);
+  return vec4f(max(rgb * (1.0 + 0.15 * lit), vec3f(0.0)) + spec, max(s.a, min(length(v) * RIPPLE_TILT * 4.0, 1.0)));
 }
 
 // Everything under the zoom view except the cursor, at unzoomed point u. rgb + dither mark.
@@ -297,8 +291,9 @@ fn zoomed(u: vec2f, aa: f32) -> vec4f {
   var mark = 1.0;
   let cv = frameCover(u, aa);
   if (cv > 0.0) {
-    let v = clickWaves(u);
-    let s = select(screenAt(u, aa), rippled(u, v, aa), dot(v.xy, v.xy) > 1e-8);
+    let v = ripples(u);
+    var s: vec4f;
+    if (dot(v, v) > 1e-8) { s = rippled(u, v, aa); } else { s = screenAt(u, aa); }
     c = mix(c, s.rgb, cv);
     mark = mix(1.0, s.a, cv);
   }

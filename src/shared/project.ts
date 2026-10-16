@@ -131,7 +131,7 @@ export interface Style {
     animation: 'smooth' | 'medium' | 'rapid' | 'none'
     hideIdle: boolean
     loop: boolean // return to start position at the end
-    click: 'none' | 'ripple' | 'circle' | 'shockwave' | 'wave-pond' | 'wave-drop' | 'wave-shock' | 'wave-quake' | 'wave-glow'
+    click: 'none' | 'ripple' | 'circle' | 'shockwave'
     clickSound: boolean
     /** system (default) = the recorded cursor images; builtin = our vector set (arrow, pointer,
      *  I-beam; other recorded shapes stay as recorded); touch = a touch circle everywhere. */

@@ -11,7 +11,6 @@
   import { fileUrl } from '../../../engine/media/index.ts'
   import { Renderer, type Motion } from '../../../engine/gpu/renderer.ts'
   import { motionAt } from '../../../engine/compose.ts'
-  import { WAVES, WAVE_MOTIONS } from '../../../engine/overlays/index.ts'
   import { WALLPAPERS } from '../../../engine/backgrounds/index.ts'
   import { wallpaperThumbnail } from '../../../engine/backgrounds/thumbnails.ts'
   import { SvelteMap } from 'svelte/reactivity'
@@ -62,7 +61,6 @@
     overlay: false,
     click: 'ripple' as Style['cursor']['click'],
     zooms: true, // the project's own zooms, when no lab loupe replaces them
-    ease: 'cubic', // easing trial of the shock wave
   })
   let status = $state('loading')
   const thumbs = new SvelteMap<string, string>()
@@ -95,7 +93,6 @@
     if (!s.lut) st.camera.lut = undefined
     st.cursor.size = s.cursorSize
     st.cursor.click = s.click
-    WAVES['wave-shock']!.motion = WAVE_MOTIONS[s.ease]
     if (!s.zooms) p.zooms = []
     const d = p.sources.duration
     p.layouts = s.layout === 'pip' ? [] : [{ id: 'l', start: s.layoutStart, end: d, kind: s.layout }]
@@ -307,8 +304,7 @@
     <label><input type="checkbox" bind:checked={s.followFace} /> follow face</label>
     <label><input type="checkbox" bind:checked={s.lut} /> LUT</label>
     <label><input type="checkbox" bind:checked={s.overlay} /> overlay</label>
-    <label>click <select bind:value={s.click}>{#each ['none', 'ripple', 'circle', 'shockwave', ...Object.keys(WAVES)] as k}<option>{k}</option>{/each}</select></label>
-    <label>wave ease <select bind:value={s.ease}>{#each Object.keys(WAVE_MOTIONS) as k}<option>{k}</option>{/each}</select></label>
+    <label>click <select bind:value={s.click}>{#each ['none', 'ripple', 'circle', 'shockwave'] as k}<option>{k}</option>{/each}</select></label>
     <label><input type="checkbox" bind:checked={s.zooms} /> project zooms</label>
     <label>zoom <input type="range" min="1" max="4" step="0.05" bind:value={s.zoom} /> {s.zoom}</label>
     <label>motion <input type="range" min="0" max="0.3" step="0.01" bind:value={s.motion} /></label>

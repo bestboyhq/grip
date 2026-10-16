@@ -1,6 +1,7 @@
 // Owner: compositor (overlays). Click effects, drawn strokes, keystroke groups, and caption pages in
 // OUTPUT time, plus drawOverlays() which paints them with Canvas 2D (text and keycaps get the
-// platform's font rendering) for the GPU compositor to layer on top.
+// platform's font rendering) for the GPU compositor to layer on top. The ripple is the exception:
+// it bends the recording itself, so the compositor draws it (RIPPLE).
 // prepareOverlays maps every item through the one time map once per project revision and output size;
 // clicksAt / drawingsAt / keystrokesAt / captionAt are pure lookups, so any frame renders alone, in any order.
 
@@ -33,51 +34,13 @@ function upper(a: Array<{ start: number }>, t: number): number {
 
 // ---- Tuning (seconds, and lengths in units: 1 unit = min(w, h) / 1080 px). ----
 
-const CLICK_LIFE: Partial<Record<Click['style'], number>> = { ripple: 0.6, circle: 0.45, shockwave: 0.55 }
-/** Seconds a click effect shows. */
-export const clickLife = (style: Click['style']) => WAVES[style]?.motion.life ?? CLICK_LIFE[style] ?? 0
+const ramp = (p: number) => { const x = clamp01(p / 0.08); return x * x * (3 - 2 * x) } // the ripple never pops in
+/** The ripple, drawn by the compositor (shaders.wgsl, ripples). At p = age / life its front has run
+ *  out front(p) of `reach` units on a quint ease-out that brakes hard, and it keeps its full
+ *  strength until a late fade. */
+export const RIPPLE = { reach: 220, life: 0.7, front: (p: number) => 1 - (1 - p) ** 5, strength: (p: number) => (1 - p ** 2.5) * ramp(p) }
 
-/** How a click wave moves, at p = age / life in 0..1: its front as a fraction of the reach, and its strength. */
-export interface WaveMotion { life: number; front: (p: number) => number; strength: (p: number) => number }
-const ramp = (p: number, e = 0.08) => { const x = clamp01(p / e); return x * x * (3 - 2 * x) } // eases the strength in: the wave never pops
-const powerOut = (life: number, ease: number, decay: number): WaveMotion => ({ life, front: (p) => 1 - (1 - p) ** ease, strength: (p) => (1 - p) ** decay * ramp(p) })
-const expoOut = (x: number) => (1 - 2 ** (-9 * x)) / (1 - 2 ** -9)
-/** CSS cubic-bezier(x1, y1, x2, y2): x(s) is monotone for x1, x2 in 0..1, so bisection finds s. */
-function bezier(x1: number, y1: number, x2: number, y2: number) {
-  const at = (a: number, b: number, s: number) => 3 * a * s * (1 - s) ** 2 + 3 * b * s * s * (1 - s) + s ** 3
-  return (x: number) => {
-    let lo = 0, hi = 1
-    for (let i = 0; i < 30; i++) (at(x1, x2, (lo + hi) / 2) < x ? (lo = (lo + hi) / 2) : (hi = (lo + hi) / 2))
-    return at(y1, y2, (lo + hi) / 2)
-  }
-}
-const HOLD = 0.13 // press: share of the life the click point swells before the wave leaves
-const JELLY = { stiffness: 120, damping: 11, mass: 1 } // 16% overshoot
-
-/** Easing trials for the shock wave (temporary: one ships, the rest go). */
-export const WAVE_MOTIONS: Record<string, WaveMotion> = {
-  cubic: powerOut(0.6, 3, 1.2),
-  'ease-out': { life: 0.6, front: bezier(0, 0, 0.58, 1), strength: (p) => (1 - p) ** 1.2 * ramp(p) }, // CSS ease-out, today's fade
-  linear: { life: 0.6, front: (p) => p, strength: (p) => (1 - p) ** 1.2 * ramp(p) },
-  quint: { life: 0.7, front: (p) => 1 - (1 - p) ** 5, strength: (p) => (1 - p ** 2.5) * ramp(p) },
-  expo: { life: 0.9, front: expoOut, strength: (p) => (1 - p) ** 1.6 * ramp(p) },
-  blast: { life: 0.8, front: (p) => p ** 0.4, strength: (p) => (1 - p) ** 1.5 * ramp(p) },
-  spring: { life: 0.9, front: (p) => 0.87 * springProgress(p * 0.9, JELLY), strength: (p) => (1 - p) ** 1.3 * ramp(p) },
-  inout: { life: 0.7, front: (p) => 0.5 - 0.5 * Math.cos(Math.PI * p), strength: (p) => (1 - p) ** 1.2 * ramp(p, 0.3) },
-  press: { life: 0.9, front: (p) => (p < HOLD ? 0 : expoOut((p - HOLD) / (1 - HOLD))), strength: (p) => (p < HOLD ? (p / HOLD) ** 2 : (1 - (p - HOLD) / (1 - HOLD)) ** 1.5) },
-}
-
-/** Click styles the compositor draws as a wave refracting the screen (shaders.wgsl, clickWaves).
- *  reach, width, shift in units; crests = cos frequency of the packet (0: one crest); shade, tilt,
- *  spec light the surface; tint = sRGB + strength mixed into the crest. */
-export interface Wave { reach: number; width: number; crests: number; shift: number; shade: number; tilt: number; dispersion: number; spec: number; motion: WaveMotion; tint?: [number, number, number, number] }
-export const WAVES: Partial<Record<Click['style'], Wave>> = {
-  'wave-pond': { reach: 140, width: 20, crests: 5.5, shift: 4.5, shade: 0.11, tilt: 0.5, dispersion: 0, spec: 0.6, motion: powerOut(1.1, 1.3, 1.6) },
-  'wave-drop': { reach: 100, width: 16, crests: 2.2, shift: 9, shade: 0.13, tilt: 0.6, dispersion: 0.12, spec: 0.7, motion: powerOut(0.8, 1.8, 1.4) },
-  'wave-shock': { reach: 220, width: 10, crests: 0, shift: 8, shade: 0.15, tilt: 0.6, dispersion: 0.6, spec: 1, motion: WAVE_MOTIONS.cubic },
-  'wave-quake': { reach: 520, width: 60, crests: 3.5, shift: 9, shade: 0.05, tilt: 0.25, dispersion: 0, spec: 0, motion: powerOut(1.4, 1.5, 1.6) },
-  'wave-glow': { reach: 170, width: 9, crests: 0, shift: 6, shade: 0.14, tilt: 0.8, dispersion: 0.15, spec: 1, motion: powerOut(0.7, 2.2, 1.1), tint: [134 / 255, 118 / 255, 1, 0.45] },
-}
+const CLICK_LIFE: Record<Click['style'], number> = { none: 0, ripple: RIPPLE.life, circle: 0.45, shockwave: 0.55 }
 
 const KEY_H = 78 // keycap height incl. its side
 const KEY_GAP = 8 // between keycaps of one shortcut
@@ -159,7 +122,7 @@ export function clicksAt(o: Prepared, t: number): Click[] {
   const s = o.input.project.sources.screen
   const hi = upper(o.clicks, t)
   let lo = hi
-  while (lo > 0 && t - o.clicks[lo - 1].start < clickLife(style)) lo--
+  while (lo > 0 && t - o.clicks[lo - 1].start < CLICK_LIFE[style]) lo--
   const live = o.clicks.slice(lo, hi)
   const r = live.length && s ? screenAt(o.layout, t)?.screen : null
   if (!r || !s) return []
@@ -484,21 +447,11 @@ function ring(ctx: Ctx, x: number, y: number, r: number, width: number, color: s
 }
 
 function drawClick(ctx: Ctx, c: Click, u: number) {
-  const p = c.age / clickLife(c.style)
+  const p = c.age / CLICK_LIFE[c.style]
   if (p < 0 || p >= 1) return
   const fade = 1 - p
   ctx.save()
-  if (c.style === 'ripple') {
-    // A tinted disc spreads out under its rim; a second, fainter rim trails it.
-    const r = (8 + 40 * easeOut(p)) * u
-    ctx.beginPath()
-    ctx.arc(c.x, c.y, r, 0, TAU)
-    ctx.fillStyle = `rgb(${VIOLET} / ${0.22 * fade})`
-    ctx.fill()
-    ring(ctx, c.x, c.y, r, 2.5 * u, `rgb(${VIOLET} / ${0.85 * fade})`)
-    const q = clamp01((p - 0.22) / 0.78)
-    if (q > 0) ring(ctx, c.x, c.y, (8 + 40 * easeOut(q)) * u, 1.5 * u, `rgb(${VIOLET} / ${0.5 * (1 - q)})`)
-  } else if (c.style === 'circle') {
+  if (c.style === 'circle') {
     // A puck pressed under the cursor: pops in, then lets go. White rim with a dark hairline reads on any screen.
     const r = 20 * u * (0.7 + 0.3 * easeOut(p * 4))
     const a = clamp01(fade * 1.6)
