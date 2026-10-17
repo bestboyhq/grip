@@ -119,25 +119,29 @@ test('layouts and masks never overlap: fit, move, resize, paste', () => {
   assert.deepEqual(items.slice(2).map((z) => [z.start, z.end]), [[4, 6], [8, 10]])
 })
 
-test('zooms pass over each other and stack in rows that keep still while one is dragged across', () => {
+test('zooms pass over each other: a shorter one lies on a longer one, the same while dragged across', () => {
   const zs = [zoom('a', 2, 4), zoom('b', 6, 8)]
   assert.deepEqual(M.fit(zs, 3, 7, 30, M.MIN_LEN, true), [3, 7])
   assert.deepEqual(M.fit(zs, 29.5, 31, 30, M.MIN_LEN, true), [28.5, 30]) // only the recording's ends limit it
   assert.deepEqual(M.moveItems(zs, new Set(['a']), 5, 30, true)[0].start, 7)
   assert.equal(M.resizeItem(zs, 'a', 'end', 7, 30, true)[0].end, 7)
   assert.deepEqual(M.placeCopies(zs, zs, 1, 30, true).items.slice(2).map((z) => [z.start, z.end]), [[3, 5], [7, 9]])
-  const rows = (zooms: Zoom[]) => {
-    const l = M.buildModel(parts([clip(0, 30)], zooms), [], []).zooms
-    return [l.row.join(''), l.rows]
-  }
-  assert.deepEqual(rows(zs), ['00', 1])
-  assert.deepEqual(rows([zoom('a', 2, 10), zoom('b', 4, 6), zoom('c', 5, 12), zoom('d', 11, 14)]), ['0120', 3]) // d takes a's row back once a ends
-  // Dragging b from after a to before it: a never moves, b takes the row under it while they overlap.
-  for (const start of [9, 5, 1, 0]) assert.deepEqual(rows([zoom('a', 2, 6), zoom('b', start, start + 3)])[0], start + 3 > 2 && start < 6 ? '01' : '00')
+  const lane = (zooms: Zoom[]) => M.buildModel(parts([clip(0, 30)], zooms), [], []).zooms
+  const order = (zooms: Zoom[]) => lane(zooms).rank.join('') // bottom up
+  assert.equal(order([zoom('in', 4, 6), zoom('out', 2, 10)]), '10') // a zoom inside another draws over it, whichever came first
+  assert.equal(order([zoom('a', 2, 6), zoom('b', 4, 8)]), '01') // as long: the later on top
+  assert.equal(order([{ ...zoom('off', 4, 5), enabled: false }, zoom('on', 2, 10)]), '01') // turned off under turned on
+  // Dragging b (shorter) across a never reorders them.
+  for (const start of [9, 5, 1, 0]) assert.equal(order([zoom('a', 2, 6), zoom('b', start, start + 3)]), '01')
+  // Where two or more turned-on zooms are on at once, they overlap; touching ends do not.
+  const ov = (zooms: Zoom[]) => lane(zooms).overlaps.map((o) => [o.a, o.b, o.items.join('')])
+  assert.deepEqual(ov(zs), [])
+  assert.deepEqual(ov([zoom('a', 2, 6), zoom('b', 6, 8)]), [])
+  assert.deepEqual(ov([zoom('a', 2, 12), zoom('b', 4, 9), zoom('c', 5, 7), zoom('d', 11, 13)]), [[4, 5, '01'], [5, 7, '012'], [7, 9, '01'], [11, 12, '03']])
+  assert.deepEqual(ov([zoom('a', 2, 12), { ...zoom('off', 4, 9), enabled: false }]), [])
   const m = M.buildModel(parts([clip(0, 30)], [zoom('a', 2, 10), zoom('b', 4, 6)]), [], [])
-  assert.equal(M.blockAt(m.zooms, 5, 0, 0)?.i, 0)
-  assert.equal(M.blockAt(m.zooms, 5, 0, 1)?.i, 1)
-  assert.equal(M.blockAt(m.zooms, 8, 0, 1), null)
+  assert.deepEqual(M.blocksAt(m.zooms, 5).map((b) => b.i), [1, 0]) // the top one first
+  assert.equal(M.blockAt(m.zooms, 8)?.i, 0)
 })
 
 test('keystroke chips: shortcuts stand alone, typing runs merge', () => {

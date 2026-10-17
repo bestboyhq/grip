@@ -16,7 +16,7 @@
   import * as A from './actions.svelte.ts'
   import { formatTime } from '../helpers.ts'
   import { tooltip } from '../../../ui/tooltip.ts'
-  import { PAD, RULER, draw, hit, rows as layoutRows, stackRow, thumb, timeOf, xOf, type Audio, type Hit, type View } from './draw.ts'
+  import { PAD, RULER, draw, hit, rows as layoutRows, thumb, timeOf, xOf, type Audio, type Hit, type View } from './draw.ts'
   import { Waveforms, type PeaksFn } from './waveform.ts'
   import Menu, { type Target } from './Menu.svelte'
 
@@ -153,16 +153,15 @@
       return requestDraw()
     }
     model = M.buildModel(draft ? { ...base, ...draft } : base, keys, words, model ?? undefined)
+    if (draft) return requestDraw() // lanes and fit stay as they were while dragging
     const key = `${doc.path}|${doc.project?.createdAt}`
     if (key !== lanesFor) {
       lanesFor = key
       shown = new Set()
     }
-    // A zoom dragged onto another grows the zoom track a row at once, so the lanes follow drags too.
-    const r = layoutRows(M.tracks(model, camera, shown), { zooms: model.zooms.rows })
+    const r = layoutRows(M.tracks(model, camera, shown))
     view.rows = r.rows
     height = r.height
-    if (draft) return requestDraw() // the fit stays as it was while dragging
     const fit = isFit()
     view.duration = duration = model.map.duration
     if (fit) view.pps = target = minPps() // a fitted timeline stays fitted when edits change its length
@@ -430,11 +429,11 @@
       draft = { clips }
       view.shift = d.side === 'start' ? { at: d.map.outStarts[d.i], by: (clips[d.i].start - c.start) / c.speed } : null
     } else if (d.kind === 'move') {
-      draft = { [d.track]: M.moveItems(b[d.track] as M.Item[], d.ids, toSource(d.map, t) - d.grab, b.duration, M.stacks(d.track)) }
+      draft = { [d.track]: M.moveItems(b[d.track] as M.Item[], d.ids, toSource(d.map, t) - d.grab, b.duration, M.overlaps(d.track)) }
     } else if (d.kind === 'resize') {
-      draft = { [d.track]: M.resizeItem(b[d.track] as M.Item[], d.id, d.side, toSource(d.map, timeOf(view, p.x) + d.off), b.duration, M.stacks(d.track)) }
+      draft = { [d.track]: M.resizeItem(b[d.track] as M.Item[], d.id, d.side, toSource(d.map, timeOf(view, p.x) + d.off), b.duration, M.overlaps(d.track)) }
     } else if (d.kind === 'create') {
-      const r = M.fit(b[d.track], toSource(d.map, Math.min(d.t0, t)), toSource(d.map, Math.max(d.t0, t)), b.duration, M.MIN_LEN, M.stacks(d.track))
+      const r = M.fit(b[d.track], toSource(d.map, Math.min(d.t0, t)), toSource(d.map, Math.max(d.t0, t)), b.duration, M.MIN_LEN, M.overlaps(d.track))
       draft = r ? { [d.track]: [...b[d.track], A.make(d.track, r[0], r[1])] } : null
     } else if (d.kind === 'marquee') {
       selection.ids = [...new Set([...d.keep, ...marqueeHits()])]
@@ -484,11 +483,7 @@
       if (row.y > y1 || row.y + row.h < y0 || (row.id !== 'clips' && !isItem(row.id))) continue
       const l = model[row.id]
       const [from, to] = M.visible(l, t0, t1)
-      for (let k = from; k < to; k++) {
-        const b = l.blocks[k]
-        const r = stackRow(row, l.row[b.i])
-        if (b.b >= t0 && r.y <= y1 && r.y + r.h >= y0) out.push(idOf(row.id, b))
-      }
+      for (let k = from; k < to; k++) if (l.blocks[k].b >= t0) out.push(idOf(row.id, l.blocks[k]))
     }
     return out
   }

@@ -38,8 +38,15 @@ export interface Lane<T extends Timed = Timed> {
   items: T[]
   blocks: Block[] // sorted by a
   maxLen: number // longest block, bounds the visible-range search
-  row: number[] // stacked lanes: the row of each item, 0 on top
-  rows: number
+  rank: number[] // per item, its place in the drawing order, bottom up
+  overlaps: Overlap[] // where items (zooms) overlap and combine, in order
+}
+
+/** An output stretch where two or more zooms, turned on, are on at once and combine. */
+export interface Overlap {
+  a: number
+  b: number
+  items: number[] // bottom up
 }
 
 /** A removed stretch of source next to a clip edge: shown as a marker, click restores it. */
@@ -71,32 +78,41 @@ export interface Model {
 const EPS = 1e-6
 export const MIN_LEN = 0.1 // shortest clip or item, output seconds
 
-/** Zooms may overlap, so their lane stacks them in rows; every other item lane keeps one row. */
-export const stacks = (t: TrackId) => t === 'zooms'
+/** Zooms may overlap; no other items do. */
+export const overlaps = (t: TrackId) => t === 'zooms'
 
-/** Rows for items that may overlap: each item takes the topmost row free of the items before it in
- *  the array, so an item keeps its row while another is dragged across it. */
-function stack(items: Timed[]): { row: number[]; rows: number } {
-  const order = items.map((_, i) => i).sort((x, y) => items[x].start - items[y].start)
-  const before: number[][] = items.map(() => []) // earlier items overlapping each one
-  let on: number[] = []
-  for (const i of order) {
-    on = on.filter((j) => items[j].end > items[i].start + EPS)
-    for (const j of on) before[Math.max(i, j)].push(Math.min(i, j))
-    on.push(i)
+/** Overlapping items (zooms): the order they draw in, bottom up (turned off under turned on, longer
+ *  under shorter, earlier under later, so a zoom inside another always shows), and the stretches
+ *  where two or more turned on overlap. Moving an item keeps its length, so dragging one across
+ *  another never reorders them. */
+function layers(items: Timed[], blocks: Block[]): { rank: number[]; overlaps: Overlap[] } {
+  const on = (i: number) => ((items[i] as { enabled?: boolean }).enabled === false ? 0 : 1)
+  const len = (i: number) => items[i].end - items[i].start
+  const rank = items.map(() => 0)
+  items
+    .map((_, i) => i)
+    .sort((i, j) => on(i) - on(j) || len(j) - len(i) || items[i].start - items[j].start || i - j)
+    .forEach((i, k) => (rank[i] = k))
+  // Sweep the turned-on blocks' ends in output time, an end before a start at the same moment.
+  const ends = blocks.filter((b) => on(b.i)).flatMap((b) => [[b.a, 1, b.i], [b.b, -1, b.i]]).sort((x, y) => x[0] - y[0] || x[1] - y[1])
+  const overlaps: Overlap[] = []
+  const live = new Set<number>()
+  let at = 0
+  for (const [t, d, i] of ends) {
+    if (live.size > 1 && t - at > EPS) {
+      const ids = [...live].sort((x, y) => rank[x] - rank[y])
+      const last = overlaps.at(-1)
+      if (last && at - last.b < EPS && ids.join() === last.items.join()) last.b = t
+      else overlaps.push({ a: at, b: t, items: ids })
+    }
+    if (d > 0) live.add(i)
+    else live.delete(i)
+    at = t
   }
-  const row: number[] = []
-  let rows = 1
-  items.forEach((_, i) => {
-    let r = 0
-    while (before[i].some((j) => row[j] === r)) r++
-    row.push(r)
-    rows = Math.max(rows, r + 1)
-  })
-  return { row, rows }
+  return { rank, overlaps }
 }
 
-export function lane<T extends Timed>(map: TimeMap, items: T[], stacked = false): Lane<T> {
+export function lane<T extends Timed>(map: TimeMap, items: T[], overlap = false): Lane<T> {
   const blocks: Block[] = []
   let maxLen = 0
   items.forEach((it, i) => {
@@ -113,7 +129,7 @@ export function lane<T extends Timed>(map: TimeMap, items: T[], stacked = false)
     })
   })
   blocks.sort((x, y) => x.a - y.a)
-  return { items, blocks, maxLen, ...(stacked ? stack(items) : { row: items.map(() => 0), rows: 1 }) }
+  return { items, blocks, maxLen, ...(overlap ? layers(items, blocks) : { rank: items.map((_, i) => i), overlaps: [] }) }
 }
 
 function clipLane(map: TimeMap): Lane<Clip> {
@@ -124,14 +140,14 @@ function clipLane(map: TimeMap): Lane<Clip> {
     if (b - a > maxLen) maxLen = b - a
     return { a, b, i, head: true, tail: true }
   })
-  return { items: map.clips, blocks, maxLen, row: blocks.map(() => 0), rows: 1 }
+  return { items: map.clips, blocks, maxLen, rank: blocks.map((_, i) => i), overlaps: [] }
 }
 
 /** Rebuild what changed since `prev` (lanes keep identity when their inputs did). */
 export function buildModel(p: Parts, keys: Chip[], words: Chip[], prev?: Model): Model {
   const same = prev?.map.clips === p.clips
   const map = same ? prev!.map : timeMap(p.clips)
-  const reuse = <T extends Timed>(old: Lane<T> | undefined, items: T[], stacked = false) => (same && old?.items === items ? old : lane(map, items, stacked))
+  const reuse = <T extends Timed>(old: Lane<T> | undefined, items: T[], overlap = false) => (same && old?.items === items ? old : lane(map, items, overlap))
   return {
     map,
     clips: same ? prev!.clips : clipLane(map),
@@ -179,16 +195,18 @@ function lowerBound(blocks: Block[], t: number): number {
   return lo
 }
 
-/** Topmost block under output time t in `row`, widened by `tol` seconds on each side. */
-export function blockAt(l: Lane, t: number, tol = 0, row = 0): Block | null {
+/** Blocks under output time t, widened by `tol` seconds on each side: those t lies inside first, then
+ *  the top one of overlapping blocks first. */
+export function blocksAt(l: Lane, t: number, tol = 0): Block[] {
   const [from, to] = visible(l, t - tol, t + tol)
-  let best: Block | null = null
-  for (let k = from; k < to; k++) {
-    const b = l.blocks[k]
-    if (l.row[b.i] === row && b.a - tol <= t && t <= b.b + tol && (!best || (t >= b.a && t <= b.b) || !(t >= best.a && t <= best.b))) best = b
-  }
-  return best
+  const out: Block[] = []
+  for (let k = from; k < to; k++) if (l.blocks[k].a - tol <= t && t <= l.blocks[k].b + tol) out.push(l.blocks[k])
+  const inside = (b: Block) => (t >= b.a && t <= b.b ? 1 : 0)
+  return out.sort((x, y) => inside(y) - inside(x) || l.rank[y.i] - l.rank[x.i] || y.a - x.a)
 }
+
+/** Topmost block under output time t, widened by `tol` seconds on each side. */
+export const blockAt = (l: Lane, t: number, tol = 0): Block | null => blocksAt(l, t, tol)[0] ?? null
 
 // ---- Clips ----
 

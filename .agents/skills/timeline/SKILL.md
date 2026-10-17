@@ -9,9 +9,11 @@ The editor where users cut, speed up, and direct the video.
 
 - Tracks, top to bottom as the frame is built: camera layouts, zooms, masks, then clips (trim, cut, speed, volume, with their audio), then keystrokes and captions.
   An item track shows once it has items and stays for the session; the Add menu, Z, L, and ⌘K add items, so no empty track waits for them.
-- Zooms pass over each other: the zoom track stacks overlapping zooms in rows and grows with them, even mid-drag.
-  An item keeps its row while another is dragged across it; the rows carry no priority.
+- Zooms pass over each other on their one track: no extra rows.
+  Where they overlap, an inset band over them names what combines there; each zoom keeps its ends, grabbable inside a band too, and its label in the part it has alone.
+  A shorter zoom draws over a longer one, so one inside another always shows and takes the click.
   Layouts and masks never overlap.
+- Selection is a hairline ring and a soft glow in the item's colour, never a thick white border.
 - Keyboard-first: C cuts at the playhead, X ripple-deletes, holding ⌥ arms the split tool, arrows step 0.5 s (1 s with Shift), 0-9 set zoom level, and ⌘K reaches every action.
   Shortcuts stay inactive while a text field has focus.
 - Undo and redo cover every edit and return the playhead to the same source moment.

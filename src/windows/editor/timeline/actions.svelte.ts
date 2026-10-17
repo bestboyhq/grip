@@ -181,7 +181,7 @@ export function add(track: M.ItemTrack, t = player.time, len = 3) {
   if (!doc.project) return
   const m = mapNow()
   const a = Math.min(t, Math.max(0, m.duration - len))
-  const r = M.fit(list(track), toSource(m, a), toSource(m, Math.min(a + len, m.duration)), project().sources.duration, M.MIN_LEN, M.stacks(track))
+  const r = M.fit(list(track), toSource(m, a), toSource(m, Math.min(a + len, m.duration)), project().sources.duration, M.MIN_LEN, M.overlaps(track))
   if (!r) return
   const item = make(track, r[0], r[1])
   edit((q) => {
@@ -220,7 +220,7 @@ function placeItems(from: Items, delta: number) {
   const duration = project().sources.duration
   const added: string[] = []
   const next = ITEM_KINDS.map((k) => {
-    const r = M.placeCopies(list(k), from[k] as M.Item[], delta, duration, M.stacks(k))
+    const r = M.placeCopies(list(k), from[k] as M.Item[], delta, duration, M.overlaps(k))
     added.push(...r.added)
     return [k, r.items] as const
   })
