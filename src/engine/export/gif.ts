@@ -1,6 +1,7 @@
 // Streaming GIF encoder for screen recordings. Pure: runs in gif.worker.ts, tested in gif.test.ts.
 // - Per-scene palettes: a frame keeps the current 255-color palette until it no longer fits
-//   (a scene change), then gets a fresh one. Colors stay stable within a scene, so nothing flickers.
+//   (a scene change, or even a small element in a color it has nothing near), then gets a fresh one.
+//   Colors stay stable within a scene, so nothing flickers.
 // - Ordered dithering scaled to how far the palette misses each pixel: soft shadows and gradients
 //   mix neighboring colors in proportion, colors the palette has stay clean. Ordered (not error
 //   diffusion) keeps unchanged pixels identical from frame to frame, which the next step depends on.
@@ -17,7 +18,7 @@ interface Palette {
   rgb: Uint8Array // n * 3
   n: number
   cache: Int16Array // nearest index per 6-bit-per-channel RGB bucket, -1 = unknown
-  misfit: number // misfit() on the frame it was built from
+  misfit: Misfit // misfit() on the frame it was built from
 }
 
 export class GifEncoder {
@@ -49,8 +50,11 @@ export class GifEncoder {
     if (this.i === 0) this.header(out)
     let pal = this.pal
     // ponytail: scene change = 6% more of the frame misfits than on the frame the palette was built
-    // from. Small new elements (a hover, a tooltip) get dithered instead of costing a full frame.
-    const fresh = !pal || misfit(rgba, pal) > pal.misfit + 0.06
+    // from. Small new elements (a hover, a tooltip) get dithered instead of costing a full frame,
+    // unless their color is out of the palette's reach: dithering only shifts brightness, so ink or a
+    // badge in a new hue would come out another color. 0.05% of the frame is a short ink stroke.
+    const m = pal && misfit(rgba, pal)
+    const fresh = !pal || m!.bad > pal.misfit.bad + 0.06 || m!.far > pal.misfit.far + 0.0005
     if (fresh) pal = this.pal = makePalette(rgba)
     mapPixels(rgba, this.w, pal!, this.cur)
     const rect = fresh ? { x: 0, y: 0, w: this.w, h: this.h } : changedRect(this.prev, this.cur, this.w, this.h)
@@ -104,12 +108,30 @@ export class GifEncoder {
 }
 
 function makePalette(rgba: Uint8Array): Palette {
-  const colors = quantize(rgba, 255, { format: 'rgb565' })
+  // Flat surfaces first, exact: the quantizer bins 5 bits per channel, so a #fafafa page and its #ffffff
+  // cards would share one averaged entry and both come out dithered. First also wins nearest() ties.
+  const flat = flatColors(rgba, 16)
+  const colors = [...flat, ...quantize(rgba, 255 - flat.length, { format: 'rgb565' })]
   const rgb = new Uint8Array(colors.length * 3)
   colors.forEach((c, i) => rgb.set(c.slice(0, 3), i * 3))
-  const pal: Palette = { rgb, n: colors.length, cache: new Int16Array(1 << 18).fill(-1), misfit: 0 }
+  const pal: Palette = { rgb, n: colors.length, cache: new Int16Array(1 << 18).fill(-1), misfit: { bad: 0, far: 0 } }
   pal.misfit = misfit(rgba, pal)
   return pal
+}
+
+/** Up to k exact colors that each cover at least 0.5% of the frame (sampled), most common first. */
+function flatColors(rgba: Uint8Array, k: number): number[][] {
+  const counts = new Map<number, number>()
+  let n = 0
+  for (let i = 0; i < rgba.length; i += 4 * 7, n++) {
+    const c = (rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2]
+    counts.set(c, (counts.get(c) ?? 0) + 1)
+  }
+  return [...counts]
+    .filter(([, m]) => m >= n * 0.005)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, k)
+    .map(([c]) => [c >> 16, (c >> 8) & 255, c & 255])
 }
 
 function nearest(p: Palette, r: number, g: number, b: number): number {
@@ -141,14 +163,19 @@ function dist(p: Palette, i: number, r: number, g: number, b: number): number {
   return dr * dr + dg * dg + db * db
 }
 
-/** Fraction of sampled pixels the palette misses by more than ~10 levels per channel. */
-function misfit(rgba: Uint8Array, p: Palette): number {
+type Misfit = { bad: number; far: number }
+/** Fractions of sampled pixels the palette misses by more than ~10 levels per channel (bad), and by
+ *  more than ~40 levels in one channel (far: no palette color is anywhere near, like new red ink). */
+function misfit(rgba: Uint8Array, p: Palette): Misfit {
   let bad = 0
+  let far = 0
   let n = 0
   for (let k = 0; k < rgba.length; k += 4 * 7, n++) {
-    if (dist(p, nearest(p, rgba[k], rgba[k + 1], rgba[k + 2]), rgba[k], rgba[k + 1], rgba[k + 2]) > 300) bad++
+    const d = dist(p, nearest(p, rgba[k], rgba[k + 1], rgba[k + 2]), rgba[k], rgba[k + 1], rgba[k + 2])
+    if (d > 300) bad++
+    if (d > 1600) far++
   }
-  return n ? bad / n : 0
+  return n ? { bad: bad / n, far: far / n } : { bad: 0, far: 0 }
 }
 
 function mapPixels(rgba: Uint8Array, w: number, p: Palette, out: Uint8Array) {

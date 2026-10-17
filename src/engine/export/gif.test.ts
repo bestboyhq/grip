@@ -118,7 +118,7 @@ test('GIF round trip: diff rectangles, merged static frames, per-scene palettes,
   // A UI-like scene: flat window on a gradient wallpaper.
   const a = frame((x, y) => (x > 20 && x < 70 && y > 10 && y < 50 ? [245, 245, 247] : [40 + x, 60 + y, 160]))
   const b = a.slice()
-  for (let y = 30; y < 36; y++) for (let x = 40; x < 48; x++) b.set([20, 120, 255, 255], (y * W + x) * 4) // a button lights up
+  for (let y = 30; y < 36; y++) for (let x = 40; x < 48; x++) b.set([100, 110, 160, 255], (y * W + x) * 4) // a button turns a color the scene has
   const c = frame((x, y) => [(x * 7) % 256, 255 - y * 3, (x + y) % 64]) // scene change
   const enc = new GifEncoder(W, H, 15, 0)
   const parts = [a, b, b, b, c].map((f) => enc.add(f))
@@ -138,6 +138,26 @@ test('GIF round trip: diff rectangles, merged static frames, per-scene palettes,
   // Flat UI color stays exact (no dither noise).
   const k = (25 * W + 30) * 3
   assert.deepEqual([...d.frames[0].image.subarray(k, k + 3)], [245, 245, 247])
+})
+
+test('GIF keeps the color of a small element the palette cannot reach (new ink)', () => {
+  const a = frame((x, y) => (x > 20 && x < 70 && y > 10 && y < 50 ? [245, 245, 247] : [40 + x, 60 + y, 160]))
+  const b = a.slice()
+  for (let y = 30; y < 32; y++) for (let x = 22; x < 68; x++) b.set([255, 59, 48, 255], (y * W + x) * 4) // a red stroke, 1.5% of the frame
+  const enc = new GifEncoder(W, H, 15, 0)
+  const gif = new Uint8Array([...enc.add(a), ...enc.add(b), ...enc.finish()])
+  const k = (31 * W + 45) * 3
+  const [r, g, bl] = decode(gif).frames[1].image.subarray(k, k + 3)
+  assert.ok(Math.abs(r - 255) + Math.abs(g - 59) + Math.abs(bl - 48) < 24, `ink stays red, got ${[r, g, bl]}`)
+})
+
+test('GIF keeps flat surfaces exact when the quantizer would merge them (#fafafa page, #ffffff card)', () => {
+  const a = frame((x, y) => (x > 20 && x < 70 && y > 10 && y < 50 ? [255, 255, 255] : y % 9 === 0 ? [90, 90, 96] : [250, 250, 250]))
+  const enc = new GifEncoder(W, H, 15, 0)
+  const img = decode(new Uint8Array([...enc.add(a), ...enc.finish()])).frames[0].image
+  const at = (x: number, y: number) => [...img.subarray((y * W + x) * 3, (y * W + x) * 3 + 3)]
+  for (const [x, y] of [[30, 20], [31, 21], [60, 40]]) assert.deepEqual(at(x, y), [255, 255, 255], 'card')
+  for (const [x, y] of [[5, 5], [6, 5], [80, 40]]) assert.deepEqual(at(x, y), [250, 250, 250], 'page')
 })
 
 test('GIF LZW survives full code tables (noise), and loop counts', () => {
