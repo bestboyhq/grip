@@ -7,6 +7,7 @@
   import Icon from '../recorder/Icon.svelte'
   import { formatTime, shell } from '../recorder/shell.svelte.ts'
   import { symbols } from '../../shared/shortcut.ts'
+  import { paintDot } from './dot.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
@@ -18,6 +19,34 @@
   const finishKeys = $derived(symbols(shell.settings?.recordShortcut ?? ''))
   const seconds = $derived(shell.elapsed + (shell.at ? Math.max(0, now - shell.at) / 1000 : 0))
   const run = (cmd: string) => invoke('shell:command', cmd)
+
+  // The dot is alight while recording, and cools to the still logo gradient when paused (like the picker's Record
+  // button) or with Reduce Motion.
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches
+  const hot = $derived(shell.status === 'recording' && !calm)
+  let heat = 0 // outlives glow's re-runs: pausing cools the dot down instead of snapping it
+  function glow(canvas: HTMLCanvasElement) {
+    const target = hot ? 1 : 0
+    // Few samples, scaled up smoothly to 3x: soft like Tony's 4 × 4 mesh, sharp-edged on any display.
+    const n = 6
+    const small = new OffscreenCanvas(n, n).getContext('2d')!
+    const img = small.createImageData(n, n)
+    canvas.width = canvas.height = 36
+    const ctx = canvas.getContext('2d')!
+    ctx.imageSmoothingQuality = 'high'
+    let last = performance.now()
+    let raf = 0
+    const paint = (now: number) => {
+      heat += (target - heat) * (1 - Math.exp(-4 * Math.min(0.1, (now - last) / 1000)))
+      last = now
+      paintDot(img.data, n, now / 1000, heat)
+      small.putImageData(img, 0, 0)
+      ctx.drawImage(small.canvas, 0, 0, 36, 36)
+      if (target || heat > 0.002) raf = requestAnimationFrame(paint)
+    }
+    paint(last)
+    return () => cancelAnimationFrame(raf)
+  }
 
   onMount(() => {
     const tick = setInterval(() => (now = Date.now()), 200)
@@ -44,7 +73,7 @@
     <button class="text" onclick={() => (confirm = null)}>Keep</button>
     <button class="text danger" onclick={confirmed}>{confirm === 'cancel' ? 'Delete' : 'Restart'}</button>
   {:else}
-    <span class="dot" class:paused class:saving aria-hidden="true"></span>
+    <canvas class="dot" class:saving aria-hidden="true" {@attach glow}></canvas>
     <span class="time" role="timer" aria-label="Recording time">{saving ? 'Saving…' : formatTime(seconds)}</span>
     <span class="sep"></span>
     <button
@@ -79,33 +108,15 @@
     -webkit-app-region: drag;
   }
   .dot {
-    width: 9px;
-    height: 9px;
-    margin-right: 9px;
+    width: 12px;
+    height: 12px;
+    margin-right: 8px;
     border-radius: 50%;
-    background: var(--record);
-    box-shadow: 0 0 0 3px rgb(255 69 58 / 0.22);
-    animation: pulse 1.6s ease-in-out infinite;
-  }
-  .dot.paused {
-    background: var(--warning);
-    box-shadow: 0 0 0 3px rgb(255 214 10 / 0.2);
-    animation: none;
+    transition: opacity 0.3s, filter 0.3s;
   }
   .dot.saving {
-    background: var(--text-faint);
-    box-shadow: none;
-    animation: none;
-  }
-  @keyframes pulse {
-    50% {
-      box-shadow: 0 0 0 5px rgb(255 69 58 / 0.08);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .dot {
-      animation: none;
-    }
+    opacity: 0.35;
+    filter: grayscale(1);
   }
   .time {
     flex: 1;

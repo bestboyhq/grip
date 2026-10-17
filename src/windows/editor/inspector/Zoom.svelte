@@ -1,6 +1,6 @@
 <!-- Auto zoom defaults, and the zooms selected on the timeline (edits apply to every selected zoom). -->
 <script lang="ts">
-  import { doc, edit, selection } from '../../../lib/doc.svelte.ts'
+  import { doc, edit, pickLook, selection, zoomLook } from '../../../lib/doc.svelte.ts'
   import { screenCrop, type Zoom } from '../../../shared/project.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
   import { LOUPE_SIZE, setAutoZoom } from '../../../engine/zoom/index.ts'
@@ -16,13 +16,18 @@
   const screen = $derived(project.sources.screen)
   const crop = $derived(screenCrop(project)) // the picker shows the part of the screen the video does
 
-  const setAuto = (enabled: boolean) => edit((p) => setAutoZoom(p, doc.events, { ...p.style.autoZoom, enabled }))
+  const setAuto = (enabled: boolean) => edit((p) => setAutoZoom(p, doc.events, { ...p.style.autoZoom, enabled }, zoomLook()))
   const setAutoLevel = (level: number, merge?: string) => edit((p) => setAutoZoom(p, doc.events, { ...p.style.autoZoom, level }), merge)
 
   /** Apply a change to every selected zoom. */
   function each(fn: (x: Zoom) => void, merge?: string) {
     const ids = selected.map((x) => x.id)
     edit((p) => p.zooms.filter((x) => ids.includes(x.id)).forEach(fn), merge)
+  }
+  /** A change to the look (type, size, Liquid): new zooms take it too. */
+  function eachLook(fn: (x: Zoom) => void, merge?: string) {
+    each(fn, merge)
+    pickLook(z)
   }
 
   // Target picker: a frame of the screen from the middle of the zoom, with the target dot on top.
@@ -58,15 +63,15 @@
     <Segmented
       label="Type"
       value={z.mode ?? 'zoom'}
-      onchange={(v) => each((s) => (s.mode = v))}
+      onchange={(v) => eachLook((s) => (s.mode = v))}
       options={[
         { value: 'zoom', label: 'Zoom' },
         { value: 'loupe', label: 'Loupe' },
       ]}
     />
     {#if z.mode === 'loupe'}
-      <Slider label="Size" value={z.size ?? LOUPE_SIZE.initial} min={LOUPE_SIZE.min} max={LOUPE_SIZE.max} step={10} initial={LOUPE_SIZE.initial} onchange={(v, m) => each((s) => { if (s.mode === 'loupe') s.size = v }, m)} />
-      <Toggle label="Liquid" hint="The glass stretches as it moves." checked={!z.rigid} onchange={(v) => each((s) => { if (s.mode === 'loupe') s.rigid = !v })} />
+      <Slider label="Size" value={z.size ?? LOUPE_SIZE.initial} min={LOUPE_SIZE.min} max={LOUPE_SIZE.max} step={10} initial={LOUPE_SIZE.initial} onchange={(v, m) => eachLook((s) => { if (s.mode === 'loupe') s.size = v }, m)} />
+      <Toggle label="Liquid" hint="The glass stretches as it moves." checked={!z.rigid} onchange={(v) => eachLook((s) => { if (s.mode === 'loupe') s.rigid = !v })} />
     {/if}
     <Toggle label="Instant" hint="Cuts in and out instead of animating." checked={!!z.instant} onchange={(v) => each((s) => (s.instant = v))} />
   </Section>

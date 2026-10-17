@@ -2,7 +2,7 @@
      preset files. Storage, asset bundling, and file dialogs live in the main process (electron/presets.ts,
      projects:presets:*). Applying is an ordinary edit, so undo reverts it. -->
 <script lang="ts">
-  import { doc, edit } from '../../lib/doc.svelte.ts'
+  import { doc, edit, zoomLook } from '../../lib/doc.svelte.ts'
   import { invoke } from '../../lib/ipc.ts'
   import type { Style } from '../../shared/project.ts'
   import { setAutoZoom } from '../../engine/zoom/index.ts'
@@ -61,7 +61,7 @@
       const style = isStyle(r) ? r : isStyle((r as { style?: unknown })?.style) ? (r as { style: Style }).style : null
       if (!style) throw new Error(`“${p.name}” is not a valid preset.`)
       edit((pr) => {
-        setAutoZoom(pr, doc.events, style.autoZoom) // the auto zooms follow the preset's auto zoom
+        setAutoZoom(pr, doc.events, style.autoZoom, zoomLook()) // the auto zooms follow the preset's auto zoom
         pr.style = style
       })
       close()

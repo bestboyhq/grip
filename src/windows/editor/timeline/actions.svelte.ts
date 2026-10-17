@@ -5,7 +5,7 @@
 import { tick } from 'svelte'
 import { screenCrop, uid, type CameraLayout, type CameraLayoutKind, type Clip, type Mask, type Project, type Zoom } from '../../../shared/project.ts'
 import { clipAt, splitAt, timeMap, toSource } from '../../../shared/timemap.ts'
-import { canRedo, canUndo, doc, edit, redo, selection, undo } from '../../../lib/doc.svelte.ts'
+import { canRedo, canUndo, doc, edit, pickLook, redo, selection, undo, zoomLook } from '../../../lib/doc.svelte.ts'
 import { player, seek, toggle } from '../../../lib/player.svelte.ts'
 import type { Command } from '../commands/registry.ts'
 import * as M from './model.ts'
@@ -147,10 +147,12 @@ export function toggleInstant() {
 export function toggleLoupe() {
   const mode = selected('zooms').every((z) => z.mode === 'loupe') ? 'zoom' : 'loupe'
   each('zooms', ids('zooms'), (z) => ({ ...z, mode }))
+  pickLook(selected('zooms')[0])
 }
 export function toggleLiquid() {
   const rigid = !selected('zooms').filter((z) => z.mode === 'loupe').every((z) => z.rigid)
   each('zooms', ids('zooms'), (z) => (z.mode === 'loupe' ? { ...z, rigid } : z))
+  pickLook(selected('zooms').find((z) => z.mode === 'loupe'))
 }
 export const followCursor = () => each('zooms', ids('zooms'), (z) => ({ ...z, target: { kind: 'cursor' } }))
 export function levelToAll() {
@@ -164,10 +166,10 @@ export function layoutToAll() {
 }
 export const setMask = (kind: Mask['kind']) => each('masks', ids('masks'), (m) => ({ ...m, kind }))
 
-/** A new item of `track` over source [start, end]. */
+/** A new item of `track` over source [start, end]; a zoom looks like the last one picked. */
 export function make(track: M.ItemTrack, start: number, end: number): Zoom | CameraLayout | Mask {
   const id = uid()
-  if (track === 'zooms') return { id, start, end, level: project().style.autoZoom.level || 2, target: { kind: 'cursor' }, enabled: true } satisfies Zoom
+  if (track === 'zooms') return { id, start, end, level: project().style.autoZoom.level || 2, target: { kind: 'cursor' }, enabled: true, ...zoomLook() } satisfies Zoom
   if (track === 'layouts') return { id, start, end, kind: 'fullscreen' } satisfies CameraLayout
   const c = screenCrop(project()) // over the shown part of the screen
   return { id, start, end, kind: 'blur', rect: { x: c.x + 0.3 * c.w, y: c.y + 0.3 * c.h, w: 0.4 * c.w, h: 0.3 * c.h } } satisfies Mask

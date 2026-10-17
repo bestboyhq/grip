@@ -14,6 +14,7 @@ Turning clicks and typing into camera direction.
 - Vertical output follows the cursor continuously, since the frame is narrower than the source.
 - Glass loupe magnifies a region in place when a full zoom would move too much of the screen.
   It has no outline or shadow; an even dim of the frame around it makes the magnified piece stand out.
+- New zooms, manual and automatic, take the type, loupe size, and Liquid the user last picked on any zoom, in every project.
 - A loupe appears by growing its magnification from 1 with its content opaque; fading its content in shows the screen twice, magnified over unmagnified.
 - Zoomed text stays sharp: capture at native resolution, and past the source pixel density upscale with a local super-resolution model trained on UI text.
 

@@ -1,9 +1,10 @@
 // The open project in an editor window: state, edits, undo/redo, autosave.
 // Every mutation goes through edit() so undo, dirty tracking, and autosave cover it.
 
-import type { Project, Transcript } from '../shared/project.ts'
+import type { Project, Transcript, Zoom, ZoomLook } from '../shared/project.ts'
 import type { InputEvent } from '../shared/events.ts'
-import { invoke } from './ipc.ts'
+import { lookOf } from '../engine/zoom/index.ts'
+import { invoke, listen } from './ipc.ts'
 
 class Doc {
   project = $state<Project | null>(null)
@@ -19,6 +20,20 @@ class Doc {
 export const doc = new Doc()
 
 export const selection = $state({ ids: [] as string[] })
+
+// The look of new zooms (settings.zoomLook): the zoom type, loupe size, and Liquid last picked in any editor.
+let look: ZoomLook = {}
+let lookTimer: ReturnType<typeof setTimeout> | undefined
+invoke('settings:get').then((s) => (look = lookOf(s.zoomLook ?? {})))
+listen('settings:changed', (s) => (look = lookOf(s.zoomLook ?? {})))
+export const zoomLook = () => look
+/** The user just picked `z`'s type, size, or shape: new zooms look like it from now on. */
+export function pickLook(z: Zoom | undefined) {
+  if (!z) return
+  const next = (look = lookOf(z))
+  clearTimeout(lookTimer)
+  lookTimer = setTimeout(() => invoke('settings:set', { zoomLook: next }), 300) // one write per slider drag
+}
 
 interface Snapshot {
   json: string

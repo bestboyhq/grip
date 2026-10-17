@@ -70,6 +70,8 @@ export interface Zoom {
   auto?: boolean // generated from clicks/typing
   enabled: boolean
 }
+/** Full zoom or loupe, and the loupe's size and shape. New zooms take the last one picked (settings.zoomLook). */
+export type ZoomLook = Pick<Zoom, 'mode' | 'size' | 'rigid'>
 
 export type CameraLayoutKind = 'pip' | 'fullscreen' | 'hidden' | 'split'
 export interface CameraLayout {

@@ -28,11 +28,12 @@ export const windowsOf = (kind: string) => BrowserWindow.getAllWindows().filter(
 export const activeDisplay = () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
 const workAreas = () => screen.getAllDisplays().map((d) => d.workArea)
 
+/** Opens on the display of `opts.x/y` when given, else the active one; a remembered position there wins. */
 export function openWindow(route: string, opts: BrowserWindowConstructorOptions = {}) {
   const kind = route.split('?')[0]
-  const display = activeDisplay()
-  const saved = REMEMBER.has(kind) ? settings().windows[`${kind}@${display.id}`] : undefined
   const size = { width: opts.width ?? 1280, height: opts.height ?? 820 }
+  const display = opts.x === undefined || opts.y === undefined ? activeDisplay() : screen.getDisplayMatching({ x: opts.x, y: opts.y, ...size })
+  const saved = REMEMBER.has(kind) ? settings().windows[`${kind}@${display.id}`] : undefined
   const bounds = saved && reachable(saved, workAreas()) ? saved : opts.x === undefined ? place(size, display.workArea) : {}
   const win = new BrowserWindow({
     ...size,

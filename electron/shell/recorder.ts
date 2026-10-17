@@ -87,6 +87,10 @@ let counting = false
 let area: { display: number; rect: Rect } | null = null
 /** The display being recorded (null: an iPhone or iPad), where the pen draws. */
 let recDisplay: number | null = null
+/** The display the last recording was started on (its overlay, or the toolbar): its widget and
+ *  result card show there, wherever the mouse went since. */
+let homeDisplay: number | null = null
+const displayOf = (id: number | null) => screen.getAllDisplays().find((d) => d.id === id) ?? activeDisplay()
 /** The pen is on: the recorded display's overlay takes the mouse and strokes go into the recording. */
 let drawing = false
 /** Until when (ms since epoch) strokes drawn before the pen went off still fade out on screen. */
@@ -382,7 +386,7 @@ function escape(on: boolean) {
 function showWidget() {
   const open = windowsOf('widget')[0]
   if (open) return reveal(open, false)
-  const w = openWindow('widget', { ...floating, ...place(WIDGET, activeDisplay().workArea, 24), vibrancy: 'hud', visualEffectState: 'active' })
+  const w = openWindow('widget', { ...floating, ...place(WIDGET, displayOf(homeDisplay).workArea, 24), vibrancy: 'hud', visualEffectState: 'active' })
   protect(w, 2)
   w.once('ready-to-show', () => reveal(w, false))
 }
@@ -400,7 +404,7 @@ function bubbleBox(): Rectangle {
     status !== 'idle' && area ? global(area.display, { x: area.rect.x, y: area.rect.y, width: area.rect.w, height: area.rect.h })
     : picking && mode === 'area' && s.area ? global(s.area.display, s.area.rect)
     : null
-  return box ?? (recDisplay !== null && status !== 'idle' ? display(recDisplay) : undefined)?.workArea ?? activeDisplay().workArea
+  return box ?? displayOf(status !== 'idle' ? homeDisplay : null).workArea
 }
 
 /** The bubble in its corner (settings.cameraCorner) of bubbleBox, where the video will show the
@@ -469,10 +473,10 @@ function fadeInk() {
 // ---- Result card ----
 
 /** The card after a recording (bundle=<path>) or a screenshot (shot=<path>), bottom right of the
- *  display: copy, share, or edit it. One at a time; a new recording closes it. */
-function showResult(query: string) {
+ *  display (its id, else the active one): copy, share, or edit it. One at a time; a new recording closes it. */
+function showResult(query: string, display: number | null = null) {
   for (const w of windowsOf('result')) w.destroy()
-  const work = activeDisplay().workArea
+  const work = displayOf(display).workArea
   const w = openWindow(`result?${query}`, {
     ...floating,
     ...RESULT,
@@ -780,11 +784,14 @@ export function registerRecorder() {
     if (counting) toolbar?.hide()
     broadcast()
   })
-  ipcMain.handle('shell:start', (_e, opts: Partial<StartOptions>) => {
+  ipcMain.handle('shell:start', (e, opts: Partial<StartOptions>) => {
     const t = opts?.target
+    const from = BrowserWindow.fromWebContents(e.sender)
+    const here = from ? screen.getDisplayMatching(from.getBounds()).id : activeDisplay().id
     area = t?.kind === 'area' ? { display: t.displayId, rect: t.rect } : null
-    // A window records on the display it was picked on, the one under the mouse.
-    recDisplay = t?.kind === 'area' || t?.kind === 'display' ? t.displayId : t?.kind === 'window' ? activeDisplay().id : null
+    // A window records on the display it was picked on, not the one the mouse went to during the countdown.
+    recDisplay = t?.kind === 'area' || t?.kind === 'display' ? t.displayId : t?.kind === 'window' ? here : null
+    homeDisplay = recDisplay ?? here
     broadcast()
     return command('start', opts)
   })
@@ -890,7 +897,7 @@ export function registerRecorder() {
     for (const done of waiters.splice(0)) done(bundle)
     addCapture({ kind: 'recording', path: bundle, at: Date.now() })
     if (quitting) return
-    showResult(`bundle=${encodeURIComponent(bundle)}`)
+    showResult(`bundle=${encodeURIComponent(bundle)}`, homeDisplay)
     // It stopped on its own (disk full, display unplugged, a write failed): say why.
     if (end?.reason && end.reason !== 'user') void alert('Grip stopped recording.', end.message ?? 'The recording was saved.')
   })
