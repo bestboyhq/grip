@@ -413,9 +413,9 @@ const CURL = 1.0 / 3.0; // the bevel shows this share of what the flat top would
 // stays monotone: the content slows as (1 - s)^2 and stretches into a curl along the rim
 const DISPERSION = 0.045; // how far red and blue bend apart at the rim, fraction of the radius
 const KEY = vec3f(-0.38, -0.82, 0.43); // key light direction (output px axes, z toward the viewer)
-const AROUND = 0.2; // how much the frame right around a lens dims
-const AROUND_REACH = 1.1; // ...and half that this many radii out from its edge
-const AROUND_SHIFT = 0.15; // the dim sits this many radii off the lens, away from the light, like its shadow
+const AROUND = 0.14; // how much the frame right around a lens dims
+const AROUND_REACH = 0.8; // ...and half that this many radii out from its edge
+const AROUND_SHIFT = 0.3; // the dim sits this many radii off the lens, away from the light, like its shadow
 const LENSES = 4u;
 const LENS_SAMPLES = 9u; // per lens in F.loupeS (renderer.ts LOUPE_SAMPLES)
 
