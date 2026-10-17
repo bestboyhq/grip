@@ -22,13 +22,13 @@
 </p>
 
 <p align="center">
-  <img src=".github/readme/hero.gif" width="100%" alt="A recording polished by Grip on a dark satin wallpaper: the view zooms in on a form as the user types, the shortcut ⌘A appears as keycaps, a glass loupe magnifies the Create project button while a ripple bends the screen under the click, and captions follow the narration.">
+  <img src=".github/readme/hero.gif" width="100%" alt="A deployments dashboard polished by Grip on a pastel iridescent wallpaper: the view zooms in as the cursor glides to the Deploy button, the click sends a ripple through the screen, a new build slides in as Building and turns Ready, and the view eases back out into a seamless loop.">
 </p>
 
 <p align="center">
-  <sub>Exported by Grip from a raw 24-second screen recording with voice-over.
-  Zooms, cursor, click ripple, and keycaps are automatic.
-  The only edits: a wallpaper, captions on, filler words out, and one zoom turned into a glass loupe.</sub>
+  <sub>Exported by Grip from a raw 6-second take.
+  The zoom, the gliding cursor, and the click ripple are automatic.
+  The only edits: a wallpaper and a larger cursor that returns to its start, so the GIF loops.</sub>
 </p>
 
 ---
@@ -97,6 +97,15 @@ Draw right on top of the frozen screen, then copy it, save it, or record it.
 
 ### While you record
 
+<p align="center">
+  <img src=".github/readme/ink.gif" width="100%" alt="A landing page draft on a green wallpaper: after ⌥⇧⌘D appears as keycaps, red ink circles the headline 'Get paid in days, not weeks.', an arrow sweeps down to the Start free trial button, and a line underlines the $24 price. The view zooms out to the whole page and the ink fades away.">
+</p>
+
+<p align="center">
+  <sub>Draw on screen with ⌥⇧⌘D while you record.
+  The ink fades on its own.</sub>
+</p>
+
 - **Camera, mic, and system audio on one clock**, so lips stay in sync for hours.
 - **A camera bubble** in the corner of the area.
   Drag it, and the video puts your camera there too.
@@ -122,6 +131,14 @@ Drag the preview straight into another app to drop the file.
 
 ## Polished by default
 
+<p align="center">
+  <img src=".github/readme/loupe.gif" width="100%" alt="A revenue dashboard on a dark wallpaper with a teal glow: a glass loupe follows the cursor along the MRR growth chart, magnifying each day's tooltip, stretches like liquid as it glides up to the Net new MRR and MRR figures, then magnifies the Export CSV button as it turns to Exported.">
+</p>
+
+<p align="center">
+  <sub>A glass loupe magnifies one spot and keeps the rest of the dashboard in view.</sub>
+</p>
+
 - **Auto-zoom.** Clicks and typing become zooms that follow your cursor.
   Each one is a plain timeline item you can move, retime, or switch off.
   Pick a smooth glide or a focused move that settles fast.
@@ -134,9 +151,18 @@ Drag the preview straight into another app to drop the file.
   Or pick a circle or a shockwave, click sounds, a larger size, or a touch-style circle.
 - **Keystrokes as keycaps.** Shortcuts appear as macOS keycaps in your own keyboard layout.
   Password fields stay private.
-- **A voice that sounds produced.** Noise reduction, speech loudness normalized to -16 LUFS, and a limiter so nothing clips.
+
+<p align="center">
+  <img src=".github/readme/captions.gif" width="100%" alt="A launch checklist titled Relay 2.0 launch: as a voice narrates, big word-by-word captions read 'Okay, launch day.', 'Changelog, done.', 'Demo video, done.', and 'Pricing page, done.' while each item is checked off and the progress bar fills, then 'And…' before the last item, Go live, is checked and the status turns Live.">
+</p>
+
+<p align="center">
+  <sub>Word-by-word captions carry the story, even in a silent GIF.</sub>
+</p>
+
 - **Captions written on your Mac.** NVIDIA Parakeet v3 transcribes 25 European languages on device, with timing for every word.
   Show them a line or a word at a time, fading or sliding in.
+- **A voice that sounds produced.** Noise reduction, speech loudness normalized to -16 LUFS, and a limiter so nothing clips.
 - **A clean frame, your call.** New recordings show the screen edge to edge.
   Pick a wallpaper and Grip adds the padding to show it, and one undo takes both back.
   Rounded corners and a soft shadow are a slider away.
@@ -166,6 +192,14 @@ Drag the preview straight into another app to drop the file.
 ## Make it yours
 
 <p align="center">
+  <img src=".github/readme/macbook.gif" width="100%" alt="A calendar app inside a MacBook frame on a warm hazy wallpaper: the view pushes in as the user drags out a new event, types 'Design review', adds Maya Chen as a guest, picks a purple color, and saves, then pulls back to the whole laptop with the new event in the week.">
+</p>
+
+<p align="center">
+  <sub>A MacBook frame and a wallpaper, added after the recording.</sub>
+</p>
+
+<p align="center">
   <img src=".github/readme/wallpapers.webp" width="100%" alt="A grid of 28 Grip wallpapers: soft gradients, a synthwave sun, neon tunnels, sunset dunes, iridescent foil, aurora, bokeh, and a prism.">
 </p>
 
@@ -180,6 +214,15 @@ Drag the preview straight into another app to drop the file.
 - **Presets** save a whole look as a portable `.grippreset` file, images included.
 
 ## Export and share
+
+<p align="center">
+  <img src=".github/readme/formats.gif" width="100%" alt="One chat recording exported three ways and played side by side: 16:9 for YouTube, 1:1 for LinkedIn, and 9:16 for Reels. In each, the view follows the cursor as the user opens a thread, replies 'Safari + iOS look good. Ship it 🚀', sends it with ⌘↩︎, and reacts with 🎉.">
+</p>
+
+<p align="center">
+  <sub>One recording, three formats.
+  Narrow formats follow the cursor, so nothing important falls out of frame.</sub>
+</p>
 
 - **MP4** in H.264 or HEVC, from 720p to 4K at 30 or 60 fps, hardware encoded.
   Set a size limit and Grip fits the file under it.
