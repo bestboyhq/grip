@@ -5,9 +5,9 @@
 <h1 align="center">Grip</h1>
 
 <p align="center">
-  <b>Record your screen. Get a polished video.</b><br>
-  Auto-zoom, a smooth cursor, captions, screenshots, and one-click share.<br>
-  A free and open source screen recorder and editor for the Mac.
+  <b>Record your screen. Get a video worth watching.</b><br>
+  Grip zooms where you click, glides your cursor, and captions your voice for you.<br>
+  Free and open source, for the Mac.
 </p>
 
 <p align="center">
@@ -22,21 +22,24 @@
 </p>
 
 <p align="center">
-  <img src=".github/readme/hero.gif" width="100%" alt="A recording polished by Grip: the view zooms in on a form as the user clicks and types, the cursor glides, the shortcut ⌘A appears as keycaps, and captions follow the narration.">
+  <img src=".github/readme/hero.gif" width="100%" alt="A recording polished by Grip on a dark satin wallpaper: the view zooms in on a form as the user types, the shortcut ⌘A appears as keycaps, a glass loupe magnifies the Create project button while a ripple bends the screen under the click, and captions follow the narration.">
 </p>
 
 <p align="center">
   <sub>Exported by Grip from a raw 24-second screen recording with voice-over.
-  Zooms, cursor, and keycaps are automatic.
-  The only edits: a wallpaper, captions on, filler words out.</sub>
+  Zooms, cursor, click ripple, and keycaps are automatic.
+  The only edits: a wallpaper, captions on, filler words out, and one zoom turned into a glass loupe.</sub>
 </p>
 
 ---
 
-Most screen recordings are hard to watch: a tiny cursor on a huge screen, nothing in focus, and a lot of "um".
-Grip records your screen, camera, mic, and every click and keystroke on separate tracks, then directs the video for you.
-It zooms where you click, follows where you type, redraws a smooth cursor, and writes captions on your Mac.
-Nothing gets baked in, so every choice stays editable.
+Raw screen recordings are hard to watch: a tiny cursor on a huge screen, nothing in focus, and a lot of "um".
+With Grip you record once and skip the editing.
+The view zooms where you click and follows what you type, the cursor glides instead of jittering, and your voice comes out clean and captioned.
+Stop the recording, and the video is one click from your clipboard or a share link.
+
+When you do want to edit, nothing is baked in.
+Grip keeps your screen, camera, mic, and every click and keystroke on separate tracks, so every zoom, cut, and caption stays a choice you can change.
 
 Need a screenshot instead?
 The same keystroke grabs one, lets you mark it up, and puts it on your clipboard.
@@ -82,6 +85,7 @@ Draw right on top of the frozen screen, then copy it, save it, or record it.
 </p>
 
 - **Record it.** Press **↩︎** for a 3-2-1 countdown, then record.
+  The countdown shows whether auto-zoom is on, and **Z** flips it.
   Or pick a whole display, one window, or an iPhone or iPad over USB.
 - **Or screenshot it.** **⌘C** copies the area at once, **⌘S** saves it to the Desktop.
   Picking a display or a window, **⌘C** copies that; a window comes alone, with clear corners.
@@ -100,6 +104,7 @@ Draw right on top of the frozen screen, then copy it, save it, or record it.
   The ink fades out on screen just as it will in the video.
 - **Speaker notes** in a scrolling prompter only you can see.
 - **Grip stays out of the shot.** Its windows never show up in the recording, and desktop icons can hide too.
+  On several displays, the controls stay on the one you're recording, wherever the mouse goes.
 - **Pause, resume, restart, or discard** a take, from the widget, the menu bar, or a shortcut.
 - **Warnings that matter.** Grip tells you when your mic goes silent or disconnects, before the take is wasted.
 
@@ -119,10 +124,14 @@ Drag the preview straight into another app to drop the file.
 
 - **Auto-zoom.** Clicks and typing become zooms that follow your cursor.
   Each one is a plain timeline item you can move, retime, or switch off.
-  Pick a smooth glide or a focused move that settles fast, or magnify in place with a glass loupe.
+  Pick a smooth glide or a focused move that settles fast.
   Rather zoom by hand? Turn auto-zoom off for new recordings in Settings.
+- **A glass loupe.** Magnify one spot and keep the rest of the screen in view.
+  The lens refracts like real glass and stretches like liquid as it follows the cursor.
+  Pick its size, and every new zoom keeps the look you chose last.
 - **A cursor worth watching.** Redrawn from events: smoothed, passing exactly through every click, hidden when idle, with motion blur.
-  Choose ripple, circle, or shockwave click effects, click sounds, a larger size, or a touch-style circle.
+  Each click sends a ripple through the screen itself, and the loupe and zooms carry it.
+  Or pick a circle or a shockwave, click sounds, a larger size, or a touch-style circle.
 - **Keystrokes as keycaps.** Shortcuts appear as macOS keycaps in your own keyboard layout.
   Password fields stay private.
 - **A voice that sounds produced.** Noise reduction, speech loudness normalized to -16 LUFS, and a limiter so nothing clips.
@@ -135,16 +144,19 @@ Drag the preview straight into another app to drop the file.
 ## Edit a video like a doc
 
 <p align="center">
-  <img src=".github/readme/editor.webp" width="100%" alt="The Grip editor: a live preview with captions, the transcript panel with filler words underlined and a Remove filler words button, and a timeline with clip, zoom, keystroke, and word tracks.">
+  <img src=".github/readme/editor.webp" width="100%" alt="The Grip editor: the preview shows a glass loupe over a Create project button with a caption below, the transcript panel shows three filler words struck through, and the timeline shows a zoom and a loupe above clips split where the fillers were cut.">
 </p>
 
 - **Edit by transcript.** Select words and press Delete, and the video follows.
   Grip finds filler words and long pauses: remove the fillers or shorten the pauses in one click.
   Double-click a word to fix its caption.
 - **A keyboard-first timeline.** `C` cuts, `X` ripple-deletes, `Z` adds a zoom, and `⌘K` reaches every action.
-  Copy, paste, duplicate, merge clips, or bring back anything you cut.
+  Copy, paste, duplicate, merge clips, reset a trim, or bring back anything you cut.
+  Zooms, camera layouts, and masks sit in lanes above the video, and a lane shows up once it has something in it.
+- **Crop** the recording down to the part that matters, and zooms aim inside the crop.
 - **Speed without chipmunks.** Any clip from 0.25× to 8×, with pitch-preserving time-stretch.
-- **Per-clip volume** from muted to 200%, plus a background music track under the mix.
+- **Per-clip sound and cursor.** Set the mic and system audio from muted to 200% each, hide the cursor, or turn off its smoothing for one clip.
+  A background music track sits under the mix.
 - **Camera layouts.** Picture-in-picture, fullscreen, split screen, or hidden, animated as they change.
 - **Masks.** Blur or pixelate anything sensitive, or highlight what matters.
   Masks stay locked to the content through zooms.
@@ -184,7 +196,7 @@ Recording, editing, transcription, and background removal all run on your Mac.
 There is no account and no telemetry, and crash reports stay on your disk.
 Grip goes online only to download the speech model once (about 670 MB), to check for updates, and to upload when you share.
 
-Grip lives in the menu bar.
+Grip lives in the menu bar, and opened at login it starts there quietly.
 Updates download in the background and install themselves while you're away, never during a recording or an export.
 
 ## Shortcuts
@@ -200,6 +212,7 @@ Updates download in the background and install themselves while you're away, nev
 | In the picker | |
 | --- | --- |
 | **↩︎** | Record the area |
+| **Z** | During the countdown: turn auto-zoom on or off |
 | **⌘C** / **⌘S** | Copy the screenshot / save it to the Desktop |
 | **A R P T B** | Arrow, rectangle, pen, text, pixelate |
 | **Esc** | Close the picker |
