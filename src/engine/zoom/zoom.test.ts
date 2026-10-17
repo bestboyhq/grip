@@ -77,6 +77,8 @@ test('pure: any frame alone equals the same frame rendered in sequence', () => {
     zoom({ start: 9.4, end: 11, target: point(0.9, 0.1) }),
     zoom({ start: 13, end: 15, instant: true }),
     zoom({ start: 16, end: 18, mode: 'loupe' }),
+    zoom({ start: 18, end: 19, mode: 'loupe', level: 3, size: 150, target: point(0.2, 0.8) }),
+    zoom({ start: 19, end: 19.6, mode: 'loupe', instant: true }),
   ]
   const ts = frames(0, 20, 60)
   const a = setup(zooms, events)
@@ -248,14 +250,43 @@ test('loupe fades in and out, magnifies, and follows its target', () => {
   assert.deepEqual(loupeAt(rigid.p.zoom, 3.5)!.stretch, { x: 0, y: 0 })
   // Size is the radius in units (px at 1080p; this output is 1200 high), clamped to its range.
   const sized = (size?: number) => loupeAt(setup([zoom({ start: 2, end: 5, mode: 'loupe', size })], events, { duration: 10 }).p.zoom, 3.5)!.radius
-  near(sized(), (260 * 1200) / 1080, 1e-9)
-  near(sized(100), (100 * 1200) / 1080, 1e-9)
-  near(sized(5000), (400 * 1200) / 1080, 1e-9)
-  near(sized(NaN), (260 * 1200) / 1080, 1e-9)
+  near(sized(), (260 * 1200) / 1080, 1e-3)
+  near(sized(100), (100 * 1200) / 1080, 1e-3)
+  near(sized(5000), (400 * 1200) / 1080, 1e-3)
+  near(sized(NaN), (260 * 1200) / 1080, 1e-3)
   const fadeOut = loupeAt(p.zoom, 5.1)!
   assert.ok(fadeOut.opacity > 0 && fadeOut.opacity < 1)
   assert.equal(loupeAt(p.zoom, 6), null)
   near(view(3.5).scale, 1, 1e-9) // a loupe never moves the camera
+})
+
+test('a loupe into the next keeps the glass up: it glides there and eases into its level, size, and shape', () => {
+  const events = moves([[0, 1000, 800], [12, 1800, 800]])
+  const next = zoom({ start: 5, end: 8, mode: 'loupe', level: 3, size: 160, rigid: true, target: point(0.7, 0.3) })
+  // Back to back, overlapping, and a gap shorter than BRIDGE.
+  for (const end of [5, 6, 4.5]) {
+    const { p, screen } = setup([zoom({ start: 2, end, mode: 'loupe' }), next], events, { duration: 12 })
+    let was = loupeAt(p.zoom, 4)!
+    for (const t of frames(4, 7, 60).slice(1)) {
+      const l = loupeAt(p.zoom, t)!
+      near(l.opacity, 1, 1e-9, `no fade at t=${t}`)
+      assert.ok(l.scale >= 2 - 1e-3, `never drops to unmagnified: ${l.scale} at t=${t}`)
+      assert.ok(Math.hypot(l.x - was.x, l.y - was.y) < 60 && Math.abs(l.radius - was.radius) < 30, `no jump at t=${t}`)
+      was = l
+    }
+    const on = loupeAt(p.zoom, 7.5)!
+    near(on.scale, 3, 0.01)
+    near(on.radius, (160 * 1200) / 1080, 0.5)
+    near(on.x, screen(7.5).x + 0.7 * screen(7.5).w, 1)
+    near(Math.hypot(on.stretch.x, on.stretch.y), 0, 1e-6, 'eased into rigid')
+  }
+  // A longer gap fades out and back in; an instant loupe cuts in.
+  const gap = setup([zoom({ start: 2, end: 3.5, mode: 'loupe' }), next], events, { duration: 12 })
+  assert.equal(loupeAt(gap.p.zoom, 4.5), null)
+  assert.ok(loupeAt(gap.p.zoom, 5.05)!.opacity < 0.6)
+  const cut = setup([zoom({ start: 2, end: 5, mode: 'loupe' }), { ...next, instant: true }], events, { duration: 12 })
+  near(loupeAt(cut.p.zoom, 4.999)!.scale, 2, 1e-3)
+  near(loupeAt(cut.p.zoom, 5.001)!.scale, 3, 1e-3)
 })
 
 test('loupe centers on the cursor at the screen edge, overhanging the background', () => {

@@ -120,8 +120,9 @@ function pieces(zooms: Zoom[], map: TimeMap): Span[] {
   return out.sort((p, q) => p.a - q.a)
 }
 
-/** Non-overlapping spans of the camera's zoom: the latest-starting zoom wins where zooms overlap, and
- *  gaps shorter than BRIDGE belong to the zoom before them, so the camera pans to the next one. */
+/** Non-overlapping spans of the camera's zoom (or the loupe's): the latest-starting zoom wins where
+ *  zooms overlap, and gaps shorter than BRIDGE belong to the zoom before them, so the camera pans
+ *  (or the lens glides) to the next one. */
 // ponytail: O(pieces^2) sweep, fine for hundreds of zooms; use a heap of active pieces if thousands.
 function spans(zooms: Zoom[], map: TimeMap): Span[] {
   const ps = pieces(zooms, map)
@@ -217,43 +218,66 @@ function springStep(dt: number, spring: SpringConfig): [number, number, number, 
 
 export function prepareZoom(input: SceneInput, map: TimeMap, layout: ReturnType<typeof prepareLayout>, cursor: ReturnType<typeof prepareCursor>, path = zoomPath(input, map, layout, cursor)) {
   const { width: W, height: H } = input
-  const loupes = pieces(input.project.zooms.filter((z) => z.enabled && z.mode === 'loupe'), map).map((p) => {
-    const radius = (clamp(Number(p.zoom.size) || LOUPE_SIZE.initial, LOUPE_SIZE.min, LOUPE_SIZE.max) * Math.min(W, H)) / 1080
-    return { ...p, radius, path: loupePath(p, layout, cursor, radius) }
-  })
+  // One lens per run of loupes back to back (spans bridges gaps shorter than BRIDGE), so the glass
+  // stays up from one loupe into the next instead of fading out and back in.
+  const ls = spans(input.project.zooms.filter((z) => z.enabled && z.mode === 'loupe'), map)
+  const loupes: ReturnType<typeof lens>[] = []
+  for (let i = 0, j = 1; i < ls.length; i = j++) {
+    while (j < ls.length && ls[j].a - ls[j - 1].b < 1e-9) j++
+    loupes.push(lens(ls.slice(i, j), layout, cursor, Math.min(W, H) / 1080))
+  }
   return { W, H, map, layout, cursor, loupes, ...path }
 }
 
-/** Where the lens of loupe piece p sits, every DT from its start through its fade out: x, y and
- *  velocity x, y (unzoomed px, px/s), stepped like the camera so any frame reads it in isolation.
- *  Following the cursor, it trails it on a soft spring; a fixed point holds still. It centers on
- *  the cursor even at the screen's edge, so the lens may overhang into the background. */
-function loupePath(p: Span, layout: ReturnType<typeof prepareLayout>, cursor: ReturnType<typeof prepareCursor>, radius: number): Float32Array {
-  const n = Math.ceil((p.b + LOUPE_FADE - p.a) / DT) + 1
-  const out = new Float32Array(4 * n)
-  const [h, g, dh, dg] = springStep(DT, LOUPE_FOLLOW)
-  const target = p.zoom.target
-  const pos = { x: 0, y: 0 }
-  const vel = { x: 0, y: 0 }
+const LENS = 7 // floats per lens sample
+
+/** The lens of a run of loupes, every DT from its start through its fade out: x, y and velocity x, y
+ *  (unzoomed px, px/s), level, radius (px), and liquid (0 rigid, 1 liquid), stepped like the camera
+ *  so any frame reads it in isolation. Following the cursor, it trails it on a soft spring; a fixed
+ *  point holds still. Into the next loupe of the run it glides to that one's target and eases into
+ *  its level, size, and shape; into or out of an instant one it jumps. It centers on the cursor even
+ *  at the screen's edge, so the lens may overhang into the background. */
+function lens(run: Span[], layout: ReturnType<typeof prepareLayout>, cursor: ReturnType<typeof prepareCursor>, unit: number) {
+  const a = run[0].a
+  const b = run.at(-1)!.b
+  const n = Math.ceil((b + LOUPE_FADE - a) / DT) + 1
+  const path = new Float32Array(LENS * n)
+  const jumps = new Map<number, number>()
+  const follow = springStep(DT, LOUPE_FOLLOW)
+  const morph = springStep(DT, LOUPE_SPRING)
+  const pos = [0, 0, 0, 0, 0] // x, y, log level, radius, liquid
+  const vel = [0, 0, 0, 0, 0]
   let aim: Pt | null = null
-  for (let k = 0; k < n; k++) {
-    const t = p.a + k * DT
+  let prev: Span | null = null
+  for (let k = 0, i = 0; k < n; k++) {
+    const t = a + k * DT
+    while (i + 1 < run.length && run[i + 1].a <= t) i++
+    const { zoom } = run[i]
     const s = screenAt(layout, t)
     if (s) {
       const { screen: r, visible: v } = s
-      const c: Pt = target.kind === 'point' ? { x: r.x + target.x * r.w, y: r.y + target.y * r.h } : (cursorPoint(cursor, t) ?? aim ?? { x: v.x + v.w / 2, y: v.y + v.h / 2 })
+      const c: Pt = zoom.target.kind === 'point' ? { x: r.x + zoom.target.x * r.w, y: r.y + zoom.target.y * r.h } : (cursorPoint(cursor, t) ?? aim ?? { x: v.x + v.w / 2, y: v.y + v.h / 2 })
       aim = { x: clamp(c.x, v.x, v.x + v.w), y: clamp(c.y, v.y, v.y + v.h) }
     }
     if (!aim) continue
-    if (k === 0) Object.assign(pos, aim)
-    out.set([pos.x, pos.y, vel.x, vel.y], 4 * k)
-    for (const a of ['x', 'y'] as const) {
-      const d = pos[a] - aim[a]
-      pos[a] = aim[a] + d * h + vel[a] * g
-      vel[a] = d * dh + vel[a] * dg
+    const radius = clamp(Number(zoom.size) || LOUPE_SIZE.initial, LOUPE_SIZE.min, LOUPE_SIZE.max) * unit
+    const target = [aim.x, aim.y, Math.log(Math.max(1, zoom.level)), radius, zoom.rigid ? 0 : 1]
+    if (!prev || (run[i] !== prev && (zoom.instant || prev.zoom.instant))) {
+      // The first sample, or an instant loupe cutting in or out: jump, no animation.
+      if (prev) jumps.set(k - 1, run[i].a)
+      pos.splice(0, 5, ...target)
+      vel.fill(0)
+    }
+    prev = run[i]
+    path.set([pos[0], pos[1], vel[0], vel[1], Math.exp(pos[2]), pos[3], pos[4]], LENS * k)
+    for (let o = 0; o < 5; o++) {
+      const [h, g, dh, dg] = o < 2 ? follow : morph
+      const d = pos[o] - target[o]
+      pos[o] = target[o] + d * h + vel[o] * g
+      vel[o] = d * dh + vel[o] * dg
     }
   }
-  return out
+  return { a, b, first: run[0].zoom, last: run.at(-1)!.zoom, path, jumps }
 }
 
 let last: { events: InputEvent[]; cursor: Float32Array; key: string; path: ZoomPath } | null = null
@@ -417,21 +441,24 @@ export function zoomAmount(z: ReturnType<typeof prepareZoom>, t: number, v: View
 }
 
 export function loupeAt(z: ReturnType<typeof prepareZoom>, t: number): Loupe | null {
-  const piece = z.loupes.findLast((p) => p.a <= t && t < p.b + (p.zoom.instant ? 0 : LOUPE_FADE))
-  if (!piece || !screenAt(z.layout, t)) return null
-  const { a, b, zoom, path, radius } = piece
-  const fadeIn = zoom.instant || a < AT_START ? 1 : springProgress(t - a, LOUPE_SPRING)
+  const lens = z.loupes.findLast((l) => l.a <= t && t < l.b + (l.last.instant ? 0 : LOUPE_FADE))
+  if (!lens || !screenAt(z.layout, t)) return null
+  const { a, b, path } = lens
+  const fadeIn = lens.first.instant || a < AT_START ? 1 : springProgress(t - a, LOUPE_SPRING)
   const fadeOut = t < b ? 0 : springProgress(t - b, LOUPE_SPRING)
   const p = fadeIn * (1 - fadeOut)
-  const n = path.length / 4
+  const n = path.length / LENS
   const x = clamp((t - a) / DT, 0, n - 1)
   const k = Math.min(Math.floor(x), n - 2)
-  const at = (o: number) => (n < 2 ? path[o] : mix(path[4 * k + o], path[4 * (k + 1) + o], x - k))
-  const vx = at(2), vy = at(3)
+  const jump = lens.jumps.get(k)
+  // An instant switch inside this step: hold the sample on the matching side instead of blending.
+  const [i, j, w] = jump === undefined ? [k, k + 1, x - k] : t < jump ? [k, k, 0] : [k + 1, k + 1, 0]
+  const at = (o: number) => mix(path[LENS * i + o], path[LENS * j + o], w)
+  const vx = at(2), vy = at(3), radius = at(5)
   const speed = Math.hypot(vx, vy)
-  const e = zoom.rigid ? 0 : Math.min(LOUPE_MAX_STRETCH, (LOUPE_STRETCH * speed) / radius)
-  const stretch = speed > 1e-6 ? { x: (vx / speed) * e, y: (vy / speed) * e } : { x: 0, y: 0 }
-  return { x: at(0), y: at(1), radius, scale: mix(1, Math.max(1, zoom.level), p), opacity: p, stretch }
+  const e = at(6) * Math.min(LOUPE_MAX_STRETCH, (LOUPE_STRETCH * speed) / radius)
+  const stretch = e > 0 ? { x: (vx / speed) * e, y: (vy / speed) * e } : { x: 0, y: 0 }
+  return { x: at(0), y: at(1), radius, scale: mix(1, at(4), p), opacity: p, stretch }
 }
 
 /** Auto zooms (source time) from clicks and typing: merge activity close in time, start LEAD before
