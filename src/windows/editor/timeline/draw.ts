@@ -161,9 +161,8 @@ const C = {
   zoomOff: ['#2a2a2f', '#55555d', 'rgba(255,255,255,0.08)', '#36363c', 'rgba(205,205,215,0.75)', 'rgba(170,170,180,0.3)'],
   layouts: ['#3b3039', '#cf72bf', 'rgba(255,255,255,0.12)', '#4b3a48', 'rgba(238,165,224,0.95)', 'rgba(207,114,191,0.55)'],
   masks: ['#3c302e', '#e8604c', 'rgba(255,255,255,0.12)', '#4d3934', 'rgba(255,165,145,0.95)', 'rgba(232,96,76,0.55)'],
-  // Where zooms overlap: a band per layer, brighter the more zooms it holds; its top edge; the + between them.
-  bands: ['#4a4380', '#594f9d', '#685dba'],
-  bandEdge: 'rgba(255,255,255,0.16)',
+  // Where zooms overlap: a hairline outline per layer, brighter the more zooms it holds; the + between them.
+  bands: ['rgba(143,128,245,0.55)', 'rgba(169,156,255,0.75)', 'rgba(196,188,255,0.92)'],
   plus: 'rgba(255,255,255,0.5)',
   capHot: 'rgba(255,255,255,0.55)',
   text: '#ffffff',
@@ -435,9 +434,11 @@ function itemLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.It
     }
   }
   run.flush()
-  // Zooms may overlap. Their bodies draw bottom up, then a band over each stretch where they overlap
-  // names what combines there, then every block's ends, label (outside the bands), and selection.
-  shown.sort((p, q) => l.rank[p[0].i] - l.rank[q[0].i])
+  // Zooms may overlap. Their bodies draw bottom up (a selected one last, lit along its whole length),
+  // then an outline over each stretch where they overlap names what combines there, then every
+  // block's ends, label (outside the outlines), and selection ring.
+  const lit = (b: M.Block) => (s.sel.has((l.items[b.i] as M.Item).id) ? 1 : 0)
+  shown.sort((p, q) => lit(p[0]) - lit(q[0]) || l.rank[p[0].i] - l.rank[q[0].i])
   for (const [b, xa, xb] of shown) itemBlock(ctx, s, row, track, l.items[b.i] as M.Item, b, xa, xb, 'body')
   const bands = l.overlaps.filter((o) => o.b >= tA && o.a <= tB)
   overlapBands(ctx, s, row, l as M.Lane<Zoom>, bands)
@@ -461,8 +462,9 @@ function labelSpan(l: M.Lane, b: M.Block, bands: M.Overlap[]): [number, number] 
   return best
 }
 
-/** Where zooms overlap and combine: a band over them, and inside it a narrower one wherever more of
- *  them overlap, each stretch naming its zooms, top first, as a full zoom or a loupe and its level. */
+/** Where zooms overlap and combine: an outline over them, and inside it a narrower one wherever more
+ *  of them overlap, each stretch naming its zooms, top first, as a full zoom or a loupe and its level.
+ *  Outlines only: the zooms under them show through. */
 function overlapBands(ctx: CanvasRenderingContext2D, s: Scene, row: Row, l: M.Lane<Zoom>, bands: M.Overlap[]) {
   const v = s.view
   const deepest = Math.min(MAX_STACK, Math.max(1, ...bands.map((o) => o.items.length)))
@@ -479,11 +481,7 @@ function overlapBands(ctx: CanvasRenderingContext2D, s: Scene, row: Row, l: M.La
       const r = Math.min(5, (xb - xa) / 2)
       i = j
       if (xb - xa < 2) continue
-      ctx.beginPath()
-      ctx.roundRect(xa, y, xb - xa, h, r)
-      ctx.fillStyle = C.bands[k - 2]
-      ctx.fill()
-      topEdge(ctx, v, xa, y, xb - xa, h, r, C.bandEdge)
+      ring1(ctx, xa, y, xb - xa, h, [r, r, r, r], C.bands[k - 2])
     }
   }
   const plus: Seg = { text: '+', font: F_META, color: C.plus }
