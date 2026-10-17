@@ -58,8 +58,9 @@ const HOLD = 2 // s: an auto zoom holds this long after its last click or keystr
 const MERGE_GAP = 2 // s: auto zooms closer than this merge; zooming out and back in that fast looks erratic
 const MIN_AUTO = 1.2 // s: shorter auto zooms (clipped by the recording's ends) are dropped
 const FAR_JUMPS_PER_S = 0.5 // an auto zoom panning a half view more often than this is erratic: skipped
-const LOUPE_SPRING: SpringConfig = { stiffness: 300, damping: 2 * Math.sqrt(300), mass: 1 } // ~0.5 s fades
-const LOUPE_FADE = springDuration(LOUPE_SPRING)
+const LOUPE_SPRING: SpringConfig = { stiffness: 300, damping: 2 * Math.sqrt(300), mass: 1 } // one loupe eases into the next's level, size, and shape in ~0.5 s
+const LOUPE_POP: SpringConfig = { stiffness: 900, damping: 2 * Math.sqrt(900), mass: 1 } // a lens magnifies in or out, half way in ~0.06 s, settled in ~0.3 s
+const LOUPE_FADE = springDuration(LOUPE_POP)
 const LOUPE_FOLLOW: SpringConfig = { stiffness: 120, damping: 2 * 0.65 * Math.sqrt(120), mass: 1 } // trails the cursor softly, a little overshoot
 /** Loupe lens radius in units (Zoom.size): what fits depends on what it shows, a button or a paragraph. */
 export const LOUPE_SIZE = { min: 60, max: 400, initial: 260 }
@@ -522,27 +523,37 @@ export function zoomAmount(z: ReturnType<typeof prepareZoom>, t: number, v: View
 /** The lenses showing at t, in start order (later ones over earlier ones). */
 export function loupesAt(z: ReturnType<typeof prepareZoom>, t: number): Loupe[] {
   if (!screenAt(z.layout, t)) return []
-  const out: Loupe[] = []
-  for (const lens of z.loupes) {
-    const { a, b, path } = lens
-    if (t < a || t >= b + (lens.last.instant ? 0 : LOUPE_FADE)) continue
-    const fadeIn = lens.first.instant || a < AT_START ? 1 : springProgress(t - a, LOUPE_SPRING)
-    const fadeOut = t < b ? 0 : springProgress(t - b, LOUPE_SPRING)
-    const p = fadeIn * (1 - fadeOut)
-    const n = path.length / LENS
-    const x = clamp((t - a) / DT, 0, n - 1)
-    const k = Math.min(Math.floor(x), n - 2)
-    const jump = lens.jumps.get(k)
-    // An instant switch inside this step: hold the sample on the matching side instead of blending.
-    const [i, j, w] = jump === undefined ? [k, k + 1, x - k] : t < jump ? [k, k, 0] : [k + 1, k + 1, 0]
-    const at = (o: number) => mix(path[LENS * i + o], path[LENS * j + o], w)
-    const vx = at(2), vy = at(3), radius = at(5)
-    const speed = Math.hypot(vx, vy)
-    const e = at(6) * Math.min(LOUPE_MAX_STRETCH, (LOUPE_STRETCH * speed) / radius)
-    const stretch = e > 0 ? { x: (vx / speed) * e, y: (vy / speed) * e } : { x: 0, y: 0 }
-    out.push({ x: at(0), y: at(1), radius, scale: mix(1, at(4), p), opacity: p, stretch })
-  }
-  return out
+  return z.loupes.map((lens) => lensAt(lens, t)).filter((l): l is Loupe => !!l)
+}
+
+/** For motion blur: each lens showing at t (loupesAt's order) at the shutter times ts. Where it is
+ *  not on yet, or anymore, it sits where it is at t, unmagnified and clear, as good as not there. */
+export function loupesAcross(z: ReturnType<typeof prepareZoom>, t: number, ts: number[]): Loupe[][] {
+  if (!screenAt(z.layout, t)) return []
+  return z.loupes.flatMap((lens) => {
+    const at = lensAt(lens, t)
+    return at ? [ts.map((x) => lensAt(lens, x) ?? { ...at, scale: 1, opacity: 0, stretch: { x: 0, y: 0 } })] : []
+  })
+}
+
+function lensAt(lens: ReturnType<typeof prepareZoom>['loupes'][number], t: number): Loupe | null {
+  const { a, b, path } = lens
+  if (t < a || t >= b + (lens.last.instant ? 0 : LOUPE_FADE)) return null
+  const fadeIn = lens.first.instant || a < AT_START ? 1 : springProgress(t - a, LOUPE_POP)
+  const fadeOut = t < b ? 0 : springProgress(t - b, LOUPE_POP)
+  const p = fadeIn * (1 - fadeOut)
+  const n = path.length / LENS
+  const x = clamp((t - a) / DT, 0, n - 1)
+  const k = Math.min(Math.floor(x), n - 2)
+  const jump = lens.jumps.get(k)
+  // An instant switch inside this step: hold the sample on the matching side instead of blending.
+  const [i, j, w] = jump === undefined ? [k, k + 1, x - k] : t < jump ? [k, k, 0] : [k + 1, k + 1, 0]
+  const at = (o: number) => mix(path[LENS * i + o], path[LENS * j + o], w)
+  const vx = at(2), vy = at(3), radius = at(5)
+  const speed = Math.hypot(vx, vy)
+  const e = at(6) * Math.min(LOUPE_MAX_STRETCH, (LOUPE_STRETCH * speed) / radius)
+  const stretch = e > 0 ? { x: (vx / speed) * e, y: (vy / speed) * e } : { x: 0, y: 0 }
+  return { x: at(0), y: at(1), radius, scale: mix(1, at(4), p), opacity: p, stretch }
 }
 
 /** Auto zooms (source time) from clicks and typing: merge activity close in time, start LEAD before

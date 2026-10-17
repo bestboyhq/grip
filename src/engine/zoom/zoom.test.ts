@@ -7,7 +7,7 @@ import { parseEvents, type InputEvent } from '../../shared/events.ts'
 import { prepare, sceneAt, type View } from '../scene.ts'
 import { layoutAt } from '../layout.ts'
 import { cursorPoint as cursorAt } from '../motion/index.ts'
-import { autoZoomOnce, generateAutoZooms, lookOf, loupesAt, setAutoZoom, viewAt } from './index.ts'
+import { autoZoomOnce, generateAutoZooms, lookOf, loupesAcross, loupesAt, setAutoZoom, viewAt } from './index.ts'
 
 const SCREEN = { file: 'sources/screen.mp4', width: 2880, height: 1800, fps: 30, scale: 2 }
 const CAMERA = { file: 'sources/camera.mp4', width: 1280, height: 720, fps: 30, scale: 1 }
@@ -266,6 +266,21 @@ test('loupe fades in and out, magnifies, and follows its target', () => {
   assert.ok(fadeOut.opacity > 0 && fadeOut.opacity < 1)
   assert.equal(loupeAt(p.zoom, 6), null)
   near(view(3.5).scale, 1, 1e-9) // a loupe never moves the camera
+})
+
+test('a loupe pops: most of the way in a tenth of a second, gone in a third', () => {
+  const events = moves([[0, 1000, 800], [10, 1000, 800]])
+  const { p } = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 3 })], events, { duration: 10 })
+  assert.ok(loupeAt(p.zoom, 2.1)!.scale > 2.5, 'in: past 3/4 of the way at 0.1 s')
+  assert.ok(loupeAt(p.zoom, 5.1)!.scale < 1.5, 'out: past 3/4 of the way at 0.1 s')
+  assert.equal(loupeAt(p.zoom, 5.35), null)
+  // Across a shutter straddling its start, the lens is there unmagnified and clear before it begins.
+  const ts = [1.99, 2, 2.01, 2.02]
+  const [path] = loupesAcross(p.zoom, 2.01, ts)
+  assert.equal(path.length, ts.length)
+  assert.deepEqual([path[0].scale, path[0].opacity, path[0].x], [1, 0, path[2].x])
+  assert.ok(path[3].scale > path[2].scale && path[2].scale > 1, 'magnifying across the shutter')
+  assert.deepEqual(loupesAcross(p.zoom, 1.5, ts), [], 'only the lenses showing at t')
 })
 
 test('a loupe into the next keeps the glass up: it glides there and eases into its level, size, and shape', () => {
