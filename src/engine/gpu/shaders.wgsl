@@ -401,20 +401,21 @@ fn dimAt(u: vec2f, aa: f32) -> f32 {
 // across the bevel the content runs on ever slower and stands still at the rim, so whatever reaches
 // the edge stretches and curls along it, the way a thick lens bends lines at its rim. Squeezing the
 // frame around the lens into the bevel instead aliases into streaks. No outline: the bending is the
-// edge. Lit by one key light from above: a specular crescent on the bevel facing it, a dimmer one
-// where light leaves the far side, Fresnel reflection at grazing angles, and dispersion splitting the
-// colors where the bevel bends hardest. Moving, the drop stretches along its motion, keeping its
+// edge. Lit by one key light from above: the bevel shades darker turned away from it, a hairline of
+// light catches the rim, Fresnel reflection at grazing angles, and dispersion splits the colors where
+// the bevel bends hardest. Moving, the drop stretches along its motion, keeping its
 // area, and what it shows smears across the shutter like the rest of the frame. The frame dims most
 // right around a lens and less further out, so the lens lifts off the screen without the whole frame
 // going dark. Several lenses draw in order, a later one over an earlier one.
 
-const BEVEL = 0.2; // bevel width, fraction of the radius
+const BEVEL = 0.15; // bevel width, fraction of the radius
 const CURL = 1.0 / 3.0; // the bevel shows this share of what the flat top would show across it, the least that
 // stays monotone: the content slows as (1 - s)^2 and stretches into a curl along the rim
-const DISPERSION = 0.03; // how far red and blue bend apart at the rim, fraction of the radius
+const DISPERSION = 0.045; // how far red and blue bend apart at the rim, fraction of the radius
 const KEY = vec3f(-0.38, -0.82, 0.43); // key light direction (output px axes, z toward the viewer)
-const AROUND = 0.28; // how much the frame right around a lens dims
-const AROUND_REACH = 0.8; // ...and half that this many radii out from its edge
+const AROUND = 0.2; // how much the frame right around a lens dims
+const AROUND_REACH = 1.1; // ...and half that this many radii out from its edge
+const AROUND_SHIFT = 0.15; // the dim sits this many radii off the lens, away from the light, like its shadow
 const LENSES = 4u;
 const LENS_SAMPLES = 9u; // per lens in F.loupeS (renderer.ts LOUPE_SAMPLES)
 
@@ -481,7 +482,7 @@ fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, fringe: bool) -> vec
   let along = dot(q, ax);
   let sq = ax * (along / (1.0 + k)) + (q - ax * along) * sqrt(1.0 + k);
   let d = length(sq);
-  let cv = cover(d - R, aa);
+  let cv = cover(d - R, 2.0 * aa); // a rounded edge is a little soft, not a cut
   if (cv <= 0.0) { return vec4f(0.0); }
 
   let rho = min(d / R, 1.0);
@@ -505,14 +506,17 @@ fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, fringe: bool) -> vec
   // Surface normal of the bevel: flat on top, turning to near vertical at the rim.
   let tilt = 1.5 * pow(s, 2.4);
   let n = vec3f(dir * sin(tilt), cos(tilt));
-  let L0 = normalize(KEY);
-  let back = normalize(vec3f(-L0.xy, L0.z));
-  let spec = pow(max(dot(n, normalize(L0 + vec3f(0.0, 0.0, 1.0))), 0.0), 260.0);
-  let spec2 = pow(max(dot(n, normalize(back + vec3f(0.0, 0.0, 1.0))), 0.0), 260.0) * 0.5;
   let fres = 0.04 + 0.96 * pow(1.0 - n.z, 5.0);
   let env = mix(vec3f(1.0), vec3f(0.55, 0.58, 0.64), smoothstep(-0.7, 0.9, dir.y)); // bright sky above, the room below
-  var g = col * mix(vec3f(1.0), vec3f(0.9, 0.93, 0.96), smoothstep(0.35, 1.0, s) * 0.5); // a longer path through the glass
-  g = mix(g, env, fres * 0.28) + vec3f(spec + spec2);
+  // The rim rounds away: the outer bevel shades darker on the side turned from the light and barely
+  // on the side facing it, the last few px darken all around, and a hairline of light catches the
+  // very edge. Broad specular crescents read as plastic, not glass.
+  let toward = dot(dir, normalize(KEY.xy)); // 1 facing the light, -1 turned away
+  let round = smoothstep(1.0 - 0.7 * BEVEL, 1.0, rho);
+  let px = (R - d) / aa; // output px in from the rim
+  var g = col * (1.0 - round * mix(0.15, 0.02, 0.5 + 0.5 * toward)) * (1.0 - 0.1 * (1.0 - smoothstep(1.0, 6.0, px)));
+  g = mix(g, env, fres * 0.15);
+  g += vec3f(0.1 + 0.12 * max(toward, 0.0)) * (1.0 - smoothstep(0.0, 1.5, px));
 
   // Appearing, the magnification grows from 1, where the lens shows exactly what lies under it, so
   // the content stays opaque and swells in place while only the glass and the dim fade in. Fading
@@ -534,7 +538,7 @@ fn lensesAt(p: vec2f, f: f32, fringe: bool) -> vec4f {
     let L = lensOf(i, f);
     let l = lensAt(L, u, vt, aa, cs, fringe);
     out = l + out * (1.0 - l.a);
-    let d = max(length(u - L.a.xy) - L.a.z, 0.0) / (AROUND_REACH * L.a.z);
+    let d = max(length(u - L.a.xy + normalize(KEY.xy) * AROUND_SHIFT * L.a.z) - L.a.z, 0.0) / (AROUND_REACH * L.a.z);
     dim = max(dim, AROUND * L.b.x / (1.0 + d * d));
   }
   return vec4f(out.rgb, out.a + dim * (1.0 - out.a));

@@ -15,7 +15,9 @@ Turning clicks and typing into camera direction.
 - Glass loupe magnifies a region in place when a full zoom would move too much of the screen.
   It has no outline; its rim is the edge: the magnification holds almost to it, then the content slows to a stop and curls along the rim with color fringes.
   A bevel that squeezes the frame around the lens back to 1x crams too much into a sliver, which aliases into streaks.
-  The frame dims most right around the lens and fades out further away, so the lens lifts off the screen without darkening the whole frame.
+  The rim rounds toward the viewer: it shades darker on the side turned from the light, and a hairline of light catches the edge.
+  Broad specular crescents make the lens read as plastic.
+  The frame dims lightly, most right around the lens and fading further away, so the lens lifts off the screen without darkening the whole frame.
 - A loupe pops in and out in about a fifth of a second, smeared by motion blur, and what it shows blurs while it glides or magnifies like the rest of the frame.
 - New zooms, manual and automatic, take the type, loupe size, and Liquid the user last picked on any zoom, in every project.
 - A loupe appears by growing its magnification from 1 with its content opaque; fading its content in shows the screen twice, magnified over unmagnified.
