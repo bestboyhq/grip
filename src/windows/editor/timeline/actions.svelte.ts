@@ -175,12 +175,13 @@ export function make(track: M.ItemTrack, start: number, end: number): Zoom | Cam
   return { id, start, end, kind: 'blur', rect: { x: c.x + 0.3 * c.w, y: c.y + 0.3 * c.h, w: 0.4 * c.w, h: 0.3 * c.h } } satisfies Mask
 }
 
-/** Add an item about 3 output seconds long at output time t, fitted into free space; selects it. */
+/** Add an item about 3 output seconds long at output time t, fitted into free space (a zoom goes over
+ *  any there); selects it. */
 export function add(track: M.ItemTrack, t = player.time, len = 3) {
   if (!doc.project) return
   const m = mapNow()
   const a = Math.min(t, Math.max(0, m.duration - len))
-  const r = M.fit(list(track), toSource(m, a), toSource(m, Math.min(a + len, m.duration)), project().sources.duration)
+  const r = M.fit(list(track), toSource(m, a), toSource(m, Math.min(a + len, m.duration)), project().sources.duration, M.MIN_LEN, M.stacks(track))
   if (!r) return
   const item = make(track, r[0], r[1])
   edit((q) => {
@@ -219,7 +220,7 @@ function placeItems(from: Items, delta: number) {
   const duration = project().sources.duration
   const added: string[] = []
   const next = ITEM_KINDS.map((k) => {
-    const r = M.placeCopies(list(k), from[k] as M.Item[], delta, duration)
+    const r = M.placeCopies(list(k), from[k] as M.Item[], delta, duration, M.stacks(k))
     added.push(...r.added)
     return [k, r.items] as const
   })

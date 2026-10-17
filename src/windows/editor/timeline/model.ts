@@ -38,6 +38,8 @@ export interface Lane<T extends Timed = Timed> {
   items: T[]
   blocks: Block[] // sorted by a
   maxLen: number // longest block, bounds the visible-range search
+  row: number[] // stacked lanes: the row of each item, 0 on top
+  rows: number
 }
 
 /** A removed stretch of source next to a clip edge: shown as a marker, click restores it. */
@@ -69,7 +71,32 @@ export interface Model {
 const EPS = 1e-6
 export const MIN_LEN = 0.1 // shortest clip or item, output seconds
 
-export function lane<T extends Timed>(map: TimeMap, items: T[]): Lane<T> {
+/** Zooms may overlap, so their lane stacks them in rows; every other item lane keeps one row. */
+export const stacks = (t: TrackId) => t === 'zooms'
+
+/** Rows for items that may overlap: each item takes the topmost row free of the items before it in
+ *  the array, so an item keeps its row while another is dragged across it. */
+function stack(items: Timed[]): { row: number[]; rows: number } {
+  const order = items.map((_, i) => i).sort((x, y) => items[x].start - items[y].start)
+  const before: number[][] = items.map(() => []) // earlier items overlapping each one
+  let on: number[] = []
+  for (const i of order) {
+    on = on.filter((j) => items[j].end > items[i].start + EPS)
+    for (const j of on) before[Math.max(i, j)].push(Math.min(i, j))
+    on.push(i)
+  }
+  const row: number[] = []
+  let rows = 1
+  items.forEach((_, i) => {
+    let r = 0
+    while (before[i].some((j) => row[j] === r)) r++
+    row.push(r)
+    rows = Math.max(rows, r + 1)
+  })
+  return { row, rows }
+}
+
+export function lane<T extends Timed>(map: TimeMap, items: T[], stacked = false): Lane<T> {
   const blocks: Block[] = []
   let maxLen = 0
   items.forEach((it, i) => {
@@ -86,7 +113,7 @@ export function lane<T extends Timed>(map: TimeMap, items: T[]): Lane<T> {
     })
   })
   blocks.sort((x, y) => x.a - y.a)
-  return { items, blocks, maxLen }
+  return { items, blocks, maxLen, ...(stacked ? stack(items) : { row: items.map(() => 0), rows: 1 }) }
 }
 
 function clipLane(map: TimeMap): Lane<Clip> {
@@ -97,18 +124,18 @@ function clipLane(map: TimeMap): Lane<Clip> {
     if (b - a > maxLen) maxLen = b - a
     return { a, b, i, head: true, tail: true }
   })
-  return { items: map.clips, blocks, maxLen }
+  return { items: map.clips, blocks, maxLen, row: blocks.map(() => 0), rows: 1 }
 }
 
 /** Rebuild what changed since `prev` (lanes keep identity when their inputs did). */
 export function buildModel(p: Parts, keys: Chip[], words: Chip[], prev?: Model): Model {
   const same = prev?.map.clips === p.clips
   const map = same ? prev!.map : timeMap(p.clips)
-  const reuse = <T extends Timed>(old: Lane<T> | undefined, items: T[]) => (same && old?.items === items ? old : lane(map, items))
+  const reuse = <T extends Timed>(old: Lane<T> | undefined, items: T[], stacked = false) => (same && old?.items === items ? old : lane(map, items, stacked))
   return {
     map,
     clips: same ? prev!.clips : clipLane(map),
-    zooms: reuse(prev?.zooms, p.zooms),
+    zooms: reuse(prev?.zooms, p.zooms, true),
     layouts: reuse(prev?.layouts, p.layouts),
     masks: reuse(prev?.masks, p.masks),
     keys: reuse(prev?.keys, keys),
@@ -152,13 +179,13 @@ function lowerBound(blocks: Block[], t: number): number {
   return lo
 }
 
-/** Topmost block under output time t, widened by `tol` seconds on each side. */
-export function blockAt(l: Lane, t: number, tol = 0): Block | null {
+/** Topmost block under output time t in `row`, widened by `tol` seconds on each side. */
+export function blockAt(l: Lane, t: number, tol = 0, row = 0): Block | null {
   const [from, to] = visible(l, t - tol, t + tol)
   let best: Block | null = null
   for (let k = from; k < to; k++) {
     const b = l.blocks[k]
-    if (b.a - tol <= t && t <= b.b + tol && (!best || (t >= b.a && t <= b.b) || !(t >= best.a && t <= best.b))) best = b
+    if (l.row[b.i] === row && b.a - tol <= t && t <= b.b + tol && (!best || (t >= b.a && t <= b.b) || !(t >= best.a && t <= best.b))) best = b
   }
   return best
 }
@@ -306,7 +333,7 @@ export function sameMoment(before: TimeMap, after: TimeMap, t: number): number {
   return toOutput(after, src) ?? mapRange(after, src, Infinity)[0]?.[0] ?? after.duration
 }
 
-// ---- Zooms, layouts, masks: non-overlapping items in source time ----
+// ---- Zooms, layouts, masks: items in source time; with `overlap` (zooms) they pass over each other ----
 
 /** Free source space around [s, e] among items (ignoring `skip`): previous end and next start. */
 function room(items: Item[], s: number, e: number, duration: number, skip?: Set<string>) {
@@ -322,7 +349,8 @@ function room(items: Item[], s: number, e: number, duration: number, skip?: Set<
 
 /** Fit a wanted range into the free gap at its start, shifting it left to keep its length if it can.
  *  A start inside another item moves to that item's end. Null when the gap is too small. */
-export function fit(items: Item[], s: number, e: number, duration: number, min = MIN_LEN): [number, number] | null {
+export function fit(items: Item[], s: number, e: number, duration: number, min = MIN_LEN, overlap = false): [number, number] | null {
+  if (overlap) items = []
   const inside = items.find((it) => it.start < s - EPS && it.end > s + EPS)
   if (inside) [s, e] = [inside.end, inside.end + e - s] // start after the item it lands on
   const { lo, hi } = room(items, s, s, duration)
@@ -333,12 +361,12 @@ export function fit(items: Item[], s: number, e: number, duration: number, min =
 }
 
 /** Move the items in `ids` by a source delta, as a group, stopping at neighbors and the recording's ends. */
-export function moveItems<T extends Item>(items: T[], ids: Set<string>, delta: number, duration: number): T[] {
+export function moveItems<T extends Item>(items: T[], ids: Set<string>, delta: number, duration: number, overlap = false): T[] {
   let lo = -Infinity
   let hi = Infinity
   for (const it of items) {
     if (!ids.has(it.id)) continue
-    const r = room(items, it.start, it.end, duration, ids)
+    const r = room(overlap ? [] : items, it.start, it.end, duration, ids)
     lo = Math.max(lo, r.lo - it.start)
     hi = Math.min(hi, r.hi - it.end)
   }
@@ -347,20 +375,20 @@ export function moveItems<T extends Item>(items: T[], ids: Set<string>, delta: n
 }
 
 /** Move one edge of an item to a source time, clamped to its neighbors and a minimum length. */
-export function resizeItem<T extends Item>(items: T[], id: string, side: 'start' | 'end', src: number, duration: number): T[] {
+export function resizeItem<T extends Item>(items: T[], id: string, side: 'start' | 'end', src: number, duration: number, overlap = false): T[] {
   return items.map((it) => {
     if (it.id !== id) return it
-    const r = room(items, it.start, it.end, duration, new Set([id]))
+    const r = room(overlap ? [] : items, it.start, it.end, duration, new Set([id]))
     return side === 'start' ? { ...it, start: clamp(src, r.lo, it.end - MIN_LEN) } : { ...it, end: clamp(src, it.start + MIN_LEN, r.hi) }
   })
 }
 
 /** Add copies shifted by `delta` source seconds, each fitted into free space; ones that do not fit are dropped. */
-export function placeCopies<T extends Item>(items: T[], copies: T[], delta: number, duration: number): { items: T[]; added: string[] } {
+export function placeCopies<T extends Item>(items: T[], copies: T[], delta: number, duration: number, overlap = false): { items: T[]; added: string[] } {
   const next = items.slice()
   const added: string[] = []
   for (const c of copies) {
-    const r = fit(next, c.start + delta, c.end + delta, duration)
+    const r = fit(next, c.start + delta, c.end + delta, duration, MIN_LEN, overlap)
     if (!r) continue
     const id = uid()
     next.push({ ...c, id, start: r[0], end: r[1] })

@@ -54,12 +54,12 @@ export interface Motion {
 
 // `struct Frame` in shaders.wgsl, in vec4 slots.
 const A = 0, VIEWT = 1, SCR = 2, SCR2 = 3, SCR3 = 4, DEV = 5, SH = 6, VIEWS = 10, PARTS = 26, MASKS = 74
-const CUR = 106, CURIMG = 107, CURTEX = 108, CURBOX = 109, CURS = 110, LOUPE = 126, LOUPE2 = 127
-const CAM = 128, CAM1 = 129, CAM2 = 130, CAM3 = 131, CAM4 = 132, LUTMIN = 133, LUTMAX = 134, FIN = 135, VP = 136, VIS = 137
-const CLK = 138
-const FRAME_SLOTS = 142
+const CUR = 106, CURIMG = 107, CURTEX = 108, CURBOX = 109, CURS = 110
+const CAM = 126, CAM1 = 127, CAM2 = 128, CAM3 = 129, CAM4 = 130, LUTMIN = 131, LUTMAX = 132, FIN = 133, VP = 134, VIS = 135
+const CLK = 136, LOUPES = 140
+const FRAME_SLOTS = 148
 const PASS_SLOTS = 27 // `struct Pass`
-const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12, MAX_CLICKS = 4
+const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12, MAX_CLICKS = 4, MAX_LOUPES = 4
 const MASK_KIND = { blur: 0, pixelate: 1, highlight: 2 } as const
 
 // WebGPU flag values (the TS DOM lib has the types but not these namespaces).
@@ -179,7 +179,7 @@ export class Renderer {
     return {
       t: 0, src: 0, width, height, unit: Math.min(width, height) / 1080, background, backgroundBlur: blur,
       view: { center: { x: width / 2, y: height / 2 }, scale: 1 },
-      screen: null, camera: null, cursor: null, clicks: [], drawings: [], keystrokes: [], caption: null, masks: [], loupe: null,
+      screen: null, camera: null, cursor: null, clicks: [], drawings: [], keystrokes: [], caption: null, masks: [], loupes: [],
     }
   }
 
@@ -442,12 +442,12 @@ export class Renderer {
       has.cursor = x1 > 0 && y1 > 0 && x0 < W && y0 < H
     }
 
-    const l = scene.loupe
-    if (l && l.opacity > 0 && l.radius > 0) {
-      set(LOUPE, l.x, l.y, l.radius, Math.max(l.scale, 1e-3))
-      set(LOUPE2, Math.min(l.opacity, 1), 1, l.stretch.x, l.stretch.y)
+    // ponytail: the 4 newest lenses show at once; a storage buffer if anyone stacks more
+    scene.loupes.filter((l) => l.opacity > 0 && l.radius > 0).slice(-MAX_LOUPES).forEach((l, i) => {
+      set(LOUPES + 2 * i, l.x, l.y, l.radius, Math.max(l.scale, 1e-3))
+      set(LOUPES + 2 * i + 1, Math.min(l.opacity, 1), 1, l.stretch.x, l.stretch.y)
       has.loupe = true
-    }
+    })
 
     // ponytail: the 4 newest clicks ripple at once; a storage buffer if rapid clicking needs more
     scene.clicks.filter((c) => c.style === 'ripple').slice(-MAX_CLICKS).forEach((c, i) => {

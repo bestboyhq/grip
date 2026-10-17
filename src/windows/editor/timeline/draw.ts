@@ -12,7 +12,8 @@ export const RULER = 38 // playhead knob on top, labels, tick dots
 const TOP = RULER + 4
 const GAP = 6
 const BOTTOM = 16
-const HEIGHTS: Record<M.TrackId, number> = { clips: 40, zooms: 36, layouts: 26, masks: 26, keys: 20, captions: 20 }
+const HEIGHTS: Record<M.TrackId, number> = { clips: 40, zooms: 36, layouts: 26, masks: 26, keys: 20, captions: 20 } // per row of a stacked track
+const STACK_GAP = 4 // between the rows of a stacked track
 const EDGE = 12 // px of a block's end that grabs the edge
 
 export interface Row {
@@ -21,15 +22,22 @@ export interface Row {
   h: number
 }
 
-export function rows(ids: M.TrackId[]): { rows: Row[]; height: number } {
+/** Tracks top to bottom; a stacked track (zooms) is as tall as its rows, from `stacked`. */
+export function rows(ids: M.TrackId[], stacked: Partial<Record<M.TrackId, number>> = {}): { rows: Row[]; height: number } {
   let y = TOP
   const out = ids.map((id) => {
-    const r = { id, y, h: HEIGHTS[id] }
+    const n = stacked[id] ?? 1
+    const r = { id, y, h: n * HEIGHTS[id] + (n - 1) * STACK_GAP }
     y += r.h + GAP
     return r
   })
   return { rows: out, height: y - GAP + BOTTOM }
 }
+
+/** Row k of track row r. */
+export const stackRow = (r: Row, k: number): Row => ({ id: r.id, y: r.y + k * (HEIGHTS[r.id] + STACK_GAP), h: HEIGHTS[r.id] })
+/** The row of track row r under y. */
+const stackAt = (r: Row, l: M.Lane, y: number) => M.clamp(Math.floor((y - r.y + STACK_GAP / 2) / (HEIGHTS[r.id] + STACK_GAP)), 0, l.rows - 1)
 
 export interface View {
   W: number
@@ -81,7 +89,8 @@ export function hit(v: View, m: M.Model, x: number, y: number): Hit {
   if (th && y >= v.H - BOTTOM + 4 && x >= th.x - 4 && x <= th.x + th.w + 4) return { kind: 'scrollbar' }
   const row = v.rows.find((r) => y >= r.y - GAP / 2 && y < r.y + r.h + GAP / 2)
   if (!row) return { kind: 'none' }
-  const b = M.blockAt(m[row.id], timeOf(v, x), 4 / v.pps)
+  const l = m[row.id]
+  const b = M.blockAt(l, timeOf(v, x), 4 / v.pps, stackAt(row, l, y))
   if (!b) return { kind: 'lane', track: row.id }
   let edge: 'start' | 'end' | null = null
   if (row.id !== 'keys' && row.id !== 'captions') {
@@ -408,18 +417,20 @@ function itemLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.It
     ctx.fillText(HINTS[track], (la + lb) / 2, row.y + row.h / 2 + 4)
   }
   const [from, to] = M.visible(l, tA, tB)
-  const run = merger(ctx, C[track][1], row) // slivers are all ends, so they take the grip colour, not the grey
+  // Slivers are all ends, so they take the grip colour, not the grey; each row merges its own.
+  const runs = Array.from({ length: l.rows }, (_, k) => merger(ctx, C[track][1], stackRow(row, k)))
   for (let k = from; k < to; k++) {
     const b = l.blocks[k]
     if (b.b < tA) continue
     const [xa, xb] = xs(v, b)
+    const run = runs[l.row[b.i]]
     if (xb - xa < 3) run.add(xa, xb)
     else {
       run.flush()
-      itemBlock(ctx, s, row, track, l.items[b.i] as M.Item, b, xa, xb)
+      itemBlock(ctx, s, stackRow(row, l.row[b.i]), track, l.items[b.i] as M.Item, b, xa, xb)
     }
   }
-  run.flush()
+  for (const run of runs) run.flush()
 }
 
 /** A one-device-pixel highlight along a block's top, as if lit from above; the rounded corners trim it. */

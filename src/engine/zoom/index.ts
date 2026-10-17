@@ -23,6 +23,10 @@
 // The picture-in-picture camera is drawn over the zoomed screen, unzoomed: the follow camera keeps
 // the cursor and clicked elements out from under it (layout's pipCameraAt, as it sits once stepped
 // back for the zoom). This happens while stepping, so viewAt stays a cheap lookup.
+// Zooms may overlap, and none of them wins: the camera takes the deepest level of the zooms on, and
+// keeps every point they target framed (like a clicked element) and, while any of them follows the
+// cursor, the cursor too. When those do not fit at that level it backs out just enough, never past
+// the shallowest zoom on. Loupes on at once are separate lenses, but loupes on one target share one.
 
 import { uid, type Project, type Rect, type Sources, type Style, type Zoom, type ZoomLook } from '../../shared/project.ts'
 import type { InputEvent } from '../../shared/events.ts'
@@ -72,6 +76,11 @@ interface Span {
   b: number
   zoom: Zoom
 }
+interface Seg {
+  a: number // output seconds
+  b: number
+  zooms: Zoom[] // on over [a, b], in start order
+}
 /** Something to keep framed (a click or a typing stretch) at screen px (x, y). */
 interface Focus {
   t0: number // source seconds the activity starts
@@ -120,30 +129,52 @@ function pieces(zooms: Zoom[], map: TimeMap): Span[] {
   return out.sort((p, q) => p.a - q.a)
 }
 
-/** Non-overlapping spans of the camera's zoom (or the loupe's): the latest-starting zoom wins where
- *  zooms overlap, and gaps shorter than BRIDGE belong to the zoom before them, so the camera pans
- *  (or the lens glides) to the next one. */
+/** Output-time stretches over which the same zooms are on, in order: every zoom on is listed, none
+ *  wins. A gap shorter than BRIDGE keeps the zooms before it, so the camera pans to the next ones
+ *  instead of zooming out and back in. */
 // ponytail: O(pieces^2) sweep, fine for hundreds of zooms; use a heap of active pieces if thousands.
-function spans(zooms: Zoom[], map: TimeMap): Span[] {
+function segments(zooms: Zoom[], map: TimeMap): Seg[] {
   const ps = pieces(zooms, map)
   const cuts = [...new Set(ps.flatMap((p) => [p.a, p.b]))].sort((x, y) => x - y)
-  const out: Span[] = []
+  const out: Seg[] = []
   for (let i = 0; i + 1 < cuts.length; i++) {
     const a = cuts[i]
     const b = cuts[i + 1]
-    const win = ps.findLast((p) => p.a <= a && p.b >= b)
-    if (!win) continue
+    const on = ps.filter((p) => p.a <= a && p.b >= b).map((p) => p.zoom)
+    if (!on.length) continue
     const last = out.at(-1)
     if (last && a - last.b < BRIDGE) {
       last.b = a
-      if (last.zoom === win.zoom) {
+      if (on.length === last.zooms.length && on.every((z, k) => z === last.zooms[k])) {
         last.b = b
         continue
       }
     }
-    out.push({ a, b, zoom: win.zoom })
+    out.push({ a, b, zooms: on })
   }
   return out
+}
+
+/** The largest scale at which every point lies within its zone (a fraction of the half view) of one
+ *  center of viewport vp; Infinity when nothing limits it. */
+function fitScale(hold: Array<{ p: Pt; zone: number }>, vp: Rect): number {
+  let s = Infinity
+  for (const u of hold) {
+    for (const v of hold) {
+      const dx = u.p.x - v.p.x
+      const dy = u.p.y - v.p.y
+      if (dx > 0) s = Math.min(s, ((u.zone + v.zone) * vp.w) / (2 * dx))
+      if (dy > 0) s = Math.min(s, ((u.zone + v.zone) * vp.h) / (2 * dy))
+    }
+  }
+  return s
+}
+
+/** Whether moving from the zooms of `from` to those of `to` cuts instead of animating: something
+ *  instant comes on, or with nothing coming on, something instant goes off. */
+function cutsTo(from: Zoom[], to: Zoom[]): boolean {
+  const on = to.filter((z) => !from.includes(z))
+  return on.length ? on.some((z) => z.instant) : from.some((z) => !to.includes(z) && z.instant)
 }
 
 /** Scale at which the screen covers a viewport narrower than it (cut to `b`, the part clear of the
@@ -218,28 +249,55 @@ function springStep(dt: number, spring: SpringConfig): [number, number, number, 
 
 export function prepareZoom(input: SceneInput, map: TimeMap, layout: ReturnType<typeof prepareLayout>, cursor: ReturnType<typeof prepareCursor>, path = zoomPath(input, map, layout, cursor)) {
   const { width: W, height: H } = input
-  // One lens per run of loupes back to back (spans bridges gaps shorter than BRIDGE), so the glass
-  // stays up from one loupe into the next instead of fading out and back in.
-  const ls = spans(input.project.zooms.filter((z) => z.enabled && z.mode === 'loupe'), map)
-  const loupes: ReturnType<typeof lens>[] = []
-  for (let i = 0, j = 1; i < ls.length; i = j++) {
-    while (j < ls.length && ls[j].a - ls[j - 1].b < 1e-9) j++
-    loupes.push(lens(ls.slice(i, j), layout, cursor, Math.min(W, H) / 1080))
-  }
+  const unit = Math.min(W, H) / 1080
+  const loupes = lenses(input.project.zooms.filter((z) => z.enabled && z.mode === 'loupe'), map, layout, unit).map((run) => lens(run, layout, cursor, unit))
   return { W, H, map, layout, cursor, loupes, ...path }
+}
+
+/** Lens radius of loupe z, px. */
+const radiusOf = (z: Zoom, unit: number) => clamp(Number(z.size) || LOUPE_SIZE.initial, LOUPE_SIZE.min, LOUPE_SIZE.max) * unit
+
+/** Loupe pieces -> the pieces of each lens, in start order. Loupes on at once are separate lenses,
+ *  except loupes on one target (the cursor, or points closer than a lens radius), which share one.
+ *  A loupe that starts as a lens ends, or less than BRIDGE after, takes that lens over, so the glass
+ *  glides to it instead of fading out and back in. */
+function lenses(zooms: Zoom[], map: TimeMap, layout: ReturnType<typeof prepareLayout>, unit: number): Span[][] {
+  const out: Array<{ run: Span[]; end: number }> = []
+  const spot = (p: Span) => {
+    const r = p.zoom.target.kind === 'point' ? screenAt(layout, p.a)?.screen : null
+    return r && p.zoom.target.kind === 'point' ? { x: r.x + p.zoom.target.x * r.w, y: r.y + p.zoom.target.y * r.h } : null
+  }
+  const same = (p: Span, q: Span) => {
+    if (p.zoom.target.kind !== 'point' || q.zoom.target.kind !== 'point') return p.zoom.target.kind === q.zoom.target.kind
+    const u = spot(p)
+    const v = spot(q)
+    return !!u && !!v && Math.hypot(u.x - v.x, u.y - v.y) < Math.min(radiusOf(p.zoom, unit), radiusOf(q.zoom, unit))
+  }
+  for (const p of pieces(zooms, map)) {
+    const on = out.find((l) => l.end > p.a + 1e-9 && same(l.run.findLast((q) => q.b > p.a + 1e-9)!, p))
+    const free = out.filter((l) => l.end <= p.a + 1e-9 && p.a - l.end < BRIDGE).sort((x, y) => y.end - x.end)[0]
+    const l = on ?? free
+    if (l) {
+      l.run.push(p)
+      l.end = Math.max(l.end, p.b)
+    } else out.push({ run: [p], end: p.b })
+  }
+  return out.map((l) => l.run)
 }
 
 const LENS = 7 // floats per lens sample
 
-/** The lens of a run of loupes, every DT from its start through its fade out: x, y and velocity x, y
- *  (unzoomed px, px/s), level, radius (px), and liquid (0 rigid, 1 liquid), stepped like the camera
- *  so any frame reads it in isolation. Following the cursor, it trails it on a soft spring; a fixed
- *  point holds still. Into the next loupe of the run it glides to that one's target and eases into
- *  its level, size, and shape; into or out of an instant one it jumps. It centers on the cursor even
- *  at the screen's edge, so the lens may overhang into the background. */
+/** One lens, every DT from its start through its fade out: x, y and velocity x, y (unzoomed px,
+ *  px/s), level, radius (px), and liquid (0 rigid, 1 liquid), stepped like the camera so any frame
+ *  reads it in isolation. It takes the deepest level and largest size of its loupes on, and stays
+ *  rigid while any of them is; through a short gap it holds the last ones. Following the cursor, it
+ *  trails it on a soft spring; a fixed point holds still. Into the next loupe it glides to that one's
+ *  target and eases into its level, size, and shape; into or out of an instant one it jumps. It
+ *  centers on the cursor even at the screen's edge, so the lens may overhang into the background. */
 function lens(run: Span[], layout: ReturnType<typeof prepareLayout>, cursor: ReturnType<typeof prepareCursor>, unit: number) {
   const a = run[0].a
-  const b = run.at(-1)!.b
+  const last = run.reduce((x, y) => (y.b >= x.b ? y : x))
+  const b = last.b
   const n = Math.ceil((b + LOUPE_FADE - a) / DT) + 1
   const path = new Float32Array(LENS * n)
   const jumps = new Map<number, number>()
@@ -248,11 +306,17 @@ function lens(run: Span[], layout: ReturnType<typeof prepareLayout>, cursor: Ret
   const pos = [0, 0, 0, 0, 0] // x, y, log level, radius, liquid
   const vel = [0, 0, 0, 0, 0]
   let aim: Pt | null = null
-  let prev: Span | null = null
-  for (let k = 0, i = 0; k < n; k++) {
+  let started = false
+  let next = 0
+  let on: Span[] = [] // the loupes covering t
+  let held: Span[] = [] // the ones the lens shows: those, or the last ones on (a gap, the fade out)
+  for (let k = 0; k < n; k++) {
     const t = a + k * DT
-    while (i + 1 < run.length && run[i + 1].a <= t) i++
-    const { zoom } = run[i]
+    while (next < run.length && run[next].a <= t) on = [...on, run[next++]] // a new array: `held` may be the old one
+    on = on.filter((p) => p.b > t)
+    const was = held
+    held = on.length ? on : held.length ? held : [run[next - 1]]
+    const { zoom } = held.at(-1)!
     const s = screenAt(layout, t)
     if (s) {
       const { screen: r, visible: v } = s
@@ -260,15 +324,17 @@ function lens(run: Span[], layout: ReturnType<typeof prepareLayout>, cursor: Ret
       aim = { x: clamp(c.x, v.x, v.x + v.w), y: clamp(c.y, v.y, v.y + v.h) }
     }
     if (!aim) continue
-    const radius = clamp(Number(zoom.size) || LOUPE_SIZE.initial, LOUPE_SIZE.min, LOUPE_SIZE.max) * unit
-    const target = [aim.x, aim.y, Math.log(Math.max(1, zoom.level)), radius, zoom.rigid ? 0 : 1]
-    if (!prev || (run[i] !== prev && (zoom.instant || prev.zoom.instant))) {
+    const zs = held.map((p) => p.zoom)
+    const level = Math.max(1, ...zs.map((z) => z.level))
+    const target = [aim.x, aim.y, Math.log(level), Math.max(...zs.map((z) => radiusOf(z, unit))), zs.some((z) => z.rigid) ? 0 : 1]
+    if (!started || (was !== held && cutsTo(was.map((p) => p.zoom), zs))) {
       // The first sample, or an instant loupe cutting in or out: jump, no animation.
-      if (prev) jumps.set(k - 1, run[i].a)
+      const into = held.find((p) => !was.includes(p))
+      if (started) jumps.set(k - 1, into ? into.a : was.find((p) => !held.includes(p))!.b)
+      started = true
       pos.splice(0, 5, ...target)
       vel.fill(0)
     }
-    prev = run[i]
     path.set([pos[0], pos[1], vel[0], vel[1], Math.exp(pos[2]), pos[3], pos[4]], LENS * k)
     for (let o = 0; o < 5; o++) {
       const [h, g, dh, dg] = o < 2 ? follow : morph
@@ -277,7 +343,7 @@ function lens(run: Span[], layout: ReturnType<typeof prepareLayout>, cursor: Ret
       vel[o] = d * dh + vel[o] * dg
     }
   }
-  return { a, b, first: run[0].zoom, last: run.at(-1)!.zoom, path, jumps }
+  return { a, b, first: run[0].zoom, last: last.zoom, path, jumps }
 }
 
 let last: { events: InputEvent[]; cursor: Float32Array; key: string; path: ZoomPath } | null = null
@@ -332,10 +398,10 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   }
   frames.sort((p, q) => p.a - q.a)
 
-  const cam = spans(enabled.filter((z) => z.mode !== 'loupe'), map)
+  const cam = segments(enabled.filter((z) => z.mode !== 'loupe'), map)
   // A slower spring starts zooming in that much earlier, so every style is in by LEAD after the start.
   cam.forEach((s, i) => {
-    if (!s.zoom.instant && s.a > AT_START) s.a = Math.max(s.a - (lead - LEAD), i ? cam[i - 1].b : 0)
+    if (!s.zooms.some((z) => z.instant) && s.a > AT_START) s.a = Math.max(s.a - (lead - LEAD), i ? cam[i - 1].b : 0)
   })
   const data = new Float32Array(3 * (n + 1))
   const jumps = new Map<number, number>()
@@ -343,7 +409,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   const pos = [0, 0, 0] // x, y, log scale
   const vel = [0, 0, 0]
   let aim: Pt | null = null // where the follow camera wants its center
-  let prev: Span | null = null
+  let prev: Seg | null = null
   let si = 0
   let fi = 0
   for (let k = 0; k <= n; k++) {
@@ -352,35 +418,49 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
     const bounds = inner(shown, radius)
     const ts = clamp(t, AT_START, map.duration - 1e-6) // a zoom starting at 0 or running to the end covers that frame
     while (si < cam.length && cam[si].b <= ts) si++
-    const span = si < cam.length && cam[si].a <= ts ? cam[si] : null
-    const zoom = span?.zoom
+    const seg = si < cam.length && cam[si].a <= ts ? cam[si] : null
+    const zs = seg?.zooms ?? []
     const b0 = baseScale(vp, shown, bounds)
-    const s = Math.max(b0, zoom ? zoom.level : 1)
+    const follow = zs.length ? zs.some((z) => z.target.kind !== 'point') : b0 > 1
+    // Everything is read lag ahead so the trailing spring lands on time.
+    const tl = t + lag
+    const cp = follow ? cursorPt(tl, shown) : null
+    const points = zs.flatMap((z) => (z.target.kind === 'point' ? [{ x: r.x + z.target.x * r.w, y: r.y + z.target.y * r.h }] : []))
+    // The deepest level on, backed out until the points and the followed cursor fit, but never past the shallowest.
+    let s = b0
+    if (zs.length) {
+      const hold = points.map((p) => ({ p, zone: FOCUS_ZONE }))
+      if (cp && hold.length) hold.push({ p: cp, zone: EDGE_ZONE })
+      const levels = zs.map((z) => z.level)
+      s = Math.max(b0, clamp(fitScale(hold, vp), Math.min(...levels), Math.max(...levels)))
+    }
+    const mid: Pt | null = points.length
+      ? { x: (Math.min(...points.map((p) => p.x)) + Math.max(...points.map((p) => p.x))) / 2, y: (Math.min(...points.map((p) => p.y)) + Math.max(...points.map((p) => p.y))) / 2 }
+      : null
 
     let c: Pt = { x: vp.x + vp.w / 2, y: vp.y + vp.h / 2 }
-    const follow = zoom?.target.kind !== 'point' && (!!zoom || s > 1)
-    if (zoom?.target.kind === 'point') c = aim = { x: r.x + zoom!.target.x * r.w, y: r.y + zoom!.target.y * r.h }
+    if (!follow && mid) c = aim = mid
     else if (follow) {
-      // Follow: the cursor roams a dead zone, focus places stay central, both stay out from under a
-      // picture-in-picture camera, and the cursor stays in frame above all.
-      // Everything is read lag ahead so the trailing spring lands on time.
-      const tl = t + lag
-      const cp = cursorPt(tl, shown)
+      // Follow: the cursor roams a dead zone, focus places and targeted points stay central, all stay
+      // out from under a picture-in-picture camera, and the cursor stays in frame above all.
       while (fi < frames.length && frames[fi].b < tl) fi++
-      if (span && span !== prev) {
-        // Entering a zoom: aim at its first click or typing place, else at the cursor.
-        aim = frames.find((f) => f.b >= span.a && f.a <= span.a + lead + 0.4)?.p ?? cp ?? aim
+      if (seg && seg !== prev && seg.zooms.some((z) => z.target.kind !== 'point' && !prev?.zooms.includes(z))) {
+        // A zoom following the cursor comes on: aim at its first click or typing place, else at the cursor.
+        aim = frames.find((f) => f.b >= seg.a && f.a <= seg.a + lead + 0.4)?.p ?? cp ?? aim
       }
       const hw = vp.w / (2 * s)
       const hh = vp.h / (2 * s)
-      c = aim ?? { x: shown.x + shown.w / 2, y: shown.y + shown.h / 2 }
+      const focus: Pt[] = [] // clicked places, then targeted points: the ones the level makes room for go last
+      for (let i = fi; i < frames.length && frames[i].a <= tl; i++) if (frames[i].b >= tl) focus.push(frames[i].p)
+      focus.push(...points)
+      c = aim ?? mid ?? { x: shown.x + shown.w / 2, y: shown.y + shown.h / 2 }
       if (cp) c = keep(c, cp, DEAD_ZONE * hw, DEAD_ZONE * hh)
-      for (let i = fi; i < frames.length && frames[i].a <= tl; i++) if (frames[i].b >= tl) c = keep(c, frames[i].p, FOCUS_ZONE * hw, FOCUS_ZONE * hh)
+      for (const p of focus) c = keep(c, p, FOCUS_ZONE * hw, FOCUS_ZONE * hh)
       // The camera as it will sit once the view gets there (it steps back while zoomed in).
       const pip = pipCameraAt(layout, tl, magnified(s, b0))
       if (pip) {
         const m = CAMERA_CLEAR * (screen.scale || 1) * (r.w / screen.width) * Math.max(1, project.style.cursor.size) * s
-        for (let i = fi; i < frames.length && frames[i].a <= tl; i++) if (frames[i].b >= tl) c = clear(c, frames[i].p, aim, pip, m, s, vp, bounds)
+        for (const p of focus) c = clear(c, p, aim, pip, m, s, vp, bounds)
         if (cp) c = clear(c, cp, aim, pip, m, s, vp, bounds)
       }
       if (cp) c = keep(c, cp, EDGE_ZONE * hw, EDGE_ZONE * hh)
@@ -389,10 +469,9 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
     c = clampCenter(c, bounds, s, vp)
     const target = [c.x, c.y, Math.log(s)]
 
-    const leaving = k > 0 && span !== prev
-    if (k === 0 || (leaving && (zoom ? zoom.instant : prev!.zoom.instant))) {
+    if (k === 0 || (seg !== prev && cutsTo(prev?.zooms ?? [], zs))) {
       // First frame, or an instant zoom cutting in or out: jump, no animation.
-      if (k > 0) jumps.set(k - 1, zoom ? span!.a : prev!.b)
+      if (k > 0) jumps.set(k - 1, seg ? seg.a : prev!.b)
       for (let i = 0; i < 3; i++) (pos[i] = target[i]), (vel[i] = 0)
     }
     const now = follow ? cursorPt(t, shown) : null
@@ -408,7 +487,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
       pos[i] = target[i] + d * h + vel[i] * g
       vel[i] = d * dh + vel[i] * dg
     }
-    prev = span
+    prev = seg
   }
   return { n, data, jumps }
 }
@@ -440,25 +519,30 @@ export function zoomAmount(z: ReturnType<typeof prepareZoom>, t: number, v: View
   return magnified(v.scale, baseScale(s.viewport, s.visible, inner(s.visible, s.screenRadius)))
 }
 
-export function loupeAt(z: ReturnType<typeof prepareZoom>, t: number): Loupe | null {
-  const lens = z.loupes.findLast((l) => l.a <= t && t < l.b + (l.last.instant ? 0 : LOUPE_FADE))
-  if (!lens || !screenAt(z.layout, t)) return null
-  const { a, b, path } = lens
-  const fadeIn = lens.first.instant || a < AT_START ? 1 : springProgress(t - a, LOUPE_SPRING)
-  const fadeOut = t < b ? 0 : springProgress(t - b, LOUPE_SPRING)
-  const p = fadeIn * (1 - fadeOut)
-  const n = path.length / LENS
-  const x = clamp((t - a) / DT, 0, n - 1)
-  const k = Math.min(Math.floor(x), n - 2)
-  const jump = lens.jumps.get(k)
-  // An instant switch inside this step: hold the sample on the matching side instead of blending.
-  const [i, j, w] = jump === undefined ? [k, k + 1, x - k] : t < jump ? [k, k, 0] : [k + 1, k + 1, 0]
-  const at = (o: number) => mix(path[LENS * i + o], path[LENS * j + o], w)
-  const vx = at(2), vy = at(3), radius = at(5)
-  const speed = Math.hypot(vx, vy)
-  const e = at(6) * Math.min(LOUPE_MAX_STRETCH, (LOUPE_STRETCH * speed) / radius)
-  const stretch = e > 0 ? { x: (vx / speed) * e, y: (vy / speed) * e } : { x: 0, y: 0 }
-  return { x: at(0), y: at(1), radius, scale: mix(1, at(4), p), opacity: p, stretch }
+/** The lenses showing at t, in start order (later ones over earlier ones). */
+export function loupesAt(z: ReturnType<typeof prepareZoom>, t: number): Loupe[] {
+  if (!screenAt(z.layout, t)) return []
+  const out: Loupe[] = []
+  for (const lens of z.loupes) {
+    const { a, b, path } = lens
+    if (t < a || t >= b + (lens.last.instant ? 0 : LOUPE_FADE)) continue
+    const fadeIn = lens.first.instant || a < AT_START ? 1 : springProgress(t - a, LOUPE_SPRING)
+    const fadeOut = t < b ? 0 : springProgress(t - b, LOUPE_SPRING)
+    const p = fadeIn * (1 - fadeOut)
+    const n = path.length / LENS
+    const x = clamp((t - a) / DT, 0, n - 1)
+    const k = Math.min(Math.floor(x), n - 2)
+    const jump = lens.jumps.get(k)
+    // An instant switch inside this step: hold the sample on the matching side instead of blending.
+    const [i, j, w] = jump === undefined ? [k, k + 1, x - k] : t < jump ? [k, k, 0] : [k + 1, k + 1, 0]
+    const at = (o: number) => mix(path[LENS * i + o], path[LENS * j + o], w)
+    const vx = at(2), vy = at(3), radius = at(5)
+    const speed = Math.hypot(vx, vy)
+    const e = at(6) * Math.min(LOUPE_MAX_STRETCH, (LOUPE_STRETCH * speed) / radius)
+    const stretch = e > 0 ? { x: (vx / speed) * e, y: (vy / speed) * e } : { x: 0, y: 0 }
+    out.push({ x: at(0), y: at(1), radius, scale: mix(1, at(4), p), opacity: p, stretch })
+  }
+  return out
 }
 
 /** Auto zooms (source time) from clicks and typing: merge activity close in time, start LEAD before

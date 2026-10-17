@@ -20,8 +20,6 @@ struct Frame {
   curTex: vec4f,   // texture px per image px, clipped to the screen frame (a cropped recording)
   curBox: vec4f,   // swept bounds x0, y0, x1, y1 (output px)
   curS: array<vec4f, 16>,   // shutter samples of the cursor: x, y (unzoomed), unzoomed px per image px, angle
-  loupe: vec4f,    // center x, y (unzoomed), radius (unzoomed px), magnification
-  loupe2: vec4f,   // opacity, has loupe, stretch (along the motion, length = elongation)
   cam: vec4f,      // rect (output px)
   cam1: vec4f,     // radius, shadow, opacity, mirror
   cam2: vec4f,     // crop (normalized)
@@ -33,6 +31,8 @@ struct Frame {
   vp: vec4f,       // viewport (output px): the zoom view shows through it, everything outside is unzoomed
   vis: vec4f,      // shown part of the recording (unzoomed px): all of scr, or its crop; the frame is this grown by dev.w
   clicks: array<vec4f, 4>, // click ripples: x, y, front radius (unzoomed px), strength
+  loupes: array<vec4f, 8>, // lenses, two slots each: center x, y (unzoomed), radius (unzoomed px), magnification;
+                           // opacity, -, stretch (along the motion, length = elongation). Radius 0: none
 }
 
 @group(0) @binding(0) var<uniform> F: Frame;
@@ -402,11 +402,13 @@ fn dimAt(u: vec2f, aa: f32) -> f32 {
 // light from above: a specular crescent on the bevel facing it, a dimmer one where light leaves
 // the far side, Fresnel reflection at grazing angles, and a little dispersion where the bevel
 // bends hardest. Moving, the drop stretches along its motion, keeping its area. The rest of the
-// frame dims evenly, so the magnified piece stands out and the rim still shows over white.
+// frame dims evenly, so the magnified piece stands out and the rim still shows over white. Several
+// lenses draw in order, a later one over an earlier one, and the frame around all of them dims.
 
 const BEVEL = 0.22; // bevel width, fraction of the radius
 const KEY = vec3f(-0.38, -0.82, 0.43); // key light direction (output px axes, z toward the viewer)
 const AROUND = 0.15; // how much the frame around the lens dims
+const LENSES = 4u;
 
 // Radius shown at radius rho (both fractions of the lens radius, from its center), and its
 // derivative: magnified on the flat top, then a monotone cubic across the bevel that ends at the
@@ -435,25 +437,23 @@ fn underLens(um: vec2f, aa: f32, vs: f32) -> vec3f {
   return col * (1.0 - dimAt(um, aa));
 }
 
-@fragment fn fs_loupe(v: VO) -> @location(0) vec4f {
-  let vt = F.viewT.xyz;
-  let u = unview(v.pos.xy, vt);
-  let aa = 1.0 / vt.z;
+// Lens i at unzoomed point u (vt the view, aa unzoomed px per output px): premultiplied color, coverage.
+fn lensAt(i: u32, u: vec2f, vt: vec3f, aa: f32) -> vec4f {
   let unit = F.a.z;
-  let c = F.loupe.xy;
-  let R = F.loupe.z;
-  let mag = F.loupe.w;
-  let op = F.loupe2.x;
+  let c = F.loupes[2u * i].xy;
+  let R = F.loupes[2u * i].z;
+  let mag = F.loupes[2u * i].w;
+  let op = F.loupes[2u * i + 1u].x;
+  let st = F.loupes[2u * i + 1u].zw;
   let q = u - c;
   // The stretched drop: an ellipse 1 + k long along the motion and 1 / sqrt(1 + k) across it.
-  let k = length(F.loupe2.zw);
-  let ax = select(vec2f(1.0, 0.0), F.loupe2.zw / max(k, 1e-6), k > 1e-6);
+  let k = length(st);
+  let ax = select(vec2f(1.0, 0.0), st / max(k, 1e-6), k > 1e-6);
   let along = dot(q, ax);
   let sq = ax * (along / (1.0 + k)) + (q - ax * along) * sqrt(1.0 + k);
   let d = length(sq);
   let cv = cover(d - R, aa);
-  let dim = AROUND * op * (1.0 - cv);
-  if (cv <= 0.0) { return vec4f(0.0, 0.0, 0.0, dim); }
+  if (cv <= 0.0) { return vec4f(0.0); }
 
   let rho = min(d / R, 1.0);
   let gq = ax * (dot(sq, ax) / (1.0 + k)) + (sq - ax * dot(sq, ax)) * sqrt(1.0 + k); // gradient of d: the rim's normal
@@ -486,7 +486,22 @@ fn underLens(um: vec2f, aa: f32, vs: f32) -> vec3f {
   // the content stays opaque and swells in place while only the glass and the dim fade in. Fading
   // the content too would show it twice, magnified over unmagnified.
   col = mix(col, g, op);
-  return vec4f(col * cv, cv + dim);
+  return vec4f(col * cv, cv);
+}
+
+@fragment fn fs_loupe(v: VO) -> @location(0) vec4f {
+  let vt = F.viewT.xyz;
+  let u = unview(v.pos.xy, vt);
+  let aa = 1.0 / vt.z;
+  var out = vec4f(0.0);
+  var op = 0.0;
+  for (var i = 0u; i < LENSES; i++) {
+    if (F.loupes[2u * i].z <= 0.0) { continue; }
+    op = max(op, F.loupes[2u * i + 1u].x);
+    let l = lensAt(i, u, vt, aa);
+    out = l + out * (1.0 - l.a);
+  }
+  return vec4f(out.rgb, out.a + AROUND * op * (1.0 - out.a));
 }
 
 // ---- Camera ----

@@ -16,6 +16,10 @@ Turning clicks and typing into camera direction.
   It has no outline or shadow; an even dim of the frame around it makes the magnified piece stand out.
 - New zooms, manual and automatic, take the type, loupe size, and Liquid the user last picked on any zoom, in every project.
 - A loupe appears by growing its magnification from 1 with its content opaque; fading its content in shows the screen twice, magnified over unmagnified.
+- Zooms may overlap, and none of them wins: overlapping zooms combine.
+  The camera takes the deepest level on and keeps every targeted point, and the followed cursor, in frame; it backs out to fit them, never past the shallowest zoom on.
+  A loupe over a full zoom magnifies the zoomed view.
+  Loupes on different targets show as separate lenses; loupes on one target share one lens at the largest size and deepest level.
 - Loupes back to back, or less than a second apart, share one lens: it glides to the next target and eases into the next level, size, and shape.
   Fading one lens out and the next in at another spot reads as two unrelated effects.
 - Zoomed text stays sharp: capture at native resolution, and past the source pixel density upscale with a local super-resolution model trained on UI text.
