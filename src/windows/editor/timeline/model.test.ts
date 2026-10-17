@@ -139,6 +139,9 @@ test('zooms pass over each other: a shorter one lies on a longer one, the same w
   assert.deepEqual(ov([zoom('a', 2, 6), zoom('b', 6, 8)]), [])
   assert.deepEqual(ov([zoom('a', 2, 12), zoom('b', 4, 9), zoom('c', 5, 7), zoom('d', 11, 13)]), [[4, 5, '01'], [5, 7, '012'], [7, 9, '01'], [11, 12, '03']])
   assert.deepEqual(ov([zoom('a', 2, 12), { ...zoom('off', 4, 9), enabled: false }]), [])
+  // The most zooms on at once: the zoom track grows with it.
+  assert.equal(lane(zs).stack, 1)
+  assert.equal(lane([zoom('a', 2, 12), zoom('b', 4, 9), zoom('c', 5, 7), zoom('d', 11, 13)]).stack, 3)
   const m = M.buildModel(parts([clip(0, 30)], [zoom('a', 2, 10), zoom('b', 4, 6)]), [], [])
   assert.deepEqual(M.blocksAt(m.zooms, 5).map((b) => b.i), [1, 0]) // the top one first
   assert.equal(M.blockAt(m.zooms, 8)?.i, 0)

@@ -40,6 +40,7 @@ export interface Lane<T extends Timed = Timed> {
   maxLen: number // longest block, bounds the visible-range search
   rank: number[] // per item, its place in the drawing order, bottom up
   overlaps: Overlap[] // where items (zooms) overlap and combine, in order
+  stack: number // the most items on at once
 }
 
 /** An output stretch where two or more zooms, turned on, are on at once and combine. */
@@ -85,7 +86,7 @@ export const overlaps = (t: TrackId) => t === 'zooms'
  *  under shorter, earlier under later, so a zoom inside another always shows), and the stretches
  *  where two or more turned on overlap. Moving an item keeps its length, so dragging one across
  *  another never reorders them. */
-function layers(items: Timed[], blocks: Block[]): { rank: number[]; overlaps: Overlap[] } {
+function layers(items: Timed[], blocks: Block[]): { rank: number[]; overlaps: Overlap[]; stack: number } {
   const on = (i: number) => ((items[i] as { enabled?: boolean }).enabled === false ? 0 : 1)
   const len = (i: number) => items[i].end - items[i].start
   const rank = items.map(() => 0)
@@ -109,7 +110,7 @@ function layers(items: Timed[], blocks: Block[]): { rank: number[]; overlaps: Ov
     else live.delete(i)
     at = t
   }
-  return { rank, overlaps }
+  return { rank, overlaps, stack: Math.max(1, ...overlaps.map((o) => o.items.length)) }
 }
 
 export function lane<T extends Timed>(map: TimeMap, items: T[], overlap = false): Lane<T> {
@@ -129,7 +130,7 @@ export function lane<T extends Timed>(map: TimeMap, items: T[], overlap = false)
     })
   })
   blocks.sort((x, y) => x.a - y.a)
-  return { items, blocks, maxLen, ...(overlap ? layers(items, blocks) : { rank: items.map((_, i) => i), overlaps: [] }) }
+  return { items, blocks, maxLen, ...(overlap ? layers(items, blocks) : { rank: items.map((_, i) => i), overlaps: [], stack: 1 }) }
 }
 
 function clipLane(map: TimeMap): Lane<Clip> {
@@ -140,7 +141,7 @@ function clipLane(map: TimeMap): Lane<Clip> {
     if (b - a > maxLen) maxLen = b - a
     return { a, b, i, head: true, tail: true }
   })
-  return { items: map.clips, blocks, maxLen, rank: blocks.map((_, i) => i), overlaps: [] }
+  return { items: map.clips, blocks, maxLen, rank: blocks.map((_, i) => i), overlaps: [], stack: 1 }
 }
 
 /** Rebuild what changed since `prev` (lanes keep identity when their inputs did). */

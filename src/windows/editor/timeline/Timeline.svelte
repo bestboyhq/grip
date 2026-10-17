@@ -153,15 +153,22 @@
       return requestDraw()
     }
     model = M.buildModel(draft ? { ...base, ...draft } : base, keys, words, model ?? undefined)
-    if (draft) return requestDraw() // lanes and fit stay as they were while dragging
+    const relayout = (ids: M.TrackId[]) => {
+      const r = layoutRows(ids, model!.zooms.stack)
+      view.rows = r.rows
+      height = r.height
+    }
+    if (draft) {
+      // Lanes and fit stay as they were while dragging; the zoom track grows with zooms dragged onto others.
+      relayout(view.rows.map((r) => r.id))
+      return requestDraw()
+    }
     const key = `${doc.path}|${doc.project?.createdAt}`
     if (key !== lanesFor) {
       lanesFor = key
       shown = new Set()
     }
-    const r = layoutRows(M.tracks(model, camera, shown))
-    view.rows = r.rows
-    height = r.height
+    relayout(M.tracks(model, camera, shown))
     const fit = isFit()
     view.duration = duration = model.map.duration
     if (fit) view.pps = target = minPps() // a fitted timeline stays fitted when edits change its length

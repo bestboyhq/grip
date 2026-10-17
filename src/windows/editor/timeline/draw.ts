@@ -13,7 +13,8 @@ const TOP = RULER + 4
 const GAP = 6
 const BOTTOM = 16
 const HEIGHTS: Record<M.TrackId, number> = { clips: 40, zooms: 36, layouts: 26, masks: 26, keys: 20, captions: 20 }
-const BAND_INSET = 5 // px a band where zooms overlap sits in from their top and bottom
+const BAND_INSET = 5 // px a band where zooms overlap sits in from the layer under it, top and bottom
+const MAX_STACK = 4 // the zoom track grows a step per zoom stacked at once, up to this many
 const EDGE = 12 // px of a block's end that grabs the edge
 
 export interface Row {
@@ -22,15 +23,20 @@ export interface Row {
   h: number
 }
 
-export function rows(ids: M.TrackId[]): { rows: Row[]; height: number } {
+/** Tracks top to bottom. The zoom track grows with `stack`, the most zooms on at once, so the band
+ *  where they all overlap keeps a single zoom's height. */
+export function rows(ids: M.TrackId[], stack = 1): { rows: Row[]; height: number } {
   let y = TOP
   const out = ids.map((id) => {
-    const r = { id, y, h: HEIGHTS[id] }
+    const r = { id, y, h: HEIGHTS[id] + (id === 'zooms' ? inset(stack) * 2 : 0) }
     y += r.h + GAP
     return r
   })
   return { rows: out, height: y - GAP + BOTTOM }
 }
+
+/** How far the band where k zooms overlap sits in from the zoom track's top and bottom. */
+const inset = (k: number) => BAND_INSET * (Math.min(k, MAX_STACK) - 1)
 
 export interface View {
   W: number
@@ -155,7 +161,10 @@ const C = {
   zoomOff: ['#2a2a2f', '#55555d', 'rgba(255,255,255,0.08)', '#36363c', 'rgba(205,205,215,0.75)', 'rgba(170,170,180,0.3)'],
   layouts: ['#3b3039', '#cf72bf', 'rgba(255,255,255,0.12)', '#4b3a48', 'rgba(238,165,224,0.95)', 'rgba(207,114,191,0.55)'],
   masks: ['#3c302e', '#e8604c', 'rgba(255,255,255,0.12)', '#4d3934', 'rgba(255,165,145,0.95)', 'rgba(232,96,76,0.55)'],
-  band: ['#4a4380', 'rgba(255,255,255,0.16)', 'rgba(255,255,255,0.5)'], // where zooms overlap: fill, top edge, the + between them
+  // Where zooms overlap: a band per layer, brighter the more zooms it holds; its top edge; the + between them.
+  bands: ['#4a4380', '#594f9d', '#685dba'],
+  bandEdge: 'rgba(255,255,255,0.16)',
+  plus: 'rgba(255,255,255,0.5)',
   capHot: 'rgba(255,255,255,0.55)',
   text: '#ffffff',
   textOff: 'rgba(255,255,255,0.45)',
@@ -431,7 +440,7 @@ function itemLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.It
   shown.sort((p, q) => l.rank[p[0].i] - l.rank[q[0].i])
   for (const [b, xa, xb] of shown) itemBlock(ctx, s, row, track, l.items[b.i] as M.Item, b, xa, xb, 'body')
   const bands = l.overlaps.filter((o) => o.b >= tA && o.a <= tB)
-  for (const o of bands) overlapBand(ctx, s, row, l as M.Lane<Zoom>, o)
+  overlapBands(ctx, s, row, l as M.Lane<Zoom>, bands)
   for (const [b, xa, xb] of shown) itemBlock(ctx, s, row, track, l.items[b.i] as M.Item, b, xa, xb, 'top', labelSpan(l, b, bands))
 }
 
@@ -452,34 +461,49 @@ function labelSpan(l: M.Lane, b: M.Block, bands: M.Overlap[]): [number, number] 
   return best
 }
 
-/** A stretch where zooms overlap and combine: an inset band over them naming each one, top first,
- *  as a full zoom or a loupe and its level. */
-function overlapBand(ctx: CanvasRenderingContext2D, s: Scene, row: Row, l: M.Lane<Zoom>, o: M.Overlap) {
+/** Where zooms overlap and combine: a band over them, and inside it a narrower one wherever more of
+ *  them overlap, each stretch naming its zooms, top first, as a full zoom or a loupe and its level. */
+function overlapBands(ctx: CanvasRenderingContext2D, s: Scene, row: Row, l: M.Lane<Zoom>, bands: M.Overlap[]) {
   const v = s.view
-  const xa = snap(v, xOf(v, o.a))
-  const xb = snap(v, xOf(v, o.b))
-  const w = xb - xa
-  if (w < 2) return
-  const y = row.y + BAND_INSET
-  const h = row.h - 2 * BAND_INSET
-  const r = Math.min(5, w / 2)
-  ctx.beginPath()
-  ctx.roundRect(xa, y, w, h, r)
-  ctx.fillStyle = C.band[0]
-  ctx.fill()
-  topEdge(ctx, v, xa, y, w, h, r, C.band[1])
-  const zs = o.items.map((i) => l.items[i]).reverse()
-  const plus: Seg = { text: '+', font: F_META, color: C.band[2] }
-  const each = (full: boolean) => zs.flatMap((z, k): Seg[] => [...(k ? [plus] : []), { ...(full ? { icon: z.mode === 'loupe' ? lens : magnifier } : {}), text: `${z.level}×`, font: F_META, color: C.text }])
-  const room = Math.min(xb, v.W) - Math.max(xa, 0) - 2 * EDGE
-  const label = [each(true), each(false)].find((segs) => fitsRow(ctx, segs, room))
-  if (!label) return
-  ctx.save()
-  ctx.beginPath()
-  ctx.rect(xa, y, w, h)
-  ctx.clip()
-  row1(ctx, label, sticky(v, xa, xb), y + h / 2 + 4)
-  ctx.restore()
+  const deepest = Math.min(MAX_STACK, Math.max(1, ...bands.map((o) => o.items.length)))
+  for (let k = 2; k <= deepest; k++) {
+    // One rounded band per run of touching stretches holding k zooms or more.
+    for (let i = 0; i < bands.length; i++) {
+      if (bands[i].items.length < k) continue
+      let j = i
+      while (j + 1 < bands.length && bands[j + 1].items.length >= k && bands[j + 1].a - bands[j].b < 1e-9) j++
+      const xa = snap(v, xOf(v, bands[i].a))
+      const xb = snap(v, xOf(v, bands[j].b))
+      const y = row.y + inset(k)
+      const h = row.h - 2 * inset(k)
+      const r = Math.min(5, (xb - xa) / 2)
+      i = j
+      if (xb - xa < 2) continue
+      ctx.beginPath()
+      ctx.roundRect(xa, y, xb - xa, h, r)
+      ctx.fillStyle = C.bands[k - 2]
+      ctx.fill()
+      topEdge(ctx, v, xa, y, xb - xa, h, r, C.bandEdge)
+    }
+  }
+  const plus: Seg = { text: '+', font: F_META, color: C.plus }
+  for (const o of bands) {
+    const xa = snap(v, xOf(v, o.a))
+    const xb = snap(v, xOf(v, o.b))
+    const zs = o.items.map((i) => l.items[i]).reverse()
+    const each = (full: boolean) => zs.flatMap((z, k): Seg[] => [...(k ? [plus] : []), { ...(full ? { icon: z.mode === 'loupe' ? lens : magnifier } : {}), text: `${z.level}×`, font: F_META, color: C.text }])
+    const room = Math.min(xb, v.W) - Math.max(xa, 0) - 2 * EDGE
+    const label = [each(true), each(false)].find((segs) => fitsRow(ctx, segs, room))
+    if (!label) continue
+    const y = row.y + inset(o.items.length)
+    const h = row.h - 2 * inset(o.items.length)
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(xa, y, xb - xa, h)
+    ctx.clip()
+    row1(ctx, label, sticky(v, xa, xb), y + h / 2 + 4)
+    ctx.restore()
+  }
 }
 
 /** A one-device-pixel highlight along a block's top, as if lit from above; the rounded corners trim it. */
@@ -550,8 +574,8 @@ function itemBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.I
       { icon: zoom.target.kind === 'point' ? target : arrow, text: how, font: F_META, color: on ? C.meta : C.textOff },
     ]
     if (fitsRow(ctx, title, room) && fitsRow(ctx, meta, room)) {
-      row1(ctx, title, cx, y + 15)
-      row1(ctx, meta, cx, y + 28)
+      row1(ctx, title, cx, y + h / 2 - 3)
+      row1(ctx, meta, cx, y + h / 2 + 10)
     } else if (fitsRow(ctx, [meta[0]], room)) row1(ctx, [meta[0]], cx, y + h / 2 + 4)
   } else {
     const [long, short] = track === 'layouts' ? LAYOUT_NAMES[(it as CameraLayout).kind] : [MASK_NAMES[(it as Mask).kind], MASK_NAMES[(it as Mask).kind]]
@@ -704,9 +728,10 @@ function cap(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
 
 /** A pill centred in a block's end, where dragging trims it. */
 function grip(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string) {
+  const ph = Math.min(h - 14, 22)
   ctx.fillStyle = color
   ctx.beginPath()
-  ctx.roundRect(x + (w - 3) / 2, y + 7, 3, h - 14, 1.5)
+  ctx.roundRect(x + (w - 3) / 2, y + (h - ph) / 2, 3, ph, 1.5)
   ctx.fill()
 }
 
