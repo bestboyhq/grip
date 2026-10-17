@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Permission } from '../../native/index.d.ts'
 import type { Rect } from './bounds.ts'
-import type { CameraPosition } from '../../src/shared/project.ts'
+import type { CameraPosition, ZoomLook } from '../../src/shared/project.ts'
 
 export interface Settings {
   camera: string | null // capture device id; null = no camera
@@ -18,6 +18,8 @@ export interface Settings {
   cameraCorner: CameraPosition
   /** New recordings zoom in on clicks and typing; each project can still turn it on or off. */
   autoZoom: boolean
+  /** The zoom type, loupe size, and Liquid last picked in any editor: new zooms (Z, auto zooms) start with it. */
+  zoomLook: ZoomLook
   hideDesktopIcons: boolean
   /** Speaker notes on screen while picking and recording; only the user sees them. */
   speakerNotes: boolean
@@ -49,6 +51,7 @@ const defaults: Settings = {
   showCamera: true,
   cameraCorner: 'bottom-right',
   autoZoom: true,
+  zoomLook: {},
   hideDesktopIcons: false,
   speakerNotes: false,
   notes: '',

@@ -7,7 +7,7 @@ import { parseEvents, type InputEvent } from '../../shared/events.ts'
 import { prepare, sceneAt, type View } from '../scene.ts'
 import { layoutAt } from '../layout.ts'
 import { cursorPoint as cursorAt } from '../motion/index.ts'
-import { autoZoomOnce, generateAutoZooms, loupeAt, setAutoZoom, viewAt } from './index.ts'
+import { autoZoomOnce, generateAutoZooms, lookOf, loupeAt, setAutoZoom, viewAt } from './index.ts'
 
 const SCREEN = { file: 'sources/screen.mp4', width: 2880, height: 1800, fps: 30, scale: 2 }
 const CAMERA = { file: 'sources/camera.mp4', width: 1280, height: 720, fps: 30, scale: 1 }
@@ -271,12 +271,13 @@ test('generateAutoZooms: merges, leads, holds, covers typing, skips the erratic'
   const click = (t: number, x = 1400, y = 900): InputEvent => ({ t, type: 'down', x, y, button: 'left' })
   const sources = createProject('t', { duration: 45, screen: SCREEN }).sources
   const on = { enabled: true, level: 2 }
-  assert.deepEqual(generateAutoZooms([click(3)], sources, { enabled: false, level: 2 }, []), [])
+  assert.deepEqual(generateAutoZooms([click(3)], sources, { enabled: false, level: 2 }, {}, []), [])
 
   const zs = generateAutoZooms(
     [click(0.2), click(3), click(4, 1500, 1000), click(10), click(19.5, 600, 400), click(30, 100, 100), click(30.7, 2800, 1700), click(31.4, 100, 1700), click(32.1, 2800, 100), click(44.9)],
     sources,
     on,
+    {},
     [{ start: 20, end: 23 }, { start: 37, end: 38 }], // typing happens where the last click before it was
   )
   const spans = zs.map((z) => [+z.start.toFixed(2), +z.end.toFixed(2)])
@@ -284,7 +285,7 @@ test('generateAutoZooms: merges, leads, holds, covers typing, skips the erratic'
   // erratic; typing at 37 zooms on the click at 32.1; the last click is cut short by the end.
   assert.deepEqual(spans, [[0, 6], [9.4, 12], [18.9, 25], [36.4, 40]])
   for (const z of zs) assert.ok(z.auto && z.enabled && z.level === 2 && z.target.kind === 'cursor' && z.id)
-  assert.deepEqual(generateAutoZooms([], sources, on, [{ start: 5, end: 8 }]), [], 'typing with no known place is left out')
+  assert.deepEqual(generateAutoZooms([], sources, on, {}, [{ start: 5, end: 8 }]), [], 'typing with no known place is left out')
 })
 
 test('autoZoomOnce: auto zooms on the first open only, never again after the user deletes them', () => {
@@ -316,6 +317,16 @@ test('setAutoZoom: auto zooms follow the toggle and level, a manual zoom and a h
   setAutoZoom(p, events, { enabled: true, level: 3 })
   assert.ok(auto.enabled && manual.level === 1.5 && p.zooms.length === 2, 'back on: no duplicates')
   assert.equal(auto.level, 3, 'back on: the new level')
+})
+
+test('zoom look: new zooms take the loupe last picked; a full zoom adds nothing', () => {
+  assert.deepEqual(lookOf({ mode: 'loupe', size: 180, rigid: false }), { mode: 'loupe', size: 180 })
+  assert.deepEqual(lookOf({ mode: 'zoom', size: 180, rigid: true }), {}, 'loupe size and shape mean nothing to a full zoom')
+  assert.deepEqual(lookOf('garbage' as never), {}, 'a hand-edited settings file')
+  const events: InputEvent[] = [{ t: 3, type: 'down', x: 1400, y: 900, button: 'left' }]
+  const sources = createProject('t', { duration: 20, screen: SCREEN }).sources
+  const [z] = generateAutoZooms(events, sources, { enabled: true, level: 2 }, { mode: 'loupe', size: 180, rigid: true })
+  assert.ok(z.auto && z.mode === 'loupe' && z.size === 180 && z.rigid && z.level === 2)
 })
 
 const FIXTURE = join(import.meta.dirname, '../../../.context/fixtures/Demo #1 ✨ café.grip')

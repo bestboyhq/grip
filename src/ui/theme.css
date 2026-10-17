@@ -52,8 +52,8 @@
   --success: #5fd38d;
   --warning: #ffd60a; /* paused, needs attention */
   --warning-text: #ffe58a;
-  --record: #ff453a; /* recording */
-  --record-hover: #ff6961;
+  --record: #f04600; /* recording: the logo dot's orange */
+  --record-hover: #fb8600;
   --zoom: #1957fa; /* auto zoom on: the logo dot's blue */
   --zoom-text: #86a8ff; /* the same blue, legible on dark surfaces */
   --focus-ring: rgb(255 255 255 / 0.55);

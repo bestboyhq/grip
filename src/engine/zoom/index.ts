@@ -24,7 +24,7 @@
 // the cursor and clicked elements out from under it (layout's pipCameraAt, as it sits once stepped
 // back for the zoom). This happens while stepping, so viewAt stays a cheap lookup.
 
-import { uid, type Project, type Rect, type Sources, type Style, type Zoom } from '../../shared/project.ts'
+import { uid, type Project, type Rect, type Sources, type Style, type Zoom, type ZoomLook } from '../../shared/project.ts'
 import type { InputEvent } from '../../shared/events.ts'
 import { mapRange, toOutput, type TimeMap } from '../../shared/timemap.ts'
 import type { Loupe, SceneInput, View } from '../scene.ts'
@@ -59,6 +59,9 @@ const LOUPE_FADE = springDuration(LOUPE_SPRING)
 const LOUPE_FOLLOW: SpringConfig = { stiffness: 120, damping: 2 * 0.65 * Math.sqrt(120), mass: 1 } // trails the cursor softly, a little overshoot
 /** Loupe lens radius in units (Zoom.size): what fits depends on what it shows, a button or a paragraph. */
 export const LOUPE_SIZE = { min: 60, max: 400, initial: 260 }
+/** The look of `z` for new zooms: a loupe's mode, size, and shape, or nothing for a full zoom (the default). */
+export const lookOf = (z: ZoomLook): ZoomLook =>
+  z.mode === 'loupe' ? { mode: 'loupe', ...(z.size ? { size: z.size } : {}), ...(z.rigid ? { rigid: true } : {}) } : {}
 const LOUPE_STRETCH = 0.08 // a liquid lens grows this much longer along its motion per radius/s of speed
 const LOUPE_MAX_STRETCH = 0.35
 const AT_START = 1e-3 // s: a zoom starting this close to output 0 starts zoomed in
@@ -433,8 +436,8 @@ export function loupeAt(z: ReturnType<typeof prepareZoom>, t: number): Loupe | n
 
 /** Auto zooms (source time) from clicks and typing: merge activity close in time, start LEAD before
  *  it, hold HOLD after it, and skip stretches that would pan erratically. Each zoom follows the
- *  cursor; viewAt frames its clicks and typing. `typing` defaults to the input domain's detector. */
-export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZoom: Style['autoZoom'], typing: Segment[] = typingSegments(events)): Zoom[] {
+ *  cursor with `look`; viewAt frames its clicks and typing. `typing` defaults to the input domain's detector. */
+export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZoom: Style['autoZoom'], look: ZoomLook = {}, typing: Segment[] = typingSegments(events)): Zoom[] {
   const screen = sources.screen
   if (!autoZoom.enabled || !screen) return []
   const level = Math.max(1, autoZoom.level)
@@ -459,16 +462,16 @@ export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZo
   return groups
     .map((g) => ({ ...g, start: Math.max(0, g.start), end: Math.min(sources.duration, g.end) }))
     .filter((g) => g.end - g.start >= MIN_AUTO && !erratic(g))
-    .map((g): Zoom => ({ id: uid(), start: g.start, end: g.end, level, target: { kind: 'cursor' }, auto: true, enabled: true }))
+    .map((g): Zoom => ({ id: uid(), start: g.start, end: g.end, level, target: { kind: 'cursor' }, auto: true, enabled: true, ...lookOf(look) }))
 }
 
 /** Set the auto zoom defaults (the inspector, a preset) and bring the auto zooms along: turned on or
- *  off (generated when turned on with none), and moved to a new level. Mutates `p`. */
-export function setAutoZoom(p: Project, events: InputEvent[], autoZoom: Style['autoZoom']) {
+ *  off (generated with `look` when turned on with none), and moved to a new level. Mutates `p`. */
+export function setAutoZoom(p: Project, events: InputEvent[], autoZoom: Style['autoZoom'], look: ZoomLook = {}) {
   const was = p.style.autoZoom
   p.style.autoZoom = { ...autoZoom }
   const autos = p.zooms.filter((z) => z.auto)
-  if (autoZoom.enabled && !was.enabled && !autos.length) p.zooms.push(...generateAutoZooms(events, p.sources, autoZoom))
+  if (autoZoom.enabled && !was.enabled && !autos.length) p.zooms.push(...generateAutoZooms(events, p.sources, autoZoom, look))
   for (const z of autos) {
     if (autoZoom.enabled !== was.enabled) z.enabled = autoZoom.enabled
     if (autoZoom.level !== was.level) z.level = autoZoom.level
