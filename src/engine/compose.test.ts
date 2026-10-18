@@ -31,6 +31,23 @@ test('motion samples only when something moves, and only with motion blur on', (
   assert.equal(at(7), undefined)
 })
 
+test('motion samples across a cursor shape change keep the size of the image shown at t', () => {
+  const p = createProject('t', { duration: 10, screen: { file: 's.mp4', width: 2880, height: 1800, fps: 30, scale: 2 }, events: 'e.jsonl' })
+  // The system records its arrow at 5 image px per screen px and the pointing hand at 1.
+  const events: InputEvent[] = [
+    { t: 0, type: 'cursor', id: 'hand', hotX: 24, hotY: 16, w: 64, h: 64, scale: 1, kind: 'pointer' },
+    { t: 5, type: 'cursor', id: 'arrow', hotX: 50, hotY: 50, w: 280, h: 400, scale: 5, kind: 'arrow' },
+  ]
+  for (let t = 0; t <= 10; t += 1 / 120) events.push({ t, type: 'move', x: 1000 + t * 200, y: 500 })
+  const prepared = prepare({ project: p, events, transcript: null, width: 1920, height: 1080 })
+  for (const t of [5 - SHUTTER / 4, 5 + SHUTTER / 4]) {
+    const shown = sceneAt(prepared, t).cursor!
+    const m = motionAt(prepared, t)!
+    assert.ok(m.cursors.length > 1)
+    for (const c of m.cursors) assert.ok(c!.image === shown.image && Math.abs(c!.scale - shown.scale) < 1e-9, `t=${t}: ${c!.image} at ${c!.scale}, shown ${shown.image} at ${shown.scale}`)
+  }
+})
+
 test('motion samples carry the lenses: a lens magnifying or gliding blurs, a held one does not', () => {
   const p = createProject('t', { duration: 10, screen: { file: 's.mp4', width: 2880, height: 1800, fps: 30, scale: 2 }, events: 'e.jsonl' })
   p.zooms = [{ id: 'l', start: 2, end: 8, level: 2.5, target: { kind: 'point', x: 0.5, y: 0.5 }, enabled: true, mode: 'loupe' }]
