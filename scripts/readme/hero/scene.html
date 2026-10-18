@@ -1,0 +1,112 @@
+<!doctype html>
+<!-- The deployments dashboard from the README hero. render(t) draws the state at time t.
+     No cursor: like a real capture, Grip draws it later from events. -->
+<html><head><meta charset="utf-8"><style>
+  *{box-sizing:border-box}
+  html,body{margin:0;width:1440px;height:900px;overflow:hidden;background:#fafafa;color:#171717;font:15px/1.3 -apple-system,'SF Pro Text',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  header{position:absolute;left:0;top:0;width:1440px;height:114px;background:#fff;border-bottom:1px solid #ebebeb}
+  .abs{position:absolute;display:flex;align-items:center;white-space:nowrap}
+  .dot{width:13px;height:13px;border-radius:50%}
+  .av{border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600}
+  .sep{color:#c8c8c8;font-size:22px;font-weight:200}
+  .tab{position:absolute;top:70px;color:#666}
+  .tab.on{color:#171717;font-weight:500}
+  .btn{position:absolute;height:45px;border:1px solid #e6e6e6;border-radius:7px;background:#fff;display:flex;align-items:center;justify-content:center;gap:9px;font-weight:500}
+  .btn.dark{background:#171717;border-color:#171717;color:#fff}
+  .field{position:absolute;top:261px;height:45px;border:1px solid #e6e6e6;border-radius:7px;background:#fff;display:flex;align-items:center;padding:0 15px;gap:10px;color:#171717;font-weight:500}
+  .field .mut{color:#888;font-weight:400}
+  #table{position:absolute;left:36px;top:325px;width:1367px;background:#fff;border:1px solid #ebebeb;border-radius:9px;overflow:hidden}
+  .row{position:relative;height:81.3px;border-top:1px solid #f0f0f0;overflow:hidden}
+  .row:first-child{border-top:0}
+  .row>*{position:absolute;white-space:nowrap}
+  .c1{left:27px;top:17px}.c1 b{display:block;font-weight:600;font-size:15.5px;letter-spacing:-.1px}
+  .c2{left:518px;top:17px}.c3{left:686px;top:17px}
+  .sub{display:flex;align-items:center;gap:8px;margin-top:7px;color:#666;font-size:14.5px;height:18px}
+  .top{display:flex;align-items:center;gap:8px;font-size:15px;height:20px;font-weight:500;color:#171717}
+  .st{position:absolute;left:-20px;top:4px;width:10px;height:10px;border-radius:50%;background:#10b36b}
+  .mono{font-family:'SF Mono',ui-monospace,Menlo,monospace;font-size:14px;color:#666}
+  .msg{color:#444;font-size:14.5px}
+  .when{right:123px;top:0;height:81px;color:#666;font-size:14.5px;display:flex;align-items:center}
+  .sm{right:85px;top:28px;width:25px;height:25px;font-size:9.5px;background:#f0f0f0;color:#555}
+  .more{right:36px;top:0;height:76px;display:flex;align-items:center;color:#999;font-size:20px;letter-spacing:1px}
+  .cur{display:inline-block;font-size:12.5px;font-weight:500;color:#3f3f46;background:#f4f4f5;padding:1px 7px;border-radius:5px;margin-left:8px}
+</style></head><body>
+<header>
+  <div class="abs dot" style="left:23px;top:25px;background:#ff5f57"></div><div class="abs dot" style="left:46px;top:25px;background:#febc2e"></div><div class="abs dot" style="left:69px;top:25px;background:#28c840"></div>
+  <div class="abs av" style="left:111px;top:19px;width:25px;height:25px;background:#000"><svg width="13" height="12" viewBox="0 0 13 12"><path d="M6.5 0.8 12.2 11H0.8Z" fill="#fff"/></svg></div>
+  <div class="abs sep" style="left:150px;top:17px;transform:rotate(14deg)">/</div>
+  <div class="abs av" style="left:176px;top:20px;width:23px;height:23px;background:linear-gradient(135deg,#ff9a56,#ff5c5c);font-size:10px">A</div>
+  <div class="abs" style="left:206px;top:22px;font-weight:500">Acme</div>
+  <div class="abs" style="left:262px;top:23px"><svg width="9" height="14" viewBox="0 0 9 14" fill="none" stroke="#888" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5.2 4.5 2.2l3 3M1.5 8.8l3 3 3-3"/></svg></div>
+  <div class="abs sep" style="left:286px;top:17px;transform:rotate(14deg)">/</div>
+  <div class="abs av" style="left:312px;top:20px;width:23px;height:23px;background:linear-gradient(135deg,#22c1ee,#0a7cff);font-size:10px">S</div>
+  <div class="abs" style="left:343px;top:22px;font-weight:500">storefront</div>
+  <div class="abs" style="left:429px;top:23px"><svg width="9" height="14" viewBox="0 0 9 14" fill="none" stroke="#888" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5.2 4.5 2.2l3 3M1.5 8.8l3 3 3-3"/></svg></div>
+  <div class="btn" style="left:1067px;top:14px;width:97px;height:34px;font-size:14.5px;font-weight:500;box-shadow:0 1px 1px rgba(0,0,0,.04)">Feedback</div>
+  <div class="abs" style="left:1185px;top:23px;color:#666">Changelog</div>
+  <div class="abs" style="left:1282px;top:23px;color:#666">Docs</div>
+  <div class="abs" style="left:1343px;top:24px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg></div>
+  <div class="abs av" style="left:1382px;top:15px;width:33px;height:33px;background:linear-gradient(135deg,#a1a1aa,#52525b);font-size:12px">MC</div>
+  <div class="tab" style="left:27px">Overview</div><div class="tab on" style="left:127px">Deployments</div><div class="tab" style="left:255px">Analytics</div><div class="tab" style="left:353px">Speed Insights</div><div class="tab" style="left:492px">Logs</div><div class="tab" style="left:558px">Observability</div><div class="tab" style="left:685px">Firewall</div><div class="tab" style="left:772px">Storage</div><div class="tab" style="left:861px">Flags</div><div class="tab" style="left:931px">Settings</div>
+  <div style="position:absolute;left:123px;top:111px;width:103px;height:2px;background:#171717"></div>
+</header>
+<div class="abs" style="left:36px;top:157px;font-size:32px;font-weight:650;letter-spacing:-.8px">Deployments</div>
+<div class="abs" style="left:36px;top:208px;color:#666;gap:7px">Continuously generated from <svg width="19" height="19" viewBox="0 0 16 16" fill="#171717"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg><b style="font-weight:500;color:#171717">acme/storefront</b></div>
+<div class="btn" style="left:1157px;top:172px;width:98px"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#171717" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M4 8h8M6.5 12h3"/></svg>Filter</div>
+<div class="btn dark" id="deploy" style="left:1267px;top:172px;width:136px"></div>
+<div class="field" style="left:36px;width:594px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#999" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="m11 11 3.5 3.5"/></svg><span class="mut">All Branches...</span></div>
+<div class="field" style="left:825px;width:238px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#777" stroke-width="1.4" stroke-linecap="round"><rect x="1.8" y="3" width="12.4" height="11" rx="2"/><path d="M1.8 6.5h12.4M5 1.5v3M11 1.5v3"/></svg><span style="font-weight:400">Select Date Range</span></div>
+<div class="field" style="left:1075px;width:178px;justify-content:space-between">All Environments<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#777" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2.5 4.5 3.5 3.5 3.5-3.5"/></svg></div>
+<div class="field" style="left:1264px;width:139px;justify-content:space-between"><span>Status <span class="mut" style="margin-left:5px">5/6</span></span><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#777" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2.5 4.5 3.5 3.5 3.5-3.5"/></svg></div>
+<div id="table"><div id="fresh" style="height:0;overflow:hidden"></div><div id="rows"></div></div>
+<script>
+  const S = JSON.parse(new URLSearchParams(location.search).get('s')) // { click: {down, up}, row, ready }
+  const BR = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#666" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="3.5" r="1.7"/><circle cx="4" cy="12.5" r="1.7"/><circle cx="12" cy="5" r="1.7"/><path d="M4 5.2v5.6M12 6.7c0 3-3.5 2.2-8 4.3"/></svg>'
+  const CM = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#999" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="2.4"/><path d="M1 8h4.6M10.4 8H15"/></svg>'
+  const DOTS = '<div class="more">···</div>'
+  // [id, env, status text, branch, sha, message, when, who, initials]
+  const DATA = [
+    ['Hs4bT1cLe', 'Production', '41s (2h ago)', 'main', 'b4e81d2', 'fix(cart): keep coupon after sign-in', '2h ago by leopark', 'LP'],
+    ['2pWq8ZnVd', 'Preview', '38s (5h ago)', 'feat/search-v2', '3a9c07f', 'search: debounce and highlight mat…', '5h ago by anaruiz', 'AR'],
+    ['Lx7eR3uYk', 'Preview', '36s (1d ago)', 'deps/next-15', 'e07b9a1', 'chore(deps): bump next to 15.1.2', '1d ago by renovate[bot]', 'R'],
+    ['Bv6nJ0tGa', 'Production', '44s (1d ago)', 'main', '91fd2c6', 'perf: cache product images at the e…', '1d ago by mayachen', 'MC'],
+    ['Qm3hD9wPz', 'Preview', '33s (2d ago)', 'fix/og-image', '5d10b3e', 'fix: load OG image fonts once', '2d ago by jsmith', 'JS'],
+    ['Tc8sK4yNf', 'Production', '39s (3d ago)', 'main', 'c2a7f08', 'feat: gift cards at checkout', '3d ago by leopark', 'LP'],
+    ['Wd5gH2kRm', 'Preview', '40s (3d ago)', 'feat/gift-cards', '8e3f1b6', 'gift cards: balance check endpoint', '3d ago by anaruiz', 'AR'],
+    ['Zr2nB8cTs', 'Preview', '37s (4d ago)', 'main', '0a6d5e2', 'docs: add shipping FAQ', '4d ago by jsmith', 'JS'],
+  ]
+  const row = (id, env, status, dot, br, sha, msg, when, ini, badge) => `<div class="row">
+    <div class="c1"><b>${id}</b><div class="sub">${env}${badge ? '<span class="cur">Current</span>' : ''}</div></div>
+    <div class="c2"><div class="st" style="background:${dot}"></div><div class="top">${status[0]}</div><div class="sub">${status[1]}</div></div>
+    <div class="c3"><div class="top">${BR}${br}</div><div class="sub">${CM}<span class="mono">${sha}</span><span class="msg">${msg}</span></div></div>
+    <div class="when">${when}</div><div class="abs av sm">${ini}</div>${DOTS}</div>`
+  const rows = DATA.map((d, i) => row(d[0], d[1], ['Ready', d[2]], '#10b36b', d[3], d[4], d[5], d[6], d[7], false)).join('')
+  document.getElementById('rows').innerHTML = rows
+  const rowsEl = document.getElementById('rows')
+  rowsEl.firstElementChild.querySelector('.sub').insertAdjacentHTML('beforeend', '<span class="cur">Current</span>')
+  const ease = (p) => 1 - (1 - p) ** 3
+  const SPIN = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="8" r="6" stroke-opacity=".25"/><path id="arc" d="M8 2a6 6 0 0 1 6 6"/></svg>'
+  const UP = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11V2.5M4.5 5.5 8 2l3.5 3.5M2.5 10v3.5h11V10"/></svg>'
+  let last = ''
+  window.render = (t) => {
+    const deploying = t >= S.click.down && t < S.ready
+    const btn = document.getElementById('deploy')
+    const html = deploying ? SPIN + 'Deploying' : UP + 'Deploy'
+    if (html !== last) { btn.innerHTML = html; last = html }
+    btn.style.background = deploying ? '#4a4a4a' : '#171717'
+    btn.style.borderColor = btn.style.background
+    btn.style.transform = t >= S.click.down && t < S.click.up ? 'scale(.97)' : ''
+    const arc = document.getElementById('arc'); if (arc) arc.parentNode.style.transform = `rotate(${t * 540}deg)`
+    const p = ease(Math.max(0, Math.min(1, (t - S.row) / 0.55)))
+    const fresh = document.getElementById('fresh')
+    if (p > 0) {
+      const ready = t >= S.ready
+      const secs = Math.min(11, 9 + Math.floor((t - S.row) / 0.8))
+      fresh.innerHTML = row('9fK2mQx7r', 'Production', ready ? ['Ready', '12s (just now)'] : ['Building', secs + 's'], ready ? '#10b36b' : '#f5a623', 'main', '7c1e4a9', 'feat(checkout): one-tap Apple Pay', 'just now by mayachen', 'MC', ready)
+      fresh.style.height = 81.3 * p + 'px'
+      fresh.style.opacity = String(p)
+      rowsEl.firstElementChild.querySelector('.cur')?.remove()
+      if (!ready) rowsEl.firstElementChild.querySelector('.sub').insertAdjacentHTML('beforeend', '<span class="cur">Current</span>')
+    } else fresh.style.height = '0'
+  }
+</script></body></html>

@@ -1,0 +1,289 @@
+<!doctype html>
+<!-- The team chat from the README formats demo. render(t) draws the state at time t from the script:
+     the moments of each click and key, and the pointer per frame, so hover follows it exactly.
+     No cursor: like a real capture, Grip draws it later from events. -->
+<html><head><meta charset="utf-8"><style>
+  *{box-sizing:border-box;margin:0}
+  html,body{width:1440px;height:900px;overflow:hidden;background:#141416;color:#171717;font:15px/22px -apple-system,'SF Pro Text',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  svg{display:block;flex:none}
+  .row{display:flex;align-items:center}
+  .av{position:relative;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;letter-spacing:.2px}
+  .PR{background:linear-gradient(135deg,#e6b47a,#b07440)}.DA{background:linear-gradient(135deg,#aaa29d,#57524d)}.SO{background:linear-gradient(135deg,#74747c,#2a2a2e)}
+  .MC{background:linear-gradient(135deg,#ee9f82,#c2553c)}.TM{background:linear-gradient(135deg,#cfcac6,#78716c)}.LP{background:linear-gradient(135deg,#bdb08f,#736850)}
+  /* window chrome */
+  .tl{position:absolute;top:16px;width:12px;height:12px;border-radius:50%}
+  #search{position:absolute;left:520px;top:8px;width:400px;height:28px;border-radius:7px;background:#222225;border:1px solid #2c2c30;color:#8e8e93;font-size:13px;display:flex;align-items:center;gap:8px;padding:0 10px}
+  #search kbd{margin-left:auto;font:12px -apple-system,system-ui;color:#6e6e73}
+  aside{position:absolute;left:0;top:44px;width:260px;bottom:0;padding:6px 10px;color:#a1a1aa;font-size:14.5px}
+  .ws{height:40px;padding:0 6px 0 8px;gap:10px;color:#fafafa;font-weight:600;font-size:15px;margin-bottom:6px}
+  .logo{width:24px;height:24px;border-radius:6px;background:#fafafa;display:flex;align-items:center;justify-content:center}
+  .compose{margin-left:auto;width:28px;height:28px;border-radius:7px;background:#222225;display:flex;align-items:center;justify-content:center}
+  .nav{height:30px;padding:0 8px;gap:10px;border-radius:6px}
+  .nav.on{background:#2a2a2e;color:#fafafa}
+  .nav.unread{color:#fafafa;font-weight:600}
+  .ic{width:16px;display:flex;justify-content:center;color:#71717a}
+  .badge{margin-left:auto;min-width:18px;height:18px;border-radius:9px;background:#ef4444;color:#fff;font-size:11px;line-height:18px;font-weight:600;text-align:center;padding:0 5px}
+  .sec{height:30px;padding:0 8px;gap:6px;color:#71717a;font-size:13px;font-weight:500;margin-top:14px}
+  .dm .av{width:18px;height:18px;border-radius:5px;font-size:7.5px}
+  .pres{position:absolute;right:-3px;bottom:-3px;width:9px;height:9px;border-radius:50%;background:#22c55e;border:2px solid #141416}
+  .pres.away{background:#141416;box-shadow:inset 0 0 0 1.5px #71717a}
+  /* panel */
+  #panel{position:absolute;left:260px;top:44px;width:1172px;height:848px;background:#fff;border-radius:10px;overflow:hidden;display:flex}
+  #chan{flex:1;min-width:0;display:flex;flex-direction:column}
+  header{height:56px;flex:none;border-bottom:1px solid #ebebeb;display:flex;align-items:center;padding:0 16px 0 20px;gap:8px;white-space:nowrap}
+  header h1{font-size:16px;font-weight:650;letter-spacing:-.1px;display:flex;align-items:center;gap:4px}
+  header h1 .hs{color:#a1a1aa;font-weight:500}
+  .topic{font-size:13px;color:#71717a;margin-left:6px;overflow:hidden;text-overflow:ellipsis}
+  .tb{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex:none;color:#71717a}
+  .tb.h{background:#f4f4f5;color:#171717}
+  .tb.p{transform:scale(.94)}
+  .stack{display:flex;align-items:center;margin-left:auto;padding:3px 8px 3px 3px;border:1px solid #ebebeb;border-radius:8px;gap:6px;font-size:13px;font-weight:600;color:#3f3f46}
+  .stack .av{width:22px;height:22px;border-radius:6px;font-size:8.5px;box-shadow:0 0 0 2px #fff}
+  .stack .av+.av{margin-left:-8px}
+  #list{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;padding-bottom:8px}
+  .day{position:relative;height:44px;flex:none;display:flex;align-items:center;justify-content:center}
+  .day::before{content:'';position:absolute;left:20px;right:20px;top:50%;border-top:1px solid #ebebeb}
+  .day span{position:relative;background:#fff;border:1px solid #ebebeb;border-radius:12px;padding:0 10px;height:24px;line-height:22px;font-size:12px;font-weight:500;color:#52525b}
+  .msg{position:relative;flex:none;display:flex;gap:12px;padding:8px 20px}
+  .msg.h{background:#fafafa}
+  .msg.sel{background:#f4f4f5}
+  .msg>.av{width:36px;height:36px;border-radius:8px;font-size:13px;margin-top:3px}
+  .main{min-width:0;flex:1}
+  .meta{display:flex;align-items:baseline;gap:8px;height:22px}
+  .meta b{font-weight:600}
+  .meta time{font-size:12px;color:#a1a1aa}
+  .text{color:#27272a}
+  .card{display:flex;align-items:center;gap:12px;width:320px;margin-top:8px;padding:10px 12px;border:1px solid #ebebeb;border-radius:10px;background:#fff}
+  .card .fi{width:36px;height:36px;border-radius:8px;background:#f4f4f5;display:flex;align-items:center;justify-content:center}
+  .card b{display:block;font-size:14px;line-height:19px;font-weight:600}
+  .card span{font-size:12.5px;line-height:17px;color:#71717a}
+  .reacts{display:flex;gap:6px;margin-top:6px}
+  .re{height:26px;padding:0 9px 0 7px;border-radius:13px;border:1px solid #e4e4e7;background:#fff;display:flex;align-items:center;gap:5px;font-size:12.5px;color:#52525b;font-weight:500}
+  .re i{font-style:normal;font-size:14px;line-height:1}
+  .re.me{border-color:#71717a;background:#f4f4f5;color:#171717;font-weight:600}
+  .sum{display:inline-flex;align-items:center;gap:8px;margin:6px 0 0 -6px;padding:0 10px 0 5px;height:32px;border-radius:8px;border:1px solid transparent;font-size:13px;white-space:nowrap}
+  .sum .avs{display:flex;gap:3px}
+  .sum .av{width:20px;height:20px;border-radius:5px;font-size:7.5px}
+  .sum b{font-weight:600;color:#171717}
+  .sum .ago{color:#71717a}
+  .sum .vt{display:none;align-items:center;gap:2px;color:#71717a;margin-left:20px}
+  .sum.h{background:#fff;border-color:#e4e4e7}
+  .sum.h b{text-decoration:underline;text-underline-offset:2px}
+  .sum.h .vt{display:flex}
+  .comp{border:1px solid #e4e4e7;border-radius:10px;background:#fff;flex:none}
+  .comp.focus{border-color:#a1a1aa;box-shadow:0 0 0 3px rgba(0,0,0,.05)}
+  .in{height:44px;padding:0 14px;display:flex;align-items:center;white-space:pre;overflow:hidden;color:#171717}
+  .ph{color:#a1a1aa}
+  .caret{display:inline-block;width:1.5px;height:19px;background:#171717;margin-left:1px}
+  .tools{height:40px;display:flex;align-items:center;gap:2px;padding:0 8px 6px}
+  .vsep{width:1px;height:16px;background:#e4e4e7;margin:0 5px}
+  .send{margin-left:auto;width:32px;height:28px;border-radius:7px;background:#f4f4f5;display:flex;align-items:center;justify-content:center;color:#a1a1aa}
+  .send.on{background:#171717;color:#fff}
+  #chan .cwrap{padding:0 20px 20px}
+  /* thread */
+  #thread{width:448px;flex:none;border-left:1px solid #ebebeb;display:none;flex-direction:column;position:relative;background:#fff}
+  #thread header{padding-right:12px}
+  #tbody{flex:1;min-height:0;padding-top:12px;overflow:hidden}
+  #tbody .msg{padding:14px 20px 10px}
+  #tbody .rep{padding:8px 20px}
+  .tdiv{display:flex;align-items:center;gap:10px;padding:6px 20px 6px;font-size:12.5px;color:#71717a;font-weight:500;white-space:nowrap}
+  .tdiv::after{content:'';flex:1;border-top:1px solid #ebebeb}
+  #tcwrap{padding:0 16px;position:relative}
+  .also{height:40px;flex:none;display:flex;align-items:center;gap:8px;padding:0 18px;font-size:12.5px;color:#71717a}
+  .cb{width:14px;height:14px;border:1px solid #d4d4d8;border-radius:4px;background:#fff}
+  /* message toolbar, emoji picker, emoji autocomplete */
+  .bar{position:absolute;right:16px;top:-8px;height:34px;padding:0 3px;display:flex;align-items:center;gap:1px;background:#fff;border:1px solid #e4e4e7;border-radius:9px;box-shadow:0 2px 8px rgba(0,0,0,.06);opacity:0}
+  .msg.h .bar,.bar.open{opacity:1}
+  .bar .tb{width:30px}
+  .bar .tb i{font-style:normal;font-size:15px;line-height:1}
+  .bar .tb.on{background:#f4f4f5;color:#171717}
+  .bar .vsep{margin:0 3px}
+  #picker{position:absolute;right:16px;top:102px;width:304px;padding:10px;background:#fff;border:1px solid #e4e4e7;border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.10),0 1px 3px rgba(0,0,0,.05);display:none}
+  .ps{height:32px;border:1px solid #e4e4e7;border-radius:8px;display:flex;align-items:center;gap:8px;padding:0 10px;color:#a1a1aa;font-size:13px}
+  .pl{font-size:12px;line-height:16px;color:#71717a;font-weight:500;margin:10px 2px 6px}
+  .grid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px}
+  .cell{height:34px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:20px;line-height:1}
+  .cell.h{background:#f4f4f5}
+  .cell.p{background:#e4e4e7}
+  .pf{border-top:1px solid #ebebeb;margin:8px -10px -10px;padding:0 12px;height:44px;display:flex;align-items:center;gap:10px;font-size:13px;color:#a1a1aa}
+  .pf i{font-style:normal;font-size:20px;line-height:1;width:22px;text-align:center}
+  .pf.on{color:#171717;font-weight:500}
+  #ac{position:absolute;left:16px;right:16px;bottom:calc(100% + 8px);padding:6px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.10),0 1px 3px rgba(0,0,0,.05);display:none}
+  .ach{font-size:12px;line-height:16px;color:#71717a;padding:6px 8px 6px}
+  .ach b{color:#171717;font-weight:600}
+  .acr{height:34px;border-radius:7px;display:flex;align-items:center;gap:10px;padding:0 8px;font-size:14px;color:#3f3f46}
+  .acr i{font-style:normal;font-size:17px;line-height:1;width:20px;text-align:center}
+  .acr b{font-weight:600;color:#171717}
+  .acr.on{background:#f4f4f5}
+  .acr kbd{margin-left:auto;font:500 11px/16px -apple-system,system-ui;color:#71717a;border:1px solid #e4e4e7;border-radius:5px;padding:0 6px;background:#fff}
+</style></head><body>
+<div class="tl" style="left:20px;background:#ff5f57"></div><div class="tl" style="left:40px;background:#febc2e"></div><div class="tl" style="left:60px;background:#28c840"></div>
+<svg style="position:absolute;left:98px;top:15px" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#8e8e93" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8.8 2.5 4.3 7l4.5 4.5"/></svg>
+<svg style="position:absolute;left:124px;top:15px" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#55555a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.2 2.5 9.7 7l-4.5 4.5"/></svg>
+<div id="search"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#8e8e93" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="m11 11 3.5 3.5"/></svg>Search Alder<kbd>⌘K</kbd></div>
+<svg style="position:absolute;left:1366px;top:13px" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="7.2"/><path d="M6.9 7a2.2 2.2 0 0 1 4.2.9c0 1.4-2.1 1.8-2.1 3"/><circle cx="9" cy="13.3" r=".4" fill="#a1a1aa"/></svg>
+<div class="av TM" style="position:absolute;left:1398px;top:10px;width:24px;height:24px;border-radius:6px;font-size:9px">TM</div>
+<aside>
+  <div class="row ws"><div class="logo"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1.2 12.8 12H1.2Z" fill="none" stroke="#141416" stroke-width="2" stroke-linejoin="round"/></svg></div>Alder<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2 3.8 3 3 3-3"/></svg>
+    <div class="compose"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#e4e4e7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 9v3.5a1.5 1.5 0 0 1-1.5 1.5H3.5A1.5 1.5 0 0 1 2 12.5V4a1.5 1.5 0 0 1 1.5-1.5H7"/><path d="M11.8 1.9a1.3 1.3 0 0 1 1.9 1.9L8.4 9.1l-2.6.7.7-2.6Z"/></svg></div></div>
+  <div class="row nav"><span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2Z"/></svg></span>Threads</div>
+  <div class="row nav unread"><span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#fafafa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5a4 4 0 0 0-8 0c0 4.5-2 5.5-2 5.5h12s-2-1-2-5.5M9.2 14a1.4 1.4 0 0 1-2.4 0"/></svg></span>Activity<span class="badge">2</span></div>
+  <div class="row nav"><span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2 7 9M14 2l-4.5 12L7 9 2 6.5Z"/></svg></span>Drafts &amp; sent</div>
+  <div class="row sec"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#71717a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2 3.8 3 3 3-3"/></svg>Channels</div>
+  <div class="row nav"><span class="ic">#</span>general</div>
+  <div class="row nav unread"><span class="ic" style="color:#fafafa">#</span>design</div>
+  <div class="row nav"><span class="ic">#</span>eng-web</div>
+  <div class="row nav on"><span class="ic" style="color:#d4d4d8">#</span>launch</div>
+  <div class="row nav"><span class="ic">#</span>payments</div>
+  <div class="row nav"><span class="ic">#</span>support</div>
+  <div class="row sec"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#71717a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2 3.8 3 3 3-3"/></svg>Direct messages</div>
+  <div class="row nav dm"><span class="av MC">MC<span class="pres"></span></span>Maya Chen</div>
+  <div class="row nav dm unread"><span class="av SO">SO<span class="pres away"></span></span>Sam Okafor<span class="badge">1</span></div>
+  <div class="row nav dm"><span class="av DA">DA<span class="pres"></span></span>Diego Alvarez</div>
+  <div class="row nav dm"><span class="av PR">PR<span class="pres away"></span></span>Priya Raman</div>
+</aside>
+<div id="panel">
+  <section id="chan">
+    <header><h1><span class="hs">#</span>launch</h1><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#71717a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2 3.8 3 3 3-3"/></svg>
+      <span class="topic">v2.4 ships Thursday 11:00 · go/launch-v24</span>
+      <div class="stack"><span class="av MC">MC</span><span class="av SO">SO</span><span class="av DA">DA</span>24</div>
+      <div class="tb"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12V9a6 6 0 0 1 12 0v3"/><rect x="2.5" y="10.5" width="3" height="5" rx="1.2"/><rect x="12.5" y="10.5" width="3" height="5" rx="1.2"/></svg></div>
+      <div class="tb"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="12.8" r="1.3"/></svg></div>
+    </header>
+    <div id="list"></div>
+    <div class="cwrap"><div class="comp"><div class="in"><span class="ph">Message #launch</span></div><div class="tools" id="ctools"></div></div></div>
+  </section>
+  <section id="thread">
+    <header><h1>Thread</h1><span class="topic" style="margin-left:2px">#&#8202;launch</span><div class="tb" data-h style="margin-left:auto"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="m3 3 8 8M11 3l-8 8"/></svg></div></header>
+    <div id="tbody"></div>
+    <div id="tcwrap"><div id="ac"></div><div class="comp" id="tcomp" data-h><div class="in" id="tin"></div><div class="tools" id="ttools"></div></div></div>
+    <div class="also"><span class="cb"></span>Also send to #&#8202;launch</div>
+    <div id="picker"></div>
+  </section>
+</div>
+<script>
+  const S = JSON.parse(new URLSearchParams(location.search).get('s'))
+  const $ = (id) => document.getElementById(id)
+  const svg = (w, d, extra = '') => `<svg width="${w}" height="${w}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${extra}>${d}</svg>`
+  const I = {
+    plus: svg(16, '<path d="M8 3v10M3 8h10"/>'),
+    aa: '<svg width="18" height="16" viewBox="0 0 18 16" fill="currentColor"><text x="0" y="12.5" font-family="-apple-system,system-ui" font-size="13" font-weight="600">Aa</text></svg>',
+    smile: svg(16, '<circle cx="8" cy="8" r="6.2"/><path d="M5.6 9.6a3 3 0 0 0 4.8 0"/><circle cx="6" cy="6.6" r=".5" fill="currentColor"/><circle cx="10" cy="6.6" r=".5" fill="currentColor"/>'),
+    at: svg(16, '<circle cx="8" cy="8" r="2.6"/><path d="M10.6 5.6v3.2c0 1.2 1 1.9 1.9 1.5 1-.4 1.5-1.4 1.5-2.6a6 6 0 1 0-2.4 4.8"/>'),
+    mic: svg(16, '<rect x="5.8" y="1.8" width="4.4" height="8" rx="2.2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.3"/>'),
+    send: '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2.2 1.9a.7.7 0 0 1 .8-.1l11.4 5.6a.7.7 0 0 1 0 1.2L3 14.2a.7.7 0 0 1-1-.8L3.4 8.6h5.1a.6.6 0 0 0 0-1.2H3.4L2 2.6a.7.7 0 0 1 .2-.7Z"/></svg>',
+    react: svg(17, '<path d="M13.8 7.4a5.9 5.9 0 1 1-5-5.3"/><path d="M5.7 9.6a2.8 2.8 0 0 0 4.4 0"/><circle cx="6" cy="6.5" r=".5" fill="currentColor"/><circle cx="9.6" cy="6.5" r=".5" fill="currentColor"/><path d="M12.6 1v4.4M10.4 3.2h4.4"/>'),
+    bookmark: svg(16, '<path d="M4 2.2h8v11.6l-4-2.8-4 2.8Z"/>'),
+    dots: '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.2" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.8" cy="8" r="1.3"/></svg>',
+    search: svg(14, '<circle cx="7" cy="7" r="5"/><path d="m11 11 3.5 3.5"/>'),
+    doc: svg(18, '<path d="M9.5 1.8H4.5a1.2 1.2 0 0 0-1.2 1.2v10a1.2 1.2 0 0 0 1.2 1.2h7a1.2 1.2 0 0 0 1.2-1.2V5Z"/><path d="M9.3 1.8V5.2h3.4M5.8 8.5h4.4M5.8 11h3"/>', ' style="color:#71717a"'),
+    chev: '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3.8 2 3 3-3 3"/></svg>',
+  }
+  const tools = (send) => `<div class="tb">${I.plus}</div><div class="vsep"></div><div class="tb">${I.aa}</div><div class="tb">${I.smile}</div><div class="tb">${I.at}</div><div class="vsep"></div><div class="tb">${I.mic}</div><div class="send" id="${send}">${I.send}</div>`
+  $('ctools').innerHTML = tools('csend')
+  $('ttools').innerHTML = tools('tsend')
+
+  const NAMES = { PR: 'Priya Raman', DA: 'Diego Alvarez', SO: 'Sam Okafor', MC: 'Maya Chen', TM: 'Theo Martin', LP: 'Leo Park' }
+  const msg = (who, time, text, extra = '', attrs = '') =>
+    `<div class="msg"${attrs} data-h><div class="av ${who}">${who}</div><div class="main"><div class="meta"><b>${NAMES[who]}</b><time>${time}</time></div><div class="text">${text}</div>${extra}</div></div>`
+  const day = (d) => `<div class="day"><span>${d}</span></div>`
+  const re = (e, n, me) => `<div class="re${me ? ' me' : ''}"><i>${e}</i>${n}</div>`
+  const ASK = 'v2.4 release candidate is live on staging 🚢 Can someone run checkout on Safari + iOS before we ship at 11?'
+  const reacts = (id) => `<div class="reacts" id="${id}">${re('👀', 2)}${re('🙏', 1)}</div>`
+  $('list').innerHTML = [
+    msg('SO', '2:41 PM', 'Load test on the new checkout held at 3x last launch peak. Dashboards are linked in the doc.'),
+    msg('LP', '2:58 PM', 'Checkout copy is final. Pushed it to the content repo, translations land tonight.'),
+    day('Yesterday'),
+    msg('PR', '3:20 PM', 'Design QA for the new checkout is signed off ✨ Huge thanks to Diego for the wallet flow.'),
+    msg('DA', '3:26 PM', 'Feature flags for v2.4 are on in staging. Production stays off until launch.'),
+    msg('SO', '4:48 PM', 'Heads up: staging deploys are frozen from 10:30 tomorrow until v2.4 is out.'),
+    day('Today'),
+    msg('PR', '9:12 AM', 'Release notes are ready for review, thanks everyone who sent changes 💛',
+      `<div class="card"><div class="fi">${I.doc}</div><div><b>Release notes · v2.4</b><span>Doc · edited 12 min ago</span></div></div>`),
+    msg('DA', '9:41 AM', 'Payments migration is done. Old webhooks keep working until Friday.'),
+    msg('MC', '10:02 AM', ASK, reacts('cre') +
+      `<div class="sum" id="sum" data-h><div class="avs" id="savs"><span class="av MC">MC</span><span class="av DA">DA</span><span class="av SO">SO</span></div><b id="scount">3 replies</b><span class="ago" id="sago">Last reply 4 min ago</span><span class="vt">View thread${I.chev}</span></div>`, ' id="cparent"'),
+  ].join('')
+
+  const BAR = `<div class="bar" id="bar"><div class="tb" data-h><i>✅</i></div><div class="tb" data-h><i>👀</i></div><div class="tb" data-h><i>🙌</i></div><div class="vsep"></div><div class="tb" id="addre" data-h>${I.react}</div><div class="tb" data-h>${I.bookmark}</div><div class="tb" data-h>${I.dots}</div></div>`
+  $('tbody').innerHTML = msg('MC', '10:02 AM', ASK, reacts('tre') + BAR, ' id="tparent"') +
+    `<div class="tdiv" id="tcount">3 replies</div>` +
+    [msg('SO', '10:05 AM', 'Desktop passes: cards, wallets, coupons ✅'),
+     msg('DA', '10:06 AM', 'Mobile app is green too.'),
+     msg('MC', '10:07 AM', 'Amazing. Just Safari left 🙏'),
+     msg('TM', '10:09 AM', 'Safari + iOS look good. Ship it 🚀', '', ' id="mine"')].join('').replaceAll('class="msg"', 'class="msg rep"')
+
+  // [emoji, name]: the picker's frequently used, row by row
+  const FREQ = [['✅', 'white_check_mark'], ['👀', 'eyes'], ['🎉', 'tada'], ['🙌', 'raised_hands'], ['🔥', 'fire'], ['❤️', 'heart'], ['👍', '+1'], ['😂', 'joy'],
+    ['🚀', 'rocket'], ['💯', '100'], ['🙏', 'pray'], ['👏', 'clap'], ['😍', 'heart_eyes'], ['🤔', 'thinking_face'], ['✨', 'sparkles'], ['💪', 'muscle'],
+    ['🥳', 'partying_face'], ['😅', 'sweat_smile'], ['☕', 'coffee'], ['👋', 'wave'], ['👌', 'ok_hand'], ['😎', 'sunglasses'], ['🤝', 'handshake'], ['⚡', 'zap']]
+  $('picker').innerHTML = `<div class="ps">${I.search}Search all emoji</div><div class="pl">Frequently used</div><div class="grid">${FREQ.map(([e, n]) => `<div class="cell" data-h data-n="${n}" id="e-${n}">${e}</div>`).join('')}</div><div class="pf" id="pf"></div>`
+  const AC = [['🚀', 'rocket'], ['🤖', 'robot_face'], ['🌹', 'rose']]
+
+  const clamp = (x) => Math.min(1, Math.max(0, x))
+  const ease = (p) => 1 - (1 - p) ** 3
+  const fade = (el, t0, t, d = 0.18) => { const p = ease(clamp((t - t0) / d)); el.style.opacity = p; el.style.transform = p < 1 ? `translateY(${(1 - p) * 4}px)` : '' }
+  const put = (el, html) => { if (el.innerHTML !== html) el.innerHTML = html } // skip identical writes, keep hover marks
+
+  window.render = (t) => {
+    const open = t >= S.open && t < S.esc
+    const thread = $('thread')
+    thread.style.display = open ? 'flex' : 'none'
+    const o = ease(clamp((t - S.open) / 0.2))
+    thread.style.opacity = o
+    thread.style.transform = o < 1 ? `translateX(${(1 - o) * 16}px)` : ''
+    $('cparent').classList.toggle('sel', open)
+
+    // The reply: typed, completed by the emoji autocomplete on Tab, sent with ⌘↩.
+    const sent = t >= S.send
+    const n = S.keys.filter((k) => k <= t).length
+    const text = sent ? '' : t >= S.tab ? S.text.replace(/:\w+$/, '🚀') : S.text.slice(0, n)
+    const focused = t >= S.focus && t < S.esc
+    const last = Math.max(S.focus, ...S.keys.filter((k) => k <= t), t >= S.tab ? S.tab : 0, sent ? S.send : 0)
+    const caret = focused && (t - last < 0.5 || Math.floor((t - last - 0.5) / 0.53) % 2 === 1) ? '<span class="caret"></span>' : ''
+    $('tcomp').classList.toggle('focus', focused)
+    put($('tin'), text ? `${text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}${caret}` : `${caret}<span class="ph">Reply…</span>`)
+    $('tsend').classList.toggle('on', !!text)
+    const q = t < S.tab && /(?:^|\s):(\w+)$/.exec(text)
+    const ac = $('ac')
+    ac.style.display = q ? 'block' : 'none'
+    if (q) put(ac, `<div class="ach">Emoji matching <b>:${q[1]}</b></div>` + AC.map(([e, name], i) => `<div class="acr${i ? '' : ' on'}"><i>${e}</i><span><b>:${name.slice(0, q[1].length)}</b>${name.slice(q[1].length)}:</span>${i ? '' : '<kbd>Tab</kbd>'}</div>`).join(''))
+
+    const mine = $('mine')
+    mine.style.display = sent ? 'flex' : 'none'
+    if (sent) fade(mine, S.send, t)
+    $('tcount').textContent = sent ? '4 replies' : '3 replies'
+    $('scount').textContent = sent ? '4 replies' : '3 replies'
+    $('sago').textContent = sent ? 'Last reply just now' : 'Last reply 4 min ago'
+    put($('savs'), (sent ? '<span class="av TM">TM</span>' : '') + '<span class="av MC">MC</span><span class="av DA">DA</span><span class="av SO">SO</span>')
+
+    // The reaction: the picker opens from the message toolbar, and 🎉 lands on the message.
+    const picking = t >= S.pick && t < S.tada
+    $('picker').style.display = picking ? 'block' : 'none'
+    $('bar').classList.toggle('open', picking)
+    $('addre').classList.toggle('on', picking)
+    for (const id of ['tre', 'cre']) {
+      const r = $(id)
+      const has = r.children.length > 2
+      if (t >= S.tada && !has) r.insertAdjacentHTML('beforeend', `<div class="re me"><i>🎉</i>1</div>`)
+      if (t < S.tada && has) r.lastElementChild.remove()
+      if (t >= S.tada) fade(r.lastElementChild, S.tada, t, 0.15)
+    }
+
+    // Hover: the element under the pointer and its hoverable ancestors, pressed while the button is down.
+    for (const el of [...document.querySelectorAll('.h,.p')]) el.classList.remove('h', 'p')
+    const [x, y] = S.ptr[Math.min(S.ptr.length - 1, Math.round(t * S.fps))]
+    const down = S.clicks.some(([a, b]) => t >= a && t < b)
+    let first = true
+    for (let el = document.elementFromPoint(x, y); el; el = el.parentElement) {
+      if (!el.hasAttribute('data-h')) continue
+      el.classList.add('h')
+      if (first && down) el.classList.add('p')
+      first = false
+    }
+    const cell = picking && document.querySelector('.cell.h')
+    const pf = $('pf')
+    pf.classList.toggle('on', !!cell)
+    put(pf, cell ? `<i>${cell.textContent}</i>:${cell.dataset.n}:` : '<i style="filter:grayscale(1);opacity:.35">🙂</i>Pick a reaction')
+  }
+</script></body></html>
