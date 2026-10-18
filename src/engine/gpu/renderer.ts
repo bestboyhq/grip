@@ -8,6 +8,7 @@
 //              the shutter's view samples
 //   cursor     swept quad, motion blur over the shutter's cursor samples
 //   highlight
+//   lensdim    the dim around the lenses, marked for dithering
 //   loupe      glass lenses, motion blur over the shutter's lens (and view, cursor) samples
 //   camera
 //   final      overlay canvas (drawings, keystrokes, captions) on top, dithered to the 8-bit canvas
@@ -116,7 +117,7 @@ export class Renderer {
   private readonly assetUrl: (rel: string) => string
   private lost: string | null = null
 
-  private pipes!: Record<'main' | 'cursor' | 'highlight' | 'loupe' | 'camera' | 'final' | 'small' | 'mipLDR' | 'mipHDR' | 'bg' | 'blur' | 'viewblur', GPURenderPipeline>
+  private pipes!: Record<'main' | 'cursor' | 'highlight' | 'lensdim' | 'loupe' | 'camera' | 'final' | 'small' | 'mipLDR' | 'mipHDR' | 'bg' | 'blur' | 'viewblur', GPURenderPipeline>
   private groups!: { g0: GPUBindGroupLayout; g1: GPUBindGroupLayout; g2: GPUBindGroupLayout }
   private sampler!: GPUSampler
   private frameU!: GPUBuffer
@@ -230,10 +231,11 @@ export class Renderer {
         fragment: { module, entryPoint: fs, targets: [{ format, blend }] },
         primitive: { topology: vs === 'vs_full' ? 'triangle-list' : 'triangle-strip' },
       })
-    const [main, cursor, highlight, loupe, camera, final, small, mipLDR, mipHDR, bg, blur, viewblur] = await Promise.all([
+    const [main, cursor, highlight, lensdim, loupe, camera, final, small, mipLDR, mipHDR, bg, blur, viewblur] = await Promise.all([
       pipe('vs_full', 'fs_main', HDR, scene),
       pipe('vs_cursor', 'fs_cursor', HDR, scene, over(clear)),
       pipe('vs_full', 'fs_highlight', HDR, scene, over(keep)),
+      pipe('vs_full', 'fs_lensdim', HDR, scene, { color: { srcFactor: 'zero', dstFactor: 'src' }, alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'max' } }),
       pipe('vs_full', 'fs_loupe', HDR, scene, over(keep)),
       pipe('vs_camera', 'fs_camera', HDR, scene, over(clear)),
       pipe('vs_full', 'fs_final', canvasFormat, 'auto'),
@@ -244,7 +246,7 @@ export class Renderer {
       pipe('vs_full', 'fs_blur', HDR, 'auto'),
       pipe('vs_full', 'fs_viewblur', HDR, 'auto'),
     ])
-    this.pipes = { main, cursor, highlight, loupe, camera, final, small, mipLDR, mipHDR, bg, blur, viewblur }
+    this.pipes = { main, cursor, highlight, lensdim, loupe, camera, final, small, mipLDR, mipHDR, bg, blur, viewblur }
 
     this.sampler = d.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge', addressModeW: 'clamp-to-edge' })
     this.frameU = d.createBuffer({ size: FRAME_SLOTS * 16, usage: BUF.UNIFORM | BUF.COPY_DST })
@@ -335,6 +337,8 @@ export class Renderer {
       pass.draw(3)
     }
     if (has.loupe) {
+      pass.setPipeline(this.pipes.lensdim)
+      pass.draw(3)
       pass.setPipeline(this.pipes.loupe)
       pass.draw(3)
     }
