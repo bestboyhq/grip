@@ -4,7 +4,7 @@ import { inTurn, parseLaunch, parseGripUrl } from './url.ts'
 import { plainError } from './errors.ts'
 import { areaOf, arrangement, fit, place, reachable, under } from './bounds.ts'
 import { hold, release } from './session.ts'
-import { withScale } from './png.ts'
+import { ring, withScale } from './png.ts'
 import { execFile } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -182,4 +182,17 @@ test('screenshots carry their pixel density, like the ones macOS takes', () => {
   assert.equal(out.readUInt32BE(phys + 8), 5669) // 144 dpi
   assert.equal(out.readUInt8(phys + 16), 1)
   assert.deepEqual([...out.subarray(out.length - 12 - 15, out.length - 12)].slice(8, 11), [1, 2, 3])
+})
+
+test('the menu bar export ring fills clockwise from 12 o\'clock', () => {
+  const alpha = (img: Buffer, x: number, y: number) => img[(y * 36 + x) * 4 + 3]
+  const right = [32, 18], left = [3, 18], top = [18, 3], center = [18, 18] // on the ring at 2x, and the dot
+  const quarter = ring(36, 0.25), half = ring(36, 0.5), none = ring(36, 0)
+  assert.equal(alpha(none, center[0], center[1]), 255) // the record dot always shows
+  assert.ok(alpha(none, top[0], top[1]) < 100) // nothing done: only the faint track
+  assert.ok(alpha(half, right[0], right[1]) > 200) // 3 o'clock is done at a half
+  assert.ok(alpha(half, left[0], left[1]) < 100) // 9 o'clock is not
+  assert.ok(alpha(quarter, top[0], top[1]) > 200)
+  assert.equal(alpha(quarter, 0, 0), 0) // corners stay clear
+  assert.equal(ring(18, 0.4).length, 18 * 18 * 4)
 })

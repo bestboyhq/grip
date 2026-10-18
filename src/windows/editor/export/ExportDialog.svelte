@@ -1,7 +1,10 @@
-<!-- Owner: export. Export dialog (format, resolution, frame rate, quality, size estimate,
-     destination: file, clipboard, share link, batch) and the export queue with progress, cancel,
-     and reveal. Mounted by Editor.svelte as <ExportDialog bind:open />. Exports run in the
-     background (electron/export.ts): closing the dialog never stops them. -->
+<!-- Owner: export. The editor title bar's Export split button and its dialog. One click (⌘E)
+     repeats the last export: same settings, same destination (a file in the same folder, without
+     asking; the clipboard; a link), with a progress ring on the button. The very first opens the
+     dialog. The ▾ (⇧⌘E) opens the dialog: format, resolution, frame rate, quality, size estimate,
+     destination, batch, and the export queue with progress, cancel, and reveal. Starting an export
+     closes it: exports run in the background (electron/export.ts), the menu bar shows their progress,
+     and a notification says when they are done. Mounted by Editor.svelte as <ExportDialog />. -->
 <script module lang="ts">
   import { doc } from '../../../lib/doc.svelte.ts'
   import { invoke, on } from '../../../lib/ipc.ts'
@@ -9,6 +12,14 @@
 
   const KEY = 'studio.export.options'
   const saved = () => cleanOptions(JSON.parse(localStorage.getItem(KEY) ?? 'null'))
+  const LAST = 'studio.export.last'
+  /** Where the dialog's last export went: Export repeats it. */
+  type Last = { dest: 'clipboard' | 'share' } | { dest: 'file'; dir: string }
+  function savedLast(): Last | null {
+    const l = JSON.parse(localStorage.getItem(LAST) ?? 'null')
+    if (l?.dest === 'file' && typeof l.dir === 'string' && l.dir.startsWith('/')) return { dest: 'file', dir: l.dir }
+    return l?.dest === 'clipboard' || l?.dest === 'share' ? { dest: l.dest } : null
+  }
   const active = (j: JobInfo) => j.state === 'queued' || j.state === 'running' || j.state === 'uploading'
   const clean = (e: unknown) => String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
@@ -46,16 +57,21 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { canEncodeVideo } from 'mediabunny'
+  import Icon from '../../../ui/Icon.svelte'
+  import { tooltip } from '../../../ui/tooltip.ts'
+  import { registerCommands } from '../commands/registry.ts'
   import { timeMap } from '../../../shared/timemap.ts'
   import { formatTime } from '../helpers.ts'
   import { outputSize } from '../../../engine/scene.ts'
   import { fitEncoder } from '../../../engine/export/index.ts'
-  import { estimateBytes, formatBytes, LIMITS, LOOPS, mp4Plan, QUALITIES, RATES, SIZES, tooLong, type Destination, type ExportOptions, type Format } from '../../../engine/export/options.ts'
+  import { estimateBytes, formatBytes, jobOptions, LIMITS, LOOPS, mp4Plan, QUALITIES, RATES, SIZES, tooLong, type Destination, type ExportOptions, type Format } from '../../../engine/export/options.ts'
   import Segmented from '../../../ui/Segmented.svelte'
 
   let { open = $bindable(false) }: { open?: boolean } = $props()
 
   let o = $state<ExportOptions>(saved())
+  let last = $state(savedLast())
+  let starting = false // one click, one export
   let jobs = $state<JobInfo[]>([])
   let error = $state('')
   let copied = $state('')
@@ -72,6 +88,17 @@
   const estimate = $derived(size && duration ? estimateBytes(duration, size.width, size.height, o) : 0)
 
   const p = (n: number) => (n === 2160 ? '4K' : `${n}p`)
+  // The button's ring: this project's export on its way.
+  const mine = $derived(jobs.findLast((j) => j.bundle === doc.path && j.dest !== 'temp' && (j.state === 'queued' || j.state === 'running')))
+  const ring = $derived(mine ? Math.floor(mine.progress * 100) : null)
+  /** What one click does, for its tooltip. */
+  const again = $derived.by(() => {
+    if (!last) return 'Export'
+    const run = jobOptions(last.dest, o) // a link is always an MP4
+    const what = `${p(run.size)} ${run.format.toUpperCase()}`
+    if (last.dest === 'file') return `Save ${what} to ${last.dir.split('/').pop() || last.dir}`
+    return last.dest === 'clipboard' ? `Copy ${what} to the Clipboard` : `Share ${what} as a Link`
+  })
   const label: Record<string, string> = { studio: 'Studio', social: 'Social', web: 'Web', small: 'Small' }
   const quality = { studio: 'Largest files, crisp text in fast motion', social: 'Sharp, sized for social uploads', web: 'Small files for sites and docs', small: 'Smallest files, softer motion' }
 
@@ -107,18 +134,44 @@
     })
   })
 
+  $effect(() =>
+    registerCommands([
+      { id: 'project.export', group: 'Project', title: 'Export', hint: last ? again : undefined, keys: ['⌘E'], run: exportAgain, enabled: () => !!doc.project },
+      { id: 'project.exportSettings', group: 'Project', title: 'Export Settings…', keys: ['⇧⌘E'], run: () => (open = true), enabled: () => !!doc.project },
+    ]),
+  )
+
   function setFormat(format: Format) {
     o = cleanOptions({ ...o, format })
   }
 
-  async function start(dest: Destination | 'batch') {
-    if (!doc.project) return
+  /** Repeat the last export; the first one asks in the dialog. */
+  function exportAgain() {
+    if (!last) open = true
+    else void start(last.dest, last.dest === 'file' ? last.dir : undefined)
+  }
+
+  /** Queue an export (or a batch) and close the dialog; `dir` saves a file there without asking. A
+   *  failure shows in the dialog. */
+  async function start(dest: Destination | 'batch', dir?: string) {
+    if (!doc.project || starting) return
+    starting = true
     error = ''
     try {
-      if (dest === 'batch') await invoke('export:batch', $state.snapshot(o))
-      else await invoke('export:enqueue', [{ bundle: doc.path, project: $state.snapshot(doc.project), options: $state.snapshot(o), dest }])
+      if (dest === 'batch') {
+        if (await invoke('export:batch', $state.snapshot(o))) dialog.close()
+        return
+      }
+      const out: JobInfo[] | null = await invoke('export:enqueue', [{ bundle: doc.path, project: $state.snapshot(doc.project), options: $state.snapshot(o), dest, dir }])
+      if (!out) return // the save panel was canceled
+      last = dest === 'file' ? { dest, dir: out[0].path.slice(0, out[0].path.lastIndexOf('/')) || '/' } : { dest: dest as 'clipboard' | 'share' }
+      localStorage.setItem(LAST, JSON.stringify(last))
+      dialog.close()
     } catch (e) {
       error = clean(e)
+      open = true
+    } finally {
+      starting = false
     }
   }
 
@@ -142,6 +195,23 @@
     return `${pct} · ${j.phase}${left}`
   }
 </script>
+
+<div class="split">
+  <button class="btn primary go" disabled={!doc.project} aria-label={ring !== null ? `Exporting, ${ring}%` : undefined} onclick={exportAgain} {@attach tooltip(again, '⌘E')}>
+    {#if ring !== null}
+      <svg class="ring" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="8" cy="8" r="6" />
+        <circle cx="8" cy="8" r="6" class="fill" pathLength="100" stroke-dasharray="{ring} 100" />
+      </svg>
+    {:else}
+      <Icon name="export" size={16} />
+    {/if}
+    Export
+  </button>
+  <button class="btn primary more" disabled={!doc.project} aria-label="Export Settings" aria-haspopup="dialog" onclick={() => (open = true)} {@attach tooltip('Export Settings…', '⇧⌘E')}>
+    <Icon name="chevron" size={14} />
+  </button>
+</div>
 
 <dialog bind:this={dialog} onclose={() => (open = false)} onclick={(e) => e.target === dialog && dialog.close()} aria-labelledby="export-title">
   <div class="sheet">
@@ -235,6 +305,34 @@
 </dialog>
 
 <style>
+  .split {
+    display: flex;
+    margin-left: 4px;
+  }
+  .split .btn {
+    height: 28px;
+  }
+  .go {
+    padding: 0 11px 0 10px;
+    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  }
+  .more {
+    width: 22px;
+    padding: 0;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    box-shadow: inset 1px 0 0 rgb(0 0 0 / 0.14); /* the seam between the halves */
+  }
+  .ring {
+    transform: rotate(-90deg);
+    fill: none;
+    stroke-width: 2;
+    stroke: rgb(0 0 0 / 0.18);
+  }
+  .ring .fill {
+    stroke: currentColor;
+    stroke-linecap: round;
+    transition: stroke-dasharray 0.2s;
+  }
   dialog {
     padding: 0;
     border: 0;
@@ -358,12 +456,12 @@
   .secondary:hover:not(:disabled) {
     background: var(--surface-100-hover);
   }
-  .primary {
+  footer .primary {
     margin-left: auto;
     background: var(--accent);
     color: var(--accent-ink);
   }
-  .primary:hover:not(:disabled) {
+  footer .primary:hover:not(:disabled) {
     background: var(--accent-hover);
   }
   footer button:disabled {
