@@ -12,13 +12,16 @@ export const MIGRATIONS: Record<number, (p: any) => any> = {
   2: (p) => (Array.isArray(p.clips) ? { ...p, clips: p.clips.map((c: any) => (isObj(c) && c.volume !== 1 ? { ...c, systemVolume: c.volume } : c)) } : p),
 }
 
-/** v1 on/off switches -> v2 presets and amounts (shared with presets saved by v1). */
+/** Older style values -> current ones, for projects of every version and for presets. Idempotent. */
 function upgradeStyle(st: Record<string, any>) {
   if (typeof st.motionBlur === 'boolean') st.motionBlur = st.motionBlur ? 1 : 0
   if (isObj(st.cursor) && typeof st.cursor.smooth === 'boolean') {
     st.cursor.animation ??= st.cursor.smooth ? 'smooth' : 'none'
     delete st.cursor.smooth
   }
+  // Click effects renamed in format 3 (an enum string, so no format bump): the ripple is the wave,
+  // and the focus ring replaced the shockwave.
+  if (isObj(st.cursor)) st.cursor.click = ({ ripple: 'wave', shockwave: 'focus' } as Record<string, string>)[st.cursor.click] ?? st.cursor.click
   return st
 }
 
@@ -30,6 +33,7 @@ export function migrate(json: unknown, steps = MIGRATIONS, latest = PROJECT_VERS
     if (!steps[v]) throw new Error(`Grip can't upgrade projects from format ${v}.`)
     p = { ...steps[v](p), version: v + 1 }
   }
+  if (isObj(p.style)) upgradeStyle(p.style)
   if (isObj(p.sources)) fill(p, createProject('', p.sources as Project['sources']))
   return validateProject(p, latest)
 }

@@ -133,7 +133,7 @@ export interface Style {
     animation: 'smooth' | 'medium' | 'rapid' | 'none'
     hideIdle: boolean
     loop: boolean // return to start position at the end
-    click: 'none' | 'ripple' | 'circle' | 'shockwave'
+    click: 'none' | 'swell' | 'wave' | 'circle' | 'focus'
     clickSound: boolean
     /** system (default) = the recorded cursor images; builtin = our vector set (arrow, pointer,
      *  I-beam; other recorded shapes stay as recorded); touch = a touch circle everywhere. */
@@ -209,7 +209,7 @@ export const defaultStyle = (): Style => ({
   device: 'none',
   screenAnimation: 'focused',
   motionBlur: 1,
-  cursor: { visible: true, size: 1.6, animation: 'smooth', hideIdle: true, loop: false, click: 'ripple', clickSound: false, set: 'system' },
+  cursor: { visible: true, size: 1.6, animation: 'smooth', hideIdle: true, loop: false, click: 'swell', clickSound: false, set: 'system' },
   camera: {
     visible: true,
     size: 300,

@@ -1,7 +1,7 @@
 // Owner: compositor (overlays). Click effects, drawn strokes, keystroke groups, and caption pages in
 // OUTPUT time, plus drawOverlays() which paints them with Canvas 2D (text and keycaps get the
-// platform's font rendering) for the GPU compositor to layer on top. The ripple is the exception:
-// it bends the recording itself, so the compositor draws it (RIPPLE).
+// platform's font rendering) for the GPU compositor to layer on top. Click effects are the
+// exception: they live on the screen's glass, so the compositor draws them (CLICK_FX).
 // prepareOverlays maps every item through the one time map once per project revision and output size;
 // clicksAt / drawingsAt / keystrokesAt / captionAt are pure lookups, so any frame renders alone, in any order.
 
@@ -34,13 +34,44 @@ function upper(a: Array<{ start: number }>, t: number): number {
 
 // ---- Tuning (seconds, and lengths in units: 1 unit = min(w, h) / 1080 px). ----
 
-const ramp = (p: number) => { const x = clamp01(p / 0.08); return x * x * (3 - 2 * x) } // the ripple never pops in
-/** The ripple, drawn by the compositor (shaders.wgsl, ripples). At p = age / life its front has run
- *  out front(p) of `reach` units on a quint ease-out that brakes hard, and it keeps its full
- *  strength until a late fade. */
-export const RIPPLE = { reach: 220, life: 0.7, front: (p: number) => 1 - (1 - p) ** 5, strength: (p: number) => (1 - p ** 2.5) * ramp(p) }
+const smooth = (x: number) => { const k = clamp01(x); return k * k * (3 - 2 * k) }
+const ramp = (p: number) => smooth(p / 0.08) // a crest never pops in
+// ponytail: clicks don't track the release, so a long press or a drag plays like a quick click.
+// Pair each down with its up if long presses need their own look.
+const PRESS_FOR = 0.1
+const CIRCLE_SPRING = { stiffness: 2014, damping: 90, mass: 1 } // 0.14 s response, no bounce
+const CIRCLE_FADE = 0.38
+const FOCUS_SPRING = { stiffness: 584, damping: 39, mass: 1 } // 0.26 s response, a slight overshoot
+const FOCUS_LAND = 0.234 // the ring has about landed: it fades from here, or from the release if later
+const FOCUS_FADE = 0.25
 
-const CLICK_LIFE: Record<Click['style'], number> = { none: 0, ripple: RIPPLE.life, circle: 0.45, shockwave: 0.55 }
+type Effect = Exclude<Click['style'], 'none'>
+/** Click effects, drawn by the compositor on the screen's glass (shaders.wgsl, click effects). at(age)
+ *  gives the radius in units of the click's crest front, disc, or ring, and its strength 0..1;
+ *  both are 0 at age 0 and at `life`, so nothing pops in or out. */
+export const CLICK_FX: Record<Effect, { life: number; at: (age: number) => [number, number] }> = {
+  // One broad crest whose front keeps travelling as it fades all the way out.
+  swell: { life: 0.6, at: (t) => { const p = t / 0.6; return [320 * (1 - (1 - p) ** 3), (1 - p) * ramp(p)] } },
+  // A narrower crest on a quint ease that brakes hard, at full strength until a late fade.
+  wave: { life: 0.7, at: (t) => { const p = t / 0.7; return [220 * (1 - (1 - p) ** 5), (1 - p ** 2.5) * ramp(p)] } },
+  // A tinted disc settles to half size under the press, then grows to full size as it fades.
+  circle: {
+    life: PRESS_FOR + CIRCLE_FADE,
+    at: (t) => {
+      const a = springProgress(t, CIRCLE_SPRING)
+      const q = clamp01((t - PRESS_FOR) / CIRCLE_FADE)
+      return [30 * (0.5 * a + 0.5 * (1 - (1 - q) ** 3)), 0.2 * a * (1 - q * q)]
+    },
+  },
+  // A ring closes in from 48 to 15 units and locks onto the click, like a camera finding focus.
+  focus: {
+    life: Math.max(PRESS_FOR, FOCUS_LAND) + FOCUS_FADE,
+    at: (t) => {
+      const q = clamp01((t - Math.max(PRESS_FOR, FOCUS_LAND)) / FOCUS_FADE)
+      return [15 + 33 * (1 - springProgress(t, FOCUS_SPRING)), smooth(t / 0.1) * (1 - q * q)]
+    },
+  },
+}
 
 const KEY_H = 78 // keycap height incl. its side
 const KEY_GAP = 8 // between keycaps of one shortcut
@@ -122,7 +153,8 @@ export function clicksAt(o: Prepared, t: number): Click[] {
   const s = o.input.project.sources.screen
   const hi = upper(o.clicks, t)
   let lo = hi
-  while (lo > 0 && t - o.clicks[lo - 1].start < CLICK_LIFE[style]) lo--
+  const life = style === 'none' ? 0 : (CLICK_FX[style]?.life ?? 0) // a style from a newer app: none
+  while (lo > 0 && t - o.clicks[lo - 1].start < life) lo--
   const live = o.clicks.slice(lo, hi)
   const r = live.length && s ? screenAt(o.layout, t)?.screen : null
   if (!r || !s) return []
@@ -395,11 +427,11 @@ export function captionAt(o: Prepared, t: number): Caption | null {
 
 // ---- Drawing ----
 
-/** Paint drawings, clicks, keystrokes, and the caption for `scene` into a transparent 2D canvas of
- *  scene size. Drawings and clicks are drawn in zoomed space (apply scene.view) inside the screen's
- *  viewport, like the cursor; keystrokes and captions unzoomed. */
+/** Paint drawings, keystrokes, and the caption for `scene` into a transparent 2D canvas of scene
+ *  size. Drawings are drawn in zoomed space (apply scene.view) inside the screen's viewport, like
+ *  the cursor; keystrokes and captions unzoomed. */
 export function drawOverlays(ctx: Ctx, scene: Scene): void {
-  if (scene.clicks.length || scene.drawings.length) {
+  if (scene.drawings.length) {
     const v = scene.view
     const s = scene.screen
     ctx.save()
@@ -411,68 +443,18 @@ export function drawOverlays(ctx: Ctx, scene: Scene): void {
     ctx.translate(scene.width / 2, scene.height / 2)
     ctx.scale(v.scale, v.scale)
     ctx.translate(-v.center.x, -v.center.y)
-    if (s && scene.drawings.length) {
+    if (s) {
       // Ink stays on the recording: never on the inset band, the padding, or past rounded corners.
       const r = s.visible
-      ctx.save()
       ctx.beginPath()
       ctx.roundRect(r.x, r.y, r.w, r.h, Math.max(0, s.radius - s.inset))
       ctx.clip()
       for (const d of scene.drawings) paintStroke(ctx, d.points, d.color, d.width, d.opacity)
-      ctx.restore()
     }
-    if (s?.cropped) {
-      // A crop hides clicks past the shown part, like the content under them.
-      const r = s.visible
-      ctx.beginPath()
-      ctx.roundRect(r.x - s.inset, r.y - s.inset, r.w + 2 * s.inset, r.h + 2 * s.inset, s.radius)
-      ctx.clip()
-    }
-    for (const c of scene.clicks) drawClick(ctx, c, scene.unit)
     ctx.restore()
   }
   for (const k of scene.keystrokes) drawKeystroke(ctx, k, scene)
   if (scene.caption) drawCaption(ctx, scene.caption, scene)
-}
-
-const TAU = Math.PI * 2
-const VIOLET = '134 118 255'
-
-function ring(ctx: Ctx, x: number, y: number, r: number, width: number, color: string) {
-  ctx.beginPath()
-  ctx.arc(x, y, Math.max(r, 0), 0, TAU)
-  ctx.lineWidth = width
-  ctx.strokeStyle = color
-  ctx.stroke()
-}
-
-function drawClick(ctx: Ctx, c: Click, u: number) {
-  const p = c.age / CLICK_LIFE[c.style]
-  if (p < 0 || p >= 1) return
-  const fade = 1 - p
-  ctx.save()
-  if (c.style === 'circle') {
-    // A puck pressed under the cursor: pops in, then lets go. White rim with a dark hairline reads on any screen.
-    const r = 20 * u * (0.7 + 0.3 * easeOut(p * 4))
-    const a = clamp01(fade * 1.6)
-    ctx.beginPath()
-    ctx.arc(c.x, c.y, r, 0, TAU)
-    ctx.fillStyle = `rgb(${VIOLET} / ${0.3 * a})`
-    ctx.fill()
-    ring(ctx, c.x, c.y, r + 1.25 * u, 1 * u, `rgb(0 0 0 / ${0.3 * a})`)
-    ring(ctx, c.x, c.y, r, 2.5 * u, `rgb(255 255 255 / ${0.95 * a})`)
-  } else if (c.style === 'shockwave') {
-    // Two thin rings fly out fast and thin out; a tinted halo keeps them visible on light screens.
-    for (const [delay, reach] of [[0, 72], [0.18, 52]]) {
-      const q = clamp01((p - delay) / (1 - delay))
-      if (q <= 0 || q >= 1) continue
-      const r = (6 + (reach - 6) * easeOut(q)) * u
-      const w = (5 * (1 - q) + 1) * u
-      ring(ctx, c.x, c.y, r, w + 3 * u, `rgb(${VIOLET} / ${0.45 * (1 - q)})`)
-      ring(ctx, c.x, c.y, r, w, `rgb(255 255 255 / ${0.95 * (1 - q)})`)
-    }
-  }
-  ctx.restore()
 }
 
 const SYSTEM = '-apple-system, BlinkMacSystemFont, system-ui, sans-serif'

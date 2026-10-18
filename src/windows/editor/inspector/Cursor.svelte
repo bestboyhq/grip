@@ -49,9 +49,10 @@
     onchange={set('click')}
     options={[
       { value: 'none', label: 'None' },
-      { value: 'ripple', label: 'Ripple' },
+      { value: 'swell', label: 'Swell' },
+      { value: 'wave', label: 'Wave' },
       { value: 'circle', label: 'Circle' },
-      { value: 'shockwave', label: 'Shockwave' },
+      { value: 'focus', label: 'Focus' },
     ]}
   />
   <!-- Click effects and sounds play with the cursor hidden too, so they stay switchable. -->

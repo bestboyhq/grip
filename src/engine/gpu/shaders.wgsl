@@ -27,10 +27,10 @@ struct Frame {
   cam4: vec4f,     // camera source w, h
   lutMin: vec4f,
   lutMax: vec4f,
-  fin: vec4f,      // has overlay
+  fin: vec4f,      // has overlay, click effect (0 none, 1 swell, 2 wave, 3 circle, 4 focus ring)
   vp: vec4f,       // viewport (output px): the zoom view shows through it, everything outside is unzoomed
   vis: vec4f,      // shown part of the recording (unzoomed px): all of scr, or its crop; the frame is this grown by dev.w
-  clicks: array<vec4f, 4>, // click ripples: x, y, front radius (unzoomed px), strength
+  clicks: array<vec4f, 4>, // click effects: x, y, radius (unzoomed px), strength
   loupes: array<vec4f, 8>, // lenses at t, two slots each: center x, y (unzoomed), radius (unzoomed px), magnification;
                            // opacity, samples in loupeS (1: still), stretch (along the motion, length = elongation). Radius 0: none
   loupeS: array<vec4f, 72>, // each lens across the shutter: LENS_SAMPLES samples of two slots, laid out like loupes
@@ -242,21 +242,39 @@ fn screenAt(u: vec2f, aa: f32) -> vec4f {
   return masked(screenSample(uv, m), uv, m);
 }
 
-// ---- Click ripple: a shock wave on the screen's glass, refracting the recording under it ----
-// Each click raises one crest, h(r) = g((r - f) / w) + g((-r - f) / w) with g(x) = exp(-x^2), whose
-// front f runs out from the click (RIPPLE in overlays/index.ts eases it), mirrored so the surface
-// stays smooth at its center. The recording is sampled along the slope, so the crest magnifies what
-// it passes like a thin lens, strong dispersion bends the colors around it into a rainbow, and the
-// loupe's key light shades it so it still shows over flat UI. The cursor, drawn later, floats above.
+// ---- Click effects on the screen's glass (CLICK_FX in overlays/index.ts times them) ----
+// clicks[i] is x, y, radius (unzoomed px), strength; fin.y picks the effect: 1 swell, 2 wave,
+// 3 circle, 4 focus ring. They are drawn in this pass, so the loupe and motion blur carry them and
+// the cursor, drawn later, floats above.
+//
+// Swell and wave raise one crest per click, h(r) = g((r - f) / w) + g((-r - f) / w) with
+// g(x) = exp(-x^2), whose front f runs out from the click, mirrored so the surface stays smooth at
+// its center. The recording is sampled along the slope, so the crest magnifies what it passes like
+// a thin lens and dispersion bends the colors around it into a rainbow. Each crest stays several
+// times wider than its shift, so text bends and swells instead of folding into rainbow noise.
+// The swell is broad, unlit, and blurred along the bend. The wave is narrower and
+// catches the loupe's key light, so it still shows over flat UI.
 
-const RIPPLE_W = 10.0; // crest width, units
 const SLOPE = 0.857764; // steepest |g'|, sqrt(2 / e)
-const RIPPLE_SHIFT = 8.0 / SLOPE; // refraction at the steepest slope, units
-const RIPPLE_TILT = 0.6 / SLOPE; // surface tilt at the steepest slope, for the light
 
-// Slope of every live ripple at unzoomed point u: dimensionless, outward is uphill.
-fn ripples(u: vec2f) -> vec2f {
-  let w = RIPPLE_W * F.a.z;
+struct Crest {
+  w: f32,     // width, units
+  shift: f32, // refraction at the steepest slope, units
+  tilt: f32,  // surface tilt at the steepest slope, for the light
+  shade: f32, // how much the light brightens and darkens the slopes
+  spec: f32,  // specular highlight strength
+  disp: f32,  // dispersion: red bends 1 - disp as far as green, blue 1 + disp
+  blur: f32,  // smear along the bend, as a fraction of the shift
+}
+
+fn crest() -> Crest {
+  if (F.fin.y == 1.0) { return Crest(60.0, 6.0, 0.0, 0.0, 0.0, 0.72, 0.5); }
+  return Crest(22.0, 4.5, 0.45, 0.1, 0.6, 0.48, 0.0);
+}
+
+// Slope of every live crest at unzoomed point u: dimensionless, outward is uphill.
+fn ripples(u: vec2f, k: Crest) -> vec2f {
+  let w = k.w * F.a.z;
   var v = vec2f(0.0);
   for (var i = 0; i < 4; i++) {
     let c = F.clicks[i]; // x, y, front, strength
@@ -270,15 +288,69 @@ fn ripples(u: vec2f) -> vec2f {
   return v;
 }
 
-fn rippled(u: vec2f, v: vec2f, aa: f32) -> vec4f {
-  let off = v * RIPPLE_SHIFT * F.a.z;
+// The recording shifted by off, red bending least and blue most.
+fn bent(u: vec2f, off: vec2f, d: f32, aa: f32) -> vec4f {
   let s = screenAt(u + off, aa);
-  let rgb = vec3f(screenAt(u + off * 0.4, aa).r, s.g, screenAt(u + off * 1.6, aa).b); // red bends least, blue most
-  let n = normalize(vec3f(-v * RIPPLE_TILT, 1.0));
+  return vec4f(screenAt(u + off * (1.0 - d), aa).r, s.g, screenAt(u + off * (1.0 + d), aa).b, s.a);
+}
+
+fn rippled(u: vec2f, v: vec2f, k: Crest, aa: f32) -> vec4f {
+  let off = v * (k.shift / SLOPE) * F.a.z;
+  var s: vec4f;
+  if (k.blur > 0.0) { // taps along the bend: blur follows the distortion, still glass stays sharp
+    s = vec4f(0.0);
+    for (var i = 0; i < 7; i++) { s += bent(u, off * (1.0 + k.blur * (f32(i) / 3.0 - 1.0)), k.disp, aa); }
+    s /= 7.0;
+  } else {
+    s = bent(u, off, k.disp, aa);
+  }
+  let tilt = k.tilt / SLOPE;
+  let n = normalize(vec3f(-v * tilt, 1.0));
   let L = normalize(KEY);
   let lit = dot(n, L) / L.z - 1.0; // 0 on still glass, > 0 facing the light
-  let spec = pow(max(dot(n, normalize(L + vec3f(0.0, 0.0, 1.0))), 0.0), 90.0);
-  return vec4f(max(rgb * (1.0 + 0.15 * lit), vec3f(0.0)) + spec, max(s.a, min(length(v) * RIPPLE_TILT * 4.0, 1.0)));
+  let spec = pow(max(dot(n, normalize(L + vec3f(0.0, 0.0, 1.0))), 0.0), 90.0) * k.spec;
+  return vec4f(max(s.rgb * (1.0 + k.shade * lit), vec3f(0.0)) + spec, max(s.a, min(length(v) * tilt * 4.0, 1.0)));
+}
+
+const FOCUS_W = 2.5; // focus ring line width, units
+const FOCUS_TINT = vec3f(0.525, 0.463, 1.0); // violet, sRGB
+
+// The circle and the focus ring over the recording's color c at u: rgb and coverage (for the dither mark).
+fn clickMarks(c: vec3f, u: vec2f, aa: f32) -> vec4f {
+  var o = c;
+  var cover = 0.0;
+  let circle = F.fin.y == 3.0;
+  for (var i = 0; i < 4; i++) {
+    let k = F.clicks[i]; // x, y, radius, opacity
+    if (k.w <= 0.0) { continue; }
+    let r = length(u - k.xy);
+    if (circle) {
+      // A tinted disc, lighter in the middle with a crisp rim. It darkens light UI and lightens dark
+      // UI, with one tone per click taken from around it so it never flips color across text.
+      if (r > k.z + 2.0 * aa) { continue; }
+      var l = 0.0;
+      for (var j = 0; j < 8; j++) {
+        let ang = f32(j) * 0.785398;
+        l += dot(screenAt(k.xy + vec2f(cos(ang), sin(ang)) * 14.0 * F.a.z, aa).rgb, vec3f(0.2126, 0.7152, 0.0722));
+      }
+      let tone = select(vec3f(1.0), vec3f(0.0), l > 4.0);
+      let inside = 1.0 - smoothstep(k.z - aa, k.z + aa, r);
+      let rim = 1.0 - smoothstep(0.0, 1.5 * aa, abs(r - k.z + aa));
+      let rn = min(r / k.z, 1.0);
+      let a = k.w * clamp(inside * (0.55 + 0.45 * rn * rn) + 0.96 * rim, 0.0, 1.0);
+      o = mix(o, tone, a);
+      cover = max(cover, a);
+    } else {
+      // A violet line with a soft light rim that keeps it off dark text.
+      let w = FOCUS_W * F.a.z;
+      let d = abs(r - k.z);
+      let halo = exp(-pow(d / (1.8 * w + F.a.z), 2.0));
+      let line = 1.0 - smoothstep(0.5 * (w - aa), 0.5 * (w + aa), d);
+      o = mix(mix(o, vec3f(1.0), 0.5 * halo * k.w), FOCUS_TINT, 0.95 * line * k.w);
+      cover = max(cover, max(0.5 * halo, line) * k.w);
+    }
+  }
+  return vec4f(o, cover);
 }
 
 // Everything under the zoom view except the cursor, at unzoomed point u. rgb + dither mark.
@@ -292,9 +364,13 @@ fn zoomed(u: vec2f, aa: f32) -> vec4f {
   var mark = 1.0;
   let cv = frameCover(u, aa);
   if (cv > 0.0) {
-    let v = ripples(u);
+    let fx = F.fin.y;
     var s: vec4f;
-    if (dot(v, v) > 1e-8) { s = rippled(u, v, aa); } else { s = screenAt(u, aa); }
+    var v = vec2f(0.0);
+    var k: Crest;
+    if (fx == 1.0 || fx == 2.0) { k = crest(); v = ripples(u, k); }
+    if (dot(v, v) > 1e-8) { s = rippled(u, v, k, aa); } else { s = screenAt(u, aa); }
+    if (fx >= 3.0) { let m = clickMarks(s.rgb, u, aa); s = vec4f(m.rgb, max(s.a, m.a)); }
     c = mix(c, s.rgb, cv);
     mark = mix(1.0, s.a, cv);
   }

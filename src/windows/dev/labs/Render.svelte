@@ -59,7 +59,7 @@
     followFace: false,
     lut: true,
     overlay: false,
-    click: 'ripple' as Style['cursor']['click'],
+    click: 'swell' as Style['cursor']['click'],
     zooms: true, // the project's own zooms, when no lab loupe replaces them
   })
   let status = $state('loading')
@@ -304,7 +304,7 @@
     <label><input type="checkbox" bind:checked={s.followFace} /> follow face</label>
     <label><input type="checkbox" bind:checked={s.lut} /> LUT</label>
     <label><input type="checkbox" bind:checked={s.overlay} /> overlay</label>
-    <label>click <select bind:value={s.click}>{#each ['none', 'ripple', 'circle', 'shockwave'] as k}<option>{k}</option>{/each}</select></label>
+    <label>click <select bind:value={s.click}>{#each ['none', 'swell', 'wave', 'circle', 'focus'] as k}<option>{k}</option>{/each}</select></label>
     <label><input type="checkbox" bind:checked={s.zooms} /> project zooms</label>
     <label>zoom <input type="range" min="1" max="4" step="0.05" bind:value={s.zoom} /> {s.zoom}</label>
     <label>motion <input type="range" min="0" max="0.3" step="0.01" bind:value={s.motion} /></label>

@@ -147,8 +147,8 @@ Drag the preview straight into another app to drop the file.
   The lens refracts like real glass and stretches like liquid as it follows the cursor.
   Pick its size, and every new zoom keeps the look you chose last.
 - **A cursor worth watching.** Redrawn from events: smoothed, passing exactly through every click, hidden when idle, with motion blur.
-  Each click sends a ripple through the screen itself, and the loupe and zooms carry it.
-  Or pick a circle or a shockwave, click sounds, a larger size, or a touch-style circle.
+  Each click swells through the screen itself, and the loupe and zooms carry it.
+  Or pick a lit wave, a soft circle, or a focus ring that locks onto the click, plus click sounds, a larger size, or a touch-style circle.
 - **Keystrokes as keycaps.** Shortcuts appear as macOS keycaps in your own keyboard layout.
   Password fields stay private.
 
