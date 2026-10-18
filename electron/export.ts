@@ -21,6 +21,7 @@ import { basename, dirname, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { hidden, openWindow } from './windows.ts'
 import { projectsDir, readProject } from './projects.ts'
+import { accountToken, signIn } from './account.ts'
 import { shareFile } from './share.ts'
 import type { Project } from '../src/shared/project.ts'
 import { DESTINATIONS, jobOptions, safeFileName, uniqueName, type ExportOptions, type ExportRequest, type JobInfo, type JobSpec, type JobState } from '../src/engine/export/options.ts'
@@ -220,6 +221,8 @@ async function enqueue(parent: BrowserWindow | null, reqs: ExportRequest[]): Pro
   const taken = new Set<string>()
   for (const it of items) if (it.dest === 'file' && !it.path && it.dir && existsSync(it.dir)) it.path = freePath((lastDir = it.dir), it.name, it.ext, taken)
   if (!(await chooseFiles(parent, items.filter((it) => it.dest === 'file' && !it.path)))) return null
+  // Links need an account: sign in (in the browser) before an export that would only fail at upload.
+  if (items.some((it) => it.dest === 'share') && !accountToken() && !(await signIn())) return null
   const out = items.map((it) => {
     const id = crypto.randomUUID()
     // Clipboard, share, and temp exports land in a per-job temp folder, so the file keeps the project's name.

@@ -71,8 +71,10 @@
   async function run(dest: 'clipboard' | 'share', options: ExportOptions) {
     if (active) return
     try {
-      const [j]: JobInfo[] = await invoke('export:enqueue', [{ bundle, options, dest, quiet: true }])
-      job = seen.get(j.id) ?? j
+      // null: canceled, such as a link's sign-in left unfinished in the browser
+      const queued: JobInfo[] | null = await invoke('export:enqueue', [{ bundle, options, dest, quiet: true }])
+      if (!queued) return
+      job = seen.get(queued[0].id) ?? queued[0]
     } catch (e) {
       job = { state: 'failed', error: (e as Error).message } as JobInfo
     }

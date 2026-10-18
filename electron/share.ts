@@ -1,6 +1,7 @@
-// Owner: sharing. Share links through our server (server/). Uploads run here, in the background, and survive network
-// loss and app restarts (state in userData/share.json). The link exists, and is copied, as soon as the server knows
-// the item: long before the bytes are up, the link page shows the upload's progress.
+// Owner: sharing. Share links on the Bestboy platform (electron/upload.ts speaks its API), as the signed-in account
+// (electron/account.ts). Uploads run here, in the background, and survive network loss and app restarts (state in
+// userData/share.json). The link exists, and is copied, as soon as the server knows the item: long before the bytes
+// are up, the link page shows the upload's progress.
 //
 //   share:upload(path, {title?, private?, project?}) -> link, or null when canceled before the link existed.
 //                                         path: an exported video, or a .grip bundle (sent as an archive).
@@ -9,12 +10,11 @@
 //   share:status(jobId) -> Job            refresh views, comments, and privacy from the server
 //   share:update(jobId, {private}) -> Job
 //   share:cancel(jobId)                   stop the upload and delete the link
-//   share:copy(text)                      share:open(jobId): the link in the browser, as the owner (own views not counted)
-//   share:config(patch?) -> {url}         the share server, http://localhost:7433 unless STUDIO_SHARE_URL says otherwise
+//   share:copy(text)                      share:open(jobId): the link in the browser
 //   share:import(url) -> bundle path      open a shared project link in the editor; grip://open?url=<link> does the same
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { execFile } from 'node:child_process'
-import { randomBytes, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { createWriteStream, readFileSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
@@ -22,7 +22,8 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { ALL_FORMATS, FilePathSource, Input } from 'mediabunny'
-import { api, upload, type Upload } from '../server/client.ts'
+import { SERVER, accountToken, forget } from './account.ts'
+import { api, ShareError, upload, type Upload } from './upload.ts'
 import { projectsDir } from './projects.ts'
 import { openWindow } from './windows.ts'
 
@@ -40,7 +41,7 @@ export interface Job extends Upload {
   createdAt: number
 }
 
-const state = { url: process.env.STUDIO_SHARE_URL ?? 'http://localhost:7433', owner: '', jobs: [] as Job[] }
+const state = { jobs: [] as Job[] }
 let stateFile = ''
 const running = new Map<string, AbortController>()
 const waiters = new Map<string, { resolve(link: string | null): void; reject(e: Error): void }>()
@@ -77,12 +78,13 @@ function find(id: string): Job {
 
 /** Upload a video or .grip bundle in the background; resolves to the link (also used by export). */
 export async function shareFile(path: string, o: { title?: string; private?: boolean; project?: string } = {}): Promise<string | null> {
+  if (!accountToken()) throw new Error('Sign in to share links.')
   const s = await stat(path).catch(() => null)
   if (!s) throw new Error('The file to share is gone.')
   const kind = s.isDirectory() ? 'project' : 'video'
   const job: Job = {
     id: randomUUID(),
-    server: state.url,
+    server: SERVER,
     path,
     project: o.project ?? (kind === 'project' ? path : undefined),
     kind,
@@ -124,7 +126,8 @@ async function drive(job: Job) {
       job.mtimeMs = s.mtimeMs
       persist()
     }
-    const item = await upload(job.server, state.owner, job, {
+    if (job.kind === 'video' && !job.remote) job.meta ??= (await videoMeta(job.path)) ?? undefined
+    const item = await upload(job.server, accountToken(), job, {
       signal: ac.signal,
       progress(sent, st, note) {
         const changed = st !== job.state || note !== job.note
@@ -148,6 +151,7 @@ async function drive(job: Job) {
     if (job.kind === 'project') await rm(job.file, { force: true })
   } catch (e) {
     if (ac.signal.aborted) return
+    if (e instanceof ShareError && e.status === 401) forget()
     job.state = 'failed'
     job.note = plain(e)
     waiters.get(job.id)?.reject(new Error(job.note))
@@ -158,6 +162,20 @@ async function drive(job: Job) {
       persist()
       emit(job)
     }
+  }
+}
+
+/** A video's length and display size, which the link page lays out with before it loads. */
+async function videoMeta(path: string): Promise<Upload['meta'] | null> {
+  const input = new Input({ source: new FilePathSource(path), formats: ALL_FORMATS })
+  try {
+    const track = await input.getPrimaryVideoTrack()
+    if (!track) return null
+    return { duration: await input.computeDuration(), width: await track.getDisplayWidth(), height: await track.getDisplayHeight() }
+  } catch {
+    return null
+  } finally {
+    input.dispose()
   }
 }
 
@@ -191,7 +209,7 @@ export async function importProject(link: string, ask: boolean): Promise<string 
   const raw = link.startsWith('grip:') ? (new URL(link).searchParams.get('url') ?? '') : link
   const u = URL.canParse(raw) ? new URL(raw) : null
   if (!u || !/^https?:$/.test(u.protocol)) throw new Error('That is not a project link.')
-  if (/^\/v\/[\w-]{22}$/.test(u.pathname)) u.pathname += '/project.tar'
+  if (/^\/v\/[A-Za-z0-9]{12}$/.test(u.pathname)) u.pathname += '/project.tar' // the app origin sends it on to the media origin
   if (ask) {
     const { response } = await dialog.showMessageBox({
       type: 'question',
@@ -250,16 +268,12 @@ export function openSharedLink(url: string) {
 export function registerShare() {
   stateFile = join(app.getPath('userData'), 'share.json')
   try {
-    Object.assign(state, JSON.parse(readFileSync(stateFile, 'utf8')))
+    state.jobs = JSON.parse(readFileSync(stateFile, 'utf8')).jobs ?? []
   } catch {
     // first run, or a damaged file: start clean (the server keeps everything already shared)
   }
-  if (process.env.STUDIO_SHARE_URL) state.url = process.env.STUDIO_SHARE_URL
-  if (!state.owner) {
-    state.owner = randomBytes(32).toString('base64url')
-    persist()
-  }
-  for (const job of state.jobs) if (!['done', 'failed', 'canceled'].includes(job.state)) drive(job)
+  // Uploads to another server (an earlier one, or a local one in development) are not resumed here.
+  for (const job of state.jobs) if (job.server === SERVER && !['done', 'failed', 'canceled'].includes(job.state)) drive(job)
 
   ipcMain.handle('share:upload', (_e, path: string, o?: { title?: string; private?: boolean; project?: string }) => shareFile(path, o))
   ipcMain.handle('share:jobs', () => state.jobs)
@@ -267,7 +281,7 @@ export function registerShare() {
     const job = find(id)
     if (!job.remote) return job
     try {
-      const item = await api(job.server, state.owner, 'GET', `/api/items/${job.remote.id}`)
+      const item = await api(job.server, accountToken(), 'GET', `/api/items/${job.remote.id}`)
       Object.assign(job, { remote: item, private: item.private, link: item.link })
       persist()
       emit(job)
@@ -280,7 +294,7 @@ export function registerShare() {
     const job = find(id)
     if (typeof patch.private !== 'boolean') return job
     if (job.remote) {
-      const item = await api(job.server, state.owner, 'PATCH', `/api/items/${job.remote.id}`, { private: patch.private })
+      const item = await api(job.server, accountToken(), 'PATCH', `/api/items/${job.remote.id}`, { private: patch.private })
       Object.assign(job, { remote: item, private: item.private, link: item.link })
     } else job.private = patch.private // applied when the upload creates the item
     persist()
@@ -290,8 +304,8 @@ export function registerShare() {
   ipcMain.handle('share:cancel', async (_e, id: string) => {
     const job = find(id)
     // A finished link must really be gone before it leaves the list; an unfinished one is swept by the server anyway.
-    if (job.remote && job.state === 'done') await api(job.server, state.owner, 'DELETE', `/api/items/${job.remote.id}`)
-    else if (job.remote) api(job.server, state.owner, 'DELETE', `/api/items/${job.remote.id}`).catch(() => {})
+    if (job.remote && job.state === 'done') await api(job.server, accountToken(), 'DELETE', `/api/items/${job.remote.id}`)
+    else if (job.remote) api(job.server, accountToken(), 'DELETE', `/api/items/${job.remote.id}`).catch(() => {})
     running.get(job.id)?.abort()
     job.state = 'canceled'
     state.jobs = state.jobs.filter((j) => j !== job)
@@ -304,16 +318,7 @@ export function registerShare() {
   ipcMain.handle('share:copy', (_e, text: string) => clipboard.writeText(String(text)))
   ipcMain.handle('share:open', (_e, id: string) => {
     const job = find(id)
-    if (job.link) return shell.openExternal(`${job.link}#owner=${state.owner}`)
-  })
-  ipcMain.handle('share:config', (_e, patch?: { url?: string }) => {
-    if (patch?.url !== undefined) {
-      const u = URL.canParse(patch.url) ? new URL(patch.url) : null
-      if (!u || !/^https?:$/.test(u.protocol)) throw new Error('The share server URL must start with http:// or https://.')
-      state.url = u.origin + u.pathname.replace(/\/+$/, '')
-      persist()
-    }
-    return { url: state.url }
+    if (job.link) return shell.openExternal(job.link)
   })
   ipcMain.handle('share:import', (_e, url: string) => importProject(url, false))
 

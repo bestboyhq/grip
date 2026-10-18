@@ -12,9 +12,8 @@
     "build:native": "cd native && napi build --platform --release --dts index.d.ts --no-js",
     "start": "electron .",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "server": "node server/server.ts",
     "pretest": "node -e \"require('electron')\"",
-    "test": "node --test 'src/**/*.test.ts' 'electron/**/*.test.ts' 'server/**/*.test.ts' 'scripts/**/*.test.ts'",
+    "test": "node --test 'src/**/*.test.ts' 'electron/**/*.test.ts' 'scripts/**/*.test.ts'",
     "package": "npm run build && electron-builder --mac --publish never && if [ -n \"$APPLE_KEYCHAIN_PROFILE\" ]; then dmg=release/Grip-$npm_package_version-arm64.dmg && xcrun notarytool submit \"$dmg\" --keychain-profile \"$APPLE_KEYCHAIN_PROFILE\" --wait && xcrun stapler staple \"$dmg\"; fi"
   },
   "build": {
@@ -34,7 +33,6 @@
       "src/engine/**/*.ts",
       "src/assets/**/*.ts",
       "!src/**/*.test.ts",
-      "server/client.ts",
       "dist/**/*",
       "native/studio.*.node"
     ],

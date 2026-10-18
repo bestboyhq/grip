@@ -3,13 +3,19 @@
 //   grip://stop                                         finish the recording in progress
 //   grip://open?path=<absolute path to a .grip bundle>
 //   grip://open?url=<shared project link>               download it and open it (electron/share.ts)
+//   grip://auth?code=<code>&state=<state>               the browser finishing sign-in (electron/account.ts)
 // Launch arguments: `[--open] <bundle.grip | video.mp4>`, `grip://` URLs, `--lab <Name>` (dev).
 // Pure: no electron imports, so node:test can run it.
 import { closeSync, constants, mkdirSync, openSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
 export type Mode = 'display' | 'window' | 'area' | 'device'
-export type UrlAction = { kind: 'record'; mode?: Mode } | { kind: 'stop' } | { kind: 'open'; path: string } | { kind: 'import'; url: string }
+export type UrlAction =
+  | { kind: 'record'; mode?: Mode }
+  | { kind: 'stop' }
+  | { kind: 'open'; path: string }
+  | { kind: 'import'; url: string }
+  | { kind: 'auth'; code: string; state: string }
 
 const MODES = ['display', 'window', 'area', 'device']
 
@@ -29,6 +35,11 @@ export function parseGripUrl(url: string): UrlAction | null {
     return mode && MODES.includes(mode) ? { kind: 'record', mode: mode as Mode } : { kind: 'record' }
   }
   if (action === 'stop') return { kind: 'stop' }
+  if (action === 'auth') {
+    const code = query.get('code') ?? ''
+    const state = query.get('state') ?? ''
+    return /^[\w-]{16,128}$/.test(code) && /^[\w-]{16,128}$/.test(state) ? { kind: 'auth', code, state } : null
+  }
   if (action === 'open') {
     const url = query.get('url')
     if (url) return /^https?:\/\//i.test(url) ? { kind: 'import', url } : null

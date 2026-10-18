@@ -1,9 +1,11 @@
 <!-- Owner: sharing. The editor top bar's Share button: a popover that shares the video or the whole editable project
-     as a link, with upload progress, copy link, and a private toggle. Uploads run in the main process
+     as a link, with upload progress, copy link, and a private toggle; signed out, it offers sign-in first, and
+     signed in, it shows the team's uploads this month. Uploads run in the main process
      (electron/share.ts) and carry on when the popover closes, the window closes, or the app restarts.
      Mount: <ShareButton exportVideo={...} />, where exportVideo(progress?, signal?) exports the open project and resolves
      to the MP4 path (the file must stay until the upload is done), reporting 0..1 progress and stopping when signal aborts. -->
 <script lang="ts">
+  import type { Account } from '../../../../electron/account.ts'
   import type { Job } from '../../../../electron/share.ts'
   import { doc, save } from '../../../lib/doc.svelte.ts'
   import { invoke, on } from '../../../lib/ipc.ts'
@@ -19,13 +21,30 @@
   let toast = $state('')
   let toastTimer: ReturnType<typeof setTimeout> | undefined
 
+  let account = $state.raw<Account | null | undefined>() // undefined until known
+  let signing = $state(false)
+
   invoke('share:jobs').then((all: Job[]) => (jobs = all))
+  invoke('account:get').then((a: Account | null) => (account = a))
   $effect(() =>
     on('share:progress', (j: Job) => {
+      const finished = j.state === 'done' && jobs.find((x) => x.id === j.id)?.state !== 'done'
       const rest = jobs.filter((x) => x.id !== j.id)
       jobs = j.state === 'canceled' ? rest : [...rest, j]
+      if (finished) invoke('account:get').then((a: Account | null) => (account = a)) // one upload more this month
     }),
   )
+  $effect(() => on('account:changed', (a: Account | null) => (account = a)))
+
+  async function signIn() {
+    error = ''
+    signing = true
+    try {
+      account = await invoke('account:sign-in')
+    } finally {
+      signing = false
+    }
+  }
 
   const latest = (k: 'video' | 'project') =>
     jobs.filter((j) => j.kind === k && j.project === doc.path).sort((a, b) => b.createdAt - a.createdAt)[0]
@@ -102,6 +121,7 @@
   function toggled(e: ToggleEvent) {
     if (e.newState !== 'open') return
     error = ''
+    invoke('account:get').then((a: Account | null) => (account = a)) // this month's uploads
     for (const j of [latest('video'), latest('project')]) if (j?.state === 'done') invoke('share:status', j.id)
   }
 </script>
@@ -140,6 +160,9 @@
       </div>
       <div class="bar"><div style:width="{exporting.p * 100}%"></div></div>
       <div class="row actions"><button class="text" onclick={() => exporting?.stop.abort()}>Cancel</button></div>
+    {:else if !job && account === null}
+      <p class="lead">Links live on bestboy.dev and need a free account. Sign in once, in your browser.</p>
+      <button class="primary wide" onclick={signIn} disabled={signing}>{signing ? 'Finish signing in in your browser…' : 'Sign in'}</button>
     {:else if !job}
       <p class="lead">
         {kind === 'video'
@@ -194,6 +217,9 @@
       </div>
     {/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if account?.usage.limit != null}
+      <p class="hint">{account.usage.uploads} of {account.usage.limit} uploads this month · {account.team.name}</p>
+    {/if}
   </div>
 
   <label class="private">
