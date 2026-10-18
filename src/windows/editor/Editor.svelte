@@ -19,7 +19,7 @@
   import AspectPicker from './AspectPicker.svelte'
   import CropDialog from './CropDialog.svelte'
   import Timeline from './timeline/Timeline.svelte'
-  import ExportDialog, { exportVideo } from './export/ExportDialog.svelte'
+  import ExportButton, { exportVideo } from './export/ExportButton.svelte'
   import ShareButton from './share/ShareButton.svelte'
   import { commandForMenu, registerCommands, run } from './commands/registry.ts'
   import { reason } from './helpers.ts'
@@ -211,7 +211,7 @@
         <span class="sep"></span>
         <Presets />
         <ShareButton {exportVideo} />
-        <ExportDialog />
+        <ExportButton />
       </div>
     {/if}
   </header>
