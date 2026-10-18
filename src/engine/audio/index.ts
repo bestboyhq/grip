@@ -1,6 +1,6 @@
 // Owner: audio. One audio graph for preview and export (parity): mic + system + music, per-clip
 // volume, pitch-preserving time-stretch for speed changes, voice chain (noise reduction ->
-// loudness normalization -> limiter), click sounds. Everything in output time via the time map.
+// compressor -> loudness normalization -> limiter), click sounds. Everything in output time via the time map.
 // The graph is ./mix.ts; it runs in a worker (./worker.ts). This module is the main-thread API.
 
 import type { Prepared } from '../scene.ts'

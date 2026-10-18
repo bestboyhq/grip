@@ -162,7 +162,7 @@ Drag the preview straight into another app to drop the file.
 
 - **Captions written on your Mac.** NVIDIA Parakeet v3 transcribes 25 European languages on device, with timing for every word.
   Show them a line or a word at a time, fading or sliding in.
-- **A voice that sounds produced.** Noise reduction, speech loudness normalized to -16 LUFS, and a limiter so nothing clips.
+- **A voice that sounds produced.** Noise reduction, a compressor that keeps quiet phrases audible, loudness normalized to -14 LUFS like online video, and a limiter so nothing clips.
 - **A clean frame, your call.** New recordings show the screen edge to edge.
   Pick a wallpaper and Grip adds the padding to show it, and one undo takes both back.
   Rounded corners and a soft shadow are a slider away.

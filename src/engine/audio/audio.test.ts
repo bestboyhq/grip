@@ -8,7 +8,7 @@ import { BlobSource } from 'mediabunny'
 import type { Clip } from '../../shared/project.ts'
 import { createProject } from '../../shared/project.ts'
 import { timeMap, toOutput } from '../../shared/timemap.ts'
-import { CEILING, Limiter, LoudnessMeter, SR, scrubGrain, sincTable, interpolate, voiceGain } from './dsp.ts'
+import { CEILING, Limiter, LoudnessMeter, SR, VOICE_LUFS, scrubGrain, sincTable, interpolate, voiceGain } from './dsp.ts'
 import { Mixer, planOf, type Env, type Plan } from './mix.ts'
 import { analyze, loudness, openAudio, queryPeaks, Reader } from './source.ts'
 import type { PlaybackMessage } from './playback.worklet.ts'
@@ -204,7 +204,17 @@ test('the limiter holds the true-peak ceiling', async () => {
 })
 
 const rms = (a: Float32Array, s: number, e: number) => Math.sqrt(a.subarray(s, e).reduce((acc, v) => acc + v * v, 0) / (e - s))
-const gainOf = async (url: string) => voiceGain(await loudness(await openAudio(new BlobSource(files.get(url)!), url), await env.rnnoise()))
+async function gainOf(url: string) {
+  const l = await loudness(await openAudio(new BlobSource(files.get(url)!), url), await env.rnnoise())
+  return l ? voiceGain(l.speech, l.compressed) : 1
+}
+/** Integrated loudness of a mono voice track as the mixer plays it. */
+async function played(url: string, seconds: number) {
+  const [L, R] = await render(plan([clip(0, seconds)], [{ url, label: url, volume: 1, voice: true }]))
+  const m = new LoudnessMeter()
+  m.push([L, R])
+  return m.integrated()!
+}
 /** A harmonic "voice" at 160 Hz, peak about 3: RNNoise hears it as speech. */
 function voiced(i: number) {
   let v = 0
@@ -212,7 +222,7 @@ function voiced(i: number) {
   return v
 }
 
-test('voice chain: RNNoise removes noise in pauses, keeps timing, applies loudness gain', async () => {
+test('voice chain: RNNoise removes noise in pauses, keeps timing, the voice plays at the target loudness', async () => {
   // A harmonic "voice" from 1.0 s to 2.0 s over fan rumble and mains hum.
   let seed = 7
   let lp = 0
@@ -226,7 +236,9 @@ test('voice chain: RNNoise removes noise in pauses, keeps timing, applies loudne
   const wet = (await render(plan([clip(0, 3)], [{ url: 'voice', label: 'voice.wav', volume: 1, voice: true }])))[0]
   const g = await gainOf('voice')
   assert.ok(rms(wet, 0.3 * SR, 0.9 * SR) / g < rms(dry, 0.3 * SR, 0.9 * SR) / 4, 'noise in the pause drops by more than 12 dB')
-  near(rms(wet, 1.2 * SR, 1.8 * SR) / rms(dry, 1.2 * SR, 1.8 * SR) / g, 1, 0.25, 'voice keeps its level times the loudness gain')
+  const voice = new LoudnessMeter()
+  voice.push([wet, wet])
+  near(voice.integrated()!, VOICE_LUFS, 0.5, 'the voice plays at the target loudness')
   // Onset of the voice (latency compensated): within 10 ms of the dry onset.
   const onset = (a: Float32Array) => a.findIndex((v, i) => i > 0.9 * SR && Math.abs(v) > 0.05) / SR
   near(onset(wet), onset(dry), 0.01, 'voice onset')
@@ -243,23 +255,22 @@ test('a quiet voice plays normalized from the first chunk a fresh mixer renders,
   const [preview] = await render(p, 0, 20 * SR, 9600)
   const [exported] = await render(p)
   assert.ok(preview.every((v, i) => v === exported[i]), 'preview and export are bit-identical from the first chunk')
-  near(rms(preview, 0.05 * SR, 0.2 * SR) / rms(x, 0.05 * SR, 0.2 * SR) / g, 1, 0.25, 'the first chunk already plays at the loudness gain')
+  near(rms(preview, 0.05 * SR, 0.2 * SR) / rms(preview, 4.05 * SR, 4.2 * SR), 1, 0.1, 'the first chunk already plays as loud as the same phrase later')
   const m = new LoudnessMeter()
   m.push([preview, preview])
-  near(m.integrated()!, -16, 1, 'voice loudness')
+  near(m.integrated()!, VOICE_LUFS, 0.5, 'voice loudness')
 })
 
 test('voice loudness: a short file is measured whole, a long one from evenly spread windows', async () => {
-  // A voice whose level changes every 5 s within 6 dB. No pauses: every window is speech, so the
-  // speech gate keeps them all and an ungated meter is the reference.
+  // A voice whose level changes every 5 s within 6 dB, in 4 s phrases.
   const level = (k: number) => 0.03 * 10 ** ((Math.abs((Math.sin(k * 12.9898 + 1) * 43758.5453) % 1) * 6 - 3) / 20)
-  const x = Float32Array.from({ length: 100 * SR }, (_, i) => level(Math.floor(i / SR / 5)) * voiced(i))
-  const whole = new LoudnessMeter()
-  whole.push([x, x]) // a mono source is heard on both channels
-  const f = await openAudio(new BlobSource(wav([x])), 'speech.wav')
+  const x = Float32Array.from({ length: 100 * SR }, (_, i) => ((i / SR) % 5 < 4 ? level(Math.floor(i / SR / 5)) * voiced(i) : 0))
+  files.set('speech', wav([x]))
+  near(await played('speech', 100), VOICE_LUFS, 0.3, 'up to 64 windows: every block, the voice plays at the target')
+  const f = await openAudio(new BlobSource(files.get('speech')!), 'speech.wav')
   const rnnoise = await env.rnnoise()
-  near((await loudness(f, rnnoise))!, whole.integrated()!, 0.01, 'up to 64 windows: every block, as one meter over the whole file')
-  near((await loudness(f, rnnoise, 10))!, whole.integrated()!, 0.3, 'more: windows spread evenly estimate the whole-file loudness')
+  const db = (l: Awaited<ReturnType<typeof loudness>>) => 20 * Math.log10(voiceGain(l!.speech, l!.compressed))
+  near(db(await loudness(f, rnnoise, 10)), db(await loudness(f, rnnoise)), 0.3, 'more: windows spread evenly estimate the same gain')
   assert.equal(await loudness(await openAudio(new BlobSource(wav([new Float32Array(SR)])), 'silence.wav'), rnnoise), null)
 })
 
@@ -276,7 +287,7 @@ test('voice loudness counts speech only: a mic that caught room tone and trackpa
   assert.equal(await loudness(await open(room, 'room.wav'), rnnoise), null, 'no speech, no loudness: the voice gain stays 1')
   // Speech over the same room: measured as the speech alone.
   const voice = Float32Array.from(room, (_, i) => ((i / SR) % 4 < 2 ? 0.01 * voiced(i) : 0))
-  near((await loudness(await open(room.map((v, i) => v + voice[i]), 'talk.wav'), rnnoise))!, (await loudness(await open(voice, 'voice.wav'), rnnoise))!, 0.5, 'speech over clicks')
+  near((await loudness(await open(room.map((v, i) => v + voice[i]), 'talk.wav'), rnnoise))!.speech, (await loudness(await open(voice, 'voice.wav'), rnnoise))!.speech, 0.5, 'speech over clicks')
 })
 
 test('music made to loop plays straight through its seams', async () => {
