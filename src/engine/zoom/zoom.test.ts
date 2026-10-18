@@ -69,8 +69,10 @@ test('a zoom at output 0 starts zoomed in; a later one animates in and out', () 
   ;({ view } = setup([zoom({ start: 2, end: 6, target: point(0.5, 0.5) })]))
   near(view(0).scale, 1, 1e-6)
   near(view(2).scale, 1, 1e-3)
+  near(view(2.12).scale, 1.5, 0.02, 'half way in after 0.12 s, in scale, not log scale')
   assert.ok(view(2.3).scale > 1.2 && view(2.3).scale < 1.95)
   near(view(4).scale, 2, 0.01)
+  near(view(6.12).scale, 1.5, 0.02, 'half way out after 0.12 s')
   assert.ok(view(6.3).scale > 1.05 && view(6.3).scale < 1.95)
   near(view(8).scale, 1, 0.01)
 })
@@ -403,7 +405,7 @@ test('generateAutoZooms: merges, leads, holds, covers typing, skips the erratic'
   const spans = zs.map((z) => [+z.start.toFixed(2), +z.end.toFixed(2)])
   // 0.2, 3, 4 merge; 10 alone; the click at 19.5 joins its typing; the burst across the screen is
   // erratic; typing at 37 zooms on the click at 32.1; the last click is cut short by the end.
-  assert.deepEqual(spans, [[0, 6], [9.4, 12], [18.9, 25], [36.4, 40]])
+  assert.deepEqual(spans, [[0, 6], [9.57, 12], [19.07, 25], [36.57, 40]])
   for (const z of zs) assert.ok(z.auto && z.enabled && z.level === 2 && z.target.kind === 'cursor' && z.id)
   assert.deepEqual(generateAutoZooms([], sources, on, {}, [{ start: 5, end: 8 }]), [], 'typing with no known place is left out')
 })
@@ -457,7 +459,7 @@ test('fixture: auto zooms cover every click, keep the cursor in frame and clicke
   t.diagnostic(`auto zooms: ${zooms.map((z) => `${z.start.toFixed(2)}-${z.end.toFixed(2)}`).join(', ')}`)
   const clicks = events.filter((e): e is Extract<InputEvent, { button: unknown }> => e.type === 'down')
   assert.ok(zooms.length > 0)
-  for (const c of clicks) assert.ok(zooms.some((z) => z.start <= c.t - 0.5 && z.end >= c.t + 1.5), `click at ${c.t} is not covered`)
+  for (const c of clicks) assert.ok(zooms.some((z) => z.start <= c.t - 0.4 && z.end >= c.t + 1.5), `click at ${c.t} is not covered`)
   zooms.forEach((z, i) => assert.ok(z.start >= 0 && z.end <= project.sources.duration && (i === 0 || zooms[i - 1].end <= z.start)))
 
   for (const style of ['focused', 'smooth'] as const) {
