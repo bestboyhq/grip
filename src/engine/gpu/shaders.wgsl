@@ -601,23 +601,34 @@ fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, fringe: bool) -> vec
   return vec4f(col * cv, cv);
 }
 
-// Every lens over output pixel p at shutter time f (< 0: at t), and the dim around them.
+// Every lens over output pixel p at shutter time f (< 0: at t).
 fn lensesAt(p: vec2f, f: f32, fringe: bool) -> vec4f {
   let vt = select(viewAt(f), F.viewT.xyz, f < 0.0);
   let u = unview(p, vt);
   let aa = 1.0 / vt.z;
   let cs = curAt(select(f, 0.5, f < 0.0));
   var out = vec4f(0.0);
-  var dim = 0.0;
   for (var i = 0u; i < LENSES; i++) {
     if (F.loupes[2u * i].z <= 0.0) { continue; }
-    let L = lensOf(i, f);
-    let l = lensAt(L, u, vt, aa, cs, fringe);
+    let l = lensAt(lensOf(i, f), u, vt, aa, cs, fringe);
     out = l + out * (1.0 - l.a);
-    let d = max(length(u - L.a.xy + normalize(KEY.xy) * AROUND_SHIFT * L.a.z) - L.a.z, 0.0) / (AROUND_REACH * L.a.z);
-    dim = max(dim, AROUND * L.b.x / (1.0 + d * d));
   }
-  return vec4f(out.rgb, out.a + dim * (1.0 - out.a));
+  return out;
+}
+
+// The dim around the lenses at t, drawn just under them: rgb multiplies the frame, alpha raises the
+// dither mark. Over video the mark is 0, and a dim this broad quantizes to 8 bits as rings 10-30 px
+// wide, so it marks every pixel it darkens by half a level or more.
+@fragment fn fs_lensdim(v: VO) -> @location(0) vec4f {
+  let u = unview(v.pos.xy, F.viewT.xyz);
+  var dim = 0.0;
+  for (var i = 0u; i < LENSES; i++) {
+    let L = F.loupes[2u * i];
+    if (L.z <= 0.0) { continue; }
+    let d = max(length(u - L.xy + normalize(KEY.xy) * AROUND_SHIFT * L.z) - L.z, 0.0) / (AROUND_REACH * L.z);
+    dim = max(dim, AROUND * F.loupes[2u * i + 1u].x / (1.0 + d * d));
+  }
+  return vec4f(vec3f(1.0 - dim), min(dim * 510.0, 1.0));
 }
 
 // Output px the content under p travels across the shutter through a lens: the lens gliding, its

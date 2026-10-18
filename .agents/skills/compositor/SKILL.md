@@ -11,6 +11,7 @@ GPU composition of each output frame.
 - New projects start plain: the recording edge to edge, with no background, padding, corners, or shadow.
   Picking a background while none would show adds padding so it does.
 - Backgrounds: wallpapers, gradients, colors, images, blur, with gradients dithered so they show no banding.
+- Video stays undithered, but a broad ramp drawn over it, like the loupe's dim, must raise the dither mark too, or flat UI under it bands into rings.
 - Rounded corners and shadows are antialiased on light and dark backgrounds at every scale.
 - Output aspect ratios: auto, 16:9, 9:16, 4:5, 1:1, and custom.
 - Sensitive-data masks blur or pixelate and take their color from what they cover; highlight masks dim the rest.
