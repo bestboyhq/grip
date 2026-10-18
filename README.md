@@ -22,13 +22,13 @@
 </p>
 
 <p align="center">
-  <img src=".github/readme/hero.gif" width="100%" alt="A deployments dashboard polished by Grip on a pastel iridescent wallpaper: the view zooms in as the cursor glides to the Deploy button, the click sends a ripple through the screen, a new build slides in as Building and turns Ready, and the view eases back out into a seamless loop.">
+  <img src=".github/readme/hero.gif" width="100%" alt="A deployments dashboard polished by Grip on a pastel iridescent wallpaper: the view zooms in as the cursor glides to the Deploy button, the click swells through the screen, a new build slides in as Building, a glass loupe magnifies its timer as it counts up, and the build turns Ready as the cursor glides back to its start.">
 </p>
 
 <p align="center">
   <sub>Exported by Grip from a raw 6-second take.
-  The zoom, the gliding cursor, and the click ripple are automatic.
-  The only edits: a wallpaper and a larger cursor that returns to its start, so the GIF loops.</sub>
+  The zoom, the gliding cursor, and the click swell are automatic.
+  The only edits: a trim, a wallpaper, a glass loupe on the new build, and a larger cursor that returns to its start, so the GIF loops.</sub>
 </p>
 
 ---
