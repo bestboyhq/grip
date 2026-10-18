@@ -19,7 +19,7 @@
   import AspectPicker from './AspectPicker.svelte'
   import CropDialog from './CropDialog.svelte'
   import Timeline from './timeline/Timeline.svelte'
-  import ExportDialog, { exportVideo } from './export/ExportDialog.svelte'
+  import ExportButton, { exportVideo } from './export/ExportButton.svelte'
   import ShareButton from './share/ShareButton.svelte'
   import { commandForMenu, registerCommands, run } from './commands/registry.ts'
   import { reason } from './helpers.ts'
@@ -28,7 +28,6 @@
   let { params }: { params: URLSearchParams } = $props()
 
   let error = $state('')
-  let exportOpen = $state(false)
   let cropOpen = $state(false)
   let notice = $state('')
   let gone = false // moved to the Trash: nothing may write to the bundle any more
@@ -91,7 +90,6 @@
 
   $effect(() =>
     registerCommands([
-      { id: 'project.export', group: 'Project', title: 'Export…', keys: ['⌘E'], run: () => (exportOpen = true), enabled: () => !!doc.project },
       { id: 'project.reveal', group: 'Project', title: 'Show in Finder', run: reveal, enabled: () => !!doc.project },
       { id: 'project.crop', group: 'Project', title: 'Crop…', run: () => (cropOpen = true), enabled: () => !!doc.project?.sources.screen },
     ]),
@@ -213,7 +211,7 @@
         <span class="sep"></span>
         <Presets />
         <ShareButton {exportVideo} />
-        <button class="btn primary export" onclick={() => (exportOpen = true)} {@attach tooltip('Export', '⌘E')}><Icon name="export" size={16} />Export</button>
+        <ExportButton />
       </div>
     {/if}
   </header>
@@ -251,7 +249,6 @@
       <Inspector />
     </main>
     <div class="timeline"><Timeline /></div>
-    <ExportDialog bind:open={exportOpen} />
     <CropDialog bind:open={cropOpen} />
   {/if}
 </div>
@@ -276,7 +273,6 @@
   .name:focus { background: var(--surface-100); box-shadow: var(--hairline); }
   .actions { justify-self: end; display: flex; align-items: center; gap: 4px; }
   .sep { width: 0.5px; height: 18px; margin: 0 6px; background: var(--edge-strong); }
-  .export { margin-left: 4px; padding: 0 12px 0 10px; height: 28px; }
   .confirm { width: 280px; padding: 6px 6px 2px; }
   .confirm p { margin: 0 0 12px; font-size: 12.5px; line-height: 1.45; color: var(--text-dim); }
   .confirm strong { display: block; margin-bottom: 4px; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }

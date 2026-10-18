@@ -17,5 +17,7 @@ Encoding, muxing, and delivery of the final video.
 - GIF export: per-scene palettes with dithering, loop count, and a size target.
 - Destinations: file, clipboard, share link.
   Batch export asks for every destination first, then runs unattended in the background while the user keeps editing.
+- Export is one click: it repeats the last export, settings and destination alike (a file lands in the same folder unasked), and the ▾ menu beside it changes them, each setting in a submenu like any macOS menu.
+  An export never holds the user: the menu closes as it starts, the button and the menu bar icon carry the progress ring, and a notification says when it is done.
 
 Done when a 2-hour 4K project exports without a stall, matches the preview frame for frame, and opens everywhere.

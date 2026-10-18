@@ -252,7 +252,7 @@ test('loupe fades in and out, magnifies, and follows its target', () => {
   near(on.opacity, 1, 0.01)
   near(on.scale, 2.5, 0.02)
   const lag = cursorAt(p.cursor, 3.5)!.x - on.x
-  assert.ok(lag > 0 && lag < 0.05 * on.radius, `trails the cursor on a spring, close behind: ${lag}`)
+  assert.ok(Math.abs(lag) < 0.01 * on.radius, `a spring aimed ahead keeps a gliding cursor centered: ${lag}`)
   assert.ok(on.stretch.x > 0 && Math.abs(on.stretch.y) < 1e-6, 'liquid: stretches along its motion')
   const rigid = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 2.5, rigid: true })], events, { duration: 10 })
   assert.deepEqual(loupeAt(rigid.p.zoom, 3.5)!.stretch, { x: 0, y: 0 })
@@ -266,6 +266,22 @@ test('loupe fades in and out, magnifies, and follows its target', () => {
   assert.ok(fadeOut.opacity > 0 && fadeOut.opacity < 1)
   assert.equal(loupeAt(p.zoom, 6), null)
   near(view(3.5).scale, 1, 1e-9) // a loupe never moves the camera
+})
+
+test('a fast flick never leaves the lens: the cursor stays on its magnifying flat top, and the lens never jumps', () => {
+  const events = moves([[0, 400, 400], [3, 400, 400], [3.3, 2500, 1500], [3.6, 2500, 1500], [3.8, 600, 1600], [10, 600, 1600]])
+  for (const look of [{ level: 2, size: 360 }, { level: 4, size: 60 }]) {
+    const { p } = setup([zoom({ start: 1, end: 8, mode: 'loupe', rigid: true, ...look })], events, { duration: 10 })
+    let was = loupeAt(p.zoom, 2)!
+    for (const t of frames(2, 7, 120).slice(1)) {
+      const l = loupeAt(p.zoom, t)!
+      const c = cursorAt(p.cursor, t)!
+      const off = Math.hypot(c.x - l.x, c.y - l.y) / ((0.85 * l.radius) / l.scale)
+      assert.ok(off <= 0.7 + 1e-3, `cursor ${off.toFixed(2)} of the flat top out at t=${t.toFixed(3)} (${JSON.stringify(look)})`)
+      assert.ok(Math.hypot(l.x - was.x, l.y - was.y) < 150, `no jump at t=${t.toFixed(3)}`)
+      was = l
+    }
+  }
 })
 
 test('a loupe pops: most of the way in a tenth of a second, gone in a third', () => {

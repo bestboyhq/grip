@@ -1,9 +1,9 @@
-<!-- Export lab: the export dialog over an editor-like backdrop, for a project given as
-     #/dev?lab=Export&project=<absolute .grip path>. -->
+<!-- Export lab: the title bar's Export button with its menu open, at the right edge like in the
+     editor, for a project given as #/dev?lab=Export&project=<absolute .grip path>. -->
 <script lang="ts">
   import { doc } from '../../../lib/doc.svelte.ts'
   import { invoke } from '../../../lib/ipc.ts'
-  import ExportDialog from '../../editor/export/ExportDialog.svelte'
+  import ExportButton from '../../editor/export/ExportButton.svelte'
 
   let { params }: { params: URLSearchParams } = $props()
   let open = $state(false)
@@ -24,16 +24,21 @@
   })
 </script>
 
-<main>
-  <button class="btn" onclick={() => (open = true)}>Export…</button>
-  {#if error}<p>{error}</p>{:else if !path}<p>Add &project=&lt;bundle path&gt; to the URL.</p>{/if}
-</main>
-<ExportDialog bind:open />
+<div class="bar">
+  <span>{error || (path ? (doc.project?.name ?? '') : 'Add &project=<bundle path> to the URL.')}</span>
+  <ExportButton bind:open />
+</div>
 
 <style>
-  main {
-    height: 100vh;
-    padding: 16px;
+  .bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 40px;
+    padding: 0 12px 0 84px;
+    background: var(--surface-root);
+  }
+  :global(body) {
     background: var(--surface-root);
   }
 </style>

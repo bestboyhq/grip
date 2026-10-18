@@ -1,11 +1,11 @@
 // Owner: export. The export queue and the "export:*" IPC channels.
 // Each job runs in its own hidden window (#/export?job=<id>), so a crash there cannot take down the
-// editor and editing stays responsive. Jobs run one at a time, unattended, with a notification when
-// the queue drains. The window streams the file here through export:write: positioned writes into
+// editor and editing stays responsive. Jobs run one at a time, unattended: the menu bar icon turns
+// into a progress ring (electron/shell/tray.ts), and a notification says when the queue drains. The window streams the file here through export:write: positioned writes into
 // a hidden ".<name>.partial" beside the destination, renamed into place only once complete.
 //
 // Editor:
-//   export:enqueue(ExportRequest[]) -> JobInfo[] | null   asks for every destination first; null = canceled
+//   export:enqueue(ExportRequest[]) -> JobInfo[] | null   asks for every destination not given; null = canceled
 //   export:batch(ExportOptions) -> JobInfo[] | null       pick projects, then a folder, then export them all
 //   export:list() -> JobInfo[]       export:cancel(id)    export:reveal(id)    export:clear()
 //   event export:update(JobInfo) on every change
@@ -14,7 +14,7 @@
 //   export:done(id, size)        export:fail(id, message)
 // Share links: once the file is complete, main hands it to share:upload (electron/share.ts) and the
 // queue moves on; the job is done when the link exists.
-import { app, BrowserWindow, ClipboardItem, clipboard, dialog, ipcMain, Notification, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, ClipboardItem, clipboard, dialog, ipcMain, Notification, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import { open, mkdir, readdir, readFile, rename, rm, stat, writeFile, type FileHandle } from 'node:fs/promises'
 import { existsSync, rmSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
@@ -31,6 +31,7 @@ interface Job extends JobInfo {
   fh?: FileHandle
   tmp?: string // partial file, deleted unless renamed into place
   writes: Promise<unknown>
+  owner?: BrowserWindow // a quiet job's asking window: it shows the outcome, so no notification while it is open
 }
 
 const jobs = new Map<string, Job>()
@@ -42,6 +43,34 @@ const active = (j: Job) => j.state === 'queued' || j.state === 'running' || j.st
 /** Exports still running or queued (the quit prompt asks before dropping them). Uploads are not
  *  counted: they carry on after a restart (electron/share.ts). */
 export const activeExports = () => [...jobs.values()].filter((j) => j.state === 'queued' || j.state === 'running').length
+/** Called with every job change: the menu bar icon follows the queue. */
+export const exportListeners: Array<(j: JobInfo) => void> = []
+
+/** The export in progress for the menu bar: its name, 0..1 (0 while it starts or waits), and how many
+ *  wait behind it. null when nothing is queued or running. */
+export function exportStatus(): { name: string; progress: number; waiting: number } | null {
+  const list = [...jobs.values()].filter((j) => j.state === 'queued' || j.state === 'running')
+  if (!list.length) return null
+  const j = running?.state === 'running' ? running : list[0]
+  return { name: j.name, progress: j.state === 'running' ? j.progress : 0, waiting: list.length - 1 }
+}
+
+/** The menu bar menu's rows while exports run: which one, how far, and Cancel. */
+export function exportMenuItems(): MenuItemConstructorOptions[] {
+  const s = exportStatus()
+  if (!s) return []
+  return [
+    { label: `Exporting “${s.name}” · ${Math.floor(s.progress * 100)}%`, enabled: false },
+    ...(s.waiting ? [{ label: `${s.waiting} more waiting`, enabled: false }] : []),
+    {
+      label: s.waiting ? 'Cancel All Exports' : 'Cancel Export',
+      click: () => {
+        for (const j of jobs.values()) if (j.state === 'queued' || j.state === 'running') void finish(j, 'canceled')
+      },
+    },
+    { type: 'separator' },
+  ]
+}
 
 function info(j: Job): JobInfo {
   const { id, name, bundle, options, dest, path, state, progress, phase, error, url, bytes, startedAt, finishedAt } = j
@@ -50,6 +79,7 @@ function info(j: Job): JobInfo {
 
 function broadcast(j: Job) {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && w !== j.win) w.webContents.send('export:update', info(j))
+  for (const f of exportListeners) f(info(j))
 }
 
 /** The job whose own export window sent this message. */
@@ -85,8 +115,9 @@ async function finish(j: Job, state: JobState, error?: string) {
   j.fh = undefined
   if (j.tmp) await rm(j.tmp, { force: true }).catch(() => {})
   j.tmp = undefined
-  // The Share button's own exports (temp) report through the Share button, not a notification.
-  if (j.dest !== 'temp') {
+  // The Share button's own exports (temp) report through the Share button, and a quiet job through
+  // its window while that is open, not a notification.
+  if (j.dest !== 'temp' && !(j.owner && !j.owner.isDestroyed() && j.owner.isVisible())) {
     if (state === 'done') batch.done++
     if (state === 'failed') batch.failed++
     if (state !== 'canceled') batch.last = j
@@ -115,25 +146,40 @@ async function pump() {
   broadcast(j)
 }
 
-/** Unattended exports end with a notification once nothing is left to do; a single export with
- *  Grip in front does not. */
+let note: Notification | undefined // held: a collected notification no longer hears its click
+
+/** Exports run unattended, so they end with a notification once nothing is left to do, Grip in
+ *  front or not. A click shows the file, or opens the link. */
 function notifyIfIdle() {
   if ([...jobs.values()].some(active)) return
   const { done, failed, last } = batch
   batch = { done: 0, failed: 0, last: undefined }
-  if (hidden || done + failed === 0 || (done + failed === 1 && BrowserWindow.getFocusedWindow()) || !Notification.isSupported()) return
+  if (hidden || done + failed === 0 || !Notification.isSupported()) return
   const j = last!
+  const file = basename(j.path)
   const body =
     done + failed > 1 ? (failed ? `${done} finished, ${failed} failed.` : `${done} exports are ready.`)
     : failed ? `“${j.name}”: ${j.error}`
     : j.url ? `The link to “${j.name}” is ready.`
-    : `“${basename(j.path)}” is ready.`
-  const n = new Notification({ title: failed ? 'Export finished with errors' : 'Export finished', body })
-  n.on('click', () => {
+    : j.dest === 'clipboard' ? `“${file}” is on the clipboard, ready to paste.`
+    : `Saved “${file}” in ${basename(dirname(j.path))}.`
+  note = new Notification({ title: failed ? 'Export finished with errors' : 'Export finished', body })
+  note.on('click', () => {
     if (j.url) void shell.openExternal(j.url)
     else if (existsSync(j.path)) shell.showItemInFolder(j.path)
   })
-  n.show()
+  // Not allowed (the user said no, or an unsigned dev build): the menu bar's full ring still says done.
+  note.on('failed', (_e, err) => console.warn('[export] notification not shown:', err))
+  note.show()
+}
+
+/** `name.ext` in `dir`, numbered past files already there, ones this export picks (`taken`), and
+ *  ones an export still on its way will write. */
+function freePath(dir: string, name: string, ext: string, taken = new Set<string>()): string {
+  const busy = (p: string) => taken.has(p) || existsSync(p) || [...jobs.values()].some((j) => active(j) && j.path === p)
+  const path = join(dir, uniqueName(safeFileName(name), ext, (f) => busy(join(dir, f))))
+  taken.add(path)
+  return path
 }
 
 /** Resolve every destination up front (one save dialog, or one folder for many files), so the
@@ -152,11 +198,7 @@ async function chooseFiles(parent: BrowserWindow | null, items: Array<{ name: st
     if (res.canceled || !res.filePaths[0]) return false
     const dir = res.filePaths[0]
     const taken = new Set<string>()
-    for (const it of items) {
-      const name = uniqueName(safeFileName(it.name), it.ext, (f) => taken.has(f) || existsSync(join(dir, f)))
-      taken.add(name)
-      it.path = join(dir, name)
-    }
+    for (const it of items) it.path = freePath(dir, it.name, it.ext, taken)
   }
   if (items.length) lastDir = dirname(items[items.length - 1].path!)
   return true
@@ -168,18 +210,21 @@ async function enqueue(parent: BrowserWindow | null, reqs: ExportRequest[]): Pro
     reqs.map(async (r) => {
       if (typeof r?.bundle !== 'string' || !isAbsolute(r.bundle)) throw new Error('Export needs the absolute path of a project.')
       if (r.path !== undefined && (typeof r.path !== 'string' || !isAbsolute(r.path))) throw new Error('Export paths must be absolute.')
+      if (r.dir !== undefined && (typeof r.dir !== 'string' || !isAbsolute(r.dir))) throw new Error('Export folders must be absolute.')
       const project = r.project ?? (await readProject(r.bundle))
       const dest = DESTINATIONS.includes(r.dest) ? r.dest : 'file'
       const options = jobOptions(dest, r.options)
-      return { project, options, dest, bundle: r.bundle, name: project.name || basename(r.bundle, '.grip'), ext: options.format, path: r.path }
+      return { project, options, dest, bundle: r.bundle, name: project.name || basename(r.bundle, '.grip'), ext: options.format, path: r.path, dir: r.dir, quiet: r.quiet === true }
     }),
   )
+  const taken = new Set<string>()
+  for (const it of items) if (it.dest === 'file' && !it.path && it.dir && existsSync(it.dir)) it.path = freePath((lastDir = it.dir), it.name, it.ext, taken)
   if (!(await chooseFiles(parent, items.filter((it) => it.dest === 'file' && !it.path)))) return null
   const out = items.map((it) => {
     const id = crypto.randomUUID()
     // Clipboard, share, and temp exports land in a per-job temp folder, so the file keeps the project's name.
     const path = it.path ?? join(tmpRoot(), id, `${safeFileName(it.name)}.${it.ext}`)
-    const j: Job = { id, name: it.name, bundle: it.bundle, options: it.options, dest: it.dest, path, project: it.project, state: 'queued', progress: 0, phase: 'Waiting', writes: Promise.resolve() }
+    const j: Job = { id, name: it.name, bundle: it.bundle, options: it.options, dest: it.dest, path, project: it.project, state: 'queued', progress: 0, phase: 'Waiting', writes: Promise.resolve(), owner: (it.quiet && parent) || undefined }
     jobs.set(id, j)
     broadcast(j)
     return info(j)
