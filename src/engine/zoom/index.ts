@@ -61,7 +61,10 @@ const FAR_JUMPS_PER_S = 0.5 // an auto zoom panning a half view more often than 
 const LOUPE_SPRING: SpringConfig = { stiffness: 300, damping: 2 * Math.sqrt(300), mass: 1 } // one loupe eases into the next's level, size, and shape in ~0.5 s
 const LOUPE_POP: SpringConfig = { stiffness: 900, damping: 2 * Math.sqrt(900), mass: 1 } // a lens magnifies in or out, half way in ~0.06 s, settled in ~0.3 s
 const LOUPE_FADE = springDuration(LOUPE_POP)
-const LOUPE_FOLLOW: SpringConfig = { stiffness: 120, damping: 2 * 0.65 * Math.sqrt(120), mass: 1 } // trails the cursor softly, a little overshoot
+const LOUPE_FOLLOW: SpringConfig = { stiffness: 120, damping: 2 * 0.65 * Math.sqrt(120), mass: 1 } // follows the cursor softly, a little overshoot
+const LOUPE_LEAD = LOUPE_FOLLOW.damping / LOUPE_FOLLOW.stiffness // s: the follow spring trails a steady glide by this, so it aims that far ahead
+const LOUPE_TOP = 0.85 // the flat top's share of the lens radius (shaders.wgsl BEVEL): only it shows the content magnified
+const LOUPE_WALL = 0.7 // the cursor never gets further from the lens center than this share of what the flat top shows
 /** Loupe lens radius in units (Zoom.size): what fits depends on what it shows, a button or a paragraph. */
 export const LOUPE_SIZE = { min: 60, max: 400, initial: 260 }
 /** The look of `z` for new zooms: a loupe's mode, size, and shape, or nothing for a full zoom (the default). */
@@ -291,10 +294,11 @@ const LENS = 7 // floats per lens sample
 /** One lens, every DT from its start through its fade out: x, y and velocity x, y (unzoomed px,
  *  px/s), level, radius (px), and liquid (0 rigid, 1 liquid), stepped like the camera so any frame
  *  reads it in isolation. It takes the deepest level and largest size of its loupes on, and stays
- *  rigid while any of them is; through a short gap it holds the last ones. Following the cursor, it
- *  trails it on a soft spring; a fixed point holds still. Into the next loupe it glides to that one's
- *  target and eases into its level, size, and shape; into or out of an instant one it jumps. It
- *  centers on the cursor even at the screen's edge, so the lens may overhang into the background. */
+ *  rigid while any of them is; through a short gap it holds the last ones. It follows the cursor on
+ *  a soft spring aimed ahead and never lets it off the flat top; a fixed point holds still. Into the
+ *  next loupe it glides to that one's target and eases into its level, size, and shape; into or out
+ *  of an instant one it jumps. It centers on the cursor even at the screen's edge, so the lens may
+ *  overhang into the background. */
 function lens(run: Span[], layout: ReturnType<typeof prepareLayout>, cursor: ReturnType<typeof prepareCursor>, unit: number) {
   const a = run[0].a
   const last = run.reduce((x, y) => (y.b >= x.b ? y : x))
@@ -307,6 +311,8 @@ function lens(run: Span[], layout: ReturnType<typeof prepareLayout>, cursor: Ret
   const pos = [0, 0, 0, 0, 0] // x, y, log level, radius, liquid
   const vel = [0, 0, 0, 0, 0]
   let aim: Pt | null = null
+  let now: Pt | null = null // the cursor at t, while the lens follows it
+  let caught = false // the cursor got onto the flat top since the lens began following it
   let started = false
   let next = 0
   let on: Span[] = [] // the loupes covering t
@@ -319,10 +325,14 @@ function lens(run: Span[], layout: ReturnType<typeof prepareLayout>, cursor: Ret
     held = on.length ? on : held.length ? held : [run[next - 1]]
     const { zoom } = held.at(-1)!
     const s = screenAt(layout, t)
+    now = null
     if (s) {
       const { screen: r, visible: v } = s
-      const c: Pt = zoom.target.kind === 'point' ? { x: r.x + zoom.target.x * r.w, y: r.y + zoom.target.y * r.h } : (cursorPoint(cursor, t) ?? aim ?? { x: v.x + v.w / 2, y: v.y + v.h / 2 })
-      aim = { x: clamp(c.x, v.x, v.x + v.w), y: clamp(c.y, v.y, v.y + v.h) }
+      const inside = (p: Pt) => ({ x: clamp(p.x, v.x, v.x + v.w), y: clamp(p.y, v.y, v.y + v.h) })
+      const c: Pt = zoom.target.kind === 'point' ? { x: r.x + zoom.target.x * r.w, y: r.y + zoom.target.y * r.h } : (cursorPoint(cursor, t + LOUPE_LEAD) ?? aim ?? { x: v.x + v.w / 2, y: v.y + v.h / 2 })
+      aim = inside(c)
+      const p = zoom.target.kind === 'point' ? null : cursorPoint(cursor, t)
+      now = p && inside(p)
     }
     if (!aim) continue
     const zs = held.map((p) => p.zoom)
@@ -336,6 +346,16 @@ function lens(run: Span[], layout: ReturnType<typeof prepareLayout>, cursor: Ret
       pos.splice(0, 5, ...target)
       vel.fill(0)
     }
+    if (now) {
+      // A flick outruns the spring. Past the flat top the cursor would vanish under the glass and then
+      // curl back in at the rim, so once on it, the lens carries it along at the wall instead.
+      const wall = (LOUPE_WALL * LOUPE_TOP * pos[3]) / Math.exp(pos[2])
+      const dx = pos[0] - now.x
+      const dy = pos[1] - now.y
+      const d = Math.hypot(dx, dy)
+      caught ||= d <= wall
+      if (caught && d > wall) (pos[0] = now.x + (dx * wall) / d), (pos[1] = now.y + (dy * wall) / d)
+    } else caught = false
     path.set([pos[0], pos[1], vel[0], vel[1], Math.exp(pos[2]), pos[3], pos[4]], LENS * k)
     for (let o = 0; o < 5; o++) {
       const [h, g, dh, dg] = o < 2 ? follow : morph
