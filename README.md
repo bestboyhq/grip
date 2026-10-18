@@ -192,7 +192,7 @@ Drag the preview straight into another app to drop the file.
 ## Make it yours
 
 <p align="center">
-  <img src=".github/readme/macbook.gif" width="100%" alt="A calendar app inside a MacBook frame on a warm hazy wallpaper: the view pushes in as the user drags out a new event, types 'Design review', adds Maya Chen as a guest, picks a purple color, and saves, then pulls back to the whole laptop with the new event in the week.">
+  <img src=".github/readme/macbook.gif" width="100%" alt="A calendar app inside a MacBook frame on a warm hazy wallpaper: the view pushes in as the user drags out a new event, types 'Design review', adds Maya Chen as a guest, picks a sage color, and saves, then pulls back to the whole laptop with the new event in the week.">
 </p>
 
 <p align="center">
