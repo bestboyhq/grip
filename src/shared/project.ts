@@ -170,7 +170,7 @@ export interface Style {
 }
 
 export interface AudioMix {
-  mic: { volume: number; muted: boolean; enhance: boolean } // enhance = noise reduction + loudness + limiter
+  mic: { volume: number; muted: boolean; enhance: boolean } // enhance = noise reduction + compressor + loudness + limiter
   system: { volume: number; muted: boolean }
   music?: { file: string; volume: number }
 }

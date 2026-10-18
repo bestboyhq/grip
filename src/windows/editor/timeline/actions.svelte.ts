@@ -15,7 +15,7 @@ type Items = { clips: Clip[]; zooms: Zoom[]; layouts: CameraLayout[]; masks: Mas
 const KINDS: Kind[] = ['clips', 'zooms', 'layouts', 'masks']
 const ITEM_KINDS: M.ItemTrack[] = ['zooms', 'layouts', 'masks']
 
-export const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 3, 4, 8]
+export const SPEEDS = [0.25, 0.5, 1, 1.25, 1.5, 2, 3, 4, 8]
 export const VOLUMES = [0, 0.5, 1, 1.5, 2]
 export const LEVELS = [1.5, 2, 2.5, 3, 4, 5]
 export const LAYOUTS: Array<[CameraLayoutKind, string]> = [['pip', 'Picture in picture'], ['fullscreen', 'Fullscreen'], ['split', 'Split'], ['hidden', 'Hidden']]

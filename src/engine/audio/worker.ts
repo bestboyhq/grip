@@ -1,15 +1,16 @@
-// Audio worker: the mixer (preview and export) and source analysis (waveform peaks), off the main
-// thread. ./index.ts runs two of these, so a long analysis never delays real-time mixing.
+// Audio worker: the mixer (preview and export) and source analysis (waveform peaks of a source, or
+// of a mic through the voice chain), off the main thread. ./index.ts runs two of these, so a long
+// analysis never delays real-time mixing.
 
 import rnnoiseUrl from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url'
 import { fileLabel as label, fileUrl, urlSource } from '../media/index.ts'
 import { SR } from './dsp.ts'
-import { Mixer, openFile, type Env, type Plan } from './mix.ts'
-import { PEAK_SPP, analyze, cachePath, decodeAnalysis, encodeAnalysis, queryPeaks, rawPeaks, type Analysis } from './source.ts'
+import { Mixer, openFile, voiced, type Env, type Plan } from './mix.ts'
+import { PEAK_SPP, Reader, analyze, cachePath, decodeAnalysis, encodeAnalysis, queryPeaks, rawPeaks, type Analysis } from './source.ts'
 
 export type Request =
   | { op: 'render'; session: string; plan: Plan; start: number; frames: number }
-  | { op: 'peaks'; url: string; from: number; to: number; buckets: number }
+  | { op: 'peaks'; url: string; from: number; to: number; buckets: number; voice: boolean }
 
 let rnnoise: Promise<WebAssembly.Module> | undefined
 const env: Env = {
@@ -39,34 +40,38 @@ function render({ session, plan, start, frames }: Extract<Request, { op: 'render
 
 // ---- Analysis, cached in <bundle>/cache/ (written through the media: protocol) ----
 const analyses = new Map<string, Promise<Analysis>>()
-function analysis(url: string): Promise<Analysis> {
-  let a = analyses.get(url)
+function analysis(url: string, voice: boolean): Promise<Analysis> {
+  const key = `${voice}|${url}`
+  let a = analyses.get(key)
   if (!a) {
     a = (async () => {
       const f = await openFile(env, url, label(url))
-      const cache = url.startsWith('media://local/') ? cachePath(decodeURIComponent(url.slice(14)), f.size) : null
+      const cache = url.startsWith('media://local/') ? cachePath(decodeURIComponent(url.slice(14)), f.size, voice) : null
       if (cache) {
         const r = await fetch(fileUrl(cache), { cache: 'no-store' }).catch(() => null)
         const hit = r?.ok ? decodeAnalysis(await r.arrayBuffer()) : null
         if (hit) return hit
       }
-      const job = analyze(f)
+      const job = analyze(f, voice ? () => voiced(env, url, f) : () => new Reader(f))
       job.ready(0, Infinity).then(
         () => void (cache && fetch(fileUrl(cache), { method: 'PUT', body: encodeAnalysis(job.base) }).catch((e) => console.warn(`Could not cache the waveform of ${f.label}: ${e}`))),
-        () => void analyses.delete(url), // a later request retries
+        () => void analyses.delete(key), // a later request retries
       )
       return job
     })()
-    a.catch(() => analyses.delete(url))
-    analyses.set(url, a)
+    a.catch(() => analyses.delete(key))
+    analyses.set(key, a)
   }
   return a
 }
 
-async function peaks({ url, from, to, buckets }: Extract<Request, { op: 'peaks' }>) {
+async function peaks({ url, from, to, buckets, voice }: Extract<Request, { op: 'peaks' }>) {
   // Finer than the analysis buckets, and short enough to decode on the spot: exact samples.
-  if (((to - from) * SR) / buckets < PEAK_SPP && to - from <= 60) return rawPeaks(await openFile(env, url, label(url)), from, to, buckets)
-  const a = await analysis(url)
+  if (((to - from) * SR) / buckets < PEAK_SPP && to - from <= 60) {
+    const f = await openFile(env, url, label(url))
+    return rawPeaks(voice ? voiced(env, url, f) : new Reader(f), from, to, buckets)
+  }
+  const a = await analysis(url, voice)
   await a.ready(from, to)
   return queryPeaks(a.base, from, to, buckets)
 }

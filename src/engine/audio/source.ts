@@ -3,7 +3,7 @@
 // of a source: waveform peaks (computed once and cached) and the voice loudness.
 
 import { ALL_FORMATS, AudioSampleSink, Input, type AudioSample, type Source } from 'mediabunny'
-import { DENOISE_FRAME, Denoiser, LoudnessMeter, SR, integratedLoudness, interpolate, sincTable } from './dsp.ts'
+import { COMP_DEPTH, Compressor, DENOISE_FRAME, Denoiser, LoudnessMeter, SR, VOICE_CHAIN, integratedLoudness, interpolate, sincTable } from './dsp.ts'
 import { readError } from '../media/index.ts'
 
 export interface AudioFile {
@@ -30,6 +30,12 @@ export async function openAudio(source: Source, label: string): Promise<AudioFil
     if (e instanceof Error && e.message.startsWith(label)) throw e
     throw readError(`Could not read ${label}`, label, e)
   }
+}
+
+/** Audio on the 48 kHz grid, read mostly in order: a source (Reader) or a source through the voice chain. */
+export interface Samples {
+  read(start: number, n: number): Promise<Float32Array[]>
+  close(): void
 }
 
 const HALF = 16 // resampler taps per side
@@ -183,23 +189,22 @@ export interface Analysis {
   ready(from: number, to: number): Promise<void> // seconds; ready(0, Infinity): all of it
 }
 
-/** Analyze the whole file, LANES segments at a time, in time order. */
-export function analyze(f: AudioFile, seg = SEG): Analysis {
+/** Analyze the whole file as `open` reads it, LANES segments at a time, in time order. */
+export function analyze(f: AudioFile, open: () => Samples = () => new Reader(f), seg = SEG): Analysis {
   const total = Math.ceil(f.duration * SR)
   const base = new Int16Array(2 * Math.ceil(total / PEAK_SPP))
   const segs: Promise<void>[] = []
   for (let a = 0; a < total; a += seg) {
     const b = Math.min(total, a + seg)
-    segs.push((segs[segs.length - LANES] ?? Promise.resolve()).then(() => segment(f, a, b, base)))
+    segs.push((segs[segs.length - LANES] ?? Promise.resolve()).then(() => segment(open(), a, b, base)))
   }
   Promise.all(segs).catch(() => {}) // callers see the error through ready()
   const ready = async (from: number, to: number) => void (await Promise.all(segs.slice(Math.max(0, Math.floor((from * SR) / seg)), Math.ceil((to * SR) / seg))))
   return { base, ready }
 }
 
-/** Peaks of output samples [a, b) into `base`. */
-async function segment(f: AudioFile, a: number, b: number, base: Int16Array) {
-  const r = new Reader(f)
+/** Peaks of samples [a, b) of `r` into `base`, then closes `r`. */
+async function segment(r: Samples, a: number, b: number, base: Int16Array) {
   const STEP = PEAK_SPP * 750 // 4 s
   try {
     for (let pos = a; pos < b; pos += STEP) {
@@ -227,53 +232,64 @@ async function segment(f: AudioFile, a: number, b: number, base: Int16Array) {
 
 const q16 = (v: number) => Math.max(-32767, Math.min(32767, Math.round(v * 32767)))
 
-// ---- Voice loudness: BS.1770 integrated loudness of the speech in up to WINDOWS 3 s windows ----
-// Bounded work at any length (2 hours: 64 windows, about 1.5 s), so the mixer knows the voice gain
-// before it mixes the first sample and never changes it: preview and export always match. A file up
-// to 3.2 min is measured whole. ponytail: longer files are sampled (3% of 2 hours), so sparse speech
-// gives a rougher estimate; add windows until enough blocks pass the gates if that ever shows.
-// Only speech counts (RNNoise's voice probability): a mic that caught only room tone and trackpad
-// clicks would otherwise measure as a very quiet voice and get the full +24 dB, clicks included.
+// ---- Voice loudness: BS.1770 loudness of the voice chain in up to WINDOWS 3 s windows ----
+// Bounded work at any length (2 hours: 64 windows, about 1.5 s), so the mixer knows the voice chain's
+// settings before it mixes the first sample and never changes them: preview and export always match.
+// A file up to 3.2 min is measured whole. ponytail: longer files are sampled (3% of 2 hours), so sparse
+// speech gives a rougher estimate; add windows until enough blocks pass the gates if that ever shows.
+// The windows are denoised as the mixer denoises them and measured twice: their speech sets the
+// compressor's threshold, then the compressed voice sets the gain. The first time only speech counts
+// (RNNoise's voice probability): a mic that caught only room tone and trackpad clicks would otherwise
+// measure as a very quiet voice and get the full +24 dB, clicks included.
 
 const WINDOW = 3 * SR // output samples: 30 loudness blocks
 const WINDOWS = 64
 
-/** Integrated loudness (LUFS) of the speech as heard (mono counts on both channels), or null when
- *  there is none. `rnnoise` is the RNNoise module, which tells speech from everything else. */
-export async function loudness(f: AudioFile, rnnoise: WebAssembly.Module, windows = WINDOWS): Promise<number | null> {
+/** Loudness (LUFS) as heard (mono counts on both channels) of the speech after noise reduction, and
+ *  of the whole voice after the compressor that threshold sets (see Compressor), or null when there
+ *  is no speech. `rnnoise` is the RNNoise module, which tells speech from everything else. */
+export async function loudness(f: AudioFile, rnnoise: WebAssembly.Module, windows = WINDOWS): Promise<{ speech: number; compressed: number } | null> {
   const total = Math.ceil(f.duration * SR)
   const n = Math.min(windows, Math.ceil(total / WINDOW))
   // Window starts on the 100 ms block grid; a short file is tiled, so its blocks join seamlessly.
   const step = n > 1 ? Math.max(WINDOW, Math.floor((total - WINDOW) / (n - 1) / (SR / 10)) * (SR / 10)) : 0
-  const blocks: number[][] = []
+  const audio: Float32Array[][] = [] // 4 s per window: 49 MB of mono at most
   const speech: number[][] = []
   let next = 0
   const lane = async () => {
-    const den = await Denoiser.create(rnnoise, 1)
-    for (let i = next++; i < n; i = next++) [blocks[i], speech[i]] = await windowBlocks(f, den, i * step, Math.min(WINDOW, total - i * step))
+    const den = await Denoiser.create(rnnoise, Math.min(2, f.channels))
+    for (let i = next++; i < n; i = next++) [audio[i], speech[i]] = await denoised(f, den, i * step, Math.min(WINDOW, total - i * step))
   }
   await Promise.all(Array.from({ length: LANES }, lane))
-  return integratedLoudness(blocks.flat(), speech.flat())
+  /** The 100 ms loudness blocks after each window's warm-up, compressed first when given. */
+  const blocks = (comp?: Compressor) =>
+    audio.flatMap((chs) => {
+      comp?.reset()
+      comp?.process(chs)
+      const meter = new LoudnessMeter()
+      meter.push(chs, chs[0].length, chs.length === 1 ? 2 : 1)
+      return meter.blocks.slice(10)
+    })
+  const s = integratedLoudness(blocks(), speech.flat())
+  if (s === null) return null
+  const compressed = integratedLoudness(blocks(new Compressor(s - COMP_DEPTH))) // all of it, gated as a player measures it
+  return compressed === null ? null : { speech: s, compressed }
 }
 
-/** The 100 ms loudness blocks of output samples [a, a+n) and the mean speech probability of each,
- *  after a 1 s warm-up: the filters settle in 200 ms, but a fresh RNNoise takes clicks for speech
- *  until it has heard the room for about a second. */
-async function windowBlocks(f: AudioFile, den: Denoiser, a: number, n: number): Promise<[number[], number[]]> {
+/** Output samples [a, a+n) after noise reduction, behind a 1 s warm-up, and the mean speech
+ *  probability of each 100 ms block after the warm-up: a fresh RNNoise takes clicks for speech until
+ *  it has heard the room for about a second. */
+async function denoised(f: AudioFile, den: Denoiser, a: number, n: number): Promise<[Float32Array[], number[]]> {
   const pre = SR
   const r = new Reader(f)
   try {
-    const chs = await r.read(a - pre, pre + n)
-    const meter = new LoudnessMeter()
-    meter.push(chs.slice(0, 2), pre + n, chs.length === 1 ? 2 : 1)
-    const mono = chs[0] // denoised in place below, after metering
-    if (chs.length > 1) for (let i = 0; i < mono.length; i++) mono[i] = (mono[i] + chs[1][i]) / 2
+    const chs = (await r.read(a - pre, pre + n)).slice(0, 2)
     den.reset()
     const frames: number[] = []
-    for (let i = 0; i + DENOISE_FRAME <= pre + n; i += DENOISE_FRAME) frames.push(den.frame([mono.subarray(i, i + DENOISE_FRAME)]))
+    for (let i = 0; i + DENOISE_FRAME <= pre + n; i += DENOISE_FRAME) frames.push(den.frame(chs.map((ch) => ch.subarray(i, i + DENOISE_FRAME))))
     const per = SR / 10 / DENOISE_FRAME // RNNoise frames per 100 ms block
-    const speech = meter.blocks.map((_, k) => frames.slice(k * per, (k + 1) * per).reduce((s, v) => s + v, 0) / per)
-    return [meter.blocks.slice(10), speech.slice(10)]
+    const speech = Array.from({ length: Math.floor(frames.length / per) }, (_, k) => frames.slice(k * per, (k + 1) * per).reduce((s, v) => s + v, 0) / per)
+    return [chs, speech.slice(10)]
   } finally {
     r.close()
   }
@@ -300,12 +316,12 @@ export function queryPeaks(base: Int16Array, from: number, to: number, buckets: 
   return out
 }
 
-/** Exact min/max per bucket straight from decoded samples, for zoom levels finer than the base. */
-export async function rawPeaks(f: AudioFile, from: number, to: number, buckets: number): Promise<Float32Array> {
+/** Exact min/max per bucket straight from the samples of `r`, for zoom levels finer than the base.
+ *  Closes `r`. */
+export async function rawPeaks(r: Samples, from: number, to: number, buckets: number): Promise<Float32Array> {
   const out = new Float32Array(2 * buckets)
   const a = Math.round(from * SR)
   const n = Math.max(1, Math.round(to * SR) - a)
-  const r = new Reader(f)
   try {
     const chs = await r.read(a, n)
     for (let k = 0; k < buckets; k++) {
@@ -328,7 +344,7 @@ export async function rawPeaks(f: AudioFile, from: number, to: number, buckets: 
   return out
 }
 
-// ---- Cache file: <bundle>/cache/<source path with / as _>.<bytes>.analysis ----
+// ---- Cache file: <bundle>/cache/<source path with / as _>.<bytes>[.voice<chain>].analysis ----
 // 'SPK2', u32 bucket count, then int16 [min, max] pairs. (SPK1 also held the loudness: re-analyzed.)
 
 export function encodeAnalysis(base: Int16Array): ArrayBuffer {
@@ -347,8 +363,9 @@ export function decodeAnalysis(buf: ArrayBuffer): Analysis | null {
   return { base: new Int16Array(buf.slice(8)), ready: async () => {} }
 }
 
-/** Where the analysis of `path` (absolute) is cached, or null when it is not inside a .grip bundle. */
-export function cachePath(path: string, size: number): string | null {
+/** Where the analysis of `path` (absolute) is cached, or null when it is not inside a .grip bundle.
+ *  `voice`: the analysis of the voice chain's output, which changes with the chain. */
+export function cachePath(path: string, size: number, voice = false): string | null {
   const m = /^(.*\.grip)\/(.+)$/.exec(path)
-  return m ? `${m[1]}/cache/${m[2].replaceAll('/', '_')}.${size}.analysis` : null
+  return m ? `${m[1]}/cache/${m[2].replaceAll('/', '_')}.${size}${voice ? `.voice${VOICE_CHAIN}` : ''}.analysis` : null
 }

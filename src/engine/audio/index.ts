@@ -1,6 +1,6 @@
 // Owner: audio. One audio graph for preview and export (parity): mic + system + music, per-clip
 // volume, pitch-preserving time-stretch for speed changes, voice chain (noise reduction ->
-// loudness normalization -> limiter), click sounds. Everything in output time via the time map.
+// compressor -> loudness normalization -> limiter), click sounds. Everything in output time via the time map.
 // The graph is ./mix.ts; it runs in a worker (./worker.ts). This module is the main-thread API.
 
 import type { Prepared } from '../scene.ts'
@@ -68,8 +68,9 @@ export async function renderAudio(p: Prepared, bundle: string, from: number, to:
   return buf
 }
 
-/** Min/max peaks of a source audio file between source times [from, to), `buckets` pairs.
- *  Lazy and cached, so hours-long tracks render without stalling. */
-export function peaks(url: string, from: number, to: number, buckets: number): Promise<Float32Array> {
-  return analysis.call({ op: 'peaks', url, from, to, buckets: Math.max(1, Math.floor(buckets)) })
+/** Min/max peaks of a source audio file between source times [from, to), `buckets` pairs; with
+ *  `voice`, of the file through the voice chain (an enhanced mic). Lazy and cached, so hours-long
+ *  tracks render without stalling. */
+export function peaks(url: string, from: number, to: number, buckets: number, voice = false): Promise<Float32Array> {
+  return analysis.call({ op: 'peaks', url, from, to, buckets: Math.max(1, Math.floor(buckets)), voice })
 }

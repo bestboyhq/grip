@@ -93,10 +93,10 @@
         duration: p.sources.duration,
       }
       camera = !!p.sources.camera
-      const audio = (s: AudioSource | undefined, mix: { volume: number; muted: boolean }) =>
-        s && doc.path ? { url: fileUrl(`${doc.path}/${s.file}`), gain: mix.muted ? 0 : mix.volume } : null
-      mic = audio(p.sources.mic, p.audio.mic)
-      system = audio(p.sources.system, p.audio.system)
+      const audio = (s: AudioSource | undefined, mix: { volume: number; muted: boolean }, voice: boolean) =>
+        s && doc.path ? { url: fileUrl(`${doc.path}/${s.file}`), gain: mix.muted ? 0 : mix.volume, voice } : null
+      mic = audio(p.sources.mic, p.audio.mic, p.audio.mic.enhance) // the voice as it plays: processed when enhanced
+      system = audio(p.sources.system, p.audio.system, false)
       rebuild()
     })
   })
