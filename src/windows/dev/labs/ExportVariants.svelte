@@ -322,7 +322,7 @@
                 onclick={(e) => enterSub(k, e.currentTarget)}
                 onkeydown={(e) => ['ArrowRight', 'ArrowLeft', 'Enter', ' '].includes(e.key) && (e.preventDefault(), enterSub(k, e.currentTarget))}
               >
-                <span class="tick"></span>{NAMES[k]}<span class="val">{k === 'maxMB' ? limitLabel(o.maxMB) : shown(k)}</span><span class="caret"><Icon name="chevron" size={12} /></span>
+                <span class="tick caret"><Icon name="chevron" size={12} /></span>{NAMES[k]}<span class="val">{k === 'maxMB' ? limitLabel(o.maxMB) : shown(k)}</span>
               </button>
               {#if sub === k}
                 <!-- Opens to the left: the Export button sits at the window's right edge. -->
@@ -514,7 +514,8 @@
   .tick { display: grid; place-items: center; flex: none; width: 20px; }
   .mi kbd, .mi .val { margin-left: auto; color: var(--text-faint); font: inherit; font-size: 12.5px; }
   .mi .val { color: var(--text-dim); }
-  .caret { display: grid; margin-left: 4px; color: var(--text-faint); transform: rotate(-90deg); }
+  .caret { color: var(--text-faint); }
+  .caret :global(.icon) { transform: rotate(90deg); } /* points left, where the submenu opens */
   .has-sub { position: relative; display: grid; }
   .submenu { position: absolute; top: -5px; right: calc(100% + 3px); z-index: 1; width: max-content; min-width: 140px; margin: 0; }
   .submenu .mi { padding-right: 14px; }
