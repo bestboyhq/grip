@@ -2,6 +2,7 @@
      kit and export math, one shared set of options (change it in any variant and all follow), for a
      25 s 2296 × 1440 project. Nothing exports and nothing calls IPC, so it also runs in a plain browser. -->
 <script lang="ts">
+  import { tick } from 'svelte'
   import Segmented from '../../../ui/Segmented.svelte'
   import Popover from '../../../ui/Popover.svelte'
   import Icon from '../../../ui/Icon.svelte'
@@ -24,7 +25,8 @@
   let o = $state<ExportOptions>({ ...defaultOptions(), size: 1440 })
   let toast = $state('')
   let toastTimer: ReturnType<typeof setTimeout> | undefined
-  let menuRow = $state<Key | ''>('') // variant 6: the settings row open in the menu
+  let sub = $state<Key | ''>('') // variant 6: the setting whose submenu is open
+  let subTimer: ReturnType<typeof setTimeout> | undefined
   let lastDest = $state<'file' | 'clipboard'>('file') // variant 6: what ⌘E repeats
 
   const p = (n: number) => (n === 2160 ? '4K' : `${n}p`)
@@ -57,6 +59,38 @@
   const shown = (k: Key) => choices[k].find((c) => c.value === o[k])?.label ?? ''
   const summary = $derived([shown('format'), shown('size'), shown('fps'), o.format === 'mp4' ? QL[o.quality] : `Loops ${loopLabel(o.loop).toLowerCase()}`])
   const facts = $derived(`${dims(o).width} × ${dims(o).height} · 0:${SECONDS} · ${sizeOf(o)}`)
+
+  /** Variant 6, like a macOS menu: hovering a setting opens its submenu at once, and once one is open
+   *  another row takes over only after a beat, so the pointer can cross rows on its way into it. */
+  function hoverRow(k: Key | '') {
+    clearTimeout(subTimer)
+    if (!sub) sub = k
+    else if (sub !== k) subTimer = setTimeout(() => (sub = k), 180)
+  }
+
+  /** Open a submenu from the keyboard and move into it, on its checked item. */
+  async function enterSub(k: Key, row: HTMLElement) {
+    clearTimeout(subTimer)
+    sub = k
+    await tick()
+    row.parentElement?.querySelector<HTMLElement>('.submenu [aria-checked="true"]')?.focus()
+  }
+
+  /** Close the open submenu and hand focus back to its row. */
+  function leaveSub(inside: HTMLElement) {
+    sub = ''
+    inside.closest('.has-sub')?.querySelector<HTMLElement>(':scope > .mi')?.focus()
+  }
+
+  /** Up and down arrows move between a menu's own items; a submenu keeps its keys to itself. */
+  function nav(e: KeyboardEvent) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+    e.preventDefault()
+    e.stopPropagation()
+    const items = [...(e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>(':scope > .mi, :scope > .has-sub > .mi')]
+    const i = items.indexOf(document.activeElement as HTMLElement)
+    items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
+  }
 
   function flash(n: number, what: string) {
     toast = `Variant ${n}: ${what}`
@@ -259,7 +293,7 @@
     <!-- 6 -->
     <section class="card">
       <h3><b>6</b>Menu, not a dialog</h3>
-      <p class="why">The ▾ opens a native-feeling menu under the button: destinations on top, settings below, each opening in place. No modal at all. Cost: no room for notes like "H.264 tops out at 4096 px".</p>
+      <p class="why">The ▾ opens a native-feeling menu under the button: destinations on top, settings below, each opening its submenu on hover. No modal at all. Cost: no room for notes like "H.264 tops out at 4096 px".</p>
       <div class="stage start">
         <div class="titlebar-mock">
           <div class="split">
@@ -267,30 +301,57 @@
             <button class="btn primary more-btn" aria-label="Export Settings"><Icon name="chevron" size={14} /></button>
           </div>
         </div>
-        <div class="nsmenu" role="menu" aria-label="Export">
-          <button class="mi" role="menuitemradio" aria-checked={lastDest === 'file'} onclick={() => ((lastDest = 'file'), flash(6, `Save to ${folder}`))}>
+        <div class="nsmenu" role="menu" aria-label="Export" tabindex="-1" onkeydown={nav}>
+          <button class="mi" role="menuitemradio" aria-checked={lastDest === 'file'} onpointerenter={() => hoverRow('')} onclick={() => ((lastDest = 'file'), flash(6, `Save to ${folder}`))}>
             <span class="tick">{#if lastDest === 'file'}<Icon name="check" size={14} />{/if}</span>Save to {folder}{#if lastDest === 'file'}<kbd>⌘E</kbd>{/if}
           </button>
-          <button class="mi" role="menuitemradio" aria-checked={lastDest === 'clipboard'} onclick={() => ((lastDest = 'clipboard'), flash(6, 'Copy to Clipboard'))}>
+          <button class="mi" role="menuitemradio" aria-checked={lastDest === 'clipboard'} onpointerenter={() => hoverRow('')} onclick={() => ((lastDest = 'clipboard'), flash(6, 'Copy to Clipboard'))}>
             <span class="tick">{#if lastDest === 'clipboard'}<Icon name="check" size={14} />{/if}</span>Copy to Clipboard{#if lastDest === 'clipboard'}<kbd>⌘E</kbd>{/if}
           </button>
-          <button class="mi" role="menuitem" onclick={() => flash(6, 'Save As…')}><span class="tick"></span>Save As…</button>
+          <button class="mi" role="menuitem" onpointerenter={() => hoverRow('')} onclick={() => flash(6, 'Save As…')}><span class="tick"></span>Save As…</button>
           <hr />
           {#each keys as k (k)}
-            <button class="mi row" role="menuitem" aria-expanded={menuRow === k} onclick={() => (menuRow = menuRow === k ? '' : k)}>
-              <span class="tick"></span>{NAMES[k]}<span class="val">{k === 'maxMB' ? limitLabel(o.maxMB) : shown(k)}</span><span class="caret" class:open={menuRow === k}><Icon name="chevron" size={12} /></span>
-            </button>
-            {#if menuRow === k}
-              {#each choices[k] as c (c.value)}
-                <button class="mi sub" role="menuitemradio" aria-checked={c.value === o[k]} onclick={() => pick(k, c.value)}>
-                  <span class="tick">{#if c.value === o[k]}<Icon name="check" size={14} />{/if}</span>{c.label}
-                </button>
-              {/each}
-            {/if}
+            <div class="has-sub">
+              <button
+                class="mi"
+                class:on={sub === k}
+                role="menuitem"
+                aria-haspopup="menu"
+                aria-expanded={sub === k}
+                onpointerenter={() => hoverRow(k)}
+                onclick={(e) => enterSub(k, e.currentTarget)}
+                onkeydown={(e) => ['ArrowRight', 'ArrowLeft', 'Enter', ' '].includes(e.key) && (e.preventDefault(), enterSub(k, e.currentTarget))}
+              >
+                <span class="tick"></span>{NAMES[k]}<span class="val">{k === 'maxMB' ? limitLabel(o.maxMB) : shown(k)}</span><span class="caret"><Icon name="chevron" size={12} /></span>
+              </button>
+              {#if sub === k}
+                <!-- Opens to the left: the Export button sits at the window's right edge. -->
+                <div
+                  class="nsmenu submenu"
+                  role="menu"
+                  tabindex="-1"
+                  aria-label={NAMES[k]}
+                  onpointerenter={() => clearTimeout(subTimer)}
+                  onkeydown={(e) => {
+                    if (e.key === 'Escape' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      leaveSub(e.currentTarget)
+                    } else nav(e)
+                  }}
+                >
+                  {#each choices[k] as c (c.value)}
+                    <button class="mi" role="menuitemradio" aria-checked={c.value === o[k]} onclick={(e) => (pick(k, c.value), leaveSub(e.currentTarget))}>
+                      <span class="tick">{#if c.value === o[k]}<Icon name="check" size={14} />{/if}</span>{c.label}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
           {/each}
           <hr />
           <p class="mfacts">{facts}</p>
-          <button class="mi" role="menuitem" onclick={() => flash(6, 'Batch Export…')}><span class="tick"></span>Batch Export…</button>
+          <button class="mi" role="menuitem" onpointerenter={() => hoverRow('')} onclick={() => flash(6, 'Batch Export…')}><span class="tick"></span>Batch Export…</button>
         </div>
       </div>
     </section>
@@ -448,14 +509,15 @@
     display: flex; align-items: center; height: 24px; padding: 0 8px 0 2px; border: 0; border-radius: 5px; background: none; text-align: left;
     font-size: 13px; color: var(--text);
   }
-  .mi:hover, .mi:focus-visible { background: #2f6bd8; color: #fff; outline: none; }
-  .mi:hover :is(kbd, .val, .caret), .mi:focus-visible :is(kbd, .val, .caret) { color: rgb(255 255 255 / 0.8); }
+  .mi:hover, .mi:focus-visible, .mi.on { background: #2f6bd8; color: #fff; outline: none; }
+  .mi:is(:hover, :focus-visible, .on) :is(kbd, .val, .caret) { color: rgb(255 255 255 / 0.8); }
   .tick { display: grid; place-items: center; flex: none; width: 20px; }
   .mi kbd, .mi .val { margin-left: auto; color: var(--text-faint); font: inherit; font-size: 12.5px; }
   .mi .val { color: var(--text-dim); }
-  .caret { display: grid; margin-left: 4px; color: var(--text-faint); transform: rotate(-90deg); transition: transform 120ms; }
-  .caret.open { transform: none; }
-  .mi.sub { padding-left: 14px; font-size: 12.5px; }
+  .caret { display: grid; margin-left: 4px; color: var(--text-faint); transform: rotate(-90deg); }
+  .has-sub { position: relative; display: grid; }
+  .submenu { position: absolute; top: -5px; right: calc(100% + 3px); z-index: 1; width: max-content; min-width: 140px; margin: 0; }
+  .submenu .mi { padding-right: 14px; }
   .nsmenu hr { width: calc(100% - 20px); height: 0.5px; margin: 5px 10px; border: 0; background: var(--edge-strong); }
   .mfacts { margin: 2px 10px 6px 22px; color: var(--text-faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 
@@ -481,8 +543,5 @@
   .toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 8px 14px; border-radius: 18px;
     background: var(--surface-150); box-shadow: var(--shadow-pop); font-size: 12.5px;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .caret, :global(.icon) { transition: none; }
   }
 </style>
