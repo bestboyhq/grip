@@ -51,7 +51,7 @@ The same keystroke grabs one, lets you mark it up, and puts it on your clipboard
 - **Everything runs on your Mac.** Recording, editing, transcription, background removal, and face tracking.
 - **Nothing is baked in.** Raw tracks stay untouched, and every zoom, cut, and caption is an edit you can undo.
 - **What you preview is what you export.** One GPU renderer and one audio graph draw both, frame for frame.
-- **Your links, your server.** Share links come from a [small server](server) you host yourself.
+- **Links your team comments on.** Share links live on bestboy.dev with a free account; teammates, viewers, and comments never cost anything.
 - **Keyboard first.** One shortcut to capture, single keys to edit, `⌘K` for everything else, and `grip://` links for scripts.
 
 ### The usual screen recorder bugs, designed out
@@ -236,7 +236,8 @@ Drag the preview straight into another app to drop the file.
 ## Private by design
 
 Recording, editing, transcription, and background removal all run on your Mac.
-There is no account and no telemetry, and crash reports stay on your disk.
+Recording and editing need no account; sharing a link signs in to bestboy.dev once.
+There is no telemetry, and crash reports stay on your disk.
 Grip goes online only to download the speech model once (about 670 MB), to check for updates, and to upload when you share.
 
 Grip lives in the menu bar, and opened at login it starts there quietly.
@@ -280,7 +281,7 @@ Automate Grip from Raycast, Shortcuts, or a script with `grip://` links:
 open "grip://record?mode=area"   # also display, window, device; no mode opens the last one
 open "grip://stop"
 open "grip://open?path=/Users/me/Movies/Demo.grip"
-open "grip://open?url=https://share.example.com/v/abc123"   # a shared project
+open "grip://open?url=https://bestboy.dev/v/x7Kq2mP9aB3c"   # a shared project
 ```
 
 ## Under the hood
@@ -315,15 +316,6 @@ npm run dev -- --open ".context/fixtures/Demo #1 ✨ café.grip"
 ```
 
 Run the checks with `npm test`, `npm run check`, and `cd native && cargo test`.
-
-### Host your own share server
-
-```sh
-STUDIO_SHARE_URL=https://share.example.com STUDIO_SHARE_UPLOAD_KEY=<secret> npm run server
-```
-
-It runs on plain Node, listens on port 7433 (`PORT` changes it), and stores items in `STUDIO_SHARE_DATA`.
-Set the upload key before exposing it beyond localhost.
 
 ## Contributing
 

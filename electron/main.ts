@@ -9,6 +9,7 @@ import { hidden, openWindow, updateDock, watchDisplays } from './windows.ts'
 import { registerRecording } from './recording.ts'
 import { registerProjects } from './projects.ts'
 import { activeExports, registerExport } from './export.ts'
+import { completeSignIn, registerAccount } from './account.ts'
 import { openSharedLink, registerShare } from './share.ts'
 import { registerTranscript } from './transcript.ts'
 import { registerCamera } from './camera.ts'
@@ -74,6 +75,7 @@ function openUrl(url: string) {
   else if (a?.kind === 'stop' && recordingStatus() !== 'idle') command('stop')
   else if (a?.kind === 'open') openProject(a.path)
   else if (a?.kind === 'import') openSharedLink(a.url)
+  else if (a?.kind === 'auth') completeSignIn(a.code, a.state)
 }
 
 /** Act on launch arguments (parseLaunch); `cwd` is the launching shell's directory. False when there were none. */
@@ -92,6 +94,7 @@ app.whenReady().then(() => {
   registerRecording()
   registerProjects()
   registerExport()
+  registerAccount()
   registerShare()
   registerTranscript()
   registerCamera()
