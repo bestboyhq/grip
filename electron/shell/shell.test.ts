@@ -23,12 +23,18 @@ test('grip:// urls', () => {
   assert.deepEqual(parseGripUrl(`grip://open?path=${encodeURIComponent(path)}/`), { kind: 'open', path })
   assert.deepEqual(parseGripUrl('grip://open?path=/a/100%.grip'), { kind: 'open', path: '/a/100%.grip' })
   // Shared project links (the link page's "Open in Grip") import; only http(s) links do.
-  const link = 'https://share.example/v/abcdefghijklmnopqrstuv/project.tar?k=key'
+  const link = 'https://bestboy.dev/v/x7Kq2mP9aB3c/project.tar?k=key'
   assert.deepEqual(parseGripUrl(`grip://open?url=${encodeURIComponent(link)}`), { kind: 'import', url: link })
   assert.equal(parseGripUrl(`grip://open?url=${encodeURIComponent('file:///etc/passwd')}`), null)
   // Only absolute bundle paths open.
   assert.equal(parseGripUrl('grip://open?path=relative.grip'), null)
   assert.equal(parseGripUrl('grip://open?path=/etc/passwd'), null)
+  // The browser hands sign-in back with a code and the state Grip sent.
+  const code = 'c'.repeat(43)
+  const state = 's'.repeat(22)
+  assert.deepEqual(parseGripUrl(`grip://auth?code=${code}&state=${state}`), { kind: 'auth', code, state })
+  assert.equal(parseGripUrl(`grip://auth?code=${code}`), null)
+  assert.equal(parseGripUrl(`grip://auth?code=<script>&state=${state}`), null)
   assert.equal(parseGripUrl('grip://delete'), null)
   assert.equal(parseGripUrl('https://record'), null)
 })

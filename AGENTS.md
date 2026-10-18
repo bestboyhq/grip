@@ -54,7 +54,9 @@ Every domain obeys these invariants:
 - `src/windows/<name>/`: one Svelte component per window route.
 - `electron/`: main process; each `<domain>.ts` registers its `<domain>:*` IPC channels.
 - `native/`: Rust addon, one module per domain; `clock.rs` is the master clock.
-- `server/`: the share link server.
+
+Share links, accounts, and teams are hosted by the Bestboy platform at bestboy.dev (the private `bestboyhq/platform` repo, whose `docs/api.md` is the contract).
+Grip's side is `electron/upload.ts` and `electron/account.ts`; `STUDIO_SHARE_URL=http://localhost:8787` points a dev run at a local platform.
 
 ## Commands
 

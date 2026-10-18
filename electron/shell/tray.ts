@@ -1,6 +1,6 @@
 // Menu bar icon. A click starts a capture (the area picker: record it or copy a screenshot); while
 // recording a click finishes. Right-click opens the menu: new recording, recent captures (each
-// reopens its result card), recent projects, open, import, settings, updates, quit; while
+// reopens its result card), recent projects, open, import, settings, account, updates, quit; while
 // recording finish, pause, draw, delete. Dropped .grip bundles open; dropped videos import as new
 // projects. While exports run the icon is a progress ring and the menu leads with them, Cancel
 // included. A blue dot marks an update waiting for a restart, and an outlined one a check or
@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { native } from '../native.ts'
 import { exportListeners, exportMenuItems, exportStatus } from '../export.ts'
 import { ring } from './png.ts'
+import { accountMenuItems } from '../account.ts'
 import { recentProjects } from '../projects.ts'
 import { readyVersion, updateActivity, updateListeners, updateMenuItems } from './update.ts'
 import { settings } from './settings.ts'
@@ -51,6 +52,7 @@ async function template(): Promise<MenuItemConstructorOptions[]> {
     { label: 'Import Video…', click: importDialog },
     { type: 'separator' },
     { label: 'Settings…', click: () => openOnboarding('page=settings') },
+    ...accountMenuItems(),
     ...updateMenuItems(),
     { type: 'separator' },
     { label: 'Quit Grip', accelerator: 'Command+Q', registerAccelerator: false, click: () => app.quit() },
