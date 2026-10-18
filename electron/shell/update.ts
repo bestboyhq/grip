@@ -4,10 +4,11 @@
 // "Restart to Update" quits through the normal path (recording, export, and unsaved-edit prompts,
 // where Cancel still cancels), then relaunches into the new version. A downloaded update also shows
 // on the recording toolbar (shell:state `update`, electron/shell/recorder.ts) and as a blue dot on the menu
-// bar icon (electron/shell/tray.ts).
+// bar icon (electron/shell/tray.ts), outlined while a check or download runs (updateActivity).
 // A menu bar app is rarely quit, so a waiting update also installs while the user is away (screen
 // locked, or no input for a while), when that loses and hides nothing: no recording or export, and no
-// window open. The new version then starts in the menu bar only (updatedWhileAway, at launch).
+// window open. After either restart the new version starts in the menu bar only (restartedToUpdate, at
+// launch): an update is no reason to open the picker.
 //
 // IPC: update:restart   the toolbar's Restart to Update
 //      update:later     the toolbar's Later: off the toolbar for a day
@@ -50,6 +51,8 @@ function set(next: typeof state) {
 export const readyVersion = () => (state === 'ready' ? version : '')
 /** The update the recording toolbar offers: the ready one, unless put off within the last day. */
 export const toolbarUpdate = () => (Date.now() < later ? '' : readyVersion())
+/** The check or download under way while no update waits, for the menu bar icon; '' otherwise. */
+export const updateActivity = () => (state === 'checking' ? 'Checking for updates…' : state === 'downloading' ? 'Downloading an update…' : '')
 
 function say(message: string, detail: string) {
   if (!hidden) void dialog.showMessageBox({ message, detail })
@@ -89,7 +92,8 @@ export function restartToUpdate() {
   app.quit()
 }
 
-/** The relaunched app's cue, holding the version it should come back as. */
+/** The relaunched app's cue, holding the version it should come back as. The name predates
+ *  restarts the user asked for, and stays so an update from a version before them finds it. */
 const marker = () => join(app.getPath('userData'), 'updated-while-away')
 
 function restartWhileAway() {
@@ -97,17 +101,12 @@ function restartWhileAway() {
   // Only Grip's own helpers, hidden (the recording controller and the picker's overlays, loaded
   // ahead): no window of the user's goes away, not even a hidden one.
   if (recordingStatus() !== 'idle' || activeExports() || !BrowserWindow.getAllWindows().every((w) => HELPERS.includes(kindOf(w)!) && !w.isVisible())) return
-  try {
-    writeFileSync(marker(), version)
-  } catch {
-    return // without it, the new version would open the picker on its own
-  }
   away = true
   restartToUpdate()
 }
 
-/** At launch: whether a restart while the user was away started this run, which then opens nothing. */
-export function updatedWhileAway(): boolean {
+/** At launch: whether a restart into an update started this run, which then opens nothing. */
+export function restartedToUpdate(): boolean {
   try {
     failed = readFileSync(marker(), 'utf8') !== app.getVersion()
     rmSync(marker())
@@ -177,9 +176,14 @@ export function startUpdates(log: (err: unknown) => void) {
     if (!restarting) return
     restarting = false
     e.preventDefault()
-    // Squirrel refused: still quit, it was asked for; unasked, come back as this version (the marker says so).
+    try {
+      writeFileSync(marker(), version)
+    } catch {} // without it, the new version opens the picker as if the user had launched it
+    // Squirrel refused: still quit, it was asked for, and the next launch is the user's own; unasked,
+    // come back as this version (the marker says so).
     autoUpdater.once('error', () => {
       if (away) app.relaunch()
+      else rmSync(marker(), { force: true })
       app.quit()
     })
     autoUpdater.quitAndInstall()
