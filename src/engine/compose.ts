@@ -74,14 +74,17 @@ export function motionAt(p: Prepared, t: number): Motion | undefined {
   const ts = shutter(p.map, t, Math.min(project.style.motionBlur, 1))
   const views = ts.map((x) => viewAt(p.zoom, x))
   // Cursor samples ride on the screen as it sits at t: a layout transition moves the screen without
-  // blurring it, so it must not blur the cursor on it either.
+  // blurring it, so it must not blur the cursor on it either. They also wear the image shown at t,
+  // the one the renderer draws along them: a sample past a shape change keeps only its position and
+  // tilt, since another image's scale on this one draws it the wrong size (5x for a 5x system arrow).
   const at = screenAt(p.layout, t)?.screen
+  const now = cursorAt(p.cursor, t)
   const cursors = ts.map((x) => {
     const c = cursorAt(p.cursor, x)
     const r = at && c && screenAt(p.layout, x)?.screen
-    if (!r || !at || !c) return c
+    if (!r || !at || !c || !now) return c
     const k = at.w / r.w
-    return { ...c, x: at.x + (c.x - r.x) * k, y: at.y + (c.y - r.y) * k, scale: c.scale * k }
+    return { ...now, x: at.x + (c.x - r.x) * k, y: at.y + (c.y - r.y) * k, angle: c.angle }
   })
   const lenses = loupesAcross(p.zoom, t, ts)
   // Keep the run of samples around t without a jump (an instant zoom, a teleporting cursor, an
