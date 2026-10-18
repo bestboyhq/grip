@@ -19,7 +19,7 @@ import { command, editorsDone, isQuitting, openFilesOrAlert, openOnboarding, ope
 import { setAppMenu } from './shell/menu.ts'
 import { createTray } from './shell/tray.ts'
 import { registerGrant } from './shell/grant.ts'
-import { startUpdates, updatedWhileAway } from './shell/update.ts'
+import { restartedToUpdate, startUpdates } from './shell/update.ts'
 import { inTurn, parseLaunch, parseGripUrl } from './shell/url.ts'
 import { plainError } from './shell/errors.ts'
 import { registerFakeRecording } from './shell/fake-recording.ts'
@@ -107,13 +107,13 @@ app.whenReady().then(() => {
   warmUp()
   ready = true
 
-  const away = updatedWhileAway()
+  const updated = restartedToUpdate()
   const queued = early.splice(0)
   const acted = launch(process.argv)
   for (const item of queued) /^grip:/i.test(item) ? openUrl(item) : openFilesOrAlert([item])
-  // Updated while the user was away, or opened at login: back in the menu bar only, its dock icon gone
-  // too (no window hides it). The picker waits for the user to ask.
-  if (away || app.getLoginItemSettings().wasOpenedAtLogin) updateDock()
+  // Restarted into an update, or opened at login: back in the menu bar only, its dock icon gone too
+  // (no window hides it). The picker waits for the user to ask.
+  if (updated || app.getLoginItemSettings().wasOpenedAtLogin) updateDock()
   else if (!acted && !queued.length) settings().onboarded ? showPicker() : openOnboarding(settings().welcomed ? 'page=permissions' : '')
   startUpdates(logError)
 })

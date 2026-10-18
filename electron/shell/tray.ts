@@ -3,14 +3,15 @@
 // reopens its result card), recent projects, open, import, settings, updates, quit; while
 // recording finish, pause, draw, delete. Dropped .grip bundles open; dropped videos import as new
 // projects. While exports run the icon is a progress ring and the menu leads with them, Cancel
-// included. A blue dot marks an update waiting for a restart.
+// included. A blue dot marks an update waiting for a restart, and an outlined one a check or
+// download under way.
 import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { native } from '../native.ts'
 import { exportListeners, exportMenuItems, exportStatus } from '../export.ts'
 import { ring } from './png.ts'
 import { recentProjects } from '../projects.ts'
-import { readyVersion, updateListeners, updateMenuItems } from './update.ts'
+import { readyVersion, updateActivity, updateListeners, updateMenuItems } from './update.ts'
 import { settings } from './settings.ts'
 import { captureRows } from './captures.ts'
 import { cancelRecording, command, importDialog, openFilesOrAlert, openOnboarding, openProject, openProjectDialog, recordingStatus, reopenCapture, SHORTCUTS, showPicker, statusListeners, toggleDrawing } from './recorder.ts'
@@ -84,15 +85,17 @@ export function createTray() {
   const paint = () => {
     const idle = recordingStatus() === 'idle'
     const update = readyVersion()
+    const activity = updateActivity()
     const busy = exportStatus()
     const exporting = busy ?? (done ? { name: '', progress: 1, waiting: 0 } : null)
     const pct = exporting && Math.floor(exporting.progress * 100)
-    // A recording outranks an export, which outranks a waiting update. The blue dot rules out a
-    // template image: the update icon matches the menu bar's appearance itself.
-    const name = !idle ? 'trayRecordingTemplate.png' : exporting ? `ring ${pct}` : !update ? 'trayTemplate.png' : native.menuBarDark() ? 'trayUpdateDark.png' : 'trayUpdateLight.png'
+    // A recording outranks an export, which outranks a waiting update, which outranks a check. The
+    // blue dot rules out a template image: the update icon matches the menu bar's appearance itself.
+    const name = !idle ? 'trayRecordingTemplate.png' : exporting ? `ring ${pct}` : update ? (native.menuBarDark() ? 'trayUpdateDark.png' : 'trayUpdateLight.png') : activity ? 'trayCheckingTemplate.png' : 'trayTemplate.png'
     if (name !== shown) tray?.setImage((shown = name).startsWith('ring') ? ringIcon(pct!) : icon(name))
     const tip = !idle ? 'Finish recording' : exporting && !busy ? 'Export finished' : exporting ? `Exporting “${exporting.name}” · ${pct}%${exporting.waiting ? `, ${exporting.waiting} more waiting` : ''}` : 'Record or take a screenshot'
-    const full = update && idle ? `${tip}\nGrip ${update} is ready to install` : tip
+    const note = !idle ? '' : update ? `Grip ${update} is ready to install` : activity
+    const full = note ? `${tip}\n${note}` : tip
     if (full !== tipShown) tray?.setToolTip((tipShown = full)) // progress repaints often; set only changes
   }
   statusListeners.push(paint)

@@ -1,8 +1,8 @@
 // `node scripts/update-e2e.ts`: in-app updates end to end, the way a user gets them. A signed build
 // of 0.0.1 finds 0.0.2 on a local feed and downloads it; 0.0.3 ships while 0.0.2 waits and replaces
 // it, and "Restart to Update" (clicked in the app menu) relaunches it as 0.0.3, the latest, in one
-// restart. Then 0.0.4 ships and installs by itself while the user is away, and Grip comes back to the
-// menu bar only: no window, no dock icon. Run it before publishing a release.
+// restart. Then 0.0.4 ships and installs by itself while the user is away. Both restarts come back to
+// the menu bar only: no window, no dock icon, never the picker. Run it before publishing a release.
 // Needs the Developer ID identity (Squirrel installs only signed updates) and Accessibility for the
 // terminal (it clicks the menu). It builds under its own name and app id, so an installed Grip, its
 // settings, and its update cache stay untouched.
@@ -39,6 +39,12 @@ const policy = () => sh('osascript', ['-l', 'JavaScript', '-e', `ObjC.import('Ap
 const version = (bundle = app) => sh('defaults', ['read', join(bundle, 'Contents/Info.plist'), 'CFBundleShortVersionString'])
 /** The version Squirrel staged, which ShipIt installs when the app quits. */
 const staged = () => version(fileURLToPath(sh('plutil', ['-extract', 'updateBundleURL', 'raw', join(homedir(), `Library/Caches/${ID}.ShipIt/ShipItState.plist`)])))
+
+/** The app came back opening nothing: no window, no dock icon (activation policy 1, accessory). */
+async function menuBarOnly(v: string) {
+  await sleep(5000) // a launch that opens onboarding has it on screen by now
+  if (windows() || policy() !== '1') throw new Error(`${v} came back with ${windows()} windows and activation policy ${policy()}, not 1 (accessory)`)
+}
 
 async function until(what: string, test: () => boolean, ms = 180_000) {
   for (const end = Date.now() + ms; Date.now() < end; await sleep(1000)) {
@@ -112,7 +118,8 @@ try {
   sh('osascript', ['-e', `tell application "System Events" to tell process "${NAME}" to click menu item "Restart to Update" of menu 1 of menu bar item "${NAME}" of menu bar 1`])
   await until('0.0.3 to be installed', () => version() === '0.0.3')
   await until('0.0.3 to relaunch', () => running() && menu().includes('Check for Updates…'))
-  console.log(`ok: 0.0.1 updated itself to ${version()} and relaunched`)
+  await menuBarOnly('0.0.3')
+  console.log(`ok: 0.0.1 updated itself to ${version()} and relaunched to the menu bar only`)
 
   // Away: no window open (grip://stop finds nothing to stop, so neither picker nor onboarding opens),
   // and a second without input counts as away.
@@ -121,8 +128,7 @@ try {
   launch({ STUDIO_HIDDEN: '1', STUDIO_UPDATE_EVERY: '5000', STUDIO_UPDATE_AWAY: '1' }, ['grip://stop'])
   await until('0.0.4 to be installed while away', () => version() === '0.0.4')
   await until('0.0.4 to relaunch', () => running() && policy() !== '')
-  await sleep(5000) // a launch that opens onboarding has it on screen by now
-  if (windows() || policy() !== '1') throw new Error(`0.0.4 came back with ${windows()} windows and activation policy ${policy()}, not 1 (accessory)`)
+  await menuBarOnly('0.0.4')
   console.log(`ok: 0.0.3 updated itself to ${version()} while away and came back to the menu bar only`)
 } catch (e) {
   // Why it did not install or relaunch, before cleanup deletes the evidence.
