@@ -13,6 +13,9 @@ We are building Grip, a screen recorder and editor that turns a raw recording in
 The domain skills in `.agents/skills/` collect what screen recorders in this category get wrong.
 Their gotchas are bugs and limits that shipped in real products; design each one out from the first commit.
 
+Describe every behavior on its own terms in everything that lands in git: code, comments, skills, docs, commit messages, branch names, and PR titles and bodies.
+Competing products stay unnamed there, even when one inspired the work or shipped the bug a gotcha records.
+
 Every domain obeys these invariants:
 
 - **Non-destructive.** Recording writes raw sources to separate tracks: screen without the cursor, camera, mic, system audio, and the input event stream.

@@ -153,15 +153,22 @@
       return requestDraw()
     }
     model = M.buildModel(draft ? { ...base, ...draft } : base, keys, words, model ?? undefined)
-    if (draft) return requestDraw() // lanes and fit stay as they were while dragging
+    const relayout = (ids: M.TrackId[]) => {
+      const r = layoutRows(ids, model!.zooms.stack)
+      view.rows = r.rows
+      height = r.height
+    }
+    if (draft) {
+      // Lanes and fit stay as they were while dragging; the zoom track grows with zooms dragged onto others.
+      relayout(view.rows.map((r) => r.id))
+      return requestDraw()
+    }
     const key = `${doc.path}|${doc.project?.createdAt}`
     if (key !== lanesFor) {
       lanesFor = key
       shown = new Set()
     }
-    const r = layoutRows(M.tracks(model, camera, shown))
-    view.rows = r.rows
-    height = r.height
+    relayout(M.tracks(model, camera, shown))
     const fit = isFit()
     view.duration = duration = model.map.duration
     if (fit) view.pps = target = minPps() // a fitted timeline stays fitted when edits change its length
@@ -429,11 +436,11 @@
       draft = { clips }
       view.shift = d.side === 'start' ? { at: d.map.outStarts[d.i], by: (clips[d.i].start - c.start) / c.speed } : null
     } else if (d.kind === 'move') {
-      draft = { [d.track]: M.moveItems(b[d.track] as M.Item[], d.ids, toSource(d.map, t) - d.grab, b.duration) }
+      draft = { [d.track]: M.moveItems(b[d.track] as M.Item[], d.ids, toSource(d.map, t) - d.grab, b.duration, M.overlaps(d.track)) }
     } else if (d.kind === 'resize') {
-      draft = { [d.track]: M.resizeItem(b[d.track] as M.Item[], d.id, d.side, toSource(d.map, timeOf(view, p.x) + d.off), b.duration) }
+      draft = { [d.track]: M.resizeItem(b[d.track] as M.Item[], d.id, d.side, toSource(d.map, timeOf(view, p.x) + d.off), b.duration, M.overlaps(d.track)) }
     } else if (d.kind === 'create') {
-      const r = M.fit(b[d.track], toSource(d.map, Math.min(d.t0, t)), toSource(d.map, Math.max(d.t0, t)), b.duration)
+      const r = M.fit(b[d.track], toSource(d.map, Math.min(d.t0, t)), toSource(d.map, Math.max(d.t0, t)), b.duration, M.MIN_LEN, M.overlaps(d.track))
       draft = r ? { [d.track]: [...b[d.track], A.make(d.track, r[0], r[1])] } : null
     } else if (d.kind === 'marquee') {
       selection.ids = [...new Set([...d.keep, ...marqueeHits()])]

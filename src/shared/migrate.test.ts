@@ -54,6 +54,15 @@ test('fields added since the project was saved get their defaults; unknown field
   assert.deepEqual(m.futureField, { keep: true })
 })
 
+test('renamed click effects carry forward in projects and presets', () => {
+  for (const [old, now] of [['ripple', 'wave'], ['shockwave', 'focus'], ['circle', 'circle']]) {
+    const p = roundTrip(project())
+    p.style.cursor.click = old
+    assert.equal(migrate(p).style.cursor.click, now)
+    assert.equal(normalizeStyle({ cursor: { click: old } }).cursor.click, now)
+  }
+})
+
 test('malformed projects are rejected', () => {
   const bad: Array<[string, (p: any) => void]> = [
     ['not a Grip project', (p) => delete p.version],

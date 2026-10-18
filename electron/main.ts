@@ -161,7 +161,8 @@ app.on('before-quit', async (e) => {
 })
 app.on('web-contents-created', (_e, wc) => {
   // A file dropped where no page handles it, or a stray link, must never replace a window's page.
-  wc.on('will-navigate', (e) => e.preventDefault())
+  // The page reloading itself (Vite after a source edit, the dev labs) is the same URL and goes through.
+  wc.on('will-navigate', (e) => e.url !== wc.getURL() && e.preventDefault())
   wc.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) void shell.openExternal(url)
     return { action: 'deny' }

@@ -20,8 +20,6 @@ struct Frame {
   curTex: vec4f,   // texture px per image px, clipped to the screen frame (a cropped recording)
   curBox: vec4f,   // swept bounds x0, y0, x1, y1 (output px)
   curS: array<vec4f, 16>,   // shutter samples of the cursor: x, y (unzoomed), unzoomed px per image px, angle
-  loupe: vec4f,    // center x, y (unzoomed), radius (unzoomed px), magnification
-  loupe2: vec4f,   // opacity, has loupe, stretch (along the motion, length = elongation)
   cam: vec4f,      // rect (output px)
   cam1: vec4f,     // radius, shadow, opacity, mirror
   cam2: vec4f,     // crop (normalized)
@@ -29,10 +27,13 @@ struct Frame {
   cam4: vec4f,     // camera source w, h
   lutMin: vec4f,
   lutMax: vec4f,
-  fin: vec4f,      // has overlay
+  fin: vec4f,      // has overlay, click effect (0 none, 1 swell, 2 wave, 3 circle, 4 focus ring)
   vp: vec4f,       // viewport (output px): the zoom view shows through it, everything outside is unzoomed
   vis: vec4f,      // shown part of the recording (unzoomed px): all of scr, or its crop; the frame is this grown by dev.w
-  clicks: array<vec4f, 4>, // click ripples: x, y, front radius (unzoomed px), strength
+  clicks: array<vec4f, 4>, // click effects: x, y, radius (unzoomed px), strength
+  loupes: array<vec4f, 8>, // lenses at t, two slots each: center x, y (unzoomed), radius (unzoomed px), magnification;
+                           // opacity, samples in loupeS (1: still), stretch (along the motion, length = elongation). Radius 0: none
+  loupeS: array<vec4f, 72>, // each lens across the shutter: LENS_SAMPLES samples of two slots, laid out like loupes
 }
 
 @group(0) @binding(0) var<uniform> F: Frame;
@@ -241,21 +242,39 @@ fn screenAt(u: vec2f, aa: f32) -> vec4f {
   return masked(screenSample(uv, m), uv, m);
 }
 
-// ---- Click ripple: a shock wave on the screen's glass, refracting the recording under it ----
-// Each click raises one crest, h(r) = g((r - f) / w) + g((-r - f) / w) with g(x) = exp(-x^2), whose
-// front f runs out from the click (RIPPLE in overlays/index.ts eases it), mirrored so the surface
-// stays smooth at its center. The recording is sampled along the slope, so the crest magnifies what
-// it passes like a thin lens, strong dispersion bends the colors around it into a rainbow, and the
-// loupe's key light shades it so it still shows over flat UI. The cursor, drawn later, floats above.
+// ---- Click effects on the screen's glass (CLICK_FX in overlays/index.ts times them) ----
+// clicks[i] is x, y, radius (unzoomed px), strength; fin.y picks the effect: 1 swell, 2 wave,
+// 3 circle, 4 focus ring. They are drawn in this pass, so the loupe and motion blur carry them and
+// the cursor, drawn later, floats above.
+//
+// Swell and wave raise one crest per click, h(r) = g((r - f) / w) + g((-r - f) / w) with
+// g(x) = exp(-x^2), whose front f runs out from the click, mirrored so the surface stays smooth at
+// its center. The recording is sampled along the slope, so the crest magnifies what it passes like
+// a thin lens and dispersion bends the colors around it into a rainbow. Each crest stays several
+// times wider than its shift, so text bends and swells instead of folding into rainbow noise.
+// The swell is broad, unlit, and blurred along the bend. The wave is narrower and
+// catches the loupe's key light, so it still shows over flat UI.
 
-const RIPPLE_W = 10.0; // crest width, units
 const SLOPE = 0.857764; // steepest |g'|, sqrt(2 / e)
-const RIPPLE_SHIFT = 8.0 / SLOPE; // refraction at the steepest slope, units
-const RIPPLE_TILT = 0.6 / SLOPE; // surface tilt at the steepest slope, for the light
 
-// Slope of every live ripple at unzoomed point u: dimensionless, outward is uphill.
-fn ripples(u: vec2f) -> vec2f {
-  let w = RIPPLE_W * F.a.z;
+struct Crest {
+  w: f32,     // width, units
+  shift: f32, // refraction at the steepest slope, units
+  tilt: f32,  // surface tilt at the steepest slope, for the light
+  shade: f32, // how much the light brightens and darkens the slopes
+  spec: f32,  // specular highlight strength
+  disp: f32,  // dispersion: red bends 1 - disp as far as green, blue 1 + disp
+  blur: f32,  // smear along the bend, as a fraction of the shift
+}
+
+fn crest() -> Crest {
+  if (F.fin.y == 1.0) { return Crest(60.0, 6.0, 0.0, 0.0, 0.0, 0.72, 0.5); }
+  return Crest(22.0, 4.5, 0.45, 0.1, 0.6, 0.48, 0.0);
+}
+
+// Slope of every live crest at unzoomed point u: dimensionless, outward is uphill.
+fn ripples(u: vec2f, k: Crest) -> vec2f {
+  let w = k.w * F.a.z;
   var v = vec2f(0.0);
   for (var i = 0; i < 4; i++) {
     let c = F.clicks[i]; // x, y, front, strength
@@ -269,15 +288,69 @@ fn ripples(u: vec2f) -> vec2f {
   return v;
 }
 
-fn rippled(u: vec2f, v: vec2f, aa: f32) -> vec4f {
-  let off = v * RIPPLE_SHIFT * F.a.z;
+// The recording shifted by off, red bending least and blue most.
+fn bent(u: vec2f, off: vec2f, d: f32, aa: f32) -> vec4f {
   let s = screenAt(u + off, aa);
-  let rgb = vec3f(screenAt(u + off * 0.4, aa).r, s.g, screenAt(u + off * 1.6, aa).b); // red bends least, blue most
-  let n = normalize(vec3f(-v * RIPPLE_TILT, 1.0));
+  return vec4f(screenAt(u + off * (1.0 - d), aa).r, s.g, screenAt(u + off * (1.0 + d), aa).b, s.a);
+}
+
+fn rippled(u: vec2f, v: vec2f, k: Crest, aa: f32) -> vec4f {
+  let off = v * (k.shift / SLOPE) * F.a.z;
+  var s: vec4f;
+  if (k.blur > 0.0) { // taps along the bend: blur follows the distortion, still glass stays sharp
+    s = vec4f(0.0);
+    for (var i = 0; i < 7; i++) { s += bent(u, off * (1.0 + k.blur * (f32(i) / 3.0 - 1.0)), k.disp, aa); }
+    s /= 7.0;
+  } else {
+    s = bent(u, off, k.disp, aa);
+  }
+  let tilt = k.tilt / SLOPE;
+  let n = normalize(vec3f(-v * tilt, 1.0));
   let L = normalize(KEY);
   let lit = dot(n, L) / L.z - 1.0; // 0 on still glass, > 0 facing the light
-  let spec = pow(max(dot(n, normalize(L + vec3f(0.0, 0.0, 1.0))), 0.0), 90.0);
-  return vec4f(max(rgb * (1.0 + 0.15 * lit), vec3f(0.0)) + spec, max(s.a, min(length(v) * RIPPLE_TILT * 4.0, 1.0)));
+  let spec = pow(max(dot(n, normalize(L + vec3f(0.0, 0.0, 1.0))), 0.0), 90.0) * k.spec;
+  return vec4f(max(s.rgb * (1.0 + k.shade * lit), vec3f(0.0)) + spec, max(s.a, min(length(v) * tilt * 4.0, 1.0)));
+}
+
+const FOCUS_W = 2.5; // focus ring line width, units
+const FOCUS_TINT = vec3f(0.525, 0.463, 1.0); // violet, sRGB
+
+// The circle and the focus ring over the recording's color c at u: rgb and coverage (for the dither mark).
+fn clickMarks(c: vec3f, u: vec2f, aa: f32) -> vec4f {
+  var o = c;
+  var cover = 0.0;
+  let circle = F.fin.y == 3.0;
+  for (var i = 0; i < 4; i++) {
+    let k = F.clicks[i]; // x, y, radius, opacity
+    if (k.w <= 0.0) { continue; }
+    let r = length(u - k.xy);
+    if (circle) {
+      // A tinted disc, lighter in the middle with a crisp rim. It darkens light UI and lightens dark
+      // UI, with one tone per click taken from around it so it never flips color across text.
+      if (r > k.z + 2.0 * aa) { continue; }
+      var l = 0.0;
+      for (var j = 0; j < 8; j++) {
+        let ang = f32(j) * 0.785398;
+        l += dot(screenAt(k.xy + vec2f(cos(ang), sin(ang)) * 14.0 * F.a.z, aa).rgb, vec3f(0.2126, 0.7152, 0.0722));
+      }
+      let tone = select(vec3f(1.0), vec3f(0.0), l > 4.0);
+      let inside = 1.0 - smoothstep(k.z - aa, k.z + aa, r);
+      let rim = 1.0 - smoothstep(0.0, 1.5 * aa, abs(r - k.z + aa));
+      let rn = min(r / k.z, 1.0);
+      let a = k.w * clamp(inside * (0.55 + 0.45 * rn * rn) + 0.96 * rim, 0.0, 1.0);
+      o = mix(o, tone, a);
+      cover = max(cover, a);
+    } else {
+      // A violet line with a soft light rim that keeps it off dark text.
+      let w = FOCUS_W * F.a.z;
+      let d = abs(r - k.z);
+      let halo = exp(-pow(d / (1.8 * w + F.a.z), 2.0));
+      let line = 1.0 - smoothstep(0.5 * (w - aa), 0.5 * (w + aa), d);
+      o = mix(mix(o, vec3f(1.0), 0.5 * halo * k.w), FOCUS_TINT, 0.95 * line * k.w);
+      cover = max(cover, max(0.5 * halo, line) * k.w);
+    }
+  }
+  return vec4f(o, cover);
 }
 
 // Everything under the zoom view except the cursor, at unzoomed point u. rgb + dither mark.
@@ -291,9 +364,13 @@ fn zoomed(u: vec2f, aa: f32) -> vec4f {
   var mark = 1.0;
   let cv = frameCover(u, aa);
   if (cv > 0.0) {
-    let v = ripples(u);
+    let fx = F.fin.y;
     var s: vec4f;
-    if (dot(v, v) > 1e-8) { s = rippled(u, v, aa); } else { s = screenAt(u, aa); }
+    var v = vec2f(0.0);
+    var k: Crest;
+    if (fx == 1.0 || fx == 2.0) { k = crest(); v = ripples(u, k); }
+    if (dot(v, v) > 1e-8) { s = rippled(u, v, k, aa); } else { s = screenAt(u, aa); }
+    if (fx >= 3.0) { let m = clickMarks(s.rgb, u, aa); s = vec4f(m.rgb, max(s.a, m.a)); }
     c = mix(c, s.rgb, cv);
     mark = mix(1.0, s.a, cv);
   }
@@ -396,97 +473,198 @@ fn dimAt(u: vec2f, aa: f32) -> f32 {
 }
 
 // ---- Glass loupe: a lens over the zoomed layer, masks, cursor and highlight included ----
-// A flat-topped glass disc with a rounded bevel. The flat top magnifies; across the bevel the
-// content compresses back to 1x, so at the rim it meets the content around the lens, the way a
-// drop of water sits on a screen: no outline, no shadow, the bending is the edge. Lit by one key
-// light from above: a specular crescent on the bevel facing it, a dimmer one where light leaves
-// the far side, Fresnel reflection at grazing angles, and a little dispersion where the bevel
-// bends hardest. Moving, the drop stretches along its motion, keeping its area. The rest of the
-// frame dims evenly, so the magnified piece stands out and the rim still shows over white.
+// A flat-topped glass disc with a rounded bevel. The flat top magnifies almost to the edge;
+// across the bevel the content runs on ever slower and stands still at the rim, so whatever reaches
+// the edge stretches and curls along it, the way a thick lens bends lines at its rim. Squeezing the
+// frame around the lens into the bevel instead aliases into streaks. No outline: the bending is the
+// edge. Lit by one key light from above: the bevel shades darker turned away from it, a hairline of
+// light catches the rim, Fresnel reflection at grazing angles, and dispersion splits the colors where
+// the bevel bends hardest. Moving, the drop stretches along its motion, keeping its
+// area, and what it shows smears across the shutter like the rest of the frame. The frame dims most
+// right around a lens and less further out, so the lens lifts off the screen without the whole frame
+// going dark. Several lenses draw in order, a later one over an earlier one.
 
-const BEVEL = 0.22; // bevel width, fraction of the radius
+const BEVEL = 0.15; // bevel width, fraction of the radius
+const CURL = 1.0 / 3.0; // the bevel shows this share of what the flat top would show across it, the least that
+// stays monotone: the content slows as (1 - s)^2 and stretches into a curl along the rim
+const DISPERSION = 0.045; // how far red and blue bend apart at the rim, fraction of the radius
 const KEY = vec3f(-0.38, -0.82, 0.43); // key light direction (output px axes, z toward the viewer)
-const AROUND = 0.15; // how much the frame around the lens dims
+const AROUND = 0.14; // how much the frame right around a lens dims
+const AROUND_REACH = 0.8; // ...and half that this many radii out from its edge
+const AROUND_SHIFT = 0.3; // the dim sits this many radii off the lens, away from the light, like its shadow
+const LENSES = 4u;
+const LENS_SAMPLES = 9u; // per lens in F.loupeS (renderer.ts LOUPE_SAMPLES)
+
+// Cubic Hermite from (0, p0) with slope m0 to (1, p1) with slope m1, at s: value, slope.
+fn hermite(s: f32, p0: f32, m0: f32, p1: f32, m1: f32) -> vec2f {
+  let s2 = s * s;
+  let s3 = s2 * s;
+  return vec2f(
+    (2.0 * s3 - 3.0 * s2 + 1.0) * p0 + (s3 - 2.0 * s2 + s) * m0 + (3.0 * s2 - 2.0 * s3) * p1 + (s3 - s2) * m1,
+    (6.0 * s2 - 6.0 * s) * p0 + (3.0 * s2 - 4.0 * s + 1.0) * m0 + (6.0 * s - 6.0 * s2) * p1 + (3.0 * s2 - 2.0 * s) * m1);
+}
 
 // Radius shown at radius rho (both fractions of the lens radius, from its center), and its
-// derivative: magnified on the flat top, then a monotone cubic across the bevel that ends at the
-// rim on the content just outside it, compressed hardest there. At magnification 1 it is flat glass.
+// derivative: magnified on the flat top, then a monotone cubic across the bevel that slows to a stop
+// at the rim. Under 1.5x it blends into one that ends on the content just outside the rim, so at
+// magnification 1 the lens is flat glass and shows exactly what lies under it.
 fn lensMap(rho: f32, mag: f32) -> vec2f {
   let e = 1.0 - BEVEL;
   if (rho <= e) { return vec2f(rho / mag, 1.0 / mag); }
   let s = min((rho - e) / BEVEL, 1.0);
   let p0 = e / mag;
   let m0 = BEVEL / mag;
-  let m1 = (1.0 - p0) * (1.0 + 1.8 * clamp(mag - 1.0, 0.0, 1.0)); // under 3x the secant: stays monotone
-  let s2 = s * s;
-  let s3 = s2 * s;
-  let f = (2.0 * s3 - 3.0 * s2 + 1.0) * p0 + (s3 - 2.0 * s2 + s) * m0 + (3.0 * s2 - 2.0 * s3) + (s3 - s2) * m1;
-  let df = (6.0 * s2 - 6.0 * s) * p0 + (3.0 * s2 - 4.0 * s + 1.0) * m0 + (6.0 * s - 6.0 * s2) + (3.0 * s2 - 2.0 * s) * m1;
-  return vec2f(f, df / BEVEL);
+  let curl = hermite(s, p0, m0, p0 + CURL * m0, 0.0);
+  let meet = hermite(s, p0, m0, 1.0, (1.0 - p0) * (1.0 + 1.8 * clamp(mag - 1.0, 0.0, 1.0))); // under 3x the secant: stays monotone
+  let h = mix(meet, curl, clamp(2.0 * (mag - 1.0), 0.0, 1.0));
+  return vec2f(h.x, h.y / BEVEL);
 }
 
-// Everything the lens shows at unzoomed point um: the zoomed layer, the cursor, the highlight dim.
-fn underLens(um: vec2f, aa: f32, vs: f32) -> vec3f {
+// Everything the lens shows at unzoomed point um: the zoomed layer, the cursor (sample cs), the highlight dim.
+fn underLens(um: vec2f, aa: f32, vs: f32, cs: vec4f) -> vec3f {
   var col = zoomed(um, aa).rgb;
   if (F.cur.w > 0.5) {
-    let k = cursorAt(um, curAt(0.5), vs) * F.cur.y;
+    let k = cursorAt(um, cs, vs) * F.cur.y;
     col = k.rgb + col * (1.0 - k.a);
   }
   return col * (1.0 - dimAt(um, aa));
 }
 
-@fragment fn fs_loupe(v: VO) -> @location(0) vec4f {
-  let vt = F.viewT.xyz;
-  let u = unview(v.pos.xy, vt);
-  let aa = 1.0 / vt.z;
-  let unit = F.a.z;
-  let c = F.loupe.xy;
-  let R = F.loupe.z;
-  let mag = F.loupe.w;
-  let op = F.loupe2.x;
+struct Lens { a: vec4f, b: vec4f } // two slots of F.loupes
+
+// Lens i at shutter time f in 0..1, piecewise linear between its samples; at t when f < 0 or it is still.
+fn lensOf(i: u32, f: f32) -> Lens {
+  let n = u32(F.loupes[2u * i + 1u].y);
+  if (f < 0.0 || n <= 1u) { return Lens(F.loupes[2u * i], F.loupes[2u * i + 1u]); }
+  let x = clamp(f, 0.0, 1.0) * f32(n - 1u);
+  let k = min(u32(x), n - 2u);
+  let w = x - f32(k);
+  let j = 2u * (i * LENS_SAMPLES + k);
+  return Lens(mix(F.loupeS[j], F.loupeS[j + 2u], w), mix(F.loupeS[j + 1u], F.loupeS[j + 3u], w));
+}
+
+// Lens L at unzoomed point u (vt the view, aa unzoomed px per output px, cs the cursor sample, fringe
+// whether to split the colors): premultiplied color, coverage.
+fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, fringe: bool) -> vec4f {
+  let c = L.a.xy;
+  let R = L.a.z;
+  let mag = L.a.w;
+  let op = L.b.x;
+  let st = L.b.zw;
   let q = u - c;
   // The stretched drop: an ellipse 1 + k long along the motion and 1 / sqrt(1 + k) across it.
-  let k = length(F.loupe2.zw);
-  let ax = select(vec2f(1.0, 0.0), F.loupe2.zw / max(k, 1e-6), k > 1e-6);
+  let k = length(st);
+  let ax = select(vec2f(1.0, 0.0), st / max(k, 1e-6), k > 1e-6);
   let along = dot(q, ax);
   let sq = ax * (along / (1.0 + k)) + (q - ax * along) * sqrt(1.0 + k);
   let d = length(sq);
-  let cv = cover(d - R, aa);
-  let dim = AROUND * op * (1.0 - cv);
-  if (cv <= 0.0) { return vec4f(0.0, 0.0, 0.0, dim); }
+  let cv = cover(d - R, 2.0 * aa); // a rounded edge is a little soft, not a cut
+  if (cv <= 0.0) { return vec4f(0.0); }
 
   let rho = min(d / R, 1.0);
   let gq = ax * (dot(sq, ax) / (1.0 + k)) + (sq - ax * dot(sq, ax)) * sqrt(1.0 + k); // gradient of d: the rim's normal
   let dir = gq / max(length(gq), 1e-6);
   let m = lensMap(rho, mag);
   let shown = m.x / max(rho, 1e-4); // 1 / mag on the flat top: the magnification stays round when stretched
-  let foot = aa * max(m.y, shown); // unzoomed px per output px: the bevel minifies
-  let um = c + q * shown;
-  var col = underLens(um, foot, vt.z / foot * aa);
+  let foot = aa * max(m.y, shown); // unzoomed px per output px
+  let vs = vt.z / foot * aa;
+  var col = underLens(c + q * shown, foot, vs, cs);
   let s = clamp((rho - (1.0 - BEVEL)) / BEVEL, 0.0, 1.0); // 0 on the flat top, 1 at the rim
-  if (s > 0.0) {
-    // Dispersion: red bends least, blue most, apart by up to a few output px at the rim.
-    let ca = dir * (1.3 * unit * s * s * m.y * clamp(mag - 1.0, 0.0, 1.0));
-    col = vec3f(underLens(um + ca, foot, vt.z / foot * aa).r, col.g, underLens(um - ca, foot, vt.z / foot * aa).b);
+  if (s > 0.0 && fringe) {
+    // Dispersion: red bends least, so it shows what lies a little further out, and blue the reverse.
+    // Splitting the radius rather than the content keeps the fringes as wide where the rim stretches.
+    let sp = DISPERSION * s * clamp(mag - 1.0, 0.0, 1.0);
+    let r = lensMap(min(rho * (1.0 + sp), 1.0), mag).x / max(rho, 1e-4);
+    let b = lensMap(rho * (1.0 - sp), mag).x / max(rho, 1e-4);
+    col = vec3f(underLens(c + q * r, foot, vs, cs).r, col.g, underLens(c + q * b, foot, vs, cs).b);
   }
 
   // Surface normal of the bevel: flat on top, turning to near vertical at the rim.
   let tilt = 1.5 * pow(s, 2.4);
   let n = vec3f(dir * sin(tilt), cos(tilt));
-  let L = normalize(KEY);
-  let back = normalize(vec3f(-L.xy, L.z));
-  let spec = pow(max(dot(n, normalize(L + vec3f(0.0, 0.0, 1.0))), 0.0), 260.0);
-  let spec2 = pow(max(dot(n, normalize(back + vec3f(0.0, 0.0, 1.0))), 0.0), 260.0) * 0.5;
   let fres = 0.04 + 0.96 * pow(1.0 - n.z, 5.0);
   let env = mix(vec3f(1.0), vec3f(0.55, 0.58, 0.64), smoothstep(-0.7, 0.9, dir.y)); // bright sky above, the room below
-  var g = col * mix(vec3f(1.0), vec3f(0.9, 0.93, 0.96), smoothstep(0.35, 1.0, s) * 0.5); // a longer path through the glass
-  g = mix(g, env, fres * 0.28) + vec3f(spec + spec2);
+  // The rim rounds away: the outer bevel shades darker on the side turned from the light and barely
+  // on the side facing it, the last few px darken all around, and a hairline of light catches the
+  // very edge. Broad specular crescents read as plastic, not glass.
+  let toward = dot(dir, normalize(KEY.xy)); // 1 facing the light, -1 turned away
+  let round = smoothstep(1.0 - 0.7 * BEVEL, 1.0, rho);
+  let px = (R - d) / aa; // output px in from the rim
+  var g = col * (1.0 - round * mix(0.15, 0.02, 0.5 + 0.5 * toward)) * (1.0 - 0.1 * (1.0 - smoothstep(1.0, 6.0, px)));
+  g = mix(g, env, fres * 0.15);
+  g += vec3f(0.1 + 0.12 * max(toward, 0.0)) * (1.0 - smoothstep(0.0, 1.5, px));
 
   // Appearing, the magnification grows from 1, where the lens shows exactly what lies under it, so
   // the content stays opaque and swells in place while only the glass and the dim fade in. Fading
   // the content too would show it twice, magnified over unmagnified.
   col = mix(col, g, op);
-  return vec4f(col * cv, cv + dim);
+  return vec4f(col * cv, cv);
+}
+
+// Every lens over output pixel p at shutter time f (< 0: at t), and the dim around them.
+fn lensesAt(p: vec2f, f: f32, fringe: bool) -> vec4f {
+  let vt = select(viewAt(f), F.viewT.xyz, f < 0.0);
+  let u = unview(p, vt);
+  let aa = 1.0 / vt.z;
+  let cs = curAt(select(f, 0.5, f < 0.0));
+  var out = vec4f(0.0);
+  var dim = 0.0;
+  for (var i = 0u; i < LENSES; i++) {
+    if (F.loupes[2u * i].z <= 0.0) { continue; }
+    let L = lensOf(i, f);
+    let l = lensAt(L, u, vt, aa, cs, fringe);
+    out = l + out * (1.0 - l.a);
+    let d = max(length(u - L.a.xy + normalize(KEY.xy) * AROUND_SHIFT * L.a.z) - L.a.z, 0.0) / (AROUND_REACH * L.a.z);
+    dim = max(dim, AROUND * L.b.x / (1.0 + d * d));
+  }
+  return vec4f(out.rgb, out.a + dim * (1.0 - out.a));
+}
+
+// Output px the content under p travels across the shutter through a lens: the lens gliding, its
+// magnification changing, the view moving under it (read off the flat top, which shows the most),
+// and the cursor it magnifies moving inside it.
+fn lensTravel(p: vec2f) -> f32 {
+  var moving = F.a.w > 1.5 || F.cur.z > 1.5;
+  for (var i = 0u; i < LENSES; i++) { moving = moving || (F.loupes[2u * i].z > 0.0 && F.loupes[2u * i + 1u].y > 1.5); }
+  if (!moving) { return 0.0; }
+  var was: array<vec4f, 4>; // per lens: what its flat top shows at p, its center
+  var wasCur: array<vec2f, 4>; // per lens: where it shows the cursor
+  var travel = 0.0;
+  for (var k = 0; k <= 8; k++) {
+    let f = f32(k) / 8.0;
+    let vt = viewAt(f);
+    let u = unview(p, vt);
+    let cs = curAt(f);
+    let reach = max(F.curImg.x, F.curImg.y) * cs.z; // the cursor's extent, unzoomed px
+    var step = 0.0;
+    for (var i = 0u; i < LENSES; i++) {
+      if (F.loupes[2u * i].z <= 0.0) { continue; }
+      let L = lensOf(i, f);
+      let now = vec4f(L.a.xy + (u - L.a.xy) / L.a.w, L.a.xy);
+      let cur = L.a.xy + (cs.xy - L.a.xy) * L.a.w;
+      if (k > 0 && length(u - L.a.xy) < 1.5 * L.a.z) {
+        step = max(step, max(length(now.xy - was[i].xy) * L.a.w, length(now.zw - was[i].zw)) * vt.z);
+        if (F.cur.w > 0.5 && length(u - cur) < reach * L.a.w + length(cur - wasCur[i])) { step = max(step, length(cur - wasCur[i]) * vt.z); }
+      }
+      was[i] = now;
+      wasCur[i] = cur;
+    }
+    travel += step;
+  }
+  return travel;
+}
+
+// Like the zoomed layer's motion blur, but the lens bends what it shows, so no reprojection of one
+// frame reaches it: average whole lens renders across the shutter, as many as the content travels.
+// Smeared further than a few px, the color fringes are gone in the blur: those taps skip them.
+@fragment fn fs_loupe(v: VO) -> @location(0) vec4f {
+  let p = v.pos.xy;
+  let count = clamp(i32(ceil(lensTravel(p) / 1.5)), 1, 32);
+  if (count == 1) { return lensesAt(p, -1.0, true); }
+  let j = ign(p);
+  var acc = vec4f(0.0);
+  for (var i = 0; i < count; i++) { acc += lensesAt(p, (f32(i) + j) / f32(count), count <= 4); }
+  return acc / f32(count);
 }
 
 // ---- Camera ----

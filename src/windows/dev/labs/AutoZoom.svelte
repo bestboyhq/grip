@@ -107,8 +107,7 @@
       c.strokeStyle = `rgb(255 255 255 / ${1 - Math.abs(e.t - s.src) * 2})`
       c.stroke()
     }
-    if (s.loupe) {
-      const l = s.loupe
+    for (const l of s.loupes) {
       c.save()
       c.globalAlpha = l.opacity
       c.beginPath()

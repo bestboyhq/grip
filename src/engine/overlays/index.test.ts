@@ -5,7 +5,7 @@ import type { InputEvent, Modifier } from '../../shared/events.ts'
 import { removeSourceRange, setSpeed, timeMap } from '../../shared/timemap.ts'
 import { captionCues } from '../transcript/index.ts'
 import { prepare, sceneAt, type SceneInput } from '../scene.ts'
-import { breakLines, captionAt, classifyKey, clicksAt, drawOverlays, keystrokesAt, maxLineChars } from './index.ts'
+import { breakLines, captionAt, classifyKey, CLICK_FX, clicksAt, drawOverlays, keystrokesAt, maxLineChars } from './index.ts'
 
 const key = (t: number, k: string, mods: Modifier[] = [], hold = 0.08): InputEvent[] => [
   { t, type: 'key', down: true, key: k, code: 0, mods },
@@ -106,6 +106,18 @@ test('clicks: mapped through cuts, positioned on the screen rect, gone after the
   assert.equal(clicksAt(p.overlays, 14).length, 0)
   p.input.project.style.cursor.click = 'none'
   assert.equal(clicksAt(p.overlays, 2.1).length, 0)
+})
+
+test('click effects grow from nothing and are gone by the end of their life', () => {
+  for (const [style, fx] of Object.entries(CLICK_FX)) {
+    const [, start] = fx.at(0)
+    const [r, end] = fx.at(fx.life)
+    assert.ok(Math.abs(start) < 1e-6 && Math.abs(end) < 1e-6, `${style} pops: ${start} at 0, ${end} at its end`)
+    assert.ok(r > 0 && Number.isFinite(r), style)
+    let peak = 0
+    for (let t = 0; t <= fx.life; t += 0.005) peak = Math.max(peak, fx.at(t)[1])
+    assert.ok(peak > 0.1, `${style} never shows`)
+  }
 })
 
 test('captions: the video shows exactly the exported subtitle cues, each word active where it is spoken, after any cuts and speed changes', () => {

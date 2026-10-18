@@ -13,7 +13,7 @@ import type { InputEvent } from '../shared/events.ts'
 import { timeMap, toSource, type TimeMap } from '../shared/timemap.ts'
 import { prepareLayout, layoutAt } from './layout.ts'
 import { prepareCursor, cursorAt, cursorPath, type CursorPath } from './motion/index.ts'
-import { prepareZoom, viewAt, loupeAt, zoomAmount, zoomPath, type ZoomPath } from './zoom/index.ts'
+import { prepareZoom, viewAt, loupesAt, zoomAmount, zoomPath, type ZoomPath } from './zoom/index.ts'
 import { prepareOverlays, clicksAt, drawingsAt, keystrokesAt, captionAt } from './overlays/index.ts'
 
 export interface View {
@@ -122,7 +122,7 @@ export interface Scene {
   keystrokes: Keystroke[]
   caption: Caption | null
   masks: MaskLayer[]
-  loupe: Loupe | null
+  loupes: Loupe[] // in drawing order
 }
 
 export interface SceneInput {
@@ -207,7 +207,7 @@ export function sceneAt(p: Prepared, t: number): Scene {
     keystrokes: keystrokesAt(p.overlays, t),
     caption: captionAt(p.overlays, t),
     masks,
-    loupe: loupeAt(p.zoom, t),
+    loupes: loupesAt(p.zoom, t),
   }
 }
 

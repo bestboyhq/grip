@@ -4,19 +4,21 @@
 //
 // Passes per frame (shaders.wgsl):
 //   small      screen frame -> quarter-res mip pyramid, only while blur/pixelate masks show
-//   main       background, shadow, device mockup, screen with click ripples, blur/pixelate masks; motion blur over
+//   main       background, shadow, device mockup, screen with click effects, blur/pixelate masks; motion blur over
 //              the shutter's view samples
 //   cursor     swept quad, motion blur over the shutter's cursor samples
-//   highlight, loupe, camera
-//   final      overlay canvas (other click effects, drawings, keystrokes, captions) on top, dithered to the 8-bit canvas
+//   highlight
+//   loupe      glass lenses, motion blur over the shutter's lens (and view, cursor) samples
+//   camera
+//   final      overlay canvas (drawings, keystrokes, captions) on top, dithered to the 8-bit canvas
 // Composition happens in an rgba16float frame, so soft shadows and gradients never band before
 // the final dither. Steady state allocates no GPU memory: textures live until the output size or
 // an asset changes, and video frames come in zero-copy as external textures.
 
 import { defaultStyle, type Background, type Rect } from '../../shared/project.ts'
-import type { CursorLayer, Scene, View } from '../scene.ts'
+import type { CursorLayer, Loupe, Scene, View } from '../scene.ts'
 import { deviceGeometry } from '../layout.ts'
-import { RIPPLE, drawOverlays } from '../overlays/index.ts'
+import { CLICK_FX, drawOverlays } from '../overlays/index.ts'
 import { oklab, parseColor, wallpaper, DEFAULT_WALLPAPER } from '../backgrounds/index.ts'
 import { CURSORS, CURSOR_RES, type BuiltinName } from '../../assets/cursors.ts'
 import { GRADE, gradeLut, parseCube, type Lut } from './lut.ts'
@@ -50,17 +52,20 @@ export interface Frames {
 export interface Motion {
   views: View[]
   cursors: Array<CursorLayer | null>
+  /** Per lens in scene.loupes, its samples across the same shutter. */
+  loupes?: Loupe[][]
 }
 
 // `struct Frame` in shaders.wgsl, in vec4 slots.
 const A = 0, VIEWT = 1, SCR = 2, SCR2 = 3, SCR3 = 4, DEV = 5, SH = 6, VIEWS = 10, PARTS = 26, MASKS = 74
-const CUR = 106, CURIMG = 107, CURTEX = 108, CURBOX = 109, CURS = 110, LOUPE = 126, LOUPE2 = 127
-const CAM = 128, CAM1 = 129, CAM2 = 130, CAM3 = 131, CAM4 = 132, LUTMIN = 133, LUTMAX = 134, FIN = 135, VP = 136, VIS = 137
-const CLK = 138
-const FRAME_SLOTS = 142
+const CUR = 106, CURIMG = 107, CURTEX = 108, CURBOX = 109, CURS = 110
+const CAM = 126, CAM1 = 127, CAM2 = 128, CAM3 = 129, CAM4 = 130, LUTMIN = 131, LUTMAX = 132, FIN = 133, VP = 134, VIS = 135
+const CLK = 136, LOUPES = 140, LOUPE_S = 148
+const FRAME_SLOTS = 220
 const PASS_SLOTS = 27 // `struct Pass`
-const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12, MAX_CLICKS = 4
+const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12, MAX_CLICKS = 4, MAX_LOUPES = 4, LOUPE_SAMPLES = 9
 const MASK_KIND = { blur: 0, pixelate: 1, highlight: 2 } as const
+const CLICK_KIND = { swell: 1, wave: 2, circle: 3, focus: 4 } as const // fin.y in shaders.wgsl
 
 // WebGPU flag values (the TS DOM lib has the types but not these namespaces).
 const STAGE = { VERTEX: 1, FRAGMENT: 2 }
@@ -179,7 +184,7 @@ export class Renderer {
     return {
       t: 0, src: 0, width, height, unit: Math.min(width, height) / 1080, background, backgroundBlur: blur,
       view: { center: { x: width / 2, y: height / 2 }, scale: 1 },
-      screen: null, camera: null, cursor: null, clicks: [], drawings: [], keystrokes: [], caption: null, masks: [], loupe: null,
+      screen: null, camera: null, cursor: null, clicks: [], drawings: [], keystrokes: [], caption: null, masks: [], loupes: [],
     }
   }
 
@@ -442,18 +447,28 @@ export class Renderer {
       has.cursor = x1 > 0 && y1 > 0 && x0 < W && y0 < H
     }
 
-    const l = scene.loupe
-    if (l && l.opacity > 0 && l.radius > 0) {
-      set(LOUPE, l.x, l.y, l.radius, Math.max(l.scale, 1e-3))
-      set(LOUPE2, Math.min(l.opacity, 1), 1, l.stretch.x, l.stretch.y)
-      has.loupe = true
+    // ponytail: the 4 newest lenses show at once; a storage buffer if anyone stacks more
+    const lens = (slot: number, l: Loupe, samples: number) => {
+      set(slot, l.x, l.y, l.radius, Math.max(l.scale, 1e-3))
+      set(slot + 1, Math.min(l.opacity, 1), samples, l.stretch.x, l.stretch.y)
     }
-
-    // ponytail: the 4 newest clicks ripple at once; a storage buffer if rapid clicking needs more
-    scene.clicks.filter((c) => c.style === 'ripple').slice(-MAX_CLICKS).forEach((c, i) => {
-      const p = c.age / RIPPLE.life
-      set(CLK + i, c.x, c.y, RIPPLE.reach * scene.unit * RIPPLE.front(p), RIPPLE.strength(p))
+    const lenses = scene.loupes.map((l, i) => ({ l, path: motion?.loupes?.[i] ?? [] })).filter(({ l }) => l.opacity > 0 && l.radius > 0)
+    lenses.slice(-MAX_LOUPES).forEach(({ l, path }, i) => {
+      const ps = path.length > 1 ? even(path, LOUPE_SAMPLES) : []
+      lens(LOUPES + 2 * i, l, Math.max(ps.length, 1))
+      ps.forEach((s, k) => lens(LOUPE_S + 2 * (i * LOUPE_SAMPLES + k), s, 0))
+      has.loupe = true
     })
+
+    // ponytail: the 4 newest clicks show at once; a storage buffer if rapid clicking needs more
+    const style = scene.clicks[0]?.style // one style per project
+    if (style && style !== 'none' && CLICK_FX[style]) {
+      scene.clicks.slice(-MAX_CLICKS).forEach((c, i) => {
+        const [r, k] = CLICK_FX[style].at(c.age)
+        set(CLK + i, c.x, c.y, r * scene.unit, k)
+      })
+      u[FIN * 4 + 1] = CLICK_KIND[style]
+    }
 
     const cam = scene.camera
     if (cam && frames.camera && cam.opacity > 0 && cam.rect.w > 0 && cam.rect.h > 0) {
@@ -472,7 +487,7 @@ export class Renderer {
   }
 
   private paintOverlay(scene: Scene): boolean {
-    if (!scene.clicks.some((c) => c.style !== 'ripple') && !scene.drawings.length && !scene.keystrokes.length && !scene.caption) return false
+    if (!scene.drawings.length && !scene.keystrokes.length && !scene.caption) return false
     const ctx = this.overlayCtx!
     ctx.clearRect(0, 0, this.w, this.h)
     drawOverlays(ctx, scene)

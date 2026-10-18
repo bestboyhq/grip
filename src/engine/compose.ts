@@ -2,9 +2,9 @@
 // Preview (src/lib/player.svelte.ts) and export (src/engine/export) both call renderFrame.
 // Owner: compositor.
 
-import { sceneAt, type CursorLayer, type Prepared, type View } from './scene.ts'
+import { sceneAt, type CursorLayer, type Loupe, type Prepared, type View } from './scene.ts'
 import { clipAt, toSource, type TimeMap } from '../shared/timemap.ts'
-import { viewAt } from './zoom/index.ts'
+import { loupesAcross, viewAt } from './zoom/index.ts'
 import { screenAt } from './layout.ts'
 import { cursorAt } from './motion/index.ts'
 import type { FrameSource } from './media/index.ts'
@@ -66,8 +66,8 @@ export function shutter(map: TimeMap, t: number, amount = 1): number[] {
   return Array.from({ length: SAMPLES }, (_, k) => Math.min(Math.max(t + amount * SHUTTER * (k / (SAMPLES - 1) - 0.5), a), b))
 }
 
-/** Shutter samples of the zoom view and the cursor around t, or undefined when neither moves (the
- *  renderer then draws one sample, so static frames cost nothing extra). Pure in (project, t). */
+/** Shutter samples of the zoom view, the cursor, and the lenses around t, or undefined when none of
+ *  them moves (the renderer then draws one sample, so static frames cost nothing extra). Pure in (project, t). */
 export function motionAt(p: Prepared, t: number): Motion | undefined {
   const { project, width: W, height: H } = p.input
   if (!(project.style.motionBlur > 0) || !p.map.clips.length) return
@@ -83,18 +83,22 @@ export function motionAt(p: Prepared, t: number): Motion | undefined {
     const k = at.w / r.w
     return { ...c, x: at.x + (c.x - r.x) * k, y: at.y + (c.y - r.y) * k, scale: c.scale * k }
   })
-  // Keep the run of samples around t without a jump (an instant zoom, a teleporting cursor):
-  // a jump is a cut, not motion.
+  const lenses = loupesAcross(p.zoom, t, ts)
+  // Keep the run of samples around t without a jump (an instant zoom, a teleporting cursor, an
+  // instant loupe): a jump is a cut, not motion.
   const jump = 0.08 * Math.min(W, H)
-  const step = (k: number) => Math.max(viewShift(views[k], views[k + 1], W, H), cursorShift(cursors[k], cursors[k + 1], views[k + 1]))
+  const step = (k: number) => Math.max(viewShift(views[k], views[k + 1], W, H), cursorShift(cursors[k], cursors[k + 1], views[k + 1]), ...lenses.map((l) => lensShift(l[k], l[k + 1], views[k + 1])))
   const mid = (SAMPLES - 1) / 2
   let lo = mid, hi = mid
   while (lo > 0 && step(lo - 1) < jump) lo--
   while (hi < SAMPLES - 1 && step(hi) < jump) hi++
   const v = views.slice(lo, hi + 1)
   const c = cursors.slice(lo, hi + 1)
-  const still = v.every((x) => viewShift(x, v[0], W, H) < 1e-3) && c.every((x) => cursorShift(x, c[0], v[0]) < 1e-3 && x?.angle === c[0]?.angle)
-  return still ? undefined : { views: v, cursors: c }
+  const l = lenses.map((x) => x.slice(lo, hi + 1))
+  const fixed = v.every((x) => viewShift(x, v[0], W, H) < 1e-3)
+  const still = fixed && c.every((x) => cursorShift(x, c[0], v[0]) < 1e-3 && x?.angle === c[0]?.angle) && l.every((x) => x.every((y) => lensShift(y, x[0], v[0]) < 1e-3))
+  // A still view is one sample: only a moving one costs the renderer its reprojection pass.
+  return still ? undefined : { views: fixed ? [v[0]] : v, cursors: c, loupes: l }
 }
 
 /** Largest movement of an output corner between two views, in output px. */
@@ -106,6 +110,11 @@ function viewShift(a: View, b: View, W: number, H: number): number {
     m = Math.max(m, Math.hypot((ux - b.center.x) * b.scale + W / 2 - x, (uy - b.center.y) * b.scale + H / 2 - y))
   }
   return m
+}
+
+/** Largest movement of a lens's content in output px: its edge moving, and the rim's content as the magnification changes. */
+function lensShift(a: Loupe, b: Loupe, v: View): number {
+  return (Math.hypot(b.x - a.x, b.y - a.y) + Math.abs(b.radius - a.radius) + (a.radius * Math.abs(b.scale - a.scale)) / a.scale) * v.scale
 }
 
 /** Cursor movement in output px. A cursor appearing or vanishing is not motion. */

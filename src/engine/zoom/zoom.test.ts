@@ -7,7 +7,7 @@ import { parseEvents, type InputEvent } from '../../shared/events.ts'
 import { prepare, sceneAt, type View } from '../scene.ts'
 import { layoutAt } from '../layout.ts'
 import { cursorPoint as cursorAt } from '../motion/index.ts'
-import { autoZoomOnce, generateAutoZooms, lookOf, loupeAt, setAutoZoom, viewAt } from './index.ts'
+import { autoZoomOnce, generateAutoZooms, lookOf, loupesAcross, loupesAt, setAutoZoom, viewAt } from './index.ts'
 
 const SCREEN = { file: 'sources/screen.mp4', width: 2880, height: 1800, fps: 30, scale: 2 }
 const CAMERA = { file: 'sources/camera.mp4', width: 1280, height: 720, fps: 30, scale: 1 }
@@ -55,6 +55,12 @@ function visible(v: View, W = 1920, H = 1200) {
   return { x0: v.center.x - hw, x1: v.center.x + hw, y0: v.center.y - hh, y1: v.center.y + hh, hw, hh }
 }
 const frames = (from: number, to: number, fps = 30) => Array.from({ length: Math.round((to - from) * fps) + 1 }, (_, i) => from + i / fps)
+/** The one lens showing at t, or null. */
+function loupeAt(z: Parameters<typeof loupesAt>[0], t: number) {
+  const ls = loupesAt(z, t)
+  assert.ok(ls.length <= 1, `one lens at t=${t}`)
+  return ls[0] ?? null
+}
 const near = (a: number, b: number, eps: number, msg = '') => assert.ok(Math.abs(a - b) <= eps, `${a} != ${b} ±${eps} ${msg}`)
 
 test('a zoom at output 0 starts zoomed in; a later one animates in and out', () => {
@@ -74,16 +80,20 @@ test('pure: any frame alone equals the same frame rendered in sequence', () => {
   const zooms = [
     zoom({ start: 0, end: 3 }),
     zoom({ start: 4, end: 9, level: 2.5 }),
+    zoom({ start: 5, end: 7, level: 3.5, target: point(0.6, 0.7) }),
     zoom({ start: 9.4, end: 11, target: point(0.9, 0.1) }),
     zoom({ start: 13, end: 15, instant: true }),
     zoom({ start: 16, end: 18, mode: 'loupe' }),
+    zoom({ start: 18, end: 19, mode: 'loupe', level: 3, size: 150, target: point(0.2, 0.8) }),
+    zoom({ start: 19, end: 19.6, mode: 'loupe', instant: true }),
+    zoom({ start: 17, end: 18.5, mode: 'loupe', size: 120, target: point(0.7, 0.2) }),
   ]
   const ts = frames(0, 20, 60)
   const a = setup(zooms, events)
-  const seq = ts.map((t) => [a.view(t), loupeAt(a.p.zoom, t)])
+  const seq = ts.map((t) => [a.view(t), loupesAt(a.p.zoom, t)])
   const b = setup(zooms, events) // fresh preparation, frames in random order
   const order = ts.map((_, i) => i).sort(() => Math.random() - 0.5)
-  for (const i of order) assert.deepEqual([b.view(ts[i]), loupeAt(b.p.zoom, ts[i])], seq[i], `t=${ts[i]}`)
+  for (const i of order) assert.deepEqual([b.view(ts[i]), loupesAt(b.p.zoom, ts[i])], seq[i], `t=${ts[i]}`)
 })
 
 test('dead zone: small moves do not pan, big moves do, and the cursor stays in frame', () => {
@@ -248,14 +258,108 @@ test('loupe fades in and out, magnifies, and follows its target', () => {
   assert.deepEqual(loupeAt(rigid.p.zoom, 3.5)!.stretch, { x: 0, y: 0 })
   // Size is the radius in units (px at 1080p; this output is 1200 high), clamped to its range.
   const sized = (size?: number) => loupeAt(setup([zoom({ start: 2, end: 5, mode: 'loupe', size })], events, { duration: 10 }).p.zoom, 3.5)!.radius
-  near(sized(), (260 * 1200) / 1080, 1e-9)
-  near(sized(100), (100 * 1200) / 1080, 1e-9)
-  near(sized(5000), (400 * 1200) / 1080, 1e-9)
-  near(sized(NaN), (260 * 1200) / 1080, 1e-9)
+  near(sized(), (260 * 1200) / 1080, 1e-3)
+  near(sized(100), (100 * 1200) / 1080, 1e-3)
+  near(sized(5000), (400 * 1200) / 1080, 1e-3)
+  near(sized(NaN), (260 * 1200) / 1080, 1e-3)
   const fadeOut = loupeAt(p.zoom, 5.1)!
   assert.ok(fadeOut.opacity > 0 && fadeOut.opacity < 1)
   assert.equal(loupeAt(p.zoom, 6), null)
   near(view(3.5).scale, 1, 1e-9) // a loupe never moves the camera
+})
+
+test('a loupe pops: most of the way in a tenth of a second, gone in a third', () => {
+  const events = moves([[0, 1000, 800], [10, 1000, 800]])
+  const { p } = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 3 })], events, { duration: 10 })
+  assert.ok(loupeAt(p.zoom, 2.1)!.scale > 2.5, 'in: past 3/4 of the way at 0.1 s')
+  assert.ok(loupeAt(p.zoom, 5.1)!.scale < 1.5, 'out: past 3/4 of the way at 0.1 s')
+  assert.equal(loupeAt(p.zoom, 5.35), null)
+  // Across a shutter straddling its start, the lens is there unmagnified and clear before it begins.
+  const ts = [1.99, 2, 2.01, 2.02]
+  const [path] = loupesAcross(p.zoom, 2.01, ts)
+  assert.equal(path.length, ts.length)
+  assert.deepEqual([path[0].scale, path[0].opacity, path[0].x], [1, 0, path[2].x])
+  assert.ok(path[3].scale > path[2].scale && path[2].scale > 1, 'magnifying across the shutter')
+  assert.deepEqual(loupesAcross(p.zoom, 1.5, ts), [], 'only the lenses showing at t')
+})
+
+test('a loupe into the next keeps the glass up: it glides there and eases into its level, size, and shape', () => {
+  const events = moves([[0, 1000, 800], [12, 1800, 800]])
+  const next = zoom({ start: 5, end: 8, mode: 'loupe', level: 3, size: 160, rigid: true, target: point(0.7, 0.3) })
+  // Back to back, and a gap shorter than BRIDGE.
+  for (const end of [5, 4.5]) {
+    const { p, screen } = setup([zoom({ start: 2, end, mode: 'loupe' }), next], events, { duration: 12 })
+    let was = loupeAt(p.zoom, 4)!
+    for (const t of frames(4, 7, 60).slice(1)) {
+      const l = loupeAt(p.zoom, t)!
+      near(l.opacity, 1, 1e-9, `no fade at t=${t}`)
+      assert.ok(l.scale >= 2 - 1e-3, `never drops to unmagnified: ${l.scale} at t=${t}`)
+      assert.ok(Math.hypot(l.x - was.x, l.y - was.y) < 60 && Math.abs(l.radius - was.radius) < 30, `no jump at t=${t}`)
+      was = l
+    }
+    const on = loupeAt(p.zoom, 7.5)!
+    near(on.scale, 3, 0.01)
+    near(on.radius, (160 * 1200) / 1080, 0.5)
+    near(on.x, screen(7.5).x + 0.7 * screen(7.5).w, 1)
+    near(Math.hypot(on.stretch.x, on.stretch.y), 0, 1e-6, 'eased into rigid')
+  }
+  // A longer gap fades out and back in; an instant loupe cuts in.
+  const gap = setup([zoom({ start: 2, end: 3.5, mode: 'loupe' }), next], events, { duration: 12 })
+  assert.equal(loupeAt(gap.p.zoom, 4.5), null)
+  assert.ok(loupeAt(gap.p.zoom, 5.05)!.opacity < 0.6)
+  const cut = setup([zoom({ start: 2, end: 5, mode: 'loupe' }), { ...next, instant: true }], events, { duration: 12 })
+  near(loupeAt(cut.p.zoom, 4.999)!.scale, 2, 1e-3)
+  near(loupeAt(cut.p.zoom, 5.001)!.scale, 3, 1e-3)
+})
+
+test('overlapping loupes: other targets get a lens each, one target shares one', () => {
+  const events = moves([[0, 1000, 800], [12, 1800, 800]])
+  // A point loupe over part of a cursor loupe: two lenses at once, each its own; the first stays up.
+  const two = setup([zoom({ start: 2, end: 8, mode: 'loupe' }), zoom({ start: 4, end: 6, mode: 'loupe', level: 3, size: 160, target: point(0.7, 0.3) })], events, { duration: 12 })
+  const [a, b] = loupesAt(two.p.zoom, 5)
+  near(a.scale, 2, 0.01)
+  near(a.x, cursorAt(two.p.cursor, 5)!.x, 0.05 * a.radius)
+  near(b.scale, 3, 0.01)
+  near(b.radius, (160 * 1200) / 1080, 0.5)
+  near(b.x, two.screen(5).x + 0.7 * two.screen(5).w, 1)
+  for (const t of frames(3, 7.5)) near(loupesAt(two.p.zoom, t)[0].opacity, 1, 1e-3, `t=${t}`)
+  near(loupeAt(two.p.zoom, 7.5)!.scale, 2, 0.01)
+  // Two loupes on the cursor: one lens at the deeper level and larger size, easing back after.
+  const one = setup([zoom({ start: 2, end: 8, mode: 'loupe', size: 160 }), zoom({ start: 4, end: 6, mode: 'loupe', level: 3, size: 260 })], events, { duration: 12 })
+  for (const t of frames(2, 9)) loupeAt(one.p.zoom, t)
+  near(loupeAt(one.p.zoom, 5.5)!.scale, 3, 0.01)
+  near(loupeAt(one.p.zoom, 5.5)!.radius, (260 * 1200) / 1080, 0.5)
+  near(loupeAt(one.p.zoom, 7.5)!.scale, 2, 0.01)
+  near(loupeAt(one.p.zoom, 7.5)!.radius, (160 * 1200) / 1080, 0.5)
+})
+
+test('overlapping zooms combine: the deepest level, every target framed, never past the shallowest', () => {
+  const still = moves([[0, 1440, 900], [20, 1440, 900]])
+  // A deeper point zoom inside a wider cursor zoom punches in, then back out.
+  const nested = setup([zoom({ start: 2, end: 12, level: 1.5 }), zoom({ start: 5, end: 8, level: 3, target: point(0.55, 0.55) })], still)
+  near(nested.view(4.5).scale, 1.5, 0.01)
+  near(nested.view(7.5).scale, 3, 0.02)
+  near(nested.view(11).scale, 1.5, 0.01)
+  const shows = (v: View, x: number, y: number) => Math.abs(x - v.center.x) <= visible(v).hw && Math.abs(y - v.center.y) <= visible(v).hh
+  // Two points: the camera backs out just enough to show both, and no further than the shallowest
+  // level; points further apart than that leaves stay centered between.
+  const points = (x0: number, x1: number) => setup([zoom({ start: 2, end: 10, level: 2, target: point(x0, 0.5) }), zoom({ start: 4, end: 10, level: 3, target: point(x1, 0.5) })], still)
+  const close = points(0.42, 0.58)
+  const r = close.screen(9)
+  assert.ok(close.view(9).scale > 2.05 && close.view(9).scale < 2.9, `${close.view(9).scale}`)
+  for (const x of [0.42, 0.58]) assert.ok(shows(close.view(9), r.x + x * r.w, r.y + 0.5 * r.h), `${x} shows`)
+  const far = points(0.2, 0.8)
+  near(far.view(9).scale, 2, 0.01)
+  near(far.view(9).center.x, r.x + 0.5 * r.w, 1)
+  // A point zoom over a cursor zoom: the point and the cursor both stay in frame as the cursor moves off.
+  const { p, view, screen } = setup([zoom({ start: 2, end: 14, level: 2 }), zoom({ start: 4, end: 14, level: 3, target: point(0.35, 0.35) })], moves([[0, 1000, 600], [6, 1000, 600], [12, 1900, 1200], [20, 1900, 1200]]))
+  for (const t of frames(6, 14)) {
+    const v = view(t)
+    const r = screen(t)
+    const c = cursorAt(p.cursor, t)!
+    assert.ok(shows(v, r.x + 0.35 * r.w, r.y + 0.35 * r.h) && shows(v, c.x, c.y) && v.scale >= 2 - 0.01, `t=${t}`)
+  }
+  near(view(5.5).scale, 3, 0.05) // the cursor next to the point: the deepest level
 })
 
 test('loupe centers on the cursor at the screen edge, overhanging the background', () => {

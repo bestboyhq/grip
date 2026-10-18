@@ -31,6 +31,19 @@ test('motion samples only when something moves, and only with motion blur on', (
   assert.equal(at(7), undefined)
 })
 
+test('motion samples carry the lenses: a lens magnifying or gliding blurs, a held one does not', () => {
+  const p = createProject('t', { duration: 10, screen: { file: 's.mp4', width: 2880, height: 1800, fps: 30, scale: 2 }, events: 'e.jsonl' })
+  p.zooms = [{ id: 'l', start: 2, end: 8, level: 2.5, target: { kind: 'point', x: 0.5, y: 0.5 }, enabled: true, mode: 'loupe' }]
+  const events: InputEvent[] = [{ t: 0, type: 'move', x: 1000, y: 500 }]
+  const at = (t: number) => motionAt(prepare({ project: p, events, transcript: null, width: 1920, height: 1080 }), t)
+  const popping = at(2.05)
+  assert.ok(popping?.loupes?.length === 1, 'one lens, sampled across the shutter')
+  const scales = popping.loupes[0].map((l) => l.scale)
+  assert.ok(scales.every((s, i) => !i || s > scales[i - 1]), 'oldest first, magnifying')
+  assert.equal(popping.views.length, 1, 'the view holds still: one view sample, no reprojection pass')
+  assert.equal(at(5), undefined, 'a held lens: one sample')
+})
+
 test('rendering in sequence decodes the clip after a cut ahead, on every source, from half a second before it', () => {
   const p = prepare({ project: { ...createProject('t', { duration: 30 }), clips: [clip(0, 10), clip(20, 30)] }, events: [], transcript: null, width: 640, height: 360 })
   const calls: Array<[string, number, number]> = []

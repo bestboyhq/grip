@@ -13,6 +13,8 @@ const TOP = RULER + 4
 const GAP = 6
 const BOTTOM = 16
 const HEIGHTS: Record<M.TrackId, number> = { clips: 40, zooms: 36, layouts: 26, masks: 26, keys: 20, captions: 20 }
+const BAND_INSET = 5 // px a band where zooms overlap sits in from the layer under it, top and bottom
+const MAX_STACK = 4 // the zoom track grows a step per zoom stacked at once, up to this many
 const EDGE = 12 // px of a block's end that grabs the edge
 
 export interface Row {
@@ -21,15 +23,20 @@ export interface Row {
   h: number
 }
 
-export function rows(ids: M.TrackId[]): { rows: Row[]; height: number } {
+/** Tracks top to bottom. The zoom track grows with `stack`, the most zooms on at once, so the band
+ *  where they all overlap keeps a single zoom's height. */
+export function rows(ids: M.TrackId[], stack = 1): { rows: Row[]; height: number } {
   let y = TOP
   const out = ids.map((id) => {
-    const r = { id, y, h: HEIGHTS[id] }
+    const r = { id, y, h: HEIGHTS[id] + (id === 'zooms' ? inset(stack) * 2 : 0) }
     y += r.h + GAP
     return r
   })
   return { rows: out, height: y - GAP + BOTTOM }
 }
+
+/** How far the band where k zooms overlap sits in from the zoom track's top and bottom. */
+const inset = (k: number) => BAND_INSET * (Math.min(k, MAX_STACK) - 1)
 
 export interface View {
   W: number
@@ -81,16 +88,18 @@ export function hit(v: View, m: M.Model, x: number, y: number): Hit {
   if (th && y >= v.H - BOTTOM + 4 && x >= th.x - 4 && x <= th.x + th.w + 4) return { kind: 'scrollbar' }
   const row = v.rows.find((r) => y >= r.y - GAP / 2 && y < r.y + r.h + GAP / 2)
   if (!row) return { kind: 'none' }
-  const b = M.blockAt(m[row.id], timeOf(v, x), 4 / v.pps)
-  if (!b) return { kind: 'lane', track: row.id }
-  let edge: 'start' | 'end' | null = null
+  const under = M.blocksAt(m[row.id], timeOf(v, x), 4 / v.pps)
+  if (!under.length) return { kind: 'lane', track: row.id }
+  // Any end under the pointer trims its item, also inside a stretch where zooms overlap; else the top one moves.
   if (row.id !== 'keys' && row.id !== 'captions') {
-    const [xa, xb] = xs(v, b)
-    const ez = Math.min(EDGE, (xb - xa) / 3)
-    if (b.head && x >= xa - 4 && x <= xa + ez) edge = 'start'
-    else if (b.tail && x >= xb - ez && x <= xb + 4) edge = 'end'
+    for (const b of under) {
+      const [xa, xb] = xs(v, b)
+      const ez = Math.min(EDGE, (xb - xa) / 3)
+      if (b.head && x >= xa - 4 && x <= xa + ez) return { kind: 'block', track: row.id, block: b, edge: 'start' }
+      if (b.tail && x >= xb - ez && x <= xb + 4) return { kind: 'block', track: row.id, block: b, edge: 'end' }
+    }
   }
-  return { kind: 'block', track: row.id, block: b, edge }
+  return { kind: 'block', track: row.id, block: under[0], edge: null }
 }
 
 // ---- Drawing ----
@@ -137,7 +146,8 @@ const C = {
   clipBottom: '#263d9c',
   clipGrid: 'rgba(220,228,255,0.08)',
   clipEdge: 'rgba(196,212,255,0.6)',
-  clipSel: '#a3b6ff',
+  clipSel: 'rgba(205,216,255,0.95)', // selected: a hairline ring and a glow
+  clipGlow: 'rgba(72,104,255,0.6)',
   clipCap: 'rgba(214,224,255,0.55)',
   clipText: 'rgba(255,255,255,0.97)',
   clipMeta: 'rgba(232,238,255,0.9)',
@@ -146,15 +156,18 @@ const C = {
   waveEdge: 'rgba(232,238,255,0.72)',
   waveSys: 'rgba(249,120,0,0.5)', // system audio, in front of the mic and warm against the clip
   waveSysEdge: 'rgba(255,154,64,0.95)',
-  zooms: ['#35334a', '#8f80f5', 'rgba(255,255,255,0.12)'], // fill, grips, top edge
-  zoomOff: ['#2a2a2f', '#55555d', 'rgba(255,255,255,0.08)'],
-  layouts: ['#3b3039', '#cf72bf', 'rgba(255,255,255,0.12)'],
-  masks: ['#3c302e', '#e8604c', 'rgba(255,255,255,0.12)'],
+  // Fill, grips, top edge; selected: fill, hairline ring, glow.
+  zooms: ['#35334a', '#8f80f5', 'rgba(255,255,255,0.12)', '#433d6b', 'rgba(186,175,255,0.95)', 'rgba(143,128,245,0.55)'],
+  zoomOff: ['#2a2a2f', '#55555d', 'rgba(255,255,255,0.08)', '#36363c', 'rgba(205,205,215,0.75)', 'rgba(170,170,180,0.3)'],
+  layouts: ['#3b3039', '#cf72bf', 'rgba(255,255,255,0.12)', '#4b3a48', 'rgba(238,165,224,0.95)', 'rgba(207,114,191,0.55)'],
+  masks: ['#3c302e', '#e8604c', 'rgba(255,255,255,0.12)', '#4d3934', 'rgba(255,165,145,0.95)', 'rgba(232,96,76,0.55)'],
+  // Where zooms overlap: a hairline outline per layer, brighter the more zooms it holds; the + between them.
+  bands: ['rgba(143,128,245,0.55)', 'rgba(169,156,255,0.75)', 'rgba(196,188,255,0.92)'],
+  plus: 'rgba(255,255,255,0.5)',
   capHot: 'rgba(255,255,255,0.55)',
   text: '#ffffff',
   textOff: 'rgba(255,255,255,0.45)',
   meta: 'rgba(255,255,255,0.72)',
-  sel: 'rgba(255,255,255,0.92)',
   chip: '#2c2c31', // --surface-150: keycaps and caption words rise out of the lane
   chipEdge: 'rgba(255,255,255,0.14)', // --edge-strong, as a top highlight
   chipText: '#a0a0a8', // --text-dim
@@ -290,7 +303,13 @@ function clipBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, c: Clip, b
   fill.addColorStop(0, C.clipTop)
   fill.addColorStop(1, C.clipBottom)
   ctx.fillStyle = fill
+  ctx.save()
+  if (sel) {
+    ctx.shadowColor = C.clipGlow
+    ctx.shadowBlur = 12
+  }
   ctx.fill()
+  ctx.restore()
   if (w > 6) {
     ctx.save()
     ctx.clip()
@@ -307,13 +326,7 @@ function clipBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, c: Clip, b
   const hv = s.hover?.kind === 'block' && s.hover.block === b && !s.armed ? s.hover.edge : null
   if (hv) cap(ctx, hv === 'start' ? xa : xb - 4, y + 6, 4, h - 12, C.clipCap)
   topEdge(ctx, v, xa, y, w, h, Math.min(8, w / 2), C.clipEdge)
-  if (sel) {
-    ctx.beginPath()
-    ctx.roundRect(xa + 1, y + 1, w - 2, h - 2, Math.min(7, w / 2))
-    ctx.lineWidth = 2
-    ctx.strokeStyle = C.clipSel
-    ctx.stroke()
-  }
+  if (sel) ring1(ctx, xa, y, w, h, Array(4).fill(Math.min(8, w / 2)), C.clipSel)
 
   // Labels stay centered in the visible part of a long clip.
   const cx = sticky(v, xa, xb)
@@ -408,6 +421,7 @@ function itemLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.It
     ctx.fillText(HINTS[track], (la + lb) / 2, row.y + row.h / 2 + 4)
   }
   const [from, to] = M.visible(l, tA, tB)
+  const shown: Array<[M.Block, number, number]> = []
   const run = merger(ctx, C[track][1], row) // slivers are all ends, so they take the grip colour, not the grey
   for (let k = from; k < to; k++) {
     const b = l.blocks[k]
@@ -416,10 +430,78 @@ function itemLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.It
     if (xb - xa < 3) run.add(xa, xb)
     else {
       run.flush()
-      itemBlock(ctx, s, row, track, l.items[b.i] as M.Item, b, xa, xb)
+      shown.push([b, xa, xb])
     }
   }
   run.flush()
+  // Zooms may overlap. Their bodies draw bottom up (a selected one last, lit along its whole length),
+  // then an outline over each stretch where they overlap names what combines there, then every
+  // block's ends, label (outside the outlines), and selection ring.
+  const lit = (b: M.Block) => (s.sel.has((l.items[b.i] as M.Item).id) ? 1 : 0)
+  shown.sort((p, q) => lit(p[0]) - lit(q[0]) || l.rank[p[0].i] - l.rank[q[0].i])
+  for (const [b, xa, xb] of shown) itemBlock(ctx, s, row, track, l.items[b.i] as M.Item, b, xa, xb, 'body')
+  const bands = l.overlaps.filter((o) => o.b >= tA && o.a <= tB)
+  overlapBands(ctx, s, row, l as M.Lane<Zoom>, bands)
+  for (const [b, xa, xb] of shown) itemBlock(ctx, s, row, track, l.items[b.i] as M.Item, b, xa, xb, 'top', labelSpan(l, b, bands))
+}
+
+/** The longest stretch of block b no other block covers: none above it, and no band it is under. */
+function labelSpan(l: M.Lane, b: M.Block, bands: M.Overlap[]): [number, number] {
+  const over: Array<[number, number]> = bands.filter((o) => o.items.includes(b.i)).map((o) => [o.a, o.b])
+  if (l.overlaps.length || bands.length) {
+    const [from, to] = M.visible(l, b.a, b.b)
+    for (let k = from; k < to; k++) if (l.rank[l.blocks[k].i] > l.rank[b.i]) over.push([l.blocks[k].a, l.blocks[k].b])
+  }
+  let best: [number, number] = [b.a, b.a]
+  let at = b.a
+  for (const [a, e] of over.sort((x, y) => x[0] - y[0])) {
+    if (Math.min(a, b.b) - at > best[1] - best[0]) best = [at, Math.min(a, b.b)]
+    at = Math.max(at, e)
+  }
+  if (b.b - at > best[1] - best[0]) best = [at, b.b]
+  return best
+}
+
+/** Where zooms overlap and combine: an outline over them, and inside it a narrower one wherever more
+ *  of them overlap, each stretch naming its zooms, top first, as a full zoom or a loupe and its level.
+ *  Outlines only: the zooms under them show through. */
+function overlapBands(ctx: CanvasRenderingContext2D, s: Scene, row: Row, l: M.Lane<Zoom>, bands: M.Overlap[]) {
+  const v = s.view
+  const deepest = Math.min(MAX_STACK, Math.max(1, ...bands.map((o) => o.items.length)))
+  for (let k = 2; k <= deepest; k++) {
+    // One rounded band per run of touching stretches holding k zooms or more.
+    for (let i = 0; i < bands.length; i++) {
+      if (bands[i].items.length < k) continue
+      let j = i
+      while (j + 1 < bands.length && bands[j + 1].items.length >= k && bands[j + 1].a - bands[j].b < 1e-9) j++
+      const xa = snap(v, xOf(v, bands[i].a))
+      const xb = snap(v, xOf(v, bands[j].b))
+      const y = row.y + inset(k)
+      const h = row.h - 2 * inset(k)
+      const r = Math.min(5, (xb - xa) / 2)
+      i = j
+      if (xb - xa < 2) continue
+      ring1(ctx, xa, y, xb - xa, h, [r, r, r, r], C.bands[k - 2])
+    }
+  }
+  const plus: Seg = { text: '+', font: F_META, color: C.plus }
+  for (const o of bands) {
+    const xa = snap(v, xOf(v, o.a))
+    const xb = snap(v, xOf(v, o.b))
+    const zs = o.items.map((i) => l.items[i]).reverse()
+    const each = (full: boolean) => zs.flatMap((z, k): Seg[] => [...(k ? [plus] : []), { ...(full ? { icon: z.mode === 'loupe' ? lens : magnifier } : {}), text: `${z.level}×`, font: F_META, color: C.text }])
+    const room = Math.min(xb, v.W) - Math.max(xa, 0) - 2 * EDGE
+    const label = [each(true), each(false)].find((segs) => fitsRow(ctx, segs, room))
+    if (!label) continue
+    const y = row.y + inset(o.items.length)
+    const h = row.h - 2 * inset(o.items.length)
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(xa, y, xb - xa, h)
+    ctx.clip()
+    row1(ctx, label, sticky(v, xa, xb), y + h / 2 + 4)
+    ctx.restore()
+  }
 }
 
 /** A one-device-pixel highlight along a block's top, as if lit from above; the rounded corners trim it. */
@@ -434,20 +516,33 @@ function topEdge(ctx: CanvasRenderingContext2D, v: View, x: number, y: number, w
   ctx.restore()
 }
 
-function itemBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.ItemTrack, it: M.Item, b: M.Block, xa: number, xb: number) {
+/** An item's body (fill, top edge, a glow when selected), or what goes on top of it: its ends, its
+ *  label centered in `span` (output seconds), and its selection ring. */
+function itemBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.ItemTrack, it: M.Item, b: M.Block, xa: number, xb: number, pass: 'body' | 'top', span: [number, number] = [b.a, b.b]) {
   const v = s.view
   const { y, h } = row
   xa = snap(v, xa)
   xb = snap(v, xb)
   const w = xb - xa
   const zoom = track === 'zooms' ? (it as Zoom) : null
-  const [fill, capColor, edge] = zoom ? (zoom.enabled ? C.zooms : C.zoomOff) : C[track as 'layouts' | 'masks']
+  const [fill, capColor, edge, selFill, ring, glow] = zoom ? (zoom.enabled ? C.zooms : C.zoomOff) : C[track as 'layouts' | 'masks']
+  const sel = s.sel.has(it.id)
   const r = Math.min(track === 'zooms' ? 8 : 6, w / 2)
   const radii = [b.head ? r : 1.5, b.tail ? r : 1.5, b.tail ? r : 1.5, b.head ? r : 1.5] // cut pieces get square inner ends
   ctx.beginPath()
   ctx.roundRect(xa, y, w, h, radii)
-  ctx.fillStyle = fill
-  ctx.fill()
+  if (pass === 'body') {
+    // Selected, it lifts and glows in its colour.
+    ctx.save()
+    if (sel) {
+      ctx.shadowColor = glow
+      ctx.shadowBlur = 12
+    }
+    ctx.fillStyle = sel ? selFill : fill
+    ctx.fill()
+    ctx.restore()
+    return topEdge(ctx, v, xa, y, w, h, radii, edge)
+  }
   const hv = s.hover?.kind === 'block' && s.hover.block === b ? s.hover.edge : null
   const cw = Math.min(9, w / 4)
   if (b.head || b.tail) {
@@ -458,20 +553,15 @@ function itemBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.I
     if (b.tail) end(ctx, xb - cw, y, cw, h, hv === 'end' ? C.capHot : capColor)
     ctx.restore()
   }
-  topEdge(ctx, v, xa, y, w, h, radii, edge)
-  if (s.sel.has(it.id)) {
-    ctx.beginPath()
-    ctx.roundRect(xa + 1, y + 1, w - 2, h - 2, radii.map((x) => Math.max(0, x - 1)))
-    ctx.lineWidth = 2
-    ctx.strokeStyle = C.sel
-    ctx.stroke()
-  }
-  if (w < 18) return
-  const cx = sticky(v, xa + cw, xb - cw)
-  const room = Math.min(xb, v.W) - Math.max(xa, 0) - 2 * cw - 8 // the visible part the labels are centered in
+  if (sel) ring1(ctx, xa, y, w, h, radii, ring)
+  const la = Math.max(xa + cw, snap(v, xOf(v, span[0])) + (span[0] > b.a ? 4 : 0)) // clear of a band's edge
+  const lb = Math.min(xb - cw, snap(v, xOf(v, span[1])) - (span[1] < b.b ? 4 : 0))
+  if (lb - la < 10) return
+  const cx = sticky(v, la, lb)
+  const room = Math.min(lb, v.W) - Math.max(la, 0) - 8 // the visible part the labels are centered in
   ctx.save()
   ctx.beginPath()
-  ctx.rect(xa + cw, y, w - 2 * cw, h)
+  ctx.rect(la, y, lb - la, h)
   ctx.clip()
   if (zoom) {
     const on = zoom.enabled
@@ -482,8 +572,8 @@ function itemBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.I
       { icon: zoom.target.kind === 'point' ? target : arrow, text: how, font: F_META, color: on ? C.meta : C.textOff },
     ]
     if (fitsRow(ctx, title, room) && fitsRow(ctx, meta, room)) {
-      row1(ctx, title, cx, y + 15)
-      row1(ctx, meta, cx, y + 28)
+      row1(ctx, title, cx, y + h / 2 - 3)
+      row1(ctx, meta, cx, y + h / 2 + 10)
     } else if (fitsRow(ctx, [meta[0]], room)) row1(ctx, [meta[0]], cx, y + h / 2 + 4)
   } else {
     const [long, short] = track === 'layouts' ? LAYOUT_NAMES[(it as CameraLayout).kind] : [MASK_NAMES[(it as Mask).kind], MASK_NAMES[(it as Mask).kind]]
@@ -636,10 +726,20 @@ function cap(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
 
 /** A pill centred in a block's end, where dragging trims it. */
 function grip(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string) {
+  const ph = Math.min(h - 14, 22)
   ctx.fillStyle = color
   ctx.beginPath()
-  ctx.roundRect(x + (w - 3) / 2, y + 7, 3, h - 14, 1.5)
+  ctx.roundRect(x + (w - 3) / 2, y + (h - ph) / 2, 3, ph, 1.5)
   ctx.fill()
+}
+
+/** A hairline ring just inside a block's edge. */
+function ring1(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, radii: number[], color: string) {
+  ctx.beginPath()
+  ctx.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, radii.map((r) => Math.max(0, r - 0.5)))
+  ctx.lineWidth = 1
+  ctx.strokeStyle = color
+  ctx.stroke()
 }
 
 /** Blocks narrower than a few px merge into runs: at most one rect per pixel column per lane. */
@@ -758,6 +858,11 @@ const magnifier: Icon = (ctx, x, y, s) =>
     ctx.moveTo(x + s * 0.66, y + s * 0.66)
     ctx.lineTo(x + s * 0.92, y + s * 0.92)
   }, 1.4)
+/** A loupe: a glass ring with a glint. */
+const lens: Icon = (ctx, x, y, s) => {
+  line(ctx, () => ctx.arc(x + s / 2, y + s / 2, s * 0.4, 0, Math.PI * 2), 1.3)
+  line(ctx, () => ctx.arc(x + s / 2, y + s / 2, s * 0.2, Math.PI * 1.05, Math.PI * 1.6), 1.1)
+}
 const arrow: Icon = (ctx, x, y, s) =>
   line(ctx, () => {
     ctx.moveTo(x + s * 0.22, y + s * 0.08)
