@@ -18,5 +18,6 @@ Microphone, system, device, and music audio, from capture to mix.
   Set the boost from speech only: a mic that caught just room tone and trackpad clicks otherwise reads as a very quiet voice and gets the full boost, clicks included.
 - Mixer: volume and mute per track and per clip, background music synced to the timeline, click sounds.
 - Waveforms load lazily and render hours-long tracks without stalling.
+  A waveform draws the track as it plays: an enhanced mic through the voice chain, raw when enhance is off.
 
 Done when after hundreds of cuts and speed changes, the export sounds identical to the preview and stays in sync to the frame.

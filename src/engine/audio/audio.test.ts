@@ -9,8 +9,8 @@ import type { Clip } from '../../shared/project.ts'
 import { createProject } from '../../shared/project.ts'
 import { timeMap, toOutput } from '../../shared/timemap.ts'
 import { CEILING, Limiter, LoudnessMeter, SR, VOICE_LUFS, scrubGrain, sincTable, interpolate, voiceGain } from './dsp.ts'
-import { Mixer, planOf, type Env, type Plan } from './mix.ts'
-import { analyze, loudness, openAudio, queryPeaks, Reader } from './source.ts'
+import { Mixer, planOf, voiced as chain, type Env, type Plan } from './mix.ts'
+import { analyze, loudness, openAudio, queryPeaks, rawPeaks, Reader } from './source.ts'
 import type { PlaybackMessage } from './playback.worklet.ts'
 
 const files = new Map<string, Blob>()
@@ -364,7 +364,7 @@ test('reader resamples 44.1 kHz onto the 48 kHz grid', async () => {
 test('peaks: shape, exactness against brute force, any zoom, across parallel segments', async () => {
   const x = bursts(10, [1, 4.2, 9.5])
   const f = await openAudio(new BlobSource(wav([x])), 'p.wav')
-  const a = analyze(f, 76800) // 1.6 s segments: ranges below span several, decoded 4 at a time
+  const a = analyze(f, () => new Reader(f), 76800) // 1.6 s segments: ranges below span several, decoded 4 at a time
   await a.ready(9.4, 9.6) // the last segment only; earlier ones may still be decoding
   near(queryPeaks(a.base, 9.4, 9.6, 1)[1], 0.5, 0.01, 'last segment ready on its own')
   await a.ready(0, 10)
@@ -380,6 +380,27 @@ test('peaks: shape, exactness against brute force, any zoom, across parallel seg
       assert.ok(pk[2 * k] <= 0 && pk[2 * k] >= -1)
     }
   }
+})
+
+test('an enhanced mic draws as it plays: the quiet voice comes up, the noise in its pauses goes', async () => {
+  // A quiet voice in 1.5 s phrases over fan noise, 10 s.
+  let seed = 11
+  const x = Float32Array.from({ length: 10 * SR }, (_, i) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return ((i / SR) % 2 < 1.5 ? 0.012 * voiced(i) : 0) + 0.003 * (seed / 1073741824 - 1)
+  })
+  files.set('drawn', wav([x]))
+  const f = await openAudio(new BlobSource(files.get('drawn')!), 'drawn.wav')
+  const raw = analyze(f, () => new Reader(f))
+  const voice = analyze(f, () => chain(env, 'drawn', f))
+  await Promise.all([raw.ready(0, 10), voice.ready(0, 10)])
+  const peak = (a: typeof raw, from: number, to: number) => queryPeaks(a.base, from, to, 1)[1]
+  const [rawTalk, rawPause, talk, pause] = [peak(raw, 4.2, 5.3), peak(raw, 5.6, 5.9), peak(voice, 4.2, 5.3), peak(voice, 5.6, 5.9)]
+  assert.ok(talk > 5 * rawTalk, `the voice draws at its played level (${talk} vs raw ${rawTalk})`)
+  assert.ok(pause / talk < rawPause / rawTalk / 4, `the pause draws denoised (${pause / talk} vs raw ${rawPause / rawTalk})`)
+  // Zoomed in, peaks come from the chain on the spot, primed by a seek's pre-roll: the same drawing
+  // as the analysis to well under a pixel.
+  near(Math.max(...(await rawPeaks(chain(env, 'drawn', f), 4.2, 5.3, 10))), talk, 0.05 * talk, 'on the spot matches the analysis')
 })
 
 test('preview worklet: a first chunk that arrives late fades in instead of starting mid-wave', async () => {

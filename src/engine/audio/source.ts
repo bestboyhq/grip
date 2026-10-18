@@ -3,7 +3,7 @@
 // of a source: waveform peaks (computed once and cached) and the voice loudness.
 
 import { ALL_FORMATS, AudioSampleSink, Input, type AudioSample, type Source } from 'mediabunny'
-import { COMP_DEPTH, Compressor, DENOISE_FRAME, Denoiser, LoudnessMeter, SR, integratedLoudness, interpolate, sincTable } from './dsp.ts'
+import { COMP_DEPTH, Compressor, DENOISE_FRAME, Denoiser, LoudnessMeter, SR, VOICE_CHAIN, integratedLoudness, interpolate, sincTable } from './dsp.ts'
 import { readError } from '../media/index.ts'
 
 export interface AudioFile {
@@ -30,6 +30,12 @@ export async function openAudio(source: Source, label: string): Promise<AudioFil
     if (e instanceof Error && e.message.startsWith(label)) throw e
     throw readError(`Could not read ${label}`, label, e)
   }
+}
+
+/** Audio on the 48 kHz grid, read mostly in order: a source (Reader) or a source through the voice chain. */
+export interface Samples {
+  read(start: number, n: number): Promise<Float32Array[]>
+  close(): void
 }
 
 const HALF = 16 // resampler taps per side
@@ -183,23 +189,22 @@ export interface Analysis {
   ready(from: number, to: number): Promise<void> // seconds; ready(0, Infinity): all of it
 }
 
-/** Analyze the whole file, LANES segments at a time, in time order. */
-export function analyze(f: AudioFile, seg = SEG): Analysis {
+/** Analyze the whole file as `open` reads it, LANES segments at a time, in time order. */
+export function analyze(f: AudioFile, open: () => Samples = () => new Reader(f), seg = SEG): Analysis {
   const total = Math.ceil(f.duration * SR)
   const base = new Int16Array(2 * Math.ceil(total / PEAK_SPP))
   const segs: Promise<void>[] = []
   for (let a = 0; a < total; a += seg) {
     const b = Math.min(total, a + seg)
-    segs.push((segs[segs.length - LANES] ?? Promise.resolve()).then(() => segment(f, a, b, base)))
+    segs.push((segs[segs.length - LANES] ?? Promise.resolve()).then(() => segment(open(), a, b, base)))
   }
   Promise.all(segs).catch(() => {}) // callers see the error through ready()
   const ready = async (from: number, to: number) => void (await Promise.all(segs.slice(Math.max(0, Math.floor((from * SR) / seg)), Math.ceil((to * SR) / seg))))
   return { base, ready }
 }
 
-/** Peaks of output samples [a, b) into `base`. */
-async function segment(f: AudioFile, a: number, b: number, base: Int16Array) {
-  const r = new Reader(f)
+/** Peaks of samples [a, b) of `r` into `base`, then closes `r`. */
+async function segment(r: Samples, a: number, b: number, base: Int16Array) {
   const STEP = PEAK_SPP * 750 // 4 s
   try {
     for (let pos = a; pos < b; pos += STEP) {
@@ -311,12 +316,12 @@ export function queryPeaks(base: Int16Array, from: number, to: number, buckets: 
   return out
 }
 
-/** Exact min/max per bucket straight from decoded samples, for zoom levels finer than the base. */
-export async function rawPeaks(f: AudioFile, from: number, to: number, buckets: number): Promise<Float32Array> {
+/** Exact min/max per bucket straight from the samples of `r`, for zoom levels finer than the base.
+ *  Closes `r`. */
+export async function rawPeaks(r: Samples, from: number, to: number, buckets: number): Promise<Float32Array> {
   const out = new Float32Array(2 * buckets)
   const a = Math.round(from * SR)
   const n = Math.max(1, Math.round(to * SR) - a)
-  const r = new Reader(f)
   try {
     const chs = await r.read(a, n)
     for (let k = 0; k < buckets; k++) {
@@ -339,7 +344,7 @@ export async function rawPeaks(f: AudioFile, from: number, to: number, buckets: 
   return out
 }
 
-// ---- Cache file: <bundle>/cache/<source path with / as _>.<bytes>.analysis ----
+// ---- Cache file: <bundle>/cache/<source path with / as _>.<bytes>[.voice<chain>].analysis ----
 // 'SPK2', u32 bucket count, then int16 [min, max] pairs. (SPK1 also held the loudness: re-analyzed.)
 
 export function encodeAnalysis(base: Int16Array): ArrayBuffer {
@@ -358,8 +363,9 @@ export function decodeAnalysis(buf: ArrayBuffer): Analysis | null {
   return { base: new Int16Array(buf.slice(8)), ready: async () => {} }
 }
 
-/** Where the analysis of `path` (absolute) is cached, or null when it is not inside a .grip bundle. */
-export function cachePath(path: string, size: number): string | null {
+/** Where the analysis of `path` (absolute) is cached, or null when it is not inside a .grip bundle.
+ *  `voice`: the analysis of the voice chain's output, which changes with the chain. */
+export function cachePath(path: string, size: number, voice = false): string | null {
   const m = /^(.*\.grip)\/(.+)$/.exec(path)
-  return m ? `${m[1]}/cache/${m[2].replaceAll('/', '_')}.${size}.analysis` : null
+  return m ? `${m[1]}/cache/${m[2].replaceAll('/', '_')}.${size}${voice ? `.voice${VOICE_CHAIN}` : ''}.analysis` : null
 }

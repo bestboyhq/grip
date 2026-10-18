@@ -12,7 +12,7 @@ import type { InputEvent } from '../../shared/events.ts'
 import { timeMap, toOutput } from '../../shared/timemap.ts'
 import { fileUrl } from '../media/index.ts'
 import { COMP_DEPTH, Compressor, DENOISE_FRAME, DENOISE_LATENCY, Denoiser, Limiter, SR, Stretcher, clickSound, voiceGain } from './dsp.ts'
-import { Reader, loudness, openAudio, type AudioFile } from './source.ts'
+import { Reader, loudness, openAudio, type AudioFile, type Samples } from './source.ts'
 
 export interface PlanTrack {
   url: string
@@ -54,6 +54,14 @@ export function planOf(project: Project, events: InputEvent[], bundle: string): 
     music: music && music.volume > 0 ? { url: url(music.file), label: music.file, volume: music.volume } : null,
     clicks,
   }
+}
+
+/** `f` (opened from `url`) as the voice chain plays it, in source time at full volume: what the
+ *  timeline draws for an enhanced mic. The same mixer as playback, so the drawing matches the sound. */
+export function voiced(env: Env, url: string, f: AudioFile): Samples {
+  const m = new Mixer(env)
+  m.setPlan({ duration: f.duration, clips: [{ id: 'voice', start: 0, end: f.duration, speed: 1, volume: 1 }], tracks: [{ url, label: f.label, volume: 1, voice: true }], music: null, clicks: [] })
+  return { read: (start, n) => m.render(start, n), close: () => m.dispose() }
 }
 
 /** Platform hooks, so the same mixer runs in the browser worker and in node tests. */

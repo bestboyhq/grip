@@ -383,6 +383,7 @@ export function integratedLoudness(sub: number[], speech?: number[]): number | n
 // up about 4 dB, and the limiter behind it touches about 1% of the speech.
 
 export const VOICE_LUFS = -14 // the level online video plays at
+export const VOICE_CHAIN = 1 // bump whenever the chain sounds different: cached voice waveforms are redrawn
 export const COMP_DEPTH = 10 // dB under the speech loudness
 const RATIO = 3
 const KNEE = 10

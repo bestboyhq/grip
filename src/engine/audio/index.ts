@@ -68,8 +68,9 @@ export async function renderAudio(p: Prepared, bundle: string, from: number, to:
   return buf
 }
 
-/** Min/max peaks of a source audio file between source times [from, to), `buckets` pairs.
- *  Lazy and cached, so hours-long tracks render without stalling. */
-export function peaks(url: string, from: number, to: number, buckets: number): Promise<Float32Array> {
-  return analysis.call({ op: 'peaks', url, from, to, buckets: Math.max(1, Math.floor(buckets)) })
+/** Min/max peaks of a source audio file between source times [from, to), `buckets` pairs; with
+ *  `voice`, of the file through the voice chain (an enhanced mic). Lazy and cached, so hours-long
+ *  tracks render without stalling. */
+export function peaks(url: string, from: number, to: number, buckets: number, voice = false): Promise<Float32Array> {
+  return analysis.call({ op: 'peaks', url, from, to, buckets: Math.max(1, Math.floor(buckets)), voice })
 }
