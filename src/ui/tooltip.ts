@@ -5,7 +5,7 @@
 // aria-label of their own.
 import type { Attachment } from 'svelte/attachments'
 
-type Side = 'bottom' | 'left'
+type Side = 'bottom' | 'right'
 type Request = { text: string; shortcut?: string; side: Side }
 
 const OPEN_DELAY = 420
@@ -110,14 +110,14 @@ function place(x: number, y: number, snap: boolean) {
   if (snap) requestAnimationFrame(() => root?.classList.remove('snap'))
 }
 
-/** Bottom flips above, left flips right, when the preferred side has no room. */
+/** Bottom flips above, right flips left, when the preferred side has no room. */
 function reposition(snap: boolean) {
   if (!root || !anchor?.isConnected) return
   const a = anchor.getBoundingClientRect()
   const w = morphW || bubble.offsetWidth
   const h = morphH || bubble.offsetHeight
-  if (side === 'left') {
-    const left = a.left - GAP - w >= EDGE || a.right + GAP + w > innerWidth - EDGE
+  if (side === 'right') {
+    const left = a.right + GAP + w > innerWidth - EDGE && a.left - GAP - w >= EDGE
     root.classList.remove('below')
     root.classList.toggle('left', left)
     root.classList.toggle('right', !left)

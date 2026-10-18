@@ -127,9 +127,14 @@
     void pills
     edges()
   })
+  // The chosen pill stays clear of the fades: in view the moment the row shows, and again when the
+  // macOS pill arrives in front and pushes it right. Switching collections glides to it.
+  let shown: [HTMLElement | undefined, string] | undefined
   $effect(() => {
-    void collection
-    pillRow?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+    void pills
+    const glide = shown?.[0] === pillRow && shown?.[1] !== collection
+    pillRow?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: glide ? 'smooth' : 'instant' })
+    shown = [pillRow, collection]
   })
   // Tabs pattern: one tab stop, arrow keys and Home/End move between collections and show them.
   function pillKeys(e: KeyboardEvent) {

@@ -1,7 +1,9 @@
 // Owner: auto-zoom. Camera direction: zoom items (source time) -> the zoom camera (View) and the
 // glass loupe in OUTPUT time, plus generateAutoZooms (clicks and typing -> Zoom items).
 //
-// The camera is three critically damped springs (center x, center y, log scale) chasing a target.
+// The camera is three critically damped springs (center x, center y, scale) chasing a target.
+// Springing scale itself, not its log, front-loads a zoom in (it pops in, then lands softly on the
+// content) and eases a zoom out away from the content before it opens up.
 // prepareZoom steps them exactly (closed form per step) at 120 Hz in output time; viewAt only reads
 // those samples, so a frame is a pure function of (project, t) and matches one rendered in sequence.
 // Output time means cuts and speed changes never shift or stretch an animation, and a cut that
@@ -38,11 +40,12 @@ import { springDuration, springProgress, mix, type SpringConfig } from '../motio
 import { typingSegments, type Segment } from '../input/index.ts'
 
 const DT = 1 / 120 // s between camera samples
-/** Camera springs per screen animation style, all critical (no overshoot): focused settles in ~0.9 s,
- *  smooth glides in ~1.3 s. A critical spring trails a moving target by 2 / omega s, so following
- *  aims that far ahead, and is ~98% there after 6 / omega s, so framing starts that early. */
+/** Camera springs per screen animation style, all critical (no overshoot): focused is half way in
+ *  0.12 s and settles in ~0.65 s, smooth glides in ~1.3 s. A critical spring trails a moving target
+ *  by 2 / omega s, so following aims that far ahead, and is ~98% there after 6 / omega s, so framing
+ *  starts that early. */
 const SPRINGS: Record<Style['screenAnimation'], SpringConfig> = {
-  focused: { stiffness: 100, damping: 20, mass: 1 },
+  focused: { stiffness: 196, damping: 28, mass: 1 },
   smooth: { stiffness: 49, damping: 14, mass: 1 },
 }
 const BRIDGE = 1 // s: a shorter gap between zooms pans across instead of zooming out and back in
@@ -52,7 +55,7 @@ const EDGE_ZONE = 0.85 // the cursor never gets closer to the frame edge than th
 const WALL_ZONE = 0.95 // ...and when a fast flick outruns the trailing spring, never past this
 const CAMERA_CLEAR = 28 // screen points x cursor size (about a cursor's height, magnified with it by the
 // zoom) the cursor and clicked elements keep from a picture-in-picture camera
-const LEAD = 0.6 // s: auto zooms start this long before a click or typing (the focused spring is ~98% there)
+const LEAD = 6 / Math.sqrt(SPRINGS.focused.stiffness) // s: auto zooms start this long before a click or typing, so the focused spring is ~98% there
 const KEEP = 1 // s: a clicked element stays framed this long after the click
 const HOLD = 2 // s: an auto zoom holds this long after its last click or keystroke
 const MERGE_GAP = 2 // s: auto zooms closer than this merge; zooming out and back in that fast looks erratic
@@ -427,7 +430,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   const data = new Float32Array(3 * (n + 1))
   const jumps = new Map<number, number>()
   const [h, g, dh, dg] = springStep(DT, spring)
-  const pos = [0, 0, 0] // x, y, log scale
+  const pos = [0, 0, 0] // x, y, scale
   const vel = [0, 0, 0]
   let aim: Pt | null = null // where the follow camera wants its center
   let prev: Seg | null = null
@@ -488,7 +491,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
       c = aim = clampCenter(c, bounds, s, vp)
     }
     c = clampCenter(c, bounds, s, vp)
-    const target = [c.x, c.y, Math.log(s)]
+    const target = [c.x, c.y, s]
 
     if (k === 0 || (seg !== prev && cutsTo(prev?.zooms ?? [], zs))) {
       // First frame, or an instant zoom cutting in or out: jump, no animation.
@@ -497,7 +500,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
     }
     const now = follow ? cursorPt(t, shown) : null
     if (now) {
-      const v = Math.exp(pos[2])
+      const v = pos[2]
       const w = clampCenter(keep({ x: pos[0], y: pos[1] }, now, (WALL_ZONE * vp.w) / (2 * v), (WALL_ZONE * vp.h) / (2 * v)), bounds, v, vp)
       pos[0] = w.x
       pos[1] = w.y
@@ -523,7 +526,7 @@ export function viewAt(z: ReturnType<typeof prepareZoom>, t: number): View {
   // An instant cut inside this step: hold the sample on the matching side instead of blending.
   const [i, j, w] = jump === undefined ? [k, k1, tc / DT - k] : tc < jump ? [k, k, 0] : [k1, k1, 0]
   const at = (o: number) => mix(data[3 * i + o], data[3 * j + o], w)
-  const scale = Math.exp(at(2))
+  const scale = at(2)
   const vp = screenAt(z.layout, tc)?.viewport ?? { x: 0, y: 0, w: W, h: H }
   // Never show past the viewport's edge, even mid-animation.
   const x = clamp(at(0), vp.x + vp.w / (2 * scale), vp.x + vp.w - vp.w / (2 * scale))

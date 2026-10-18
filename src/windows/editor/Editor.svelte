@@ -235,6 +235,7 @@
     </div>
   {:else if doc.project}
     <main class="body">
+      <Inspector />
       <section class="stage">
         <div class="toolbar">
           <AspectPicker />
@@ -246,7 +247,6 @@
         </div>
         <Preview />
       </section>
-      <Inspector />
     </main>
     <div class="timeline"><Timeline /></div>
     <CropDialog bind:open={cropOpen} />

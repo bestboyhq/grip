@@ -74,7 +74,7 @@
         tabindex={tab === t.id ? 0 : -1}
         class:on={tab === t.id}
         onclick={() => (tab = t.id)}
-        {@attach tooltip(t.label, undefined, 'left')}
+        {@attach tooltip(t.label, undefined, 'right')}
       >
         <Icon name={t.icon} size={20} />
       </button>
@@ -112,7 +112,7 @@
 </aside>
 
 <style>
-  .inspector { flex: none; display: flex; padding-right: var(--gutter); }
+  .inspector { flex: none; display: flex; padding-left: var(--gutter); }
   /* In a short window the tabs scroll instead of squashing. */
   .rail { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 52px; padding: 6px 0; overflow-y: auto; scrollbar-width: none; }
   .rail button {
