@@ -507,6 +507,8 @@
           <div class="sub">{px(W)} × {px(H)}</div>
           {@render actions(startDisplay)}
         </div>
+      {:else}
+        <div class="hint">Move the pointer onto a display to record it · Esc to cancel</div>
       {/if}
     </div>
   {:else if shell.mode === 'window'}
@@ -534,7 +536,7 @@
         {@render actions(startWindow)}
       </div>
     {:else}
-      <div class="hint">Move the pointer over a window to record it</div>
+      <div class="hint">Move the pointer over a window to record it · Esc to cancel</div>
     {/if}
   {:else if shell.mode === 'area'}
     {#if sel}

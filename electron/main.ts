@@ -68,8 +68,10 @@ app.on('open-url', (e, url) => {
   if (ready) openUrl(url)
   else early.push(url)
 })
+// Opening Grip again (Finder, Spotlight, the Dock) shows the toolbar alone: the screen freezes only
+// when the user asks to record (the menu bar icon, the record shortcut, grip://record, a picked mode).
 app.on('second-instance', (_e, argv, cwd) => {
-  if (!isQuitting() && !launch(argv, cwd)) showPicker()
+  if (!isQuitting() && !launch(argv, cwd)) showPicker(null)
 })
 
 function openUrl(url: string) {
@@ -120,15 +122,15 @@ app.whenReady().then(() => {
   // Restarted into an update, or opened at login: back in the menu bar only, its dock icon gone too
   // (no window hides it). The picker waits for the user to ask.
   if (updated || app.getLoginItemSettings().wasOpenedAtLogin) updateDock()
-  else if (!acted && !queued.length) settings().onboarded ? showPicker() : openOnboarding(settings().welcomed ? 'page=permissions' : '')
+  else if (!acted && !queued.length) settings().onboarded ? showPicker(null) : openOnboarding(settings().welcomed ? 'page=permissions' : '')
   startUpdates(logError)
 })
 
 // Menu bar app: closing the last window keeps Grip running.
 app.on('window-all-closed', () => {})
-// Dock icon click with nothing open: new recording.
+// Dock icon click with nothing open: the toolbar.
 app.on('activate', () => {
-  if (!BrowserWindow.getAllWindows().some((w) => w.isVisible())) showPicker()
+  if (!BrowserWindow.getAllWindows().some((w) => w.isVisible())) showPicker(null)
 })
 
 // Quit prompts. Cancel always means: keep running, nothing changed. ⌘Q again while one is open
