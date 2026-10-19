@@ -27,6 +27,9 @@ import { registerFakeRecording } from './shell/fake-recording.ts'
 
 // Dev: per-worktree user data, so parallel checkouts do not share locks, settings, or projects.
 if (!app.isPackaged) app.setPath('userData', join(import.meta.dirname, '../.context/userdata'))
+// Dev: safeStorage uses a fixed key, not the "Grip Safe Storage" keychain item. The ad-hoc signed dev Electron would
+// otherwise own that item, and the signed app would ask for the login password to read it.
+if (!app.isPackaged) app.commandLine.appendSwitch('use-mock-keychain')
 if (process.env.STUDIO_CDP_PORT) app.commandLine.appendSwitch('remote-debugging-port', process.env.STUDIO_CDP_PORT)
 if (process.env.STUDIO_HIDDEN) app.commandLine.appendSwitch('mute-audio') // hidden runs (agents, tests) never play sound
 // Dev stand-in engine: Chromium's fake camera too, so the preview runs without a camera prompt.
