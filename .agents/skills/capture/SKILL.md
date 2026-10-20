@@ -14,6 +14,8 @@ Screen, window, area, and device recording.
 - Our own UI stays out of the capture: recording widget, speaker notes and prompter, camera preview, area picker.
   System notifications and, optionally, desktop icons stay out too.
 - The picker freezes every display the moment it opens (shortcut or menu bar click), before any of our UI shows, so menus and hover states stay; the freeze ends when a countdown starts.
+- Area picking opens with nothing selected: windows move between recordings, and a restored area followed by a quick ↩ records the wrong place.
+  The last area shows outlined and tagged: a click picks it again, a drag inside it draws a new one, and its aspect lock carries over.
 - Screenshots come from the same area picker and are cut from that frozen frame: ⌘C copies the area, a drawing tool annotates it first, and drawn shapes drag to another place.
   Picking a display or a window, ⌘C copies it without drawing; a window comes alone, as macOS takes it: nothing in front of it, clear corners, no shadow.
   The overlay under the pointer holds the keyboard, so ↩ and ⌘C reach the display the user is looking at.

@@ -1,7 +1,9 @@
 <!-- Onboarding and settings (#/onboarding?page=welcome|permissions|settings[&need=<permission>]).
      Welcome, then permissions: each with a one-line reason, live status, a request button that
      shows the system prompt the first time and System Settings after that, and a way back from a
-     revoked permission (`need`). Settings reuses the permission list and adds recording options. -->
+     revoked permission (`need`). Settings puts recording options and shortcuts first, then the same
+     permission list with every allowed one folded into a single row. Each recording option plays on a
+     small desktop beside the list while it is pointed at or focused. -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
   import { invoke } from '../../lib/ipc.ts'
@@ -9,6 +11,7 @@
   import { ensurePermission, setSettings, shell, type Permission, type PermissionStatus, type Settings } from '../recorder/shell.svelte.ts'
   import appIcon from '../../../build/icon.png'
   import { acceleratorOf, symbols } from '../../shared/shortcut.ts'
+  import SettingPreview from './SettingPreview.svelte'
 
   let { params }: { params: URLSearchParams } = $props()
 
@@ -32,6 +35,7 @@
     ['hideDesktopIcons', 'Hide desktop icons', 'Keeps a busy desktop out of your recordings.'],
     ['autoZoom', 'Auto zoom', 'New recordings zoom in where you click and type.'],
   ]
+  let previewed = $state(0) // the recording option the preview plays: the last one pointed at or focused
   const SHORTCUTS = [
     ['Pause or resume', '⌥⇧⌘P'],
     ['Delete recording', '⌥⇧⌘⌫'],
@@ -49,6 +53,9 @@
   // Screen Recording turned on while this window is open: macOS applies it only after a relaunch.
   let screenWas: PermissionStatus | undefined
   const screenNew = $derived(screenOk && screenWas !== undefined && screenWas !== 'granted' && need !== 'screen') // the banner says it then
+  const shown = $derived(ROWS.filter((r) => status?.[r.id]))
+  // Settings folds what is allowed, with nothing more to say, into one row: only what needs the user keeps a full row.
+  const folded = $derived(page === 'settings' ? shown.filter((r) => status?.[r.id] === 'granted' && !(r.id === 'screen' && screenNew)) : [])
 
   // Live status: permissions change in System Settings, not here.
   onMount(() => {
@@ -91,7 +98,8 @@
     if (keys === '') return // only modifiers so far
     if (!keys) return void (keysNote = 'Use ⌘ or ⌃ with another modifier, like ⌥⌘ or ⇧⌘.')
     typingKeys = false
-    keysNote = (await invoke('shell:shortcut', keys)) ? '' : `Another app uses ${symbols(keys)}. Try another.`
+    const ok = await invoke('shell:shortcut', keys)
+    keysNote = !ok ? `Another app uses ${symbols(keys)}. Try another.` : ok === 'macos' ? `Grip takes ${symbols(keys)} over from macOS until you quit Grip.` : ''
   }
 </script>
 
@@ -113,7 +121,7 @@
 
 {#snippet permissionList()}
   <ul class="rows">
-    {#each ROWS.filter((r) => status?.[r.id]) as row (row.id)}
+    {#each shown.filter((r) => !folded.includes(r)) as row (row.id)}
       {@const s = status?.[row.id]}
       <li class:need={need === row.id && s !== 'granted'}>
         <span class="tile"><Icon name={row.icon} size={20} /></span>
@@ -138,11 +146,20 @@
         {/if}
       </li>
     {/each}
+    {#if folded.length}
+      <li>
+        <span class="stack">{#each folded as row (row.id)}<span><Icon name={row.icon} size={15} /></span>{/each}</span>
+        <div class="text">
+          <div class="title">{folded.length === shown.length ? 'All permissions allowed' : `${folded.length} more allowed`}</div>
+          <div class="reason">{folded.map((r) => r.title).join(', ')}</div>
+        </div>
+      </li>
+    {/if}
   </ul>
 {/snippet}
 
 <main class="window">
-  <div class="titlebar"></div>
+  <div class="titlebar">{#if page === 'settings'}<span class="name">Settings</span>{/if}</div>
   {#if page === 'welcome'}
     <section class="welcome">
       <img src={appIcon} alt="" width="128" height="128" />
@@ -163,30 +180,36 @@
     </footer>
   {:else}
     <section class="body scroll">
-      <h2>Settings</h2>
       {@render needBanner()}
-      <h3>Permissions</h3>
-      {@render permissionList()}
       <h3>Recording</h3>
-      <ul class="rows">
-        {#each TOGGLES as [key, title, reason] (key)}
-          <li>
-            <div class="text">
-              <div class="title">{title}</div>
-              <div class="reason">{reason}</div>
-            </div>
-            <input type="checkbox" role="switch" aria-label={title} checked={!!shell.settings?.[key]} onchange={(e) => setSettings({ [key]: e.currentTarget.checked })} />
-          </li>
-        {/each}
-      </ul>
+      <div class="recording">
+        <ul class="rows compact">
+          {#each TOGGLES as [key, title, reason], i (key)}
+            <li class:current={i === previewed} onpointerenter={() => (previewed = i)} onfocusin={() => (previewed = i)}>
+              <label>
+                {title}
+                <input type="checkbox" role="switch" aria-describedby="why-{key}" checked={!!shell.settings?.[key]} onchange={(e) => setSettings({ [key]: e.currentTarget.checked })} />
+              </label>
+              <span id="why-{key}" hidden>{reason}</span>
+            </li>
+          {/each}
+        </ul>
+        <figure class="preview" aria-hidden="true">
+          <SettingPreview kind={TOGGLES[previewed][0]} on={!!shell.settings?.[TOGGLES[previewed][0]]} />
+          <figcaption>
+            <div class="title">{TOGGLES[previewed][1]}</div>
+            <div class="reason">{TOGGLES[previewed][2]}</div>
+          </figcaption>
+        </figure>
+      </div>
       <h3>Keyboard shortcuts</h3>
       <ul class="rows compact">
         <li>
           <div class="text">
             <div class="title">New recording, or finish</div>
-            <!-- macOS takes its own screenshot shortcuts before any app sees them. -->
+            <!-- macOS's own shortcuts reach this field while it listens; Grip turns off the one it takes. -->
             <div class="reason" role="status">
-              {keysNote || (typingKeys ? 'To use ⇧⌘3, ⇧⌘4, or ⇧⌘5, first turn them off in System Settings › Keyboard › Keyboard Shortcuts › Screenshots.' : 'Works in any app. Click it to change it.')}
+              {keysNote || (typingKeys ? 'Press the new keys. macOS’s screenshot keys, like ⇧⌘5, work too.' : 'Works in any app. Click it to change it.')}
             </div>
           </div>
           <button class="keys" class:typing={typingKeys} aria-label="New recording shortcut: {recordKeys}. Change" title="Click to change" onclick={listen} onkeydown={typeKeys} onblur={stopListening}
@@ -200,6 +223,9 @@
           </li>
         {/each}
       </ul>
+      <!-- Last: onboarding is where permissions come first, and an allowed one needs nothing here. -->
+      <h3>Permissions</h3>
+      {@render permissionList()}
     </section>
   {/if}
 </main>
@@ -221,6 +247,14 @@
     inset: 0 0 auto;
     height: 40px;
     -webkit-app-region: drag;
+  }
+  /* The window's name, in line with the traffic lights (macOS centers them at y 18, ending at x 72). */
+  .name {
+    display: block;
+    padding-left: 84px;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 36px;
   }
   .welcome {
     flex: 1;
@@ -249,9 +283,9 @@
   }
   .body {
     flex: 1;
-    margin-top: 40px; /* under the title bar: it scrolls where it shows */
-    padding: 12px 40px 0;
-    mask-image: linear-gradient(transparent, #000 12px); /* rows scroll away under a fade, not a cut */
+    margin-top: 36px; /* under the title bar: it scrolls where it shows */
+    padding: 16px 40px 0;
+    mask-image: linear-gradient(transparent, #000 16px); /* rows scroll away under a fade, not a cut */
     min-height: 0;
     overflow-y: auto; /* a banner and hints never push Continue off the window */
   }
@@ -272,6 +306,9 @@
     color: var(--text-dim);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+  }
+  h3:first-child {
+    margin-top: 0;
   }
   .lead {
     margin: 0 0 22px;
@@ -314,6 +351,42 @@
   .rows.compact li {
     min-height: 44px;
   }
+  /* Recording: short rows, and beside them a preview of the one pointed at. The row is its label. */
+  .recording {
+    display: grid;
+    grid-template-columns: 1fr 264px;
+    gap: 12px;
+    margin: 0 -16px;
+  }
+  .recording .rows {
+    margin: 0;
+  }
+  .recording li {
+    padding: 0;
+  }
+  .recording li.current {
+    background: var(--surface-50-hover);
+  }
+  .recording label {
+    display: flex;
+    flex: 1;
+    align-self: stretch;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .preview {
+    margin: 0;
+    padding: 6px; /* concentric: the stage's corners are the card's less this */
+    border-radius: var(--radius-lg);
+    background: var(--surface-50);
+    box-shadow: var(--hairline);
+  }
+  figcaption {
+    padding: 10px 6px 4px;
+  }
   .rows li + li {
     box-shadow: var(--hairline-t);
   }
@@ -332,6 +405,25 @@
     border-radius: var(--radius);
     background: var(--surface-100);
     box-shadow: var(--hairline);
+    color: var(--text);
+  }
+  /* The allowed permissions, overlapping like a stack of avatars. */
+  .stack {
+    display: flex;
+    flex: none;
+    padding-left: 8px;
+  }
+  .stack span {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    margin-left: -8px;
+    border-radius: 50%;
+    background: var(--surface-100);
+    box-shadow:
+      0 0 0 2px var(--surface-50),
+      var(--hairline);
     color: var(--text);
   }
   .text {

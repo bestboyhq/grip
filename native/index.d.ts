@@ -180,6 +180,9 @@ export interface Rotation {
   deg: number
 }
 
+/** Turn a macOS shortcut on or off until logout; System Settings keeps showing the user's choice. */
+export declare function setSystemShortcut(id: number, on: boolean): void
+
 /** System Settings' window, or nothing when System Settings is not running. */
 export declare function settingsWindow(): SettingsWindow | null
 
@@ -223,6 +226,15 @@ export declare function stopMicMonitor(): void
 
 /** Stop and finalize. Resolves with the sources (null when nothing was recording). */
 export declare function stopRecording(): Promise<RecordingSources | null>
+
+/**
+ * While on, macOS's own shortcuts (⇧⌘4, ⌘Space) reach Grip instead of firing, so the user can type
+ * one into a shortcut field. Only while Grip is the active app; accessibility shortcuts still fire.
+ */
+export declare function suspendSystemShortcuts(on: boolean): void
+
+/** The ids of macOS's shortcuts that are on and use `keys`, in macOS notation ('⇧⌘5'). */
+export declare function systemShortcuts(keys: string): Array<number>
 
 /**
  * What to record. An area rect is in points relative to its display's top-left corner. A window

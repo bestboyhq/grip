@@ -223,7 +223,7 @@ const FN: u64 = 0x800000;
 const DEVICE_BITS: u64 = 0x207F; // NX_DEVICE* left/right modifier bits
 
 /// Keys whose label does not depend on the layout.
-fn special_key(code: u16) -> Option<&'static str> {
+pub(crate) fn special_key(code: u16) -> Option<&'static str> {
     Some(match code {
         0x24 => "↩",
         0x4C => "⌤",

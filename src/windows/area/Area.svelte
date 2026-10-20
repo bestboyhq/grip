@@ -3,7 +3,7 @@
      Display mode: highlight the hovered display. Window mode: highlight the window under the mouse
      (a click keeps it), with preset sizes. Either records (↩) or copies a screenshot (⌘C), the window
      alone with clear corners, as macOS takes it. Area mode: drag out a rectangle, resize it by its handles, type its size, lock
-     an aspect; the last area is remembered. Then record it (↩, a 3-2-1 countdown over the region), or
+     an aspect; the last area shows as an outline, and a click picks it again. Then record it (↩, a 3-2-1 countdown over the region), or
      take a screenshot of it: ⌘C copies it at once, a tool from the strip beside it (or its key)
      freezes it to draw on first (a drawn shape drags to another place), then ⌘C copies or ⌘S
      saves it to the Desktop.
@@ -16,10 +16,10 @@
   import { invoke, on } from '../../lib/ipc.ts'
   import Icon from '../recorder/Icon.svelte'
   import ZoomHint from '../recorder/ZoomHint.svelte'
+  import Countdown, { burst, pop } from './Countdown.svelte'
   import UiIcon from '../../ui/Icon.svelte'
   import { paintStroke, visibleStrokes, type Stroke } from '../../engine/overlays/drawings.ts'
-  import { springDuration, springProgress, type SpringConfig } from '../../engine/motion/spring.ts'
-  import { fromEngine, setSettings, shell, startRequest, toEngine, windowList, type Rect, type StartRequest, type WindowSource } from '../recorder/shell.svelte.ts'
+  import { fromEngine, shell, startRequest, toEngine, windowList, type Rect, type Settings, type StartRequest, type WindowSource } from '../recorder/shell.svelte.ts'
   import { ASPECTS, constrain, formAt, presetFrame, presetSize, PRESETS, resize, toolsAt, type Handle } from './geometry.ts'
   import { COLORS, FONT, FONT_FAMILY, moved, P3, paintShapes, shapeAt, tiny, TOOLS, type P, type Shape, type Tool } from './annotate.ts'
 
@@ -41,7 +41,7 @@
   let choice = $state({ id: 0, preset: 'current' }) // preset size picked for window `id`
   let target = $state<Rect | null>(null) // region being counted down, local points
   let count = $state(0)
-  let drag = $state<{ kind: 'new' | 'move' | Handle; x: number; y: number; orig: Rect } | null>(null)
+  let drag = $state<{ kind: 'new' | 'move' | Handle; x: number; y: number; orig: Rect; moved?: boolean } | null>(null)
   let formW = $state(0)
   let formH = $state(0)
 
@@ -103,12 +103,15 @@
   const preset = $derived(hovered && choice.id === hovered.id ? choice.preset : 'current')
   const frame = $derived(hovered && display ? toLocal(presetFrame(fromEngine(hovered.frame), preset, display.workArea)) : null)
 
-  // Area mode: the remembered area (settings) belongs to one display; picking on another clears it
-  // here. Local edits override it until they are saved back.
+  // Area mode: the area picked (shell.selection) belongs to one display; picking on another clears it
+  // here. Local edits override it until they are saved back. A pick opens with none: the last area
+  // (settings) is only an outline, which a click picks again.
   const remembered = $derived(shell.settings?.area)
-  let sel = $derived<Rect | null>(remembered && display && remembered.display === display.id ? constrain(remembered.rect, null, W, H) : null)
-  let aspect = $derived(remembered?.aspect ?? 'free')
-  const save = () => setSettings({ area: sel && display ? { display: display.id, rect: $state.snapshot(sel), aspect } : null })
+  const here = (a: Settings['area'] | undefined) => (a && display && a.display === display.id ? constrain(a.rect, null, W, H) : null)
+  let sel = $derived<Rect | null>(here(shell.selection))
+  const last = $derived(here(remembered))
+  let aspect = $derived(shell.selection?.aspect ?? remembered?.aspect ?? 'free')
+  const save = () => invoke('shell:select', sel && display ? { display: display.id, rect: $state.snapshot(sel), aspect } : null)
 
   function down(e: PointerEvent, kind: 'new' | 'move' | Handle) {
     // Window mode: a click picks the window under it (recording waits for Start or ↩); off any window, it lets go.
@@ -118,12 +121,17 @@
     ;(document.body as Element).setPointerCapture(e.pointerId)
     const orig = kind === 'new' ? { x: e.clientX, y: e.clientY, width: 0, height: 0 } : sel!
     drag = { kind, x: e.clientX, y: e.clientY, orig }
-    if (kind === 'new') sel = orig
   }
+  /** A drag (new area, move, or resize) on its way: a new area only once the pointer moves. */
+  const dragging = $derived(!!drag && (drag.kind !== 'new' || !!drag.moved))
   function move(e: PointerEvent) {
     mouse = { x: e.clientX, y: e.clientY }
     if (!drag) return
     const { kind, orig } = drag
+    if (kind === 'new' && !drag.moved) {
+      if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 4) return // a click so far
+      drag.moved = true
+    }
     if (kind === 'move') {
       const x = Math.min(Math.max(orig.x + e.clientX - drag.x, 0), W - orig.width)
       const y = Math.min(Math.max(orig.y + e.clientY - drag.y, 0), H - orig.height)
@@ -135,9 +143,11 @@
   const takeKeys = () => (shell.mode === 'display' || shell.mode === 'window') && !target && invoke('shell:focus')
   function up() {
     if (!drag) return
-    const wasNew = drag.kind === 'new'
+    const { kind, x, y, moved } = drag
     drag = null
-    if (sel && (sel.width < 32 || sel.height < 32)) sel = wasNew ? null : sel // a click is not an area
+    // A click lets go of the area, or picks the last one again on its outline. A tiny new area is a click too.
+    if (kind === 'new' && !moved) sel = !sel && last && inside(last, { x, y }) ? last : null
+    else if (kind === 'new' && sel && (sel.width < 32 || sel.height < 32)) sel = null
     save()
   }
 
@@ -373,43 +383,6 @@
     }
   })
 
-  // The countdown: the circle pops in, each number drops in on a spring while the one before falls out
-  // under it, and the circle beats as it lands. Reduced motion keeps the fades only.
-  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches
-  const DROP: SpringConfig = { stiffness: 380, damping: 22, mass: 1 } // ~12% overshoot: the number lands
-  const POP: SpringConfig = { stiffness: 420, damping: 24, mass: 1 }
-  const easeOut = (u: number) => 1 - (1 - u) ** 3
-  /** A spring as a transition: `css` gets its progress (past 1 while it overshoots) and linear time. */
-  const sprung = (c: SpringConfig, css: (p: number, t: number) => string) => (_: Element) => {
-    const d = springDuration(c)
-    return { duration: d * 1000, css: (t: number) => css(springProgress(t * d, c), t) }
-  }
-  const pop = sprung(POP, (p, t) => (calm ? `opacity: ${t}` : `opacity: ${Math.min(1, t * 3)}; transform: scale(${0.82 + 0.18 * p})`))
-  const drop = sprung(DROP, (p, t) =>
-    calm ? `opacity: ${t}` : `opacity: ${Math.min(1, t * 4)}; transform: translateY(${-60 * (1 - p)}%) scale(${1 + 0.45 * (1 - p)}); filter: blur(${Math.max(0, 8 * (1 - p))}px)`,
-  )
-  // Outros run t from 1 to 0; easing the elapsed part gives them a fast start.
-  const fall = (_: Element) => ({
-    duration: 280,
-    css: (t: number) => {
-      const e = easeOut(1 - t)
-      return calm ? `opacity: ${t}` : `opacity: ${1 - e}; transform: translateY(${55 * e}%) scale(${1 - 0.3 * e}); filter: blur(${6 * e}px)`
-    },
-  })
-  // Recording starts: the circle bursts. Esc (no target left): it just fades.
-  const burst = (_: Element) => ({
-    duration: target ? 260 : 150,
-    css: (t: number) => {
-      const e = easeOut(1 - t)
-      return calm || !target ? `opacity: ${t}` : `opacity: ${1 - e}; transform: scale(${1 + 0.2 * e}); filter: blur(${4 * e}px)`
-    },
-  })
-  /** The circle beats as each number after the first lands. */
-  function beat(el: HTMLElement) {
-    if (count < 3 && !calm)
-      el.animate([{ scale: 1, easing: 'cubic-bezier(0.2, 0, 0, 1)' }, { scale: 1.06, offset: 0.3, easing: 'cubic-bezier(0.3, 0, 0.2, 1)' }, { scale: 1 }], 450)
-  }
-
   let takes = 0 // countdowns started; a newer one (Esc, then start again) ends the older loop
   async function begin(req: StartRequest, region: Rect) {
     if (target) return
@@ -545,7 +518,7 @@
   {:else if shell.mode === 'area'}
     {#if sel}
       {@render shade(sel)}
-      <div class="sel" class:dragging={drag} class:frozen={!!shot} style:left="{sel.x}px" style:top="{sel.y}px" style:width="{sel.width}px" style:height="{sel.height}px" role="presentation" onpointerdown={(e) => down(e, 'move')}>
+      <div class="sel" class:frozen={!!shot} style:left="{sel.x}px" style:top="{sel.y}px" style:width="{sel.width}px" style:height="{sel.height}px" role="presentation" onpointerdown={(e) => down(e, 'move')}>
         {#if shot}
           <canvas class="board" class:pointing={!!tool && tool !== 'text'} class:typing={tool === 'text'} class:over {@attach board} onpointerdown={boardDown} onpointermove={boardMove} onpointerup={boardUp}></canvas>
           {#if typing}
@@ -570,7 +543,7 @@
             ></textarea>
           {/if}
         {:else}
-          {#if drag && drag.kind !== 'move'}<div class="plus"></div>{/if}
+          {#if dragging && drag?.kind !== 'move'}<div class="plus"></div>{/if}
           {#each HANDLES as h (h)}
             <span class="handle {h}" role="presentation" onpointerdown={(e) => down(e, h)}><i></i></span>
           {/each}
@@ -610,7 +583,7 @@
           {/if}
         </div>
       {/if}
-      {#if tools && !drag}
+      {#if tools && !dragging}
         <div
           class="tools"
           role="toolbar"
@@ -637,15 +610,17 @@
         </div>
       {/if}
     {:else}
+      {#if last}
+        {@const [x0, y0, x1, y1] = [last.x, last.y, last.x + last.width, last.y + last.height].map((v) => px(v) / scale)}
+        <div class="last" style:left="{x0}px" style:top="{y0}px" style:width="{x1 - x0}px" style:height="{y1 - y0}px"><span class="tag">Last area</span></div>
+      {/if}
       <div class="hint">Drag to select an area · Esc to cancel</div>
     {/if}
   {/if}
   <!-- Outside the branches above, so it bursts away even as the recording's backdrop replaces them. -->
   {#if count > 0 && target}
-    <div class="countdown" style:left="{target.x + target.width / 2}px" style:top="{target.y + target.height / 2}px" in:pop out:burst>
-      <div class="count" role="status" aria-live="assertive" {@attach beat}>
-        {#key count}<span class="digit" class:one={count === 1} in:drop|global out:fall>{count}</span>{/key}
-      </div>
+    <div class="countdown" style:left="{target.x + target.width / 2}px" style:top="{target.y + target.height / 2}px" in:pop out:burst={{ fade: !target }}>
+      <Countdown {count} />
       <div class="zoom"><ZoomHint /></div>
     </div>
   {/if}
@@ -843,6 +818,49 @@
   .sel {
     cursor: move;
   }
+  /* The last area: half as dim as the screen around it, with a tag, and dashes where the selection's
+     hairline would be, on device pixels, white on dark so they read on any content. Under the pointer
+     it clears, as when it is picked: a click picks it. */
+  .last {
+    position: absolute;
+    background: rgb(0 0 0 / 0.14);
+    box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.28); /* the dim around it, painted once: it never resizes */
+    transition: background-color 120ms;
+  }
+  .last::before {
+    --dash: #fff 0 6px, rgb(0 0 0 / 0.45) 0 10px;
+    content: '';
+    position: absolute;
+    inset: -1px;
+    background:
+      repeating-linear-gradient(90deg, var(--dash)) top / 100% 1px no-repeat,
+      repeating-linear-gradient(90deg, var(--dash)) bottom / 100% 1px no-repeat,
+      repeating-linear-gradient(var(--dash)) left / 1px 100% no-repeat,
+      repeating-linear-gradient(var(--dash)) right / 1px 100% no-repeat;
+  }
+  main.area:has(.last) {
+    background: none;
+  }
+  .last:hover {
+    background: none;
+  }
+  .tag {
+    position: absolute;
+    left: 8px;
+    top: 8px;
+    padding: 4px 9px;
+    border-radius: var(--radius);
+    background: var(--surface-50);
+    box-shadow: /* the hint's edges: it reads on any content */
+      0 0 0 0.5px rgb(0 0 0 / 0.6),
+      0 2px 6px rgb(0 0 0 / 0.25),
+      inset 0 0 0 0.5px var(--edge-strong);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+  }
   .dim {
     position: absolute;
     inset: 0;
@@ -969,26 +987,6 @@
     position: absolute;
     translate: -50% -50%;
     pointer-events: none;
-  }
-  .count {
-    display: grid;
-    width: 132px;
-    height: 132px;
-    overflow: hidden; /* numbers fly in and out through its edge */
-    border-radius: 50%;
-    background: rgb(20 20 22 / 0.78);
-    box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.2);
-    color: #fff;
-    font-size: 68px;
-    font-weight: 600; /* proportional figures: each centers on its own width */
-  }
-  .digit {
-    grid-area: 1 / 1; /* the falling number and the landing one overlap */
-    place-self: center;
-    translate: 0 -1px; /* figures sit low in their line box: this centers the ink */
-  }
-  .digit.one {
-    translate: -2px -1px; /* its flag pulls its box left of the stem the eye centers on */
   }
   .zoom {
     position: absolute;

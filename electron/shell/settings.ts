@@ -28,7 +28,8 @@ export interface Settings {
   prompter: { speed: number; size: number }
   /** The picker mode last chosen; the picker opens in it (null: none yet, the toolbar alone). */
   mode: 'display' | 'window' | 'area' | null
-  /** Last recording area: display id and rect in points relative to that display. */
+  /** The last area picked: display id and rect in points relative to that display. The next pick
+   *  outlines it, and a click picks it again. */
   area: { display: number; rect: Rect; aspect: string } | null
   /** Past the welcome page: granting a permission can relaunch Grip, and onboarding resumes at permissions. */
   welcomed: boolean
@@ -40,6 +41,9 @@ export interface Settings {
   /** The global shortcut that opens the picker and finishes a recording: an Electron accelerator
    *  (src/shared/shortcut.ts), set through shell:shortcut. */
   recordShortcut: string
+  /** macOS shortcuts (ids) Grip turned off because they use the record shortcut's keys: back on when
+   *  it changes, at quit, and at the next launch after a crash. */
+  borrowedShortcuts: number[]
 }
 
 const defaults: Settings = {
@@ -63,6 +67,7 @@ const defaults: Settings = {
   prompted: [],
   windows: {},
   recordShortcut: 'Alt+Command+Return',
+  borrowedShortcuts: [],
 }
 
 const file = () => join(app.getPath('userData'), 'settings.json')
