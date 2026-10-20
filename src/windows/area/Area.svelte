@@ -60,6 +60,9 @@
   const pixels = (s: { width: number; height: number; data: Uint8Array<ArrayBuffer> } | null) =>
     s && new ImageData(new Uint8ClampedArray(s.data.buffer, s.data.byteOffset, s.data.byteLength), s.width, s.height, { colorSpace: 'display-p3' })
   const paint = (canvas: HTMLCanvasElement) => void (still && canvas.getContext('2d', P3)!.putImageData(still, 0, 0))
+  /** On screen: shell:ready returns once the main process has shown this overlay. Loaded ahead, it paints
+   *  while hidden, so an animation started on mount would play unseen. */
+  let shown = $state(false)
   // A countdown or a recording shows the screen live from then on.
   $effect(() => {
     if (!still || !(target || shell.counting || shell.status !== 'idle')) return
@@ -78,7 +81,8 @@
         display = await invoke('shell:display', id)
         still = s
         await tick()
-        invoke('shell:ready')
+        await invoke('shell:ready')
+        shown = true
       })
     const offs = [
       on('shell:escape', () => {
@@ -483,7 +487,7 @@
   </div>
 {/snippet}
 
-<main class:area={shell.mode === 'area' && !target} onpointerdown={(e) => down(e, 'new')}>
+<main class:area={shell.mode === 'area' && !target} class:shown onpointerdown={(e) => down(e, 'new')}>
   {#if shell.area && display}
     <!-- Recording an area: everything else stays dim, every display (click-through, main process). -->
     {@const r = shell.area.display === display.id ? fromEngine(shell.area.rect) : null}
@@ -507,6 +511,8 @@
           <div class="sub">{px(W)} × {px(H)}</div>
           {@render actions(startDisplay)}
         </div>
+      {:else}
+        <div class="hint">Move the pointer onto a display to record it · Esc to cancel</div>
       {/if}
     </div>
   {:else if shell.mode === 'window'}
@@ -534,7 +540,7 @@
         {@render actions(startWindow)}
       </div>
     {:else}
-      <div class="hint">Move the pointer over a window to record it</div>
+      <div class="hint">Move the pointer over a window to record it · Esc to cancel</div>
     {/if}
   {:else if shell.mode === 'area'}
     {#if sel}
@@ -798,11 +804,29 @@
     transform: translate(-50%, -50%);
     padding: 9px 16px;
     border-radius: var(--radius-lg);
-    background: var(--surface-50);
-    box-shadow: var(--shadow-pop);
-    color: var(--text-dim);
+    /* The text is the top layer: gray, with the logo dot's colors (widget/dot.ts) in the middle third,
+       which passes through it once, left to right, as the hint comes on screen. The pill is the bottom one. */
+    background:
+      linear-gradient(90deg, var(--text-dim) 33.3%, #1957fa, #8b67a8, #e44730, #f04600, #fb8600, var(--text-dim) 66.7%) 0 0 / 300% 100%,
+      var(--surface-50);
+    background-clip: text, padding-box;
+    color: transparent;
+    /* A strong hairline inside and a dark one outside: the edge reads on any wallpaper. */
+    box-shadow:
+      0 0 0 0.5px rgb(0 0 0 / 0.6),
+      0 4px 12px rgb(0 0 0 / 0.3),
+      inset 0 0 0 0.5px var(--edge-strong);
     font-size: 13px;
     pointer-events: none;
+  }
+  .shown .hint {
+    animation: sweep 2.5s cubic-bezier(0.37, 0, 0.63, 1); /* slow enough to read the colors as they pass */
+    animation-delay: 150ms;
+  }
+  @keyframes sweep {
+    from {
+      background-position: 100% 0;
+    }
   }
   /* The region to record: clear, with a hairline, and everything around it dim (shade). */
   .sel,

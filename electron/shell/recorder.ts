@@ -193,9 +193,10 @@ function controller(): BrowserWindow {
   return (toolbar = win)
 }
 
-/** Open the picker on the display under the mouse, in the last mode unless told otherwise (the
- *  toolbar alone before the first pick): the screen freezes, and in area mode the last area comes back
- *  selected, ready to record (↩) or to copy as a screenshot (⌘C). While recording, bring back the controls. */
+/** Open the picker on the display under the mouse, in the last mode unless told otherwise: the screen
+ *  freezes, and in area mode the last area comes back selected, ready to record (↩) or to copy as a
+ *  screenshot (⌘C). Mode null is the toolbar alone, nothing frozen: before the first pick, and whenever
+ *  Grip is opened rather than asked to record. While recording, bring back the controls. */
 export function showPicker(m: Mode | null = settings().mode) {
   if (status !== 'idle') return showWidget()
   const win = controller()
@@ -776,7 +777,7 @@ export function registerRecorder() {
   ipcMain.handle('shell:finish-onboarding', () => {
     setSettings({ onboarded: true })
     for (const w of windowsOf('onboarding')) w.destroy()
-    showPicker()
+    showPicker(null)
   })
   ipcMain.handle('shell:countdown', (_e, on: boolean) => {
     counting = !!on
