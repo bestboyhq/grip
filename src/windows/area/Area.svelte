@@ -60,6 +60,9 @@
   const pixels = (s: { width: number; height: number; data: Uint8Array<ArrayBuffer> } | null) =>
     s && new ImageData(new Uint8ClampedArray(s.data.buffer, s.data.byteOffset, s.data.byteLength), s.width, s.height, { colorSpace: 'display-p3' })
   const paint = (canvas: HTMLCanvasElement) => void (still && canvas.getContext('2d', P3)!.putImageData(still, 0, 0))
+  /** On screen: shell:ready returns once the main process has shown this overlay. Loaded ahead, it paints
+   *  while hidden, so an animation started on mount would play unseen. */
+  let shown = $state(false)
   // A countdown or a recording shows the screen live from then on.
   $effect(() => {
     if (!still || !(target || shell.counting || shell.status !== 'idle')) return
@@ -78,7 +81,8 @@
         display = await invoke('shell:display', id)
         still = s
         await tick()
-        invoke('shell:ready')
+        await invoke('shell:ready')
+        shown = true
       })
     const offs = [
       on('shell:escape', () => {
@@ -483,7 +487,7 @@
   </div>
 {/snippet}
 
-<main class:area={shell.mode === 'area' && !target} onpointerdown={(e) => down(e, 'new')}>
+<main class:area={shell.mode === 'area' && !target} class:shown onpointerdown={(e) => down(e, 'new')}>
   {#if shell.area && display}
     <!-- Recording an area: everything else stays dim, every display (click-through, main process). -->
     {@const r = shell.area.display === display.id ? fromEngine(shell.area.rect) : null}
@@ -801,10 +805,34 @@
     padding: 9px 16px;
     border-radius: var(--radius-lg);
     background: var(--surface-50);
-    box-shadow: var(--shadow-pop);
+    /* A strong hairline inside and a dark one outside: the edge reads on any wallpaper. */
+    box-shadow:
+      0 0 0 0.5px rgb(0 0 0 / 0.6),
+      0 4px 12px rgb(0 0 0 / 0.3),
+      inset 0 0 0 0.5px var(--edge-strong);
     color: var(--text-dim);
     font-size: 13px;
     pointer-events: none;
+    overflow: hidden; /* the sweep stays inside */
+  }
+  /* The logo dot's colors (widget/dot.ts) pass through once, left to right, as the hint comes on screen. */
+  .hint::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1; /* over the fill, under the text: the transform above makes the hint a stacking context */
+    background: linear-gradient(90deg, transparent, #1957fa, #8b67a8, #e44730, #f04600, #fb8600, transparent);
+    opacity: 0.7; /* the logo's colors, the text still legible over them */
+    transform: translateX(-100%);
+  }
+  .shown .hint::before {
+    animation: sweep 1.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+    animation-delay: 150ms;
+  }
+  @keyframes sweep {
+    to {
+      transform: translateX(100%);
+    }
   }
   /* The region to record: clear, with a hairline, and everything around it dim (shade). */
   .sel,
