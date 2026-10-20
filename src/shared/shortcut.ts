@@ -24,7 +24,7 @@ const isFKey = (key: string) => /^F([1-9]|1\d|20)$/.test(key)
  *  another modifier. ⌘C belongs to every app, ⌥A types "ą", ⌃C stops a command in Terminal. */
 const fair = (mods: string[], key: string) => isFKey(key) || ((mods.includes('Command') || mods.includes('Control')) && mods.length >= 2)
 
-type Press = Pick<KeyboardEvent, 'code' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey'>
+export type Press = Pick<KeyboardEvent, 'code' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey'>
 
 /** The accelerator a key press makes; '' for a lone modifier or a key Grip has no name for, null
  *  for a combination that would take keys from typing or other apps (see `fair`). */

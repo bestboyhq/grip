@@ -2,12 +2,20 @@
 //! windows that show without AppKit's zoom. macOS's own shortcuts, when the record shortcut wants their keys.
 #![cfg_attr(test, allow(dead_code))] // napi exports are only referenced from JS
 
+use std::cell::RefCell;
+use std::ptr::{NonNull, null_mut};
+
+use block2::RcBlock;
+use napi::Status;
 use napi::bindgen_prelude::Buffer;
+use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use objc2::MainThreadMarker;
+use objc2::rc::Retained;
+use objc2::runtime::AnyObject;
 use objc2_app_kit::{
-    NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication, NSView,
-    NSWindowAnimationBehavior,
+    NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication, NSEvent, NSEventMask,
+    NSEventModifierFlags, NSView, NSWindowAnimationBehavior,
 };
 use objc2_foundation::NSArray;
 
@@ -47,11 +55,84 @@ unsafe extern "C" {
     fn CGSGetSymbolicHotKeyValue(id: u32, ch: *mut u16, code: *mut u16, modifiers: *mut u32) -> i32;
 }
 
-/// While on, macOS's own shortcuts (⇧⌘4, ⌘Space) reach Grip instead of firing, so the user can type
-/// one into a shortcut field. Only while Grip is the active app; accessibility shortcuts still fire.
+/// A key press, as src/shared/shortcut.ts reads one off a KeyboardEvent.
+#[napi(object)]
+pub struct KeyPress {
+    pub code: String,
+    pub ctrl_key: bool,
+    pub alt_key: bool,
+    pub shift_key: bool,
+    pub meta_key: bool,
+}
+
+thread_local! {
+    /// AppKit's key monitor while a shortcut is being typed.
+    static MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
+}
+
+/// While `onKey` is set, the user can type any shortcut into a shortcut field, macOS's own (⇧⌘4,
+/// ⌘Space) included. macOS lets its shortcuts through only to the active app, and only with
+/// Accessibility on; accessibility shortcuts still fire. Chromium then drops the keys macOS reserves
+/// before the page sees them, so each press with ⌘ or ⌃, and each F key, goes to `onKey` instead.
 #[napi]
-pub fn suspend_system_shortcuts(on: bool) {
-    unsafe { CGSSetGlobalHotKeyOperatingMode(CGSMainConnectionID(), if on { 2 } else { 0 }) };
+pub fn catch_shortcut_keys(
+    #[napi(ts_arg_type = "((press: KeyPress) => void) | null")] on_key: Option<ThreadsafeFunction<KeyPress, (), KeyPress, Status, false, true>>,
+) {
+    if MainThreadMarker::new().is_none() {
+        return;
+    }
+    unsafe { CGSSetGlobalHotKeyOperatingMode(CGSMainConnectionID(), if on_key.is_some() { 2 } else { 0 }) };
+    MONITOR.with_borrow_mut(|monitor| {
+        if let Some(m) = monitor.take() {
+            unsafe { NSEvent::removeMonitor(&m) };
+        }
+        let Some(on_key) = on_key else { return };
+        let block = RcBlock::new(move |e: NonNull<NSEvent>| -> *mut NSEvent {
+            let event = unsafe { e.as_ref() };
+            let Some(p) = press(event.keyCode(), event.modifierFlags()) else { return e.as_ptr() };
+            on_key.call(p, ThreadsafeFunctionCallMode::NonBlocking);
+            null_mut()
+        });
+        *monitor = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &block) };
+    });
+}
+
+/// The press a shortcut field gets from AppKit rather than the page: one with ⌘ or ⌃, or an F key.
+fn press(key: u16, flags: NSEventModifierFlags) -> Option<KeyPress> {
+    let code = dom_code(key)?;
+    let has = |m| flags.contains(m);
+    let f_key = code.starts_with('F'); // F1 to F20: no other code starts with F
+    (has(NSEventModifierFlags::Command) || has(NSEventModifierFlags::Control) || f_key).then(|| KeyPress {
+        code: code.into(),
+        ctrl_key: has(NSEventModifierFlags::Control),
+        alt_key: has(NSEventModifierFlags::Option),
+        shift_key: has(NSEventModifierFlags::Shift),
+        meta_key: has(NSEventModifierFlags::Command),
+    })
+}
+
+/// A key's KeyboardEvent.code: its place on a US keyboard. None for Esc, which the page handles.
+fn dom_code(key: u16) -> Option<&'static str> {
+    const ANSI: [&str; 0x34] = [
+        "KeyA", "KeyS", "KeyD", "KeyF", "KeyH", "KeyG", "KeyZ", "KeyX", "KeyC", "KeyV", "IntlBackslash", "KeyB", "KeyQ", "KeyW",
+        "KeyE", "KeyR", "KeyY", "KeyT", "Digit1", "Digit2", "Digit3", "Digit4", "Digit6", "Digit5", "Equal", "Digit9", "Digit7",
+        "Minus", "Digit8", "Digit0", "BracketRight", "KeyO", "KeyU", "BracketLeft", "KeyI", "KeyP", "Enter", "KeyL", "KeyJ",
+        "Quote", "KeyK", "Semicolon", "Backslash", "Comma", "Slash", "KeyN", "KeyM", "Period", "Tab", "Space", "Backquote",
+        "Backspace",
+    ];
+    ANSI.get(usize::from(key)).copied().or(match key {
+        0x4C => Some("NumpadEnter"),
+        0x75 => Some("Delete"),
+        0x73 => Some("Home"),
+        0x77 => Some("End"),
+        0x74 => Some("PageUp"),
+        0x79 => Some("PageDown"),
+        0x7B => Some("ArrowLeft"),
+        0x7C => Some("ArrowRight"),
+        0x7D => Some("ArrowDown"),
+        0x7E => Some("ArrowUp"),
+        _ => crate::input::special_key(key).filter(|k| k.starts_with('F')), // F1 to F20
+    })
 }
 
 /// The ids of macOS's shortcuts that are on and use `keys`, in macOS notation ('⇧⌘5').
@@ -96,5 +177,20 @@ mod tests {
         assert_eq!(notation(u16::MAX, 0x60, 0x800000).as_deref(), Some("F5")); // F keys carry fn
         assert_eq!(notation(u16::MAX, u16::MAX, 0), None);
         assert_eq!(notation(b'5'.into(), u16::MAX, 0x120000), None);
+    }
+
+    #[test]
+    fn shortcut_keys_reach_the_field_as_the_page_would_see_them() {
+        use NSEventModifierFlags as M;
+        let p = press(0x15, M::Shift | M::Command).unwrap(); // ⇧⌘4, which Chromium keeps from the page
+        assert_eq!((p.code.as_str(), p.ctrl_key, p.alt_key, p.shift_key, p.meta_key), ("Digit4", false, false, true, true));
+        assert_eq!(press(0x24, M::Option | M::Command).map(|p| p.code).as_deref(), Some("Enter"));
+        assert_eq!(press(0x00, M::Control).map(|p| p.code).as_deref(), Some("KeyA"));
+        assert_eq!(press(0x67, M::Function).map(|p| p.code).as_deref(), Some("F11")); // Show Desktop's key
+        assert_eq!(press(0x7E, M::Command).map(|p| p.code).as_deref(), Some("ArrowUp"));
+        assert!(press(0x00, M::Option).is_none()); // ⌥A types a character: the page has it
+        assert!(press(0x30, M::empty()).is_none()); // Tab moves focus
+        assert!(press(0x35, M::Command).is_none()); // Esc cancels, in the page
+        assert!(press(0x66, M::Command).is_none()); // no code for 英数
     }
 }
