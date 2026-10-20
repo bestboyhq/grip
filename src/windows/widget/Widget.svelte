@@ -1,6 +1,7 @@
 <!-- Recording widget: timer, pen, pause/resume, restart, finish, delete. Floats over everything, drags
      anywhere, stays out of the recording. Restart and delete ask first: both throw the take away.
-     The pen draws on the recorded display; what it draws is in the video and fades out after a moment. -->
+     The pen draws on the recorded display; what it draws is in the video and fades out after a moment.
+     #/widget?preview: a recording in progress that acts on nothing, for Settings to show. -->
 <script lang="ts">
   import { onMount } from 'svelte'
   import { invoke } from '../../lib/ipc.ts'
@@ -11,19 +12,21 @@
 
   let { params }: { params: URLSearchParams } = $props()
 
-  let now = $state(Date.now())
+  const preview = $derived(params.has('preview'))
+  const shown = Date.now()
+  let now = $state(shown)
   let confirm = $state<'cancel' | 'restart' | null>(null)
 
-  const paused = $derived(shell.status === 'paused')
-  const saving = $derived(shell.status === 'stopping')
+  const paused = $derived(!preview && shell.status === 'paused')
+  const saving = $derived(!preview && shell.status === 'stopping')
   const finishKeys = $derived(symbols(shell.settings?.recordShortcut ?? ''))
-  const seconds = $derived(shell.elapsed + (shell.at ? Math.max(0, now - shell.at) / 1000 : 0))
+  const seconds = $derived(preview ? (now - shown) / 1000 : shell.elapsed + (shell.at ? Math.max(0, now - shell.at) / 1000 : 0))
   const run = (cmd: string) => invoke('shell:command', cmd)
 
   // The dot is alight while recording, and cools to the still logo gradient when paused (like the picker's Record
   // button) or with Reduce Motion.
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches
-  const hot = $derived(shell.status === 'recording' && !calm)
+  const hot = $derived((preview || shell.status === 'recording') && !calm)
   let heat = 0 // outlives glow's re-runs: pausing cools the dot down instead of snapping it
   function glow(canvas: HTMLCanvasElement) {
     const target = hot ? 1 : 0
@@ -60,6 +63,7 @@
 
   /** Right-click: hide the controls for this recording. The menu bar icon brings them back. */
   async function menu(e: MouseEvent) {
+    if (preview) return
     const items = [{ id: 'hide', label: 'Hide Recording Controls' }]
     if ((await invoke('shell:popup', items, e.clientX, e.clientY)) === 'hide') window.close()
   }
@@ -81,7 +85,7 @@
       aria-label="Draw on screen"
       aria-pressed={shell.drawing}
       title={shell.drawing ? 'Stop drawing (esc)' : 'Draw on screen (⌥⇧⌘D)'}
-      disabled={saving || paused || shell.inkDisplay === null}
+      disabled={saving || paused || (!preview && shell.inkDisplay === null)}
       onclick={() => invoke('shell:draw')}><Icon name="pen" size={18} stroke={1.7} /></button
     >
     <button aria-label={paused ? 'Resume' : 'Pause'} title={paused ? 'Resume (⌥⇧⌘P)' : 'Pause (⌥⇧⌘P)'} disabled={saving} onclick={() => run('toggle-pause')}>

@@ -8,7 +8,7 @@
 // hidden when not picking, so the tray, shortcuts, URLs, and the quit prompt reach the recording.
 //
 // IPC (all windows of this flow):
-//   shell:state -> { status, mode, picking, counting, area, drawing, inkDisplay, elapsed, at, update }, pushed as
+//   shell:state -> { status, mode, picking, counting, selection, area, drawing, inkDisplay, elapsed, at, update }, pushed as
 //                                 "shell:state" on change (update: a downloaded version waiting for a restart, or '' also while put off;
 //                                 drawing: the pen is on, on display inkDisplay)
 //   shell:command(cmd)            widget -> controller: stop, pause, resume, toggle-pause, cancel, restart
@@ -18,6 +18,7 @@
 //                                 RGBA); a loaded overlay asks ahead and gets it when a pick opens
 //   shell:ready                   overlay: painted (its still too), show it
 //   shell:focus                   overlay: the pointer is on it, picking a display or window: it takes the keyboard
+//   shell:select(area | null)     overlay: the area picked so far ({ display, rect, aspect }), also kept as the last area
 //   shell:close-picker            hide toolbar, overlays, and the idle camera bubble
 //   shell:countdown(on)           a countdown runs (Esc cancels it: "shell:escape")
 //   shell:start(opts)             overlay -> controller: start recording with these options
@@ -32,7 +33,8 @@
 //   shell:reopen(path)            a recent capture's result card again (the picker closes first)
 //   shell:fail(error, title?)     a recording (or screenshot) call failed: plain-language message or permission fix
 //   shell:shortcut(keys | null) -> ok   Settings: the record shortcut becomes `keys` (an accelerator), false if
-//                                 macOS won't give it to Grip; null pauses it while the user types a new one
+//                                 macOS won't give it to Grip, 'macos' if it took the keys from a macOS
+//                                 shortcut until quit; null pauses it while the user types a new one
 //   shell:display(id)             display geometry for an overlay, and where the toolbar sits on it
 //   shell:popup(items, x, y)      native menu at (x, y) in the sender window -> picked id | null (icon: PNG at 2x)
 //   shell:open-project(path?)     open a bundle in the editor (no path: Open dialog)
@@ -57,7 +59,7 @@ import { withScale } from './png.ts'
 import { plainError, type Permission } from './errors.ts'
 import { editorCloser, type Choice } from './closing.ts'
 import { hold, release, type Held } from './session.ts'
-import { setSettings, settings, settingsListeners } from './settings.ts'
+import { setSettings, settings, settingsListeners, type Settings } from './settings.ts'
 import { addCapture, captureRows, captures, moveCapture, shotsDir } from './captures.ts'
 import { toolbarUpdate, updateListeners } from './update.ts'
 import { setAppMenu } from './menu.ts'
@@ -82,6 +84,10 @@ let status: Status = 'idle'
 let mode: Mode | null = null
 let picking = false // toolbar on screen
 let counting = false
+/** The area picked so far, on one display: the overlays draw it and the camera bubble sits in it. Each
+ *  pick opens with none: windows move between recordings, so the last area (settings.area) only shows
+ *  as an outline a click picks again. */
+let selection: Settings['area'] = null
 /** The area being recorded, from its start request until the recording ends: the overlays stay as
  *  a click-through backdrop that dims everything around it. Rect relative to its display. */
 let area: { display: number; rect: Rect } | null = null
@@ -135,14 +141,21 @@ function shortcut(accelerator: string, fn: () => void): boolean {
 let recordKeys = ''
 
 /** Make `keys` (an accelerator from src/shared/shortcut.ts) the record shortcut, or pause it (null)
- *  while the user types a new one, so pressing the current one records it instead of opening the
- *  picker. False when it isn't one, or another app has it: the one before stays. */
+ *  while the user types a new one, with macOS's own shortcuts let through, so pressing the current
+ *  one or ⇧⌘5 records it instead of opening the picker or the screenshot toolbar. A macOS shortcut
+ *  on the same keys would fire instead of Grip's: it is off while Grip has them. False when `keys`
+ *  isn't one, or another app has it: the one before stays. */
 function setRecordShortcut(keys: string | null): boolean {
   if (recordKeys) globalShortcut.unregister(recordKeys)
   recordKeys = ''
+  borrowShortcuts([])
+  if (!hidden) native.suspendSystemShortcuts(keys === null)
   if (keys === null) return true
   const before = settings().recordShortcut
-  if (!symbols(keys) || !shortcut(keys, () => (status === 'idle' ? showPicker() : command('stop')))) {
+  const shown = symbols(keys)
+  if (shown && !hidden) borrowShortcuts(native.systemShortcuts(shown))
+  if (!shown || !shortcut(keys, () => (status === 'idle' ? showPicker() : command('stop')))) {
+    borrowShortcuts([])
     if (keys !== before) setRecordShortcut(before)
     return false
   }
@@ -154,13 +167,22 @@ function setRecordShortcut(keys: string | null): boolean {
   return true
 }
 
+/** Turn off the macOS shortcuts `ids` (System Settings › Keyboard Shortcuts), and back on the ones
+ *  Grip turned off before. Kept in settings, so a launch after a crash still gives them back. */
+function borrowShortcuts(ids: number[]) {
+  const was = settings().borrowedShortcuts
+  for (const id of was) native.setSystemShortcut(id, true)
+  for (const id of ids) native.setSystemShortcut(id, false)
+  if (was.length || ids.length) setSettings({ borrowedShortcuts: ids })
+}
+
 /** A one-off message. Hidden runs log it instead of blocking on a modal. */
 function alert(message: string, detail: string) {
   if (hidden) return console.error(`${message} ${detail}`)
   return dialog.showMessageBox({ type: 'warning', message, detail })
 }
 
-const state = () => ({ status, mode, picking, counting, area, drawing, inkDisplay: recDisplay, ...clock, update: toolbarUpdate() })
+const state = () => ({ status, mode, picking, counting, selection, area, drawing, inkDisplay: recDisplay, ...clock, update: toolbarUpdate() })
 const broadcast = () => sendAll('shell:state', state())
 
 // ---- Toolbar (controller) ----
@@ -194,8 +216,8 @@ function controller(): BrowserWindow {
 }
 
 /** Open the picker on the display under the mouse, in the last mode unless told otherwise: the screen
- *  freezes, and in area mode the last area comes back selected, ready to record (↩) or to copy as a
- *  screenshot (⌘C). Mode null is the toolbar alone, nothing frozen: before the first pick, and whenever
+ *  freezes, and in area mode the last area shows as an outline, a click away from recording (↩) or
+ *  copying (⌘C) it again. Mode null is the toolbar alone, nothing frozen: before the first pick, and whenever
  *  Grip is opened rather than asked to record. While recording, bring back the controls. */
 export function showPicker(m: Mode | null = settings().mode) {
   if (status !== 'idle') return showWidget()
@@ -326,9 +348,10 @@ function openOverlays() {
   for (const w of windowsOf('area')) setTimeout(() => showOverlay(w), 2000)
 }
 
-/** The overlays go with their stills; fresh ones load for the next pick. */
+/** The overlays go with their stills and the area picked; fresh ones load for the next pick. */
 function closeOverlays() {
   overlaysOpen = false
+  selection = null
   for (const w of windowsOf('area')) w.destroy()
   stills.clear()
   loadOverlays()
@@ -400,10 +423,9 @@ function bubbleBox(): Rectangle {
     const b = display(id)?.bounds
     return b && { x: b.x + r.x, y: b.y + r.y, width: r.width, height: r.height }
   }
-  const s = settings()
   const box =
     status !== 'idle' && area ? global(area.display, { x: area.rect.x, y: area.rect.y, width: area.rect.w, height: area.rect.h })
-    : picking && mode === 'area' && s.area ? global(s.area.display, s.area.rect)
+    : picking && mode === 'area' && selection ? global(selection.display, selection.rect)
     : null
   return box ?? displayOf(status !== 'idle' ? homeDisplay : null).workArea
 }
@@ -766,6 +788,12 @@ export function registerRecorder() {
     const w = BrowserWindow.fromWebContents(e.sender)
     if (w?.isVisible() && !w.isFocused() && picking && !counting && windowsOf('area').includes(w)) reveal(w)
   })
+  ipcMain.handle('shell:select', (_e, a: Settings['area']) => {
+    selection = a ?? null
+    if (selection) setSettings({ area: selection })
+    broadcast()
+    updateBubble()
+  })
   ipcMain.handle('shell:warn', (_e, message: string) => notify(String(message)))
   ipcMain.handle('shell:relaunch', () => {
     app.relaunch()
@@ -838,7 +866,7 @@ export function registerRecorder() {
     await alert(typeof title === 'string' ? title : 'Grip couldn’t record.', plain.message)
   })
   ipcMain.handle('shell:shortcut', (e, keys: unknown) => {
-    if (keys !== null) return typeof keys === 'string' && setRecordShortcut(keys)
+    if (keys !== null) return typeof keys === 'string' && setRecordShortcut(keys) && (settings().borrowedShortcuts.length ? 'macos' : true)
     setRecordShortcut(null)
     // Settings closed while the user was typing one: the current one comes back.
     e.sender.once('destroyed', () => recordKeys || setRecordShortcut(settings().recordShortcut))
@@ -907,6 +935,7 @@ export function registerRecorder() {
   recordingEvents.on('recovered', (bundle: string) => openProject(bundle, true))
   recoveredAtLaunch.then((list) => list.forEach((r) => openProject(r.path, true)))
   setRecordShortcut(settings().recordShortcut)
+  app.on('will-quit', () => borrowShortcuts([])) // quitting Grip gives macOS its shortcut back
   covered = displays()
   for (const e of ['display-added', 'display-removed', 'display-metrics-changed'] as const) {
     screen.on(e as 'display-added', () => {

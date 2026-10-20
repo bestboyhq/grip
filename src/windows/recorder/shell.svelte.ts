@@ -57,6 +57,7 @@ export const shell = $state({
   mode: null as Mode | null,
   picking: false,
   counting: false,
+  selection: null as Settings['area'], // the area being picked, on one display
   area: null as { display: number; rect: EngineRect } | null, // the area being recorded
   drawing: false, // the pen is on (while recording)
   inkDisplay: null as number | null, // the display being recorded, where the pen draws

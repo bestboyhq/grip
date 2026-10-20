@@ -18,6 +18,8 @@ The native macOS app around everything else.
 - Windows remember positions per display and return on-screen after a display disconnects.
   The recording controls, camera bubble, and result card show on the display the recording was started on, never where the mouse went since.
 - Global shortcuts, a URL scheme for automation (Raycast), and drag-and-drop of project files onto the app or menu bar icon.
+  Many users want Grip on macOS's own screenshot keys (⇧⌘5), and macOS takes those before any app sees them.
+  So while the user types a shortcut, macOS's shortcuts reach the field, and the macOS one on the keys picked stays off while Grip runs: back on when the user picks other keys or quits Grip.
 - Ask before quitting during a recording or export, and Cancel on any prompt really cancels.
 - Universal binary, in-app auto-update, crash reports with diagnostics, and plain-language messages for system error codes (disk full, permission denied).
   A restart into an update, asked for or not, comes back to the menu bar only: updating is no reason to open the picker.
