@@ -804,34 +804,28 @@
     transform: translate(-50%, -50%);
     padding: 9px 16px;
     border-radius: var(--radius-lg);
-    background: var(--surface-50);
+    /* The text is the top layer: gray, with the logo dot's colors (widget/dot.ts) in the middle third,
+       which passes through it once, left to right, as the hint comes on screen. The pill is the bottom one. */
+    background:
+      linear-gradient(90deg, var(--text-dim) 33.3%, #1957fa, #8b67a8, #e44730, #f04600, #fb8600, var(--text-dim) 66.7%) 0 0 / 300% 100%,
+      var(--surface-50);
+    background-clip: text, padding-box;
+    color: transparent;
     /* A strong hairline inside and a dark one outside: the edge reads on any wallpaper. */
     box-shadow:
       0 0 0 0.5px rgb(0 0 0 / 0.6),
       0 4px 12px rgb(0 0 0 / 0.3),
       inset 0 0 0 0.5px var(--edge-strong);
-    color: var(--text-dim);
     font-size: 13px;
     pointer-events: none;
-    overflow: hidden; /* the sweep stays inside */
   }
-  /* The logo dot's colors (widget/dot.ts) pass through once, left to right, as the hint comes on screen. */
-  .hint::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: -1; /* over the fill, under the text: the transform above makes the hint a stacking context */
-    background: linear-gradient(90deg, transparent, #1957fa, #8b67a8, #e44730, #f04600, #fb8600, transparent);
-    opacity: 0.7; /* the logo's colors, the text still legible over them */
-    transform: translateX(-100%);
-  }
-  .shown .hint::before {
+  .shown .hint {
     animation: sweep 1.2s cubic-bezier(0.645, 0.045, 0.355, 1);
     animation-delay: 150ms;
   }
   @keyframes sweep {
-    to {
-      transform: translateX(100%);
+    from {
+      background-position: 100% 0;
     }
   }
   /* The region to record: clear, with a hairline, and everything around it dim (shade). */
