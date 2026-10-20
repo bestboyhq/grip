@@ -34,7 +34,8 @@
 //   shell:fail(error, title?)     a recording (or screenshot) call failed: plain-language message or permission fix
 //   shell:shortcut(keys | null) -> ok   Settings: the record shortcut becomes `keys` (an accelerator), false if
 //                                 macOS won't give it to Grip, 'macos' if it took the keys from a macOS
-//                                 shortcut until quit; null pauses it while the user types a new one
+//                                 shortcut until quit; null pauses it while the user types a new one, and
+//                                 pushes each press with ⌘ or ⌃ (or an F key) as "shell:typed" (press)
 //   shell:display(id)             display geometry for an overlay, and where the toolbar sits on it
 //   shell:popup(items, x, y)      native menu at (x, y) in the sender window -> picked id | null (icon: PNG at 2x)
 //   shell:open-project(path?)     open a bundle in the editor (no path: Open dialog)
@@ -141,15 +142,15 @@ function shortcut(accelerator: string, fn: () => void): boolean {
 let recordKeys = ''
 
 /** Make `keys` (an accelerator from src/shared/shortcut.ts) the record shortcut, or pause it (null)
- *  while the user types a new one, with macOS's own shortcuts let through, so pressing the current
- *  one or ⇧⌘5 records it instead of opening the picker or the screenshot toolbar. A macOS shortcut
- *  on the same keys would fire instead of Grip's: it is off while Grip has them. False when `keys`
- *  isn't one, or another app has it: the one before stays. */
+ *  while the user types a new one, with macOS's own shortcuts let through and caught before Chromium
+ *  drops them, so pressing the current one or ⇧⌘5 records it instead of opening the picker or the
+ *  screenshot toolbar. A macOS shortcut on the same keys would fire instead of Grip's: it is off while
+ *  Grip has them. False when `keys` isn't one, or another app has it: the one before stays. */
 function setRecordShortcut(keys: string | null): boolean {
   if (recordKeys) globalShortcut.unregister(recordKeys)
   recordKeys = ''
   borrowShortcuts([])
-  if (!hidden) native.suspendSystemShortcuts(keys === null)
+  if (!hidden) native.catchShortcutKeys(keys === null ? (press) => windowsOf('onboarding')[0]?.webContents.send('shell:typed', press) : null)
   if (keys === null) return true
   const before = settings().recordShortcut
   const shown = symbols(keys)

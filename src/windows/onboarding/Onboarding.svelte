@@ -6,11 +6,11 @@
      small desktop beside the list while it is pointed at or focused. -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
-  import { invoke } from '../../lib/ipc.ts'
+  import { invoke, on } from '../../lib/ipc.ts'
   import Icon, { type IconName } from '../recorder/Icon.svelte'
   import { ensurePermission, setSettings, shell, type Permission, type PermissionStatus, type Settings } from '../recorder/shell.svelte.ts'
   import appIcon from '../../../build/icon.png'
-  import { acceleratorOf, symbols } from '../../shared/shortcut.ts'
+  import { acceleratorOf, symbols, type Press } from '../../shared/shortcut.ts'
   import SettingPreview from './SettingPreview.svelte'
 
   let { params }: { params: URLSearchParams } = $props()
@@ -88,13 +88,20 @@
   function stopListening() {
     if (!typingKeys) return
     typingKeys = false
+    keysNote = ''
     invoke('shell:shortcut', shell.settings?.recordShortcut)
   }
-  async function typeKeys(e: KeyboardEvent) {
+  function typeKeys(e: KeyboardEvent) {
     if (!typingKeys || (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey)) return // Tab moves on
     e.preventDefault()
     if (e.key === 'Escape') return stopListening()
-    const keys = acceleratorOf(e)
+    typed(e)
+  }
+  // Presses with ⌘ or ⌃ come from Grip instead of the page: Chromium keeps the ones macOS reserves from it.
+  onMount(() => on('shell:typed', typed))
+  async function typed(press: Press) {
+    if (!typingKeys) return
+    const keys = acceleratorOf(press)
     if (keys === '') return // only modifiers so far
     if (!keys) return void (keysNote = 'Use ⌘ or ⌃ with another modifier, like ⌥⌘ or ⇧⌘.')
     typingKeys = false
@@ -207,9 +214,12 @@
         <li>
           <div class="text">
             <div class="title">New recording, or finish</div>
-            <!-- macOS's own shortcuts reach this field while it listens; Grip turns off the one it takes. -->
+            <!-- macOS's own shortcuts reach this field while it listens, with Accessibility on; Grip turns off the one it takes. -->
             <div class="reason" role="status">
-              {keysNote || (typingKeys ? 'Press the new keys. macOS’s screenshot keys, like ⇧⌘5, work too.' : 'Works in any app. Click it to change it.')}
+              {keysNote ||
+                (!typingKeys ? 'Works in any app. Click it to change it.'
+                : status?.accessibility === 'granted' ? 'Press the new keys. macOS’s screenshot keys, like ⇧⌘5, work too.'
+                : 'Press the new keys. To use macOS’s own, like ⇧⌘5, allow Accessibility below.')}
             </div>
           </div>
           <button class="keys" class:typing={typingKeys} aria-label="New recording shortcut: {recordKeys}. Change" title="Click to change" onclick={listen} onkeydown={typeKeys} onblur={stopListening}

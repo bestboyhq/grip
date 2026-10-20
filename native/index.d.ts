@@ -61,6 +61,14 @@ export declare function captureStill(displayId: number): Promise<Still>
 export declare function captureWindowScreenshot(windowId: number, frame?: Rect | undefined | null): Promise<Buffer>
 
 /**
+ * While `on_key` is set, the user can type any shortcut into a shortcut field, macOS's own (⇧⌘4,
+ * ⌘Space) included. macOS lets its shortcuts through only to the active app, and only with
+ * Accessibility on; accessibility shortcuts still fire. Chromium then drops the keys macOS reserves
+ * before the page sees them, so each press with ⌘ or ⌃, and each F key, goes to `on_key` instead.
+ */
+export declare function catchShortcutKeys(onKey?: ((press: KeyPress) => void) | null): void
+
+/**
  * No zoom when the window shows: AppKit scales a window in over 150 ms, which would set the
  * picker's frozen screen moving. `handle`: BrowserWindow.getNativeWindowHandle(), its NSView.
  */
@@ -76,6 +84,15 @@ export interface Display {
   scale: number
   refreshRate: number
   isMain: boolean
+}
+
+/** A key press, as src/shared/shortcut.ts reads one off a KeyboardEvent. */
+export interface KeyPress {
+  code: string
+  ctrlKey: boolean
+  altKey: boolean
+  shiftKey: boolean
+  metaKey: boolean
 }
 
 /** Webcams, Continuity Cameras, and iPhone/iPad screens connected over USB. */
@@ -226,12 +243,6 @@ export declare function stopMicMonitor(): void
 
 /** Stop and finalize. Resolves with the sources (null when nothing was recording). */
 export declare function stopRecording(): Promise<RecordingSources | null>
-
-/**
- * While on, macOS's own shortcuts (⇧⌘4, ⌘Space) reach Grip instead of firing, so the user can type
- * one into a shortcut field. Only while Grip is the active app; accessibility shortcuts still fire.
- */
-export declare function suspendSystemShortcuts(on: boolean): void
 
 /** The ids of macOS's shortcuts that are on and use `keys`, in macOS notation ('⇧⌘5'). */
 export declare function systemShortcuts(keys: string): Array<number>
