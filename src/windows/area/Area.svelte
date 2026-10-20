@@ -820,7 +820,7 @@
     pointer-events: none;
   }
   .shown .hint {
-    animation: sweep 1.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+    animation: sweep 2.5s cubic-bezier(0.37, 0, 0.63, 1); /* slow enough to read the colors as they pass */
     animation-delay: 150ms;
   }
   @keyframes sweep {
