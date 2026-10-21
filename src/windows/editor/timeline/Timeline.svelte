@@ -4,10 +4,10 @@
      only plain variables and redraw the canvas in the next frame: no reactive churn per frame. -->
 <script lang="ts">
   import { untrack } from 'svelte'
-  import type { AudioSource } from '../../../shared/project.ts'
+  import type { AudioSource, Clip } from '../../../shared/project.ts'
   import { timeMap, toSource, type TimeMap } from '../../../shared/timemap.ts'
   import { doc, edit, selection } from '../../../lib/doc.svelte.ts'
-  import { player, previewTime, scrub, seek, toggle } from '../../../lib/player.svelte.ts'
+  import { pause, player, previewTime, scrub, seek, showEdge, toggle } from '../../../lib/player.svelte.ts'
   import { peaks as enginePeaks } from '../../../engine/audio/index.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
   import CommandMenu from '../commands/CommandMenu.svelte'
@@ -30,7 +30,7 @@
   type Gesture =
     | { kind: 'scrub' }
     | { kind: 'scroll'; x: number; x0: number }
-    | { kind: 'trim'; i: number; side: 'start' | 'end'; lim: { lo: number; hi: number }; off: number }
+    | { kind: 'trim'; i: number; side: 'start' | 'end'; lim: { lo: number; hi: number }; off: number; full: Clip[] }
     | { kind: 'move'; track: M.ItemTrack; ids: Set<string>; grab: number }
     | { kind: 'resize'; track: M.ItemTrack; id: string; side: 'start' | 'end'; off: number }
     | { kind: 'create'; track: M.ItemTrack; t0: number }
@@ -357,9 +357,11 @@
       if (h.edge) {
         select = id
         const off = (h.edge === 'start' ? h.block.a : h.block.b) - timeOf(view, p.x) // the edge keeps its distance to the pointer
-        g = h.track === 'clips'
-          ? { kind: 'trim', i: h.block.i, side: h.edge, lim: M.clipLimits(base.clips, h.block.i, base.duration), off }
-          : { kind: 'resize', track: h.track, id, side: h.edge, off }
+        if (h.track === 'clips') {
+          const lim = M.clipLimits(base.clips, h.block.i, base.duration)
+          const full = M.trimClip(base.clips, h.block.i, h.edge, h.edge === 'start' ? lim.lo : lim.hi, lim) // the edge as far out as it goes, for the preview
+          g = { kind: 'trim', i: h.block.i, side: h.edge, lim, off, full }
+        } else g = { kind: 'resize', track: h.track, id, side: h.edge, off }
       } else {
         if (add) selection.ids = selection.ids.includes(id) ? selection.ids.filter((x) => x !== id) : [...selection.ids, id]
         else if (!selection.ids.includes(id)) selection.ids = [id]
@@ -381,7 +383,10 @@
       // synthetic pointers (lab benchmarks) cannot be captured
     }
     pointer = p
-    player.hover = null // a drag shows what it edits: the playhead's frame
+    if (drag.kind === 'trim') {
+      pause() // the preview shows the edge, not playback
+      trimPreview(drag, base.clips)
+    } else player.hover = null // a drag shows what it edits: the playhead's frame
     cursor = dragCursor(drag)
     requestDraw()
   }
@@ -402,6 +407,7 @@
     const d = drag
     if (!d || !base) return
     drag = null
+    showEdge(null)
     if (d.moved) commit(d)
     else click(d)
     draft = null
@@ -435,6 +441,7 @@
       const clips = M.trimClip(b.clips, d.i, d.side, M.edgeSource(d.map, d.i, timeOf(view, p.x) + d.off), d.lim)
       draft = { clips }
       view.shift = d.side === 'start' ? { at: d.map.outStarts[d.i], by: (clips[d.i].start - c.start) / c.speed } : null
+      trimPreview(d, clips)
     } else if (d.kind === 'move') {
       draft = { [d.track]: M.moveItems(b[d.track] as M.Item[], d.ids, toSource(d.map, t) - d.grab, b.duration, M.overlaps(d.track)) }
     } else if (d.kind === 'resize') {
@@ -447,6 +454,14 @@
       return
     } else return
     rebuild()
+  }
+
+  /** A trim shows the moment at its edge in the preview, the one the clip now ends or starts on, so the user
+   *  sees what they cut; the time readout shows where that edge sits. */
+  function trimPreview(d: Extract<Drag, { kind: 'trim' }>, clips: Clip[]) {
+    const src = clips[d.i][d.side]
+    player.hover = M.edgeOutput(d.map, d.map.clips, d.i, src)
+    showEdge({ clips: d.full, t: M.edgeOutput(d.map, d.full, d.i, src) })
   }
 
   function commit(d: Drag) {
@@ -469,6 +484,7 @@
 
   function cancel() {
     drag = null
+    showEdge(null)
     draft = null
     view.shift = null
     rebuild()

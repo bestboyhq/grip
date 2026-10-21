@@ -68,6 +68,8 @@ let speech: { url: string | undefined; value: Array<[number, number]> | undefine
 let restore = false // seek to the saved playhead on the next prepare
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 let detachCurrent: (() => void) | null = null
+let edge: { clips: Clip[]; t: number; timing: string } | null = null // see showEdge
+let edgePrep: { timing: string; p: Prepared | null } | null = null // edge.clips prepared from `prepared`; p is null while in flight
 
 // Audio
 let ctx: AudioContext | null = null
@@ -137,6 +139,7 @@ export function attach(c: HTMLCanvasElement): () => void {
     canvas = null
     shown = { t: NaN, p: null }
     player.hover = null
+    edge = edgePrep = null
     void ctx?.close()
     ctx = node = null
     audioReady = null
@@ -172,6 +175,15 @@ export const currentScene = (): Scene | null => (prepared ? sceneAt(prepared, pr
 
 /** The face track and mic speech the preview loaded, for other renders of the project (thumbnail). */
 export const loadedExtras = () => ({ faces: faces.value, speech: speech.value })
+
+/** While a clip edge is dragged on the timeline, the preview shows the moment at the edge: output time
+ *  `t` of `clips`, the project's clips with that edge as far out as it can go (source being trimmed back
+ *  in plays in no other timeline). Pass the same `clips` for the whole drag: they are prepared once, so
+ *  the frame follows the pointer at once. Null ends it. */
+export function showEdge(e: { clips: Clip[]; t: number } | null) {
+  edge = e && { ...e, timing: e.clips === edge?.clips ? edge.timing : timingOf(e.clips) }
+  if (!e) edgePrep = null
+}
 
 export function seek(t: number) {
   catchUp()
@@ -249,12 +261,14 @@ function frame(ts: number) {
     return
   }
   if (preparedTiming !== timing) return // the old timeline would show another moment than this one
-  const t = Math.min(previewTime(), player.duration) // latest wins: hovers between two frames are never drawn
-  if (t === shown.t && prepared === shown.p) return
-  shown = { t, p: prepared }
+  const p = edge ? edgePrepared(edge) : prepared
+  if (!p) return // the edge's clips are still being prepared: keep the last frame
+  const t = edge ? edge.t : Math.min(previewTime(), player.duration) // latest wins: hovers between two frames are never drawn
+  if (t === shown.t && p === shown.p) return
+  shown = { t, p }
   inFlight = true
   const t0 = performance.now()
-  renderFrame(renderer, prepared, media, t)
+  renderFrame(renderer, p, media, t)
     .then(() => {
       const ms = performance.now() - t0
       stats.frames++
@@ -267,6 +281,22 @@ function frame(ts: number) {
 }
 
 const timingOf = (clips: Clip[]) => clips.map((c) => `${c.start} ${c.end} ${c.speed}`).join()
+
+/** The preparation that shows a dragged edge: the preview's own when the edge reaches no removed source,
+ *  else the same input with the edge's clips, prepared in the worker. Null until that lands. */
+function edgePrepared(e: { clips: Clip[]; timing: string }): Prepared | null {
+  if (e.timing === preparedTiming) return prepared
+  if (edgePrep?.timing === e.timing) return edgePrep.p
+  const mine = (edgePrep = { timing: e.timing, p: null as Prepared | null })
+  const from = prepared!.input
+  const input = { ...from, project: { ...from.project, clips: e.clips } }
+  pathsOffThread(input)
+    .then((paths) => {
+      if (edgePrep === mine) mine.p = prepare(input, paths)
+    })
+    .catch(fail) // stays in flight, so a failure is not retried every frame; the next drag asks again
+  return null
+}
 
 /** Prepare the project for the preview: its paths in the worker, the rest here when they land. */
 function rebuild(project: Project, width: number, height: number, splice = true) {
@@ -310,6 +340,7 @@ function apply(input: SceneInput, paths: Paths, splice: boolean) {
     return fail(e)
   }
   preparedTiming = timingOf(input.project.clips)
+  edgePrep = null // a dragged edge's clips are prepared again from this preparation
   stats.prepares++
   player.prepared++
   stats.prepareMs = performance.now() - t0
