@@ -254,6 +254,10 @@ export function edgeSource(map: TimeMap, i: number, out: number): number {
   return c.start + (out - map.outStarts[i]) * c.speed
 }
 
+/** Output time at which source moment `src` on clip i's dragged edge plays in `full`, the clips with that
+ *  edge as far out as it can go (player's showEdge). The clips before i are the same as in `map`. */
+export const edgeOutput = (map: TimeMap, full: Clip[], i: number, src: number) => map.outStarts[i] + (src - full[i].start) / full[i].speed
+
 /** Removed source next to each clip edge. */
 export function cuts(map: TimeMap, duration: number): Cut[] {
   const clips = map.clips

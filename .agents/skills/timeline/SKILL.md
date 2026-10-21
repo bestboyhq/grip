@@ -20,6 +20,7 @@ The editor where users cut, speed up, and direct the video.
   Shortcuts stay inactive while a text field has focus.
 - Undo and redo cover every edit and return the playhead to the same source moment.
 - Dragging and resizing leave the playhead in place, and a dragged edge tracks the pointer exactly, on sped-up clips too.
+  Trimming a clip edge shows the frame at the edge in the preview as it moves, source being trimmed back in included, so no cut is blind.
 - Timeline zoom with pinch and ⌘-scroll, animated and centered on the playhead.
 - Multi-select, copy and paste, duplicate, and apply-to-all for zooms, speeds, and layouts.
 

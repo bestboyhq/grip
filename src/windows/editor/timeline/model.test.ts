@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Clip, Zoom } from '../../../shared/project.ts'
-import { removeOutputRange, timeMap, toOutput } from '../../../shared/timemap.ts'
+import { removeOutputRange, timeMap, toOutput, toSource } from '../../../shared/timemap.ts'
 import * as M from './model.ts'
 import { stressProject } from './stress.ts'
 import { Waveforms } from './waveform.ts'
@@ -79,6 +79,16 @@ test('a dragged clip edge lands exactly under the pointer on a sped-up clip', ()
   // growing stops at the source the neighbours use
   assert.equal(M.trimClip(clips, 1, 'start', M.edgeSource(map, 1, 0), lim)[1].start, 10)
   assert.equal(M.trimClip(clips, 1, 'end', M.edgeSource(map, 1, 99), lim)[1].end, 50)
+})
+
+test('the preview finds a dragged clip edge, inside the clip or in source being trimmed back in', () => {
+  const clips = [clip(0, 10), clip(20, 40, 4), clip(50, 60)]
+  const map = timeMap(clips)
+  const lim = M.clipLimits(clips, 1, 100)
+  for (const side of ['start', 'end'] as const) {
+    const full = M.trimClip(clips, 1, side, side === 'start' ? lim.lo : lim.hi, lim)
+    for (const src of side === 'start' ? [12, 25] : [33, 46]) near(toSource(timeMap(full), M.edgeOutput(map, full, 1, src)), src)
+  }
 })
 
 test('clip edits', () => {
