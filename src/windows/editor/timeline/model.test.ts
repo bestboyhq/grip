@@ -100,6 +100,13 @@ test('clip edits', () => {
   assert.deepEqual(pasted.map((c) => [c.start, c.end]), [[0, 5], [25, 30], [5, 10], [10, 20], [25, 30]])
   assert.equal(pasted[1].id, 'copy') // the caller's fresh id: paste selects the copies, not the clip it split
   assert.deepEqual(M.duplicateClips(clips, new Set(['c0'])).map((c) => c.start), [0, 0, 10, 25])
+  // Q and W: the clip under the playhead loses what comes before it or after it; the other clips stay.
+  const sped = [clip(0, 10), clip(10, 20, 2), clip(25, 30)] // the 2× clip plays over output 10..15
+  assert.deepEqual(M.trimAt(sped, 12, -1).map((c) => [c.start, c.end]), [[0, 10], [14, 20], [25, 30]])
+  assert.deepEqual(M.trimAt(sped, 12, 1).map((c) => [c.start, c.end]), [[0, 10], [10, 14], [25, 30]])
+  assert.equal(M.trimAt(sped, 10, -1), sped, 'nothing before the playhead at a clip start')
+  const one = [clip(0, 10)]
+  assert.equal(M.trimAt(one, 0, 1), one, 'never removes every clip')
 })
 
 test('the playhead keeps its source moment across edits, or moves to the next surviving one', () => {

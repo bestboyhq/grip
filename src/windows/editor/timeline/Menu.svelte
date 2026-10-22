@@ -128,7 +128,7 @@
       {@render submenu(sources.mic ? 'System audio volume' : 'Volume', volumes, systemVolume, A.setSystemVolume)}
     {/if}
     <hr />
-    {@render item('Split here', () => A.cut(t), 'C')}
+    {@render item('Split here', () => A.cut(t), '⌘B')}
     {@render item(many ? 'Duplicate clips' : 'Duplicate clip', A.duplicate, '⌘D')}
     {@render item('Copy', A.copy, '⌘C')}
     {@render item('Reset trim', A.resetTrim, '', !A.canResetTrim())}
@@ -171,9 +171,9 @@
     {#if sources?.camera}
       {@render item('Camera layout', () => A.add('layouts', t), 'L')}
     {/if}
-    {@render item('Mask', () => A.add('masks', t))}
+    {@render item('Blur', () => A.add('masks', t), 'B')}
   {:else if target.kind === 'lane'}
-    {@render item({ zooms: 'Add zoom here', layouts: 'Add camera layout here', masks: 'Add mask here' }[target.track], () => A.add(target.track, t))}
+    {@render item({ zooms: 'Add zoom here', layouts: 'Add camera layout here', masks: 'Add blur here' }[target.track], () => A.add(target.track, t))}
     {@render item('Paste at playhead', A.paste, '⌘V', !A.canPaste())}
   {:else}
     {@render item('Paste at playhead', A.paste, '⌘V', !A.canPaste())}

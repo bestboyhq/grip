@@ -14,7 +14,7 @@ import { accountMenuItems } from '../account.ts'
 import { recentProjects } from '../projects.ts'
 import { readyVersion, updateActivity, updateListeners, updateMenuItems } from './update.ts'
 import { settings } from './settings.ts'
-import { captureRows } from './captures.ts'
+import { captureRows, projectRows } from './captures.ts'
 import { cancelRecording, command, importDialog, openFilesOrAlert, openOnboarding, openProject, openProjectDialog, recordingStatus, reopenCapture, SHORTCUTS, showPicker, statusListeners, toggleDrawing } from './recorder.ts'
 
 let tray: Tray | null = null // module scope: a collected Tray disappears from the menu bar
@@ -35,7 +35,7 @@ function icon(name: string) {
 
 async function template(): Promise<MenuItemConstructorOptions[]> {
   const s = recordingStatus()
-  const recent = (await recentProjects().catch(() => [])).slice(0, 10) // only bundles that still exist
+  const recent = projectRows((await recentProjects().catch(() => [])).slice(0, 10)) // only bundles that still exist
   const captures = await captureRows().catch(() => [])
   const common: MenuItemConstructorOptions[] = [
     {
@@ -46,7 +46,7 @@ async function template(): Promise<MenuItemConstructorOptions[]> {
     {
       label: 'Recent Projects',
       enabled: recent.length > 0,
-      submenu: recent.map((p) => ({ label: p.name, click: () => openProject(p.path) })),
+      submenu: recent.map((p) => ({ label: p.label, icon: p.icon, click: () => openProject(p.path) })),
     },
     { label: 'Open Project…', click: openProjectDialog },
     { label: 'Import Video…', click: importDialog },

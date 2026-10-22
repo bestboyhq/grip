@@ -583,9 +583,14 @@
         <span>Commands</span>
         <kbd>⌘K</kbd>
       </button>
-      <button class="labeled" aria-haspopup="menu" aria-expanded={menu?.target.kind === 'add'} onclick={openAdd} {@attach tooltip('Add a zoom, camera layout, or mask at the playhead')}>
+      <button class="labeled" aria-haspopup="menu" aria-expanded={menu?.target.kind === 'add'} onclick={openAdd} {@attach tooltip('Add a zoom, camera layout, or blur at the playhead')}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" /></svg>
         <span>Add</span>
+      </button>
+      <button class="labeled" onclick={() => run('timeline.cut')} {@attach tooltip('Cut at playhead', 'C')}>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="6.5" width="5" height="7" rx="1.5" /><rect x="12.5" y="6.5" width="5" height="7" rx="1.5" /><path d="M10 3v14" /></svg>
+        <span>Cut</span>
+        <kbd>⌘B</kbd>
       </button>
     </div>
     <div class="center">

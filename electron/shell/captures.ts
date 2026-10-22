@@ -1,5 +1,6 @@
 // Recent Captures: the last screenshots and recordings, newest first, in <userData>/captures.json.
-// The menu bar menu and the toolbar's gear menu list them; each reopens its result card.
+// The menu bar menu and the toolbar's gear menu list them; each reopens its result card. Both menus
+// list Recent Projects beside them, with the same thumbnails, so a closed editor is one click back.
 // A screenshot that went to the clipboard lives in <userData>/Screenshots ($TMPDIR gets purged)
 // while the list points at it. One on the Desktop is the user's: never deleted.
 import electron from 'electron'
@@ -8,6 +9,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { readFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type { Project } from '../../src/shared/project.ts'
+import type { RecentProject } from '../projects.ts'
 
 export interface Capture {
   kind: 'shot' | 'recording'
@@ -67,6 +69,7 @@ export function moveCapture(from: string, to: string) {
 // ---- Menu rows ----
 
 const thumbs = new Map<string, NativeImage>() // by path: a capture's pictures never change
+const projectThumbs = new Map<string, { at: number; icon: NativeImage }>() // by path: a project's changes with each save
 
 /** A 32×20 pt thumbnail (16:10, cropped to fill so every label lines up), drawn at 2×. */
 function thumbnail(img: NativeImage): NativeImage {
@@ -113,4 +116,16 @@ export async function captureRows(): Promise<Array<{ path: string; label: string
       return { path: c.path, label, icon: thumbs.get(c.path) ?? electron.nativeImage.createEmpty() }
     }),
   )
+}
+
+/** One row per recent project: its name and length, and its thumbnail (the frame at the saved playhead). */
+export function projectRows(recent: RecentProject[]): Array<{ path: string; label: string; icon: NativeImage }> {
+  return recent.map((p) => {
+    let t = projectThumbs.get(p.path)
+    if (!t || t.at !== p.modified) {
+      t = { at: p.modified, icon: p.thumbnail ? thumbnail(electron.nativeImage.createFromPath(p.thumbnail)) : electron.nativeImage.createEmpty() }
+      projectThumbs.set(p.path, t)
+    }
+    return { path: p.path, label: p.duration ? `${p.name} (${clock(p.duration)})` : p.name, icon: t.icon }
+  })
 }

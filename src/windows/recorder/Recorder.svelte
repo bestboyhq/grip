@@ -309,18 +309,20 @@
       ['hideDesktopIcons', 'Hide Desktop Icons'],
       ['autoZoom', 'Auto Zoom'],
     ]
-    const captures: MenuItem[] = await invoke('shell:captures').catch(() => [])
+    const [captures, projects]: MenuItem[][] = await Promise.all([invoke('shell:captures').catch(() => []), invoke('shell:projects').catch(() => [])])
     const id = await popup(
       [
         ...toggles.map(([id, label]) => ({ id, label, checked: !!s[id] })),
         { separator: true },
         { label: 'Recent Captures', enabled: captures.length > 0, submenu: captures },
+        { label: 'Recent Projects', enabled: projects.length > 0, submenu: projects },
         { id: 'open', label: 'Open Project…' },
         { id: 'settings', label: 'Settings…' },
       ],
       el,
     )
     if (captures.some((c) => c.id === id)) invoke('shell:reopen', id)
+    else if (projects.some((p) => p.id === id)) invoke('shell:open-project', id)
     else if (id === 'open') invoke('shell:open-project')
     else if (id === 'settings') invoke('shell:open-settings')
     else if (id) setSettings({ [id]: !s[id as keyof Settings] })

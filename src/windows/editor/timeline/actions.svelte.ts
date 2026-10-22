@@ -68,6 +68,12 @@ export function cut(t = player.time) {
   set('clips', splitAt(project().clips, t))
 }
 
+/** Q and W: ripple-delete the clip under the playhead before it (-1) or after it (1). */
+export function trimToPlayhead(dir: -1 | 1) {
+  const next = M.trimAt(project().clips, player.time, dir)
+  if (next !== project().clips) keepingPlayhead(() => set('clips', next))
+}
+
 export function remove() {
   if (!doc.project) return
   const ids = selection.ids.length ? new Set(selection.ids) : targetClips()
@@ -283,7 +289,9 @@ export function timelineCommands(view: { zoom: (f: number) => void; fit: () => v
 
     c('undo', 'Edit', 'Undo', () => keepingPlayhead(undo), () => open() && canUndo(), ['⌘Z'], { repeat: true }),
     c('redo', 'Edit', 'Redo', () => keepingPlayhead(redo), () => open() && canRedo(), ['⇧⌘Z'], { repeat: true }),
-    c('cut', 'Edit', 'Cut at playhead', () => cut(), open, ['C', '⌘B']),
+    c('cut', 'Edit', 'Cut at playhead', () => cut(), open, ['⌘B', 'C'], { hint: 'split the clip' }),
+    c('trimBefore', 'Edit', 'Delete before playhead', () => trimToPlayhead(-1), open, ['Q'], { hint: 'in the clip under it' }),
+    c('trimAfter', 'Edit', 'Delete after playhead', () => trimToPlayhead(1), open, ['W'], { hint: 'in the clip under it' }),
     c('split', 'Edit', 'Split tool', view.split, open, ['S'], { hint: 'or hold ⌥' }),
     c('delete', 'Edit', 'Delete', remove, () => open() && (selection.ids.length > 0 || targetClips().size > 0), ['X', '⌫', '⌦'], {
       hint: 'ripple delete for clips',
@@ -322,7 +330,7 @@ export function timelineCommands(view: { zoom: (f: number) => void; fit: () => v
     ...LAYOUTS.map(([k, name]) => c(`layout-${k}`, 'Camera layout', `Camera layout: ${name}`, () => setLayout(k), () => open() && has('layouts'))),
     c('layoutAll', 'Camera layout', 'Apply camera layout to all', layoutToAll, () => open() && has('layouts')),
 
-    c('addMask', 'Mask', 'Add mask at playhead', () => add('masks'), open),
+    c('addMask', 'Mask', 'Add blur at playhead', () => add('masks'), open, ['B'], { hint: 'hide a name or email' }),
     ...MASKS.map(([k, name]) => c(`mask-${k}`, 'Mask', `Mask: ${name}`, () => setMask(k), () => open() && has('masks'))),
 
     c('zoomIn', 'Timeline', 'Zoom in timeline', () => view.zoom(1.5), open, ['⌘=', '⇧⌘+'], { repeat: true }),
