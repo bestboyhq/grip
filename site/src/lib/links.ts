@@ -56,7 +56,7 @@ export const MENUS: readonly Menu[] = [
 						tag: 'Build it',
 						href: `${BESTBOY_URL}/malini`,
 						icon: asset('icons/malini.webp'),
-						line: 'You had one job. Now you have plenty.',
+						line: 'Run many agents. Come back to merged pull requests.',
 					},
 					{
 						title: 'Grip',

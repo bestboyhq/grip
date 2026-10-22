@@ -216,12 +216,6 @@
 	padding-block: 112px;
 }
 
-@property --seam-w {
-	syntax: '<number>';
-	inherits: true;
-	initial-value: 1;
-}
-
 .beat::before {
 	content: '';
 	position: absolute;
@@ -232,8 +226,7 @@
 	height: 9px;
 	margin-left: -50vw;
 	background:
-		var(--seam, linear-gradient(transparent 0 0)) calc(50vw - var(--col) * var(--seam-w) / 2) 4px /
-			calc(var(--col) * var(--seam-w)) 1px,
+		var(--seam, linear-gradient(transparent 0 0)) calc(50vw - var(--col) / 2) 4px / var(--col) 1px,
 		var(--crosses);
 	background-repeat: no-repeat;
 	pointer-events: none;
@@ -258,9 +251,10 @@
 .rise {
 	--rise: 4px;
 	--blur: 10px;
+	--duration: 1300ms;
 	--delay: 450ms;
-	animation: blur-in calc(1300ms * var(--pace)) var(--enter-ease) calc(var(--delay) * var(--pace))
-		backwards;
+	animation: blur-in calc(var(--duration) * var(--pace)) var(--enter-ease)
+		calc(var(--delay) * var(--pace)) backwards;
 }
 
 .rise[data-reveal='wait'] {
@@ -269,7 +263,9 @@
 }
 
 [data-reveal='go'] {
-	--delay: calc(var(--i) * 120ms);
+	--blur: 6px;
+	--duration: 500ms;
+	--delay: calc(var(--i) * 80ms);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -387,6 +383,18 @@
 	height: 32px;
 	padding: 0 14px;
 	font-size: 13px;
+}
+
+.button:has(> svg:first-child) {
+	padding-left: 18px;
+}
+
+.button.small:has(> svg:first-child) {
+	padding-left: 12px;
+}
+
+.button.primary:has(> svg:first-child) {
+	gap: 10px;
 }
 
 .button.primary {
