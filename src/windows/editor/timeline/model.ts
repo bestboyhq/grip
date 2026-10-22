@@ -5,7 +5,7 @@
 
 import { uid, type CameraLayout, type Clip, type Mask, type Transcript, type Zoom } from '../../../shared/project.ts'
 import type { InputEvent } from '../../../shared/events.ts'
-import { mapRange, splitAt, timeMap, toOutput, toSource, type TimeMap } from '../../../shared/timemap.ts'
+import { clipAt, mapRange, removeOutputRange, splitAt, timeMap, toOutput, toSource, type TimeMap } from '../../../shared/timemap.ts'
 
 export type ItemTrack = 'zooms' | 'layouts' | 'masks'
 export type ChipTrack = 'keys' | 'captions'
@@ -322,6 +322,17 @@ export function trimClip(clips: Clip[], i: number, side: 'start' | 'end', src: n
 export function removeClips(clips: Clip[], ids: Set<string>): Clip[] {
   const next = clips.filter((c) => !ids.has(c.id))
   return next.length && next.length < clips.length ? next : clips
+}
+
+/** Ripple-delete the part of the clip at output time t before t (dir -1) or from t on (dir 1). */
+export function trimAt(clips: Clip[], t: number, dir: -1 | 1): Clip[] {
+  if (!clips.length) return clips
+  const m = timeMap(clips)
+  const i = clipAt(m, t)
+  const a = m.outStarts[i]
+  const b = a + (clips[i].end - clips[i].start) / clips[i].speed
+  const next = dir < 0 ? removeOutputRange(clips, a, t) : removeOutputRange(clips, t, b)
+  return next.length ? next : clips
 }
 
 /** Join clip i with the one after it, restoring the source between them. */

@@ -189,6 +189,11 @@
             </div>
           {/snippet}
         </Popover>
+        <span class="sep"></span>
+        <button class="icon-btn" aria-label="Undo" disabled={!undoable.undo} onclick={() => run('timeline.undo')} {@attach tooltip('Undo', '⌘Z')}><Icon name="undo" /></button>
+        <button class="icon-btn" aria-label="Redo" disabled={!undoable.redo} onclick={() => run('timeline.redo')} {@attach tooltip('Redo', '⇧⌘Z')}><Icon name="redo" /></button>
+        <span class="sep"></span>
+        <Presets />
       </div>
       <input
         bind:this={nameInput}
@@ -206,10 +211,10 @@
         }}
       />
       <div class="actions">
-        <button class="icon-btn" aria-label="Undo" disabled={!undoable.undo} onclick={() => run('timeline.undo')} {@attach tooltip('Undo', '⌘Z')}><Icon name="undo" /></button>
-        <button class="icon-btn" aria-label="Redo" disabled={!undoable.redo} onclick={() => run('timeline.redo')} {@attach tooltip('Redo', '⇧⌘Z')}><Icon name="redo" /></button>
-        <span class="sep"></span>
-        <Presets />
+        <!-- Says the edits are on disk, and where the project waits once this window closes. -->
+        <span class="saved" class:failed={!!doc.saveError} {@attach tooltip('Edits save as you go. Find this project again under Recent Projects in Grip’s menu.')}>
+          {#if !doc.dirty && !doc.saveError}<Icon name="check" size={14} />{/if}{doc.saveError ? 'Not saved' : doc.dirty ? 'Edited' : 'Saved'}
+        </span>
         <ShareButton {exportVideo} />
         <ExportButton />
       </div>
@@ -241,6 +246,7 @@
           <AspectPicker />
           {#if doc.project.sources.screen}
             <button class="btn ghost crop" onclick={() => (cropOpen = true)} {@attach tooltip('Crop the recording')}><Icon name="crop" size={16} />Crop</button>
+            <button class="btn ghost crop" onclick={() => run('timeline.addMask')} {@attach tooltip('Blur a name or email for a few seconds', 'B')}><Icon name="blur" size={16} />Blur</button>
           {/if}
           {#if aiming}<span class="aim-hint"><Icon name="target" size={15} /><span>Click the preview to aim the selected zoom</span></span>
           {:else if masking}<span class="aim-hint"><Icon name="target" size={15} /><span>Drag on the preview to place the mask</span></span>{/if}
@@ -264,7 +270,9 @@
     height: 40px; padding: 0 12px; -webkit-app-region: drag;
   }
   .titlebar :global(button), .titlebar :global(input), .titlebar :global(a), .titlebar :global([popover]) { -webkit-app-region: no-drag; }
-  .file { display: flex; gap: 2px; margin-left: 68px; /* 80 px from the edge, clear of the traffic lights */ }
+  .file { display: flex; align-items: center; gap: 2px; margin-left: 68px; /* 80 px from the edge, clear of the traffic lights */ }
+  .saved { display: flex; align-items: center; gap: 3px; margin-right: 8px; color: var(--text-faint); font-size: 12px; white-space: nowrap; -webkit-app-region: no-drag; }
+  .saved.failed { color: var(--warning-text); }
   .name {
     width: 100%; height: 28px; padding: 0 10px;
     border: 0; border-radius: 6px; background: transparent; text-align: center; font-size: 13px; font-weight: 600; text-overflow: ellipsis;

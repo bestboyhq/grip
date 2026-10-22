@@ -192,7 +192,7 @@ const C = {
 const HINTS: Record<M.ItemTrack, string> = {
   zooms: 'Click or drag to add a zoom',
   layouts: 'Click or drag to add a camera layout',
-  masks: 'Click or drag to add a mask or highlight',
+  masks: 'Click or drag to add a blur or highlight',
 }
 const LAYOUT_NAMES: Record<CameraLayout['kind'], [string, string]> = {
   pip: ['Picture in picture', 'PiP'],

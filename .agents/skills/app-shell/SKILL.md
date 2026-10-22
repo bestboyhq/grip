@@ -15,11 +15,12 @@ The native macOS app around everything else.
   A recording or screenshot ends in a small result card (copy as a video under 20 MB, GIF, link, edit), not in the editor.
   Its copy, GIF, and link use the project's style, which starts plain (see compositor).
   Recent Captures (menu bar menu and the toolbar's gear) reopens the last five cards, across restarts; their screenshots stay in Grip's own folder, since `$TMPDIR` gets purged.
+  Recent Projects, with thumbnails, sit in both menus too: a closed editor is one click back, and the editor's title bar says its edits are saved.
 - Windows remember positions per display and return on-screen after a display disconnects.
   The recording controls, camera bubble, and result card show on the display the recording was started on, never where the mouse went since.
 - Global shortcuts, a URL scheme for automation (Raycast), and drag-and-drop of project files onto the app or menu bar icon.
   Many users want Grip on macOS's own screenshot keys (⇧⌘5), and macOS takes those before any app sees them.
-  So while the user types a shortcut, macOS's shortcuts reach the field, and the macOS one on the keys picked stays off while Grip runs: back on when the user picks other keys or quits Grip.
+  A switch in Settings hands ⇧⌘5 to Grip (off restores ⌥⌘↩); while the user types a shortcut, macOS's shortcuts reach the field, and the macOS one on the keys picked stays off while Grip runs: back on when the user picks other keys or quits Grip.
   macOS lets its shortcuts through only to the active app with Accessibility on, and Chromium still drops every key macOS reserves before the page sees it, so the field takes its keys from AppKit.
   Only real key presses prove this works: a page-level key event skips both layers.
 - Ask before quitting during a recording or export, and Cancel on any prompt really cancels.

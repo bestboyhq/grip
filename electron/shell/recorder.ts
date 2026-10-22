@@ -31,6 +31,7 @@
 //   shell:shot-save(path) -> path the result card: a screenshot into a file on the Desktop
 //   shell:captures -> [{ id, label, icon }]   Recent Captures as menu items (id: the path; icon: PNG at 2x)
 //   shell:reopen(path)            a recent capture's result card again (the picker closes first)
+//   shell:projects -> [{ id, label, icon }]   Recent Projects as menu items (id: the bundle; open with shell:open-project)
 //   shell:fail(error, title?)     a recording (or screenshot) call failed: plain-language message or permission fix
 //   shell:shortcut(keys | null) -> ok   Settings: the record shortcut becomes `keys` (an accelerator), false if
 //                                 macOS won't give it to Grip, 'macos' if it took the keys from a macOS
@@ -49,7 +50,7 @@ import { app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, i
 import { existsSync, statSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
-import { importVideo, recoveredAtLaunch } from '../projects.ts'
+import { importVideo, recentProjects, recoveredAtLaunch } from '../projects.ts'
 import { capture, recordingEvents, recordingName } from '../recording.ts'
 import { native } from '../native.ts'
 import { DRAW_FADE, DRAW_HOLD } from '../../src/engine/overlays/drawings.ts'
@@ -61,7 +62,7 @@ import { plainError, type Permission } from './errors.ts'
 import { editorCloser, type Choice } from './closing.ts'
 import { hold, release, type Held } from './session.ts'
 import { setSettings, settings, settingsListeners, type Settings } from './settings.ts'
-import { addCapture, captureRows, captures, moveCapture, shotsDir } from './captures.ts'
+import { addCapture, captureRows, captures, moveCapture, projectRows, shotsDir } from './captures.ts'
 import { toolbarUpdate, updateListeners } from './update.ts'
 import { setAppMenu } from './menu.ts'
 import { symbols } from '../../src/shared/shortcut.ts'
@@ -855,6 +856,7 @@ export function registerRecorder() {
     return file
   })
   ipcMain.handle('shell:captures', async () => (await captureRows()).map((r) => ({ id: r.path, label: r.label, icon: r.icon.toPNG({ scaleFactor: 2 }) })))
+  ipcMain.handle('shell:projects', async () => projectRows((await recentProjects()).slice(0, 10)).map((r) => ({ id: r.path, label: r.label, icon: r.icon.toPNG({ scaleFactor: 2 }) })))
   ipcMain.handle('shell:reopen', (_e, path: unknown) => typeof path === 'string' && reopenCapture(path))
   ipcMain.handle('shell:fail', async (_e, error: unknown, title?: unknown) => {
     const plain = plainError(error)
