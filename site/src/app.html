@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="color-scheme" content="light dark" />
+		<meta name="theme-color" content="#fafaf8" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#181817" media="(prefers-color-scheme: dark)" />
+		<script>
+			{
+				const root = document.documentElement;
+				try {
+					const theme = localStorage.getItem('theme');
+					if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
+				} catch {}
+				const bars = [...document.querySelectorAll('meta[name="theme-color"]')].map((meta) => ({
+					meta,
+					scheme: meta.media.includes('dark') ? 'dark' : 'light',
+					color: meta.content,
+				}));
+				const paint = () => {
+					const chosen = bars.find((bar) => bar.scheme === root.dataset.theme);
+					for (const bar of bars) bar.meta.content = (chosen ?? bar).color;
+				};
+				paint();
+				new MutationObserver(paint).observe(root, { attributeFilter: ['data-theme'] });
+			}
+		</script>
+		<link rel="icon" type="image/png" href="%sveltekit.assets%/favicon.png" />
+		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>
