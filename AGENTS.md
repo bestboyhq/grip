@@ -54,6 +54,8 @@ Every domain obeys these invariants:
 - `src/windows/<name>/`: one Svelte component per window route.
 - `electron/`: main process; each `<domain>.ts` registers its `<domain>:*` IPC channels.
 - `native/`: Rust addon, one module per domain; `clock.rs` is the master clock.
+- `site/`: the landing page at bestboy.dev/grip, its own npm package: SvelteKit prerendered behind a Cloudflare worker (`site/worker/index.ts`) on the `bestboy.dev/grip*` route.
+  Its look is the Bestboy family's, from the platform's `docs/design.md`, and its claims and numbers come from the README.
 
 Share links, accounts, and teams are hosted by the Bestboy platform at bestboy.dev (the private `bestboyhq/platform` repo, whose `docs/api.md` is the contract).
 Grip's side is `electron/upload.ts` and `electron/account.ts`; `STUDIO_SHARE_URL=http://localhost:8787` points a dev run at a local platform.
@@ -65,6 +67,9 @@ Grip's side is `electron/upload.ts` and `electron/account.ts`; `STUDIO_SHARE_URL
   One instance runs per worktree: a second launch hands its arguments to the running one and exits, so agents share it and its CDP port.
   `npm run dev -- --lab <Name>` opens `src/windows/dev/labs/<Name>.svelte`; the `Wallpapers` lab renders wallpapers for review.
 - `npm run build:native` builds the Rust addon.
+- `cd site && npm run dev` serves the landing page at `localhost:5173/grip`, and `npm test` there builds it and tests the worker.
+  `sh site/media.sh` remakes its clips from the README's GIFs.
+  `.github/workflows/site.yml` deploys it on merge, so a site-only change is a `chore(site)` or `docs(site)` and never ships an app release.
 - `npx electron scripts/fixture/make.ts [out.grip]` generates a synthetic 24 s recording with events, camera, mic speech, and system audio, by default at `.context/fixtures/Demo #1 ✨ café.grip`.
 - `APPLE_KEYCHAIN_PROFILE=<notarytool profile> npm run package` builds, signs with the Developer ID, and notarizes `release/Grip-*.dmg`.
   Without the variable it signs and skips notarization.

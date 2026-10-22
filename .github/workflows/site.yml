@@ -1,0 +1,42 @@
+name: Site
+
+# The landing page at bestboy.dev/grip (`site/`): tested on every pull request that touches it, deployed on merge.
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/**
+      - .github/readme/**
+      - .github/workflows/site.yml
+  pull_request:
+    paths:
+      - site/**
+      - .github/readme/**
+      - .github/workflows/site.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  site:
+    name: test, then deploy to bestboy.dev/grip
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - name: Deploy the worker
+        if: github.event_name == 'push' && env.CLOUDFLARE_API_TOKEN != ''
+        run: npx --yes wrangler@4 deploy
