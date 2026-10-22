@@ -34,27 +34,45 @@ const checking = svg(`${glyph('#000')}<circle cx="3.6" cy="3.6" r="2" fill="none
 const update = (dark: boolean) => svg(`${glyph(dark ? '#fff' : 'rgb(0 0 0 / 0.85)')}<circle cx="3.6" cy="3.6" r="2.6" fill="${dark ? '#0a84ff' : '#007aff'}"/>`)
 
 // The DMG window, 540×380 pt with Grip at (130, 220) and Applications at (410, 220), electron-builder's
-// layout. Finder's title bar covers the bottom 30 pt or so, so nothing sits there. Finder draws icon
-// labels black on any background picture, in dark mode too, so the art stays light. Each icon is lit
-// by one end of the record dot's gradient, the dot's gradient carries the eye from one to the other,
-// and the area picker's crop corners frame Grip.
+// layout, in the website's dark look: warm black with grain, a hairline frame with + marks, and a glow
+// rising from a gradient border along the bottom. Finder's title bar (32 pt on macOS 26) hides the
+// art's bottom 32 pt, so the border runs along y 348 and bends up both bottom corners on the window's
+// own curve, fading out as it turns up the sides. Finder draws icon labels black on any background picture, dark mode
+// included, so each label sits on a light pill, like the site's buttons. The record dot's gradient
+// carries the eye from Grip to Applications, and the area picker's crop corners frame Grip.
+// ponytail: tuned to macOS 26's title bar and corners; on macOS 15's shorter title bar the border
+// shows 4 pt above the bottom. Retune here if Finder's window chrome changes.
+// macOS 26 rounds windows as a superellipse, |x|^2.5 + |y|^2.5 = 20^2.5 (measured off a Finder
+// window): the corner from the side (t 0) to the bottom (t 1), around the corner's center (cx, cy).
+const corner = (cx: number, cy: number, side: -1 | 1, from: 0 | 1) =>
+  Array.from({ length: 25 }, (_, i) => {
+    const t = (Math.abs(from - i / 24) * Math.PI) / 2
+    return `${(cx + side * 20 * Math.cos(t) ** 0.8).toFixed(2)} ${(cy + 20 * Math.sin(t) ** 0.8).toFixed(2)}`
+  }).join('L')
 const dmg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 380">
   <defs>
-    <linearGradient id="bg" x2="0" y2="1"><stop offset="0" stop-color="#fbfbfc"/><stop offset="1" stop-color="#ececef"/></linearGradient>
-    <radialGradient id="blue" cx="130" cy="220" r="190" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#3d5cff" stop-opacity=".16"/><stop offset="1" stop-color="#3d5cff" stop-opacity="0"/></radialGradient>
-    <radialGradient id="orange" cx="410" cy="220" r="190" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ff6a2b" stop-opacity=".16"/><stop offset="1" stop-color="#ff6a2b" stop-opacity="0"/></radialGradient>
-    <linearGradient id="dot" x1="196" x2="344" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#4a63ff"/><stop offset=".55" stop-color="#e8573a"/><stop offset="1" stop-color="#ff8a2b"/></linearGradient>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .07 0"/></filter>
+    <radialGradient id="glow" cx="270" cy="348" r="1" gradientTransform="translate(270 348) scale(330 80) translate(-270 -348)" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#c1453a" stop-opacity=".4"/><stop offset="1" stop-color="#c1453a" stop-opacity="0"/></radialGradient>
+    <linearGradient id="tails" y1="326" y2="340" x2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#fff"/></linearGradient>
+    <mask id="fade"><rect width="540" height="380" fill="url(#tails)"/></mask>
+    <linearGradient id="border" x2="540" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#3549ff"/><stop offset=".35" stop-color="#8a4bd0"/><stop offset=".65" stop-color="#e0452c"/><stop offset="1" stop-color="#ff8a1f"/></linearGradient>
+    <linearGradient id="dot" x1="196" x2="344" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7d8cff"/><stop offset=".55" stop-color="#ef6a4a"/><stop offset="1" stop-color="#ffad5c"/></linearGradient>
   </defs>
-  <rect width="540" height="380" fill="url(#bg)"/>
-  <rect width="540" height="380" fill="url(#blue)"/>
-  <rect width="540" height="380" fill="url(#orange)"/>
+  <rect width="540" height="380" fill="#181817"/>
+  <rect width="540" height="380" fill="url(#glow)"/>
+  <rect width="540" height="380" filter="url(#grain)"/>
+  <path d="M20 0V348M520 0V348M0 132H540" stroke="rgb(255 255 255 / .08)"/>
+  <path d="M16 132h8M20 128v8M516 132h8M520 128v8" stroke="rgb(255 255 255 / .35)"/>
+  <path d="M${corner(20, 328, -1, 0)}L${corner(520, 328, 1, 1)}" fill="none" stroke="url(#border)" stroke-width="3" mask="url(#fade)"/>
   <g font-family="-apple-system, system-ui" text-anchor="middle">
-    <text x="270" y="88" font-size="19" font-weight="600" letter-spacing="-.2" fill="#1d1d1f">Drag Grip into Applications</text>
-    <text x="270" y="112" font-size="13" fill="rgb(60 60 67 / .6)">Once open, Grip waits in your menu bar.</text>
+    <text x="270" y="78" font-size="24" font-weight="600" letter-spacing="-.6" fill="#f4f4f2">Drag Grip into Applications</text>
+    <text x="270" y="104" font-size="13" fill="rgb(244 244 242 / .55)">Once open, Grip waits in your menu bar.</text>
   </g>
+  <path d="${mark(-42, 42, 18, 9)}" transform="translate(130 218)" fill="none" stroke="rgb(255 255 255 / .22)" stroke-width="2.5" stroke-linecap="round"/>
   <path d="M198 220H330" fill="none" stroke="url(#dot)" stroke-width="3" stroke-linecap="round" stroke-dasharray="0 9"/>
   <path d="M332 212l9 8l-9 8" fill="none" stroke="url(#dot)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="${mark(-46, 46, 20, 10)}" transform="translate(130 220)" fill="none" stroke="rgb(0 0 0 / .14)" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="98" y="264.5" width="64" height="22" rx="11" fill="#f5f5f2"/>
+  <rect x="361.5" y="264.5" width="96" height="22" rx="11" fill="#f5f5f2"/>
 </svg>`
 
 const jobs: Array<[svg: string, px: number, out: string]> = [
