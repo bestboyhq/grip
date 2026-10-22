@@ -99,7 +99,7 @@
     })
 </script>
 
-<Popover label="Presets" bind:open>
+<Popover label="Presets" align="start" bind:open>
   {#snippet trigger(props)}
     <button class="btn ghost" {...props}><Icon name="sparkle" size={16} />Presets<Icon name="chevron" size={14} /></button>
   {/snippet}

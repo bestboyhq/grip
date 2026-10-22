@@ -107,8 +107,10 @@
     typingKeys = false
     use(keys)
   }
-  // macOS's own screenshot and recording keys, one click away: most people already reach for them.
+  // macOS's own screenshot and recording keys, one switch away: most people already reach for them.
+  // Off goes back to Grip's default.
   const MACOS_KEYS = 'Shift+Command+5'
+  const DEFAULT_KEYS = 'Alt+Command+Return'
   async function use(keys: string) {
     const ok = await invoke('shell:shortcut', keys)
     keysNote = !ok ? `Another app uses ${symbols(keys)}. Try another.` : ok === 'macos' ? `Grip takes ${symbols(keys)} over from macOS until you quit Grip.` : ''
@@ -222,17 +224,23 @@
             <!-- macOS's own shortcuts reach this field while it listens, with Accessibility on; Grip turns off the one it takes. -->
             <div class="reason" role="status">
               {keysNote ||
-                (!typingKeys ? `Works in any app. Click it to change it${shell.settings?.recordShortcut === MACOS_KEYS ? '' : ', or take over macOS’s ⇧⌘5'}.`
+                (!typingKeys ? 'Works in any app. Click it to change it.'
                 : status?.accessibility === 'granted' ? 'Press the new keys. macOS’s screenshot keys, like ⇧⌘5, work too.'
                 : 'Press the new keys. To use macOS’s own, like ⇧⌘5, allow Accessibility below.')}
             </div>
           </div>
-          {#if shell.settings && shell.settings.recordShortcut !== MACOS_KEYS && !typingKeys}
-            <button class="button" onclick={() => use(MACOS_KEYS)}>Use ⇧⌘5</button>
-          {/if}
           <button class="keys" class:typing={typingKeys} aria-label="New recording shortcut: {recordKeys}. Change" title="Click to change" onclick={listen} onkeydown={typeKeys} onblur={stopListening}
             >{typingKeys ? 'Type a shortcut' : recordKeys}</button
           >
+        </li>
+        <li>
+          <label class="switch">
+            <span class="text">
+              <span class="title">Record with ⇧⌘5</span>
+              <span class="reason">Opens Grip instead of macOS’s screenshot toolbar.</span>
+            </span>
+            <input type="checkbox" role="switch" checked={shell.settings?.recordShortcut === MACOS_KEYS} onchange={(e) => use(e.currentTarget.checked ? MACOS_KEYS : DEFAULT_KEYS)} />
+          </label>
         </li>
         {#each SHORTCUTS as [label, keys] (label)}
           <li>
@@ -384,6 +392,15 @@
   }
   .recording li.current {
     background: var(--surface-50-hover);
+  }
+  .switch {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 14px;
+  }
+  .switch .reason {
+    display: block;
   }
   .recording label {
     display: flex;
