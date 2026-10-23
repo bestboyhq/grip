@@ -26,7 +26,7 @@
 				'I switched from [my old recorder] and never looked back. Recording used to feel like paperwork. Now it’s one keystroke.',
 				'It’s so snappy. I press the shortcut, talk, stop, and the link works before the upload is even done.',
 				'Every video I send looks like a product launch. The zooms and the smooth cursor are just there.',
-				'Our engineers used to be shy about sharing updates. With Grip, they share them more often.',
+				'If your engineers are shy about sharing updates, try giving them Grip.',
 				'Comments land on the exact second. Feedback that used to take a call now takes a link.',
 				'I used to think about recording, prepare for it, skip it, then wish I had. Now it just happens.',
 				'People reply to my videos asking how I made them. Honestly, Grip did.',
