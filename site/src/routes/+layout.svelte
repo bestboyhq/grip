@@ -20,7 +20,7 @@
 		const link = event.target.closest(`a[href="${DOWNLOAD_URL}"]`);
 		if (!link) return;
 		const place = link.closest<HTMLElement>('[data-place]')?.dataset.place ?? 'page';
-		window.logdash?.track('download_started', { app: 'grip', menu: `grip-${place}` });
+		window.logdash?.track('grip_desktop_download_started', { app: 'grip', menu: `grip-${place}` });
 	}
 </script>
 
