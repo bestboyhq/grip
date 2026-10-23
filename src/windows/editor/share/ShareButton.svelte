@@ -229,7 +229,7 @@
   </div>
 
   <div class="visibility">
-    <Select label="Visibility" value={isPrivate ? 'private' : 'public'} options={VISIBILITY} onchange={(v) => setPrivate(v === 'private')} />
+    <Select label="Visibility" icon={isPrivate ? 'lock' : 'globe'} value={isPrivate ? 'private' : 'public'} options={VISIBILITY} onchange={(v) => setPrivate(v === 'private')} />
     <small>{isPrivate ? 'Only your team, and people you send this exact link to.' : 'Anyone you send the link to can watch, no account needed.'}</small>
   </div>
 </div>
@@ -453,7 +453,6 @@
   }
 
   .visibility {
-    --label-w: 72px;
     display: grid;
     gap: 4px;
     padding: 10px 14px 12px;
@@ -461,8 +460,8 @@
     box-shadow: var(--hairline-t);
   }
   .visibility small {
-    padding-left: calc(var(--label-w) + 6px); /* under the dropdown, past its label */
     font-size: 12px;
+    text-wrap: pretty;
     color: var(--fg-secondary);
   }
   :focus-visible {
