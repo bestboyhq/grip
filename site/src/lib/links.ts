@@ -33,7 +33,6 @@ export type Menu = Readonly<{
 
 export const isExternal = (link: Link): boolean => link.href.startsWith('http');
 
-const BESTBOY_GITHUB = 'https://github.com/bestboyhq';
 const LLMS: Link = { title: 'llms.txt', href: `${BESTBOY_URL}/llms.txt` };
 
 export const MENUS: readonly Menu[] = [
@@ -47,7 +46,7 @@ export const MENUS: readonly Menu[] = [
 					{
 						title: 'Tony',
 						tag: 'Say it',
-						href: `${BESTBOY_GITHUB}/tony/releases/latest`,
+						href: `${BESTBOY_URL}/tony`,
 						icon: asset('icons/tony.webp'),
 						line: 'Hold a key. Speak. Let go.',
 					},
@@ -100,9 +99,9 @@ export const MENUS: readonly Menu[] = [
 						line: 'Install, workstreams, jobs, and extensions',
 					},
 					{
-						title: 'Tony on GitHub',
-						href: `${BESTBOY_GITHUB}/tony#readme`,
-						line: 'Install it and use it, in its README',
+						title: 'Tony docs',
+						href: `${BESTBOY_URL}/tony/docs`,
+						line: 'Install, languages, your words, and privacy',
 					},
 				],
 			},
