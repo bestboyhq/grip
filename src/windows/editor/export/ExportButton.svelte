@@ -61,6 +61,7 @@
   import { canEncodeVideo } from 'mediabunny'
   import Icon from '../../../ui/Icon.svelte'
   import { tooltip } from '../../../ui/tooltip.ts'
+  import { submenuAim } from '../../../ui/aim.ts'
   import { registerCommands } from '../commands/registry.ts'
   import { timeMap } from '../../../shared/timemap.ts'
   import { formatTime } from '../helpers.ts'
@@ -82,8 +83,7 @@
   let hevc = $state(true)
   let fit = $state<{ width: number; height: number } | null>(null)
   let sub = $state<Key | ''>('') // the setting whose submenu is open
-  let subTimer: ReturnType<typeof setTimeout> | undefined
-  let pending: Key | '' | undefined // the row about to take over the submenu
+  const aim = submenuAim(() => sub, (k) => (sub = k as Key | ''))
   let menu: HTMLElement
 
   const duration = $derived(doc.project ? timeMap(doc.project.clips).duration : 0)
@@ -198,24 +198,15 @@
     }
   }
 
-  /** Like a macOS menu: moving onto a setting opens its submenu at once, and once one is open
-   *  another row takes over only after a beat, so the pointer can cross rows on its way into it.
-   *  Anything else in the menu closes it the same way. Movement only: a resting pointer leaves the
-   *  keyboard in charge. */
-  function hover(e: PointerEvent) {
-    const k = (((e.target as Element).closest('[data-key]') as HTMLElement | null)?.dataset.key ?? '') as Key | ''
-    if (k === sub) return void (clearTimeout(subTimer), (pending = undefined))
-    if (!sub) return void (sub = k)
-    if (k === pending) return
-    clearTimeout(subTimer)
-    pending = k
-    subTimer = setTimeout(() => ((sub = k), (pending = undefined)), 180)
-  }
+  /** Like a macOS menu: moving onto a setting opens its submenu, anything else in the menu closes it, and
+   *  rows crossed on the way into the open submenu wait (ui/aim.ts). Movement only: a resting pointer
+   *  leaves the keyboard in charge. */
+  const hover = (e: PointerEvent) =>
+    aim.move(e, ((e.target as Element).closest('[data-key]') as HTMLElement | null)?.dataset.key ?? '', menu.querySelector('.submenu'))
 
   /** Open a submenu from a click or the keyboard and move into it, on its checked item. */
   async function enterSub(k: Key, row: HTMLElement) {
-    clearTimeout(subTimer)
-    pending = undefined
+    aim.stop()
     sub = k
     await tick()
     row.parentElement?.querySelector<HTMLElement>('.submenu [aria-checked="true"]')?.focus()
@@ -223,8 +214,7 @@
 
   /** Close the open submenu and hand focus back to its row. */
   function leaveSub(inside: HTMLElement) {
-    clearTimeout(subTimer)
-    pending = undefined
+    aim.stop()
     sub = ''
     inside.closest('.has-sub')?.querySelector<HTMLElement>(':scope > .mi')?.focus()
   }
@@ -277,7 +267,7 @@
   style:position-anchor="--{uid}-export"
   ontoggle={(e) => {
     open = e.newState === 'open'
-    clearTimeout(subTimer)
+    aim.stop()
     sub = ''
     if (open) menu.querySelector<HTMLElement>('.mi')?.focus({ focusVisible: false } as FocusOptions)
   }}
@@ -437,14 +427,16 @@
     color: var(--text);
     white-space: nowrap;
   }
-  .mi:hover:not(:disabled),
+  /* [data-aiming]: on its way into the open submenu, the pointer lights up no row it crosses */
+  .menu:not([data-aiming]) .mi:hover:not(:disabled),
   .mi:focus-visible,
   .mi.on {
     background: var(--pick);
     color: #fff;
     outline: none;
   }
-  .mi:is(:hover:not(:disabled), :focus-visible, .on) :is(kbd, .val, .caret, small) {
+  .menu:not([data-aiming]) .mi:hover:not(:disabled) :is(kbd, .val, .caret, small),
+  .mi:is(:focus-visible, .on) :is(kbd, .val, .caret, small) {
     color: rgb(255 255 255 / 0.8);
   }
   .mi:disabled {

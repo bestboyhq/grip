@@ -8,12 +8,14 @@
   import { tick } from 'svelte'
   import { doc, selection } from '../../../lib/doc.svelte.ts'
   import * as A from './actions.svelte.ts'
+  import { submenuAim } from '../../../ui/aim.ts'
 
   // trigger: the button that opened the menu; pressing it again is not an outside press (it toggles)
   let { x, y, t, target, trigger, onclose }: { x: number; y: number; t: number; target: Target; trigger?: HTMLElement; onclose: () => void } = $props()
 
   let el: HTMLDivElement | undefined
   let openSub = $state('') // the submenu showing its choices
+  const aim = submenuAim(() => openSub, (label) => (openSub = label))
 
   const clips = $derived(A.selected('clips'))
   const zooms = $derived(A.selected('zooms'))
@@ -54,10 +56,10 @@
     }
   }
 
-  /** Open a submenu's choices, with the first (or the current) one focused when asked by keyboard. */
-  async function openFlyout(label: string, focus: boolean) {
+  /** Open a submenu's choices by click or keyboard, with the current (or the first) one focused. */
+  async function openFlyout(label: string) {
+    aim.stop()
     openSub = label
-    if (!focus) return
     await tick()
     const f = el!.querySelector<HTMLElement>('.flyout')
     ;(f?.querySelector<HTMLElement>('[aria-checked="true"]') ?? f?.querySelector<HTMLElement>('button'))?.focus()
@@ -69,8 +71,9 @@
     // arrows move within the open flyout, or within the menu's own rows
     const items = [...el!.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)')].filter((b) => (fly ? fly.contains(b) : !b.closest('.flyout')))
     const i = items.indexOf(active as HTMLElement)
-    if (e.key === 'ArrowRight' && active?.ariaHasPopup) openFlyout(active.dataset.sub!, true)
+    if (e.key === 'ArrowRight' && active?.ariaHasPopup) openFlyout(active.closest<HTMLElement>('.sub')!.dataset.sub!)
     else if (e.key === 'ArrowLeft' && fly) {
+      aim.stop()
       openSub = ''
       fly.parentElement!.querySelector<HTMLElement>('[aria-haspopup]')!.focus()
     } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') return
@@ -104,8 +107,8 @@
   </div>
 {/snippet}
 {#snippet submenu(label: string, options: Array<[any, string]>, current: unknown, fn: (v: any) => void)}
-  <div class="sub" role="none" onpointerenter={() => openFlyout(label, false)} onpointerleave={() => (openSub = '')}>
-    <button role="menuitem" aria-haspopup="menu" aria-expanded={openSub === label} data-sub={label} onclick={() => openFlyout(label, true)}>
+  <div class="sub" role="none" data-sub={label}>
+    <button role="menuitem" aria-haspopup="menu" aria-expanded={openSub === label} onclick={() => openFlyout(label)}>
       <span>{label}</span><kbd>{options.find(([v]) => v === current)?.[1] ?? ''}<i aria-hidden="true">›</i></kbd>
     </button>
     {#if openSub === label}
@@ -118,7 +121,14 @@
   </div>
 {/snippet}
 
-<div class="menu" role="menu" tabindex="-1" {@attach place} {onkeydown}>
+<div
+  class="menu"
+  role="menu"
+  tabindex="-1"
+  {@attach place}
+  {onkeydown}
+  onpointermove={(e) => aim.move(e, (e.target as Element).closest<HTMLElement>('.sub')?.dataset.sub ?? '', el?.querySelector('.flyout'))}
+>
   {#if target.kind === 'clips'}
     {@render submenu('Speed', A.SPEEDS.map((s) => [s, `${s}×`]), speed, A.setSpeed)}
     {#if sources?.mic}
@@ -212,8 +222,10 @@
     background: none;
     text-align: left;
   }
-  button[role='menuitem']:hover:not(:disabled),
-  button[role='menuitem']:focus-visible {
+  /* [data-aiming]: on its way into the open submenu, the pointer lights up no row it crosses */
+  .menu:not([data-aiming]) button[role='menuitem']:hover:not(:disabled),
+  button[role='menuitem']:focus-visible,
+  button[aria-expanded='true'] {
     background: var(--surface-50-hover);
     outline: none;
   }
@@ -225,8 +237,9 @@
     font: inherit;
     color: var(--text-dim);
   }
-  button:hover:not(:disabled) kbd,
-  button:focus-visible kbd {
+  .menu:not([data-aiming]) button:hover:not(:disabled) kbd,
+  button:focus-visible kbd,
+  button[aria-expanded='true'] kbd {
     color: var(--text);
   }
   hr {
