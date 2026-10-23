@@ -1,5 +1,5 @@
-<!-- Quotes from people who use Grip, as color cards drifting across the whole window. Hovering holds the drift, the
-     button stops it, and under reduced motion the cards sit in a row you scroll by hand. -->
+<!-- Quotes from people who use Grip, as color cards drifting across the column and under its rails. Hovering holds
+     the drift, the button stops it, and under reduced motion the cards sit in a row you scroll by hand. -->
 <script lang="ts" module>
 	export type Quote = Readonly<{ quote: string; name: string; role: string }>;
 </script>
@@ -55,9 +55,7 @@
 	}
 
 	.lane {
-		position: relative;
-		z-index: 2;
-		margin-inline: calc(50% - 50vw);
+		margin-inline: calc(-1 * max(var(--pad), env(safe-area-inset-left)));
 		overflow: hidden;
 	}
 
@@ -229,8 +227,8 @@
 
 		.lane {
 			overflow-x: auto;
-			padding-inline: max(var(--pad), calc(50vw - var(--col) / 2 + var(--pad)));
-			scroll-padding-inline: max(var(--pad), calc(50vw - var(--col) / 2 + var(--pad)));
+			padding-inline: max(var(--pad), env(safe-area-inset-left));
+			scroll-padding-inline: max(var(--pad), env(safe-area-inset-left));
 			scroll-snap-type: x mandatory;
 			scrollbar-width: none;
 		}
