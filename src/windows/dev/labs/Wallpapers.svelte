@@ -82,10 +82,10 @@
 </main>
 
 <style>
-  main { padding: 16px; background: var(--surface-root); min-height: 100vh; color: var(--text); font: 12px var(--font); }
+  main { padding: 16px; background: var(--surface-frame); min-height: 100vh; color: var(--fg-default); font: 12px var(--font); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
   figure { margin: 0; }
   img { width: 100%; aspect-ratio: 16 / 10; border-radius: var(--radius); display: block; }
-  figcaption span { color: var(--text-faint); }
-  .error { color: var(--danger); }
+  figcaption span { color: var(--fg-faint); }
+  .error { color: var(--error-content); }
 </style>

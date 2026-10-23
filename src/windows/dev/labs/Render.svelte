@@ -331,18 +331,18 @@
 </div>
 
 <style>
-  .lab { display: flex; height: 100vh; background: var(--surface-root); }
-  aside { width: 230px; padding: 10px; display: flex; flex-direction: column; gap: 6px; overflow: auto; background: var(--surface-50); box-shadow: var(--hairline-r); font-size: 12px; }
+  .lab { display: flex; height: 100vh; background: var(--surface-frame); }
+  aside { width: 230px; padding: 10px; display: flex; flex-direction: column; gap: 6px; overflow: auto; background: var(--surface-root); box-shadow: var(--hairline-r); font-size: 12px; }
   aside label { display: flex; align-items: center; gap: 6px; }
   aside input[type='range'] { flex: 1; min-width: 0; }
-  .status { color: var(--text-dim); font: 11px var(--mono); word-break: break-all; }
+  .status { color: var(--fg-secondary); font: 11px var(--mono); word-break: break-all; }
   main { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 10px; gap: 10px; }
   main > canvas { flex: 1; min-height: 0; width: 100%; object-fit: contain; }
   .bottom { display: flex; gap: 10px; height: 200px; }
-  .inspector { image-rendering: pixelated; box-shadow: 0 0 0 0.5px var(--edge-color); }
+  .inspector { image-rendering: pixelated; box-shadow: 0 0 0 0.5px var(--ring-faint); }
   .thumbs { display: grid; grid-template-columns: repeat(7, 72px); gap: 6px; align-content: start; }
   .thumbs button { width: 72px; height: 45px; padding: 0; border: 2px solid transparent; border-radius: var(--radius-sm); overflow: hidden; background: var(--surface-100); }
-  .thumbs button.on { border-color: var(--accent); }
+  .thumbs button.on { border-color: var(--brand); }
   .thumbs img { width: 100%; height: 100%; display: block; }
   video { display: none; }
 </style>

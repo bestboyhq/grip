@@ -8,12 +8,15 @@
   import { tick } from 'svelte'
   import { doc, selection } from '../../../lib/doc.svelte.ts'
   import * as A from './actions.svelte.ts'
+  import { submenuAim } from '../../../ui/aim.ts'
+  import { drop } from '../../../ui/motion.ts'
 
   // trigger: the button that opened the menu; pressing it again is not an outside press (it toggles)
   let { x, y, t, target, trigger, onclose }: { x: number; y: number; t: number; target: Target; trigger?: HTMLElement; onclose: () => void } = $props()
 
   let el: HTMLDivElement | undefined
   let openSub = $state('') // the submenu showing its choices
+  const aim = submenuAim(() => openSub, (label) => (openSub = label))
 
   const clips = $derived(A.selected('clips'))
   const zooms = $derived(A.selected('zooms'))
@@ -33,15 +36,16 @@
 
   /** Open the flyout to the side with room for it. */
   function flip(node: HTMLElement) {
-    if (node.getBoundingClientRect().right > innerWidth - 8) Object.assign(node.style, { left: 'auto', right: 'calc(100% - 2px)' })
+    if (node.getBoundingClientRect().right > innerWidth - 8) Object.assign(node.style, { left: 'auto', right: 'calc(100% - 2px)', transformOrigin: 'top right' })
   }
 
   /** Open at the pointer, kept inside the window. */
   function place(node: HTMLDivElement) {
     el = node
     // offset sizes, not the bounding rect: the opening scale animation shrinks the rect
-    node.style.left = `${Math.max(8, Math.min(x, innerWidth - node.offsetWidth - 8))}px`
-    node.style.top = `${Math.max(8, Math.min(y, innerHeight - node.offsetHeight - 8))}px`
+    const left = Math.max(8, Math.min(x, innerWidth - node.offsetWidth - 8))
+    const top = Math.max(8, Math.min(y, innerHeight - node.offsetHeight - 8))
+    Object.assign(node.style, { left: `${left}px`, top: `${top}px`, transformOrigin: `${x - left}px ${y - top}px` }) // grows out of the pointer
     node.focus() // arrows move into the items; a mouse-opened menu shows no highlight yet
   }
 
@@ -54,10 +58,10 @@
     }
   }
 
-  /** Open a submenu's choices, with the first (or the current) one focused when asked by keyboard. */
-  async function openFlyout(label: string, focus: boolean) {
+  /** Open a submenu's choices by click or keyboard, with the current (or the first) one focused. */
+  async function openFlyout(label: string) {
+    aim.stop()
     openSub = label
-    if (!focus) return
     await tick()
     const f = el!.querySelector<HTMLElement>('.flyout')
     ;(f?.querySelector<HTMLElement>('[aria-checked="true"]') ?? f?.querySelector<HTMLElement>('button'))?.focus()
@@ -69,8 +73,9 @@
     // arrows move within the open flyout, or within the menu's own rows
     const items = [...el!.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)')].filter((b) => (fly ? fly.contains(b) : !b.closest('.flyout')))
     const i = items.indexOf(active as HTMLElement)
-    if (e.key === 'ArrowRight' && active?.ariaHasPopup) openFlyout(active.dataset.sub!, true)
+    if (e.key === 'ArrowRight' && active?.ariaHasPopup) openFlyout(active.closest<HTMLElement>('.sub')!.dataset.sub!)
     else if (e.key === 'ArrowLeft' && fly) {
+      aim.stop()
       openSub = ''
       fly.parentElement!.querySelector<HTMLElement>('[aria-haspopup]')!.focus()
     } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') return
@@ -104,12 +109,12 @@
   </div>
 {/snippet}
 {#snippet submenu(label: string, options: Array<[any, string]>, current: unknown, fn: (v: any) => void)}
-  <div class="sub" role="none" onpointerenter={() => openFlyout(label, false)} onpointerleave={() => (openSub = '')}>
-    <button role="menuitem" aria-haspopup="menu" aria-expanded={openSub === label} data-sub={label} onclick={() => openFlyout(label, true)}>
+  <div class="sub" role="none" data-sub={label}>
+    <button role="menuitem" aria-haspopup="menu" aria-expanded={openSub === label} onclick={() => openFlyout(label)}>
       <span>{label}</span><kbd>{options.find(([v]) => v === current)?.[1] ?? ''}<i aria-hidden="true">›</i></kbd>
     </button>
     {#if openSub === label}
-      <div class="flyout" role="menu" aria-label={label} {@attach flip}>
+      <div class="flyout" role="menu" aria-label={label} {@attach flip} in:drop>
         {#each options as [value, text] (text)}
           <button role="menuitemradio" aria-checked={value === current} class:on={value === current} onclick={() => act(() => fn(value))}>{text}</button>
         {/each}
@@ -118,7 +123,15 @@
   </div>
 {/snippet}
 
-<div class="menu" role="menu" tabindex="-1" {@attach place} {onkeydown}>
+<div
+  class="menu"
+  role="menu"
+  tabindex="-1"
+  transition:drop|global
+  {@attach place}
+  {onkeydown}
+  onpointermove={(e) => aim.move(e, (e.target as Element).closest<HTMLElement>('.sub')?.dataset.sub ?? '', el?.querySelector('.flyout'))}
+>
   {#if target.kind === 'clips'}
     {@render submenu('Speed', A.SPEEDS.map((s) => [s, `${s}×`]), speed, A.setSpeed)}
     {#if sources?.mic}
@@ -186,18 +199,11 @@
     z-index: 50;
     min-width: 232px;
     padding: 6px;
-    background: var(--surface-50);
+    background: var(--surface-elevated);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-pop);
     font-size: 13px;
     outline: none;
-    animation: pop 110ms ease-out;
-  }
-  @keyframes pop {
-    from { opacity: 0; transform: scale(0.97); }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .menu, .flyout { animation: none; }
   }
   button[role='menuitem'] {
     display: flex;
@@ -212,28 +218,31 @@
     background: none;
     text-align: left;
   }
-  button[role='menuitem']:hover:not(:disabled),
-  button[role='menuitem']:focus-visible {
-    background: var(--surface-50-hover);
+  /* [data-aiming]: on its way into the open submenu, the pointer lights up no row it crosses */
+  .menu:not([data-aiming]) button[role='menuitem']:hover:not(:disabled),
+  button[role='menuitem']:focus-visible,
+  button[aria-expanded='true'] {
+    background: var(--surface-hover);
     outline: none;
   }
   button:disabled {
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     opacity: 0.6;
   }
   kbd {
     font: inherit;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
-  button:hover:not(:disabled) kbd,
-  button:focus-visible kbd {
-    color: var(--text);
+  .menu:not([data-aiming]) button:hover:not(:disabled) kbd,
+  button:focus-visible kbd,
+  button[aria-expanded='true'] kbd {
+    color: var(--fg-default);
   }
   hr {
     border: 0;
     height: 0.5px;
     margin: 6px 10px;
-    background: var(--edge-strong);
+    background: var(--border-default);
   }
   .sub {
     position: relative;
@@ -244,10 +253,10 @@
     left: calc(100% - 2px);
     min-width: 96px;
     padding: 6px;
-    background: var(--surface-50);
+    background: var(--surface-elevated);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-pop);
-    animation: pop 110ms ease-out;
+    transform-origin: top left;
   }
   .flyout button {
     display: block;
@@ -262,12 +271,12 @@
   }
   .flyout button:hover,
   .flyout button:focus-visible {
-    background: var(--surface-50-hover);
+    background: var(--surface-hover);
     outline: none;
   }
   .flyout button.on {
-    background: var(--accent);
-    color: var(--accent-ink);
+    background: var(--brand);
+    color: var(--color-white);
   }
   kbd i {
     margin-left: 8px;
@@ -280,7 +289,7 @@
     display: block;
     margin: 0 4px 5px;
     font-size: 11px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .row {
     display: flex;
@@ -300,12 +309,12 @@
   }
   .row button:hover,
   .row button:focus-visible {
-    background: var(--surface-100-hover);
+    background: var(--surface-hover);
     outline: none;
   }
   .row button.on {
-    background: var(--accent);
-    color: var(--accent-ink);
+    background: var(--brand);
+    color: var(--color-white);
     box-shadow: none;
   }
 </style>

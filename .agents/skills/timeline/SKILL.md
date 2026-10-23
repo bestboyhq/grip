@@ -23,6 +23,10 @@ The editor where users cut, speed up, and direct the video.
 - Undo and redo cover every edit and return the playhead to the same source moment.
 - Dragging and resizing leave the playhead in place, and a dragged edge tracks the pointer exactly, on sped-up clips too.
   Trimming a clip edge shows the frame at the edge in the preview as it moves, source being trimmed back in included, so no cut is blind.
+  A lens above the edge magnifies the recording around it: frames, voice, and words, with the source outside the clip ghosted up to where another clip's source or the recording ends.
+  Moving the pointer up into the lens trims at the lens's scale, about 7 px a frame; back down, the drag carries on from where the edge is.
+  The lens is the one magnifier: the timeline keeps its layout while trimming.
+  After an edit a fitted timeline glides to its new length, and a trimmed start edge's gap closes in the same glide, so nothing jumps.
 - Timeline zoom with pinch and ⌘-scroll, animated and centered on the playhead.
 - Multi-select, copy and paste, duplicate, and apply-to-all for zooms, speeds, and layouts.
 

@@ -193,8 +193,8 @@
     flex-direction: column;
     gap: 10px;
     padding: 8px 8px 10px;
-    color: var(--text);
-    background: var(--surface-50);
+    color: var(--fg-default);
+    background: var(--surface-root);
     border-radius: var(--radius-lg);
     box-shadow: var(--hairline);
   }
@@ -233,14 +233,13 @@
     padding: 0;
     border: 0;
     border-radius: 50%;
-    background: rgb(20 20 22 / 0.72);
-    color: rgb(255 255 255 / 0.85);
-    box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.18);
-    transition: background-color 120ms;
+    background: var(--surface-veil);
+    color: var(--fg-default);
+    box-shadow: var(--hairline);
   }
   .close:hover {
-    background: rgb(40 40 44 / 0.9);
-    color: #fff;
+    background: var(--surface-hover);
+    color: var(--fg-default);
   }
   .title {
     display: flex;
@@ -257,7 +256,7 @@
     gap: 4px;
     font-weight: 400;
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     font-variant-numeric: tabular-nums;
   }
   .meta.ok :global(svg) {
@@ -296,14 +295,14 @@
   /* Dark like the close button, so they read over any picture, and opaque while disabled too. */
   .overlay .btn:is(:not(.primary), :disabled) {
     opacity: 1;
-    background: rgb(20 20 22 / 0.8);
-    box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.18);
+    background: var(--surface-veil);
+    box-shadow: var(--hairline);
   }
   .overlay .btn:disabled {
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   .overlay .btn:not(.primary):hover {
-    background: rgb(40 40 44 / 0.9);
+    background: var(--surface-hover);
   }
   .status {
     display: flex;
@@ -311,10 +310,10 @@
     gap: 6px;
     padding: 0 4px;
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .status.failed {
-    color: var(--danger);
+    color: var(--error-content);
   }
   .status.failed .text {
     white-space: normal; /* a reason is read whole, not cut at the card's edge */
@@ -332,7 +331,7 @@
     color: var(--success);
   }
   .text a {
-    color: var(--text);
+    color: var(--fg-default);
     text-decoration: none;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -350,7 +349,7 @@
     display: block;
     height: 100%;
     border-radius: 1.5px;
-    background: var(--accent);
+    background: var(--brand);
     transition: width 200ms linear;
   }
 </style>

@@ -18,6 +18,8 @@ export interface Settings {
   cameraCorner: CameraPosition
   /** New recordings zoom in on clicks and typing; each project can still turn it on or off. */
   autoZoom: boolean
+  /** The preset new recordings start with (its id, electron/presets.ts); null: the default look. */
+  preset: string | null
   /** The zoom type, loupe size, and Liquid last picked in any editor: new zooms (Z, auto zooms) start with it. */
   zoomLook: ZoomLook
   hideDesktopIcons: boolean
@@ -55,6 +57,7 @@ const defaults: Settings = {
   showCamera: true,
   cameraCorner: 'bottom-right',
   autoZoom: true,
+  preset: null,
   zoomLook: {},
   hideDesktopIcons: false,
   speakerNotes: false,

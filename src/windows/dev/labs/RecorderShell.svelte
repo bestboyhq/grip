@@ -1,6 +1,6 @@
 <!-- Lab: recording UI at window size on a light desktop, under a reference image for comparison.
      #/dev?lab=RecorderShell[&ref=<absolute path of a 2x png whose bar starts at 17.5, 21 pt>]
-     An opaque --surface-50 stands in for the windows' HUD vibrancy, which only exists in the real windows. -->
+     An opaque --surface-root stands in for the windows' HUD vibrancy, which only exists in the real windows. -->
 <script lang="ts">
   import Recorder from '../../recorder/Recorder.svelte'
   import Widget from '../../widget/Widget.svelte'
@@ -34,7 +34,7 @@
     padding: 21px 17.5px;
   }
   .window :global(.hud) {
-    --surface-50: #515150;
+    --surface-root: #515150;
   }
   .window {
     position: relative;

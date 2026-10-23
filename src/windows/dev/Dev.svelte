@@ -21,6 +21,6 @@
 {/if}
 
 <style>
-  :global(html[data-window='dev']) { background: var(--surface-root); }
-  a { color: var(--text); }
+  :global(html[data-window='dev']) { background: var(--surface-frame); }
+  a { color: var(--fg-default); }
 </style>

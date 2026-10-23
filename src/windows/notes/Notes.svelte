@@ -96,10 +96,10 @@
     flex-direction: column;
     border-radius: var(--radius-lg);
     overflow: hidden;
-    --surface-50: rgb(28 28 30 / 0.72); /* a denser veil than the toolbar's, so notes read over any desktop */
-    background: var(--surface-50);
+    --surface-root: var(--surface-veil); /* a denser veil than the toolbar's, so notes read over any desktop */
+    background: var(--surface-root);
     box-shadow: var(--hairline);
-    color: var(--text);
+    color: var(--fg-default);
   }
   header {
     flex: none;
@@ -118,7 +118,7 @@
     flex: 1;
     font-size: 12px;
     font-weight: 600;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   button,
   input {
@@ -131,7 +131,7 @@
     border: 0;
     padding: 0;
     background: none;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .icon {
     width: 28px;
@@ -139,21 +139,21 @@
     border-radius: var(--radius-sm);
   }
   .icon:hover {
-    background: var(--surface-50-hover);
-    color: var(--text);
+    background: var(--surface-hover);
+    color: var(--fg-default);
   }
   .start {
     gap: 6px;
     height: 26px;
     padding: 0 10px 0 8px;
     border-radius: var(--radius-sm);
-    background: var(--accent);
-    color: var(--accent-ink);
+    background: var(--surface-inverse);
+    color: var(--fg-inverse);
     font-size: 12px;
     font-weight: 600;
   }
   .start:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--surface-inverse-hover);
   }
   .start:disabled {
     opacity: 0.4;
@@ -164,7 +164,7 @@
     gap: 6px;
     margin-left: 8px;
     font-size: 11.5px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .tune input {
     appearance: none;
@@ -179,7 +179,7 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: var(--knob);
+    background: var(--color-white);
     box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
   }
   .tune:last-of-type {
@@ -196,7 +196,7 @@
     line-height: 1.5;
   }
   textarea::placeholder {
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   .view {
     flex: 1;

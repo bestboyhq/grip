@@ -84,6 +84,7 @@ export function validateProject(x: unknown, version = PROJECT_VERSION): Project 
   if (p.audio.music !== undefined && !(isObj(p.audio.music) && rel(p.audio.music.file) && num(p.audio.music.volume))) fail('audio.music')
   if (!num(p.playhead)) fail('playhead')
   if (typeof p.autoZoomed !== 'boolean') fail('autoZoomed')
+  if (p.preset !== undefined && typeof p.preset !== 'string') fail('preset')
   return p
 }
 

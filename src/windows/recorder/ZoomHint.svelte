@@ -34,17 +34,15 @@
     height: 34px;
     padding: 0 12px 0 10px;
     border-radius: 17px;
-    background: rgb(20 20 22 / 0.78);
-    box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.18);
-    color: var(--text-dim);
+    background: var(--surface-veil);
+    box-shadow: var(--hairline);
+    color: var(--fg-secondary);
     font: 13px var(--font);
     white-space: nowrap;
-    transition-property: background-color, box-shadow;
-    transition-duration: 200ms;
   }
   .hint.on {
-    background: color-mix(in srgb, var(--zoom) 16%, rgb(20 20 22 / 0.86));
-    box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--zoom) 50%, transparent);
+    background: color-mix(in srgb, var(--brand) 16%, var(--surface-veil));
+    box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--brand) 50%, transparent);
   }
   .state {
     display: flex;
@@ -53,14 +51,14 @@
     font-weight: 500;
   }
   .on .state {
-    color: var(--zoom-text);
+    color: var(--brand-text);
   }
   .key {
     display: flex;
     align-items: center;
     gap: 6px;
     padding-left: 10px;
-    box-shadow: inset 0.5px 0 0 rgb(255 255 255 / 0.14);
+    box-shadow: var(--hairline-l);
   }
   kbd {
     display: grid;
@@ -69,8 +67,8 @@
     height: 20px;
     padding: 0 5px;
     border-radius: 5px;
-    background: rgb(255 255 255 / 0.12);
-    color: var(--text);
+    background: var(--surface-100);
+    color: var(--fg-default);
     font: 600 11.5px var(--font);
   }
 </style>

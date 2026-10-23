@@ -26,13 +26,13 @@
     justify-content: space-between;
     height: 44px;
     padding: 0 12px 0 84px;
-    background: var(--surface-root);
+    background: var(--surface-frame);
     box-shadow: var(--hairline-b);
   }
   .title {
     font-weight: 600;
   }
   :global(body) {
-    background: var(--surface-root);
+    background: var(--surface-frame);
   }
 </style>

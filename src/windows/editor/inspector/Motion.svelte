@@ -64,5 +64,5 @@
 </Section>
 
 <style>
-  .hint { margin: 4px 0 0; color: var(--text-faint); font-size: 11.5px; line-height: 1.4; }
+  .hint { margin: 4px 0 0; color: var(--fg-faint); font-size: 11.5px; line-height: 1.4; }
 </style>

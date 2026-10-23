@@ -258,7 +258,7 @@
 
 <style>
   :global(body) {
-    background: var(--surface-root);
+    background: var(--surface-frame);
   }
   .window {
     position: fixed;
@@ -305,7 +305,7 @@
     margin: 0 0 30px;
     font-size: 14px;
     line-height: 1.5;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .body {
     flex: 1;
@@ -329,7 +329,7 @@
     margin: 26px 0 10px;
     font-size: 12px;
     font-weight: 600;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -338,16 +338,16 @@
   }
   .lead {
     margin: 0 0 22px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     font-size: 13px;
   }
   .banner {
     margin: 14px -16px 16px; /* as wide as the list under it */
     padding: 10px 16px;
     border-radius: var(--radius-lg);
-    background: rgb(255 214 10 / 0.12);
-    box-shadow: inset 0 0 0 0.5px rgb(255 214 10 / 0.35);
-    color: var(--warning-text);
+    background: color-mix(in srgb, var(--warm) 12%, transparent);
+    box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--warm) 35%, transparent);
+    color: var(--warm);
     font-size: 13px;
     line-height: 1.45;
   }
@@ -364,7 +364,7 @@
     list-style: none;
     overflow: hidden; /* the need marker follows the corners */
     border-radius: var(--radius-lg);
-    background: var(--surface-50);
+    background: var(--surface-root);
     box-shadow: var(--hairline);
   }
   .rows li {
@@ -391,7 +391,7 @@
     padding: 0;
   }
   .recording li.current {
-    background: var(--surface-50-hover);
+    background: var(--surface-hover);
   }
   .switch {
     display: flex;
@@ -416,7 +416,7 @@
     margin: 0;
     padding: 6px; /* concentric: the stage's corners are the card's less this */
     border-radius: var(--radius-lg);
-    background: var(--surface-50);
+    background: var(--surface-root);
     box-shadow: var(--hairline);
   }
   figcaption {
@@ -426,10 +426,10 @@
     box-shadow: var(--hairline-t);
   }
   .rows li.need {
-    box-shadow: inset 3px 0 0 var(--warning);
+    box-shadow: inset 3px 0 0 var(--warm);
   }
   .rows li + li.need {
-    box-shadow: inset 3px 0 0 var(--warning), var(--hairline-t);
+    box-shadow: inset 3px 0 0 var(--warm), var(--hairline-t);
   }
   .tile {
     display: grid;
@@ -440,7 +440,7 @@
     border-radius: var(--radius);
     background: var(--surface-100);
     box-shadow: var(--hairline);
-    color: var(--text);
+    color: var(--fg-default);
   }
   /* The allowed permissions, overlapping like a stack of avatars. */
   .stack {
@@ -457,9 +457,9 @@
     border-radius: 50%;
     background: var(--surface-100);
     box-shadow:
-      0 0 0 2px var(--surface-50),
+      0 0 0 2px var(--surface-root),
       var(--hairline);
-    color: var(--text);
+    color: var(--fg-default);
   }
   .text {
     flex: 1;
@@ -476,14 +476,14 @@
     padding: 1px 6px;
     border-radius: var(--radius-xs);
     background: var(--surface-150);
-    color: var(--accent-text);
+    color: var(--fg-default);
     font-size: 10.5px;
     font-weight: 600;
   }
   .reason {
     margin-top: 2px;
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .ok {
     display: flex;
@@ -505,17 +505,17 @@
     font-weight: 500;
   }
   .button:hover:not(:disabled) {
-    background: var(--surface-100-hover);
+    background: var(--surface-hover);
   }
   .button.primary {
     height: 32px;
     padding: 0 20px;
-    background: var(--accent);
+    background: var(--surface-inverse);
     box-shadow: none;
-    color: var(--accent-ink);
+    color: var(--fg-inverse);
   }
   .button.primary:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--surface-inverse-hover);
   }
   .button:disabled {
     opacity: 0.4;
@@ -525,14 +525,14 @@
   .keys:focus-visible,
   .keys.typing,
   input:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
   .link {
     border: 0;
     padding: 0;
     background: none;
-    color: var(--accent-text);
+    color: var(--fg-default);
     font-size: 12px;
     text-decoration: underline; /* same color as the text around it: the underline marks it */
     text-underline-offset: 2px;
@@ -545,7 +545,7 @@
   }
   footer .link {
     font-size: 13px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   input[role='switch'] {
     appearance: none;
@@ -557,7 +557,6 @@
     border-radius: 10px;
     background: var(--surface-200);
     box-shadow: var(--hairline);
-    transition: background 150ms;
   }
   input[role='switch']::after {
     content: '';
@@ -567,16 +566,16 @@
     width: 15px;
     height: 15px;
     border-radius: 50%;
-    background: var(--knob);
+    background: var(--color-white);
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
-    transition: transform 150ms;
+    transition: transform 180ms var(--ease-out);
   }
   input[role='switch']:checked {
-    background: var(--accent);
+    background: var(--brand);
   }
   input[role='switch']:checked::after {
     transform: translateX(13px);
-    background: var(--accent-ink);
+    background: var(--color-white);
   }
   kbd,
   .keys {
@@ -591,13 +590,13 @@
   .keys {
     flex: none;
     border: 0;
-    color: var(--text);
+    color: var(--fg-default);
   }
   .keys:hover {
-    background: var(--surface-100-hover);
+    background: var(--surface-hover);
   }
   .keys.typing {
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     letter-spacing: 0;
   }
 </style>

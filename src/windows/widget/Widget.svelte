@@ -106,9 +106,9 @@
     gap: 2px;
     padding: 0 8px 0 16px;
     border-radius: var(--radius-lg);
-    background: var(--surface-50);
+    background: var(--surface-root);
     box-shadow: var(--hairline);
-    color: var(--text);
+    color: var(--fg-default);
     -webkit-app-region: drag;
   }
   .dot {
@@ -133,7 +133,7 @@
     width: 0.5px;
     height: 24px;
     margin: 0 6.25px;
-    background: var(--edge-strong);
+    background: var(--border-default);
   }
   button {
     -webkit-app-region: no-drag;
@@ -145,25 +145,25 @@
     border: 0;
     border-radius: var(--radius-sm);
     background: none;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   button:hover:not(:disabled) {
-    background: var(--surface-50-hover);
-    color: var(--text);
+    background: var(--surface-hover);
+    color: var(--fg-default);
   }
   button:active:not(:disabled) {
-    background: var(--surface-50-selected);
+    background: var(--surface-150);
   }
   button:disabled {
     opacity: 0.35;
   }
   button:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--brand);
     outline-offset: -2px;
   }
   button.on,
   button.on:hover:not(:disabled) {
-    background: var(--surface-50-selected);
+    background: var(--surface-150);
     box-shadow: var(--hairline);
     color: var(--record);
   }
@@ -187,18 +187,18 @@
     background: var(--surface-100);
     box-shadow: var(--hairline);
     font-size: 13px;
-    color: var(--text);
+    color: var(--fg-default);
   }
   .text:hover:not(:disabled) {
-    background: var(--surface-100-hover);
+    background: var(--surface-hover);
   }
   .danger {
-    background: var(--danger);
+    background: var(--error-bg);
     box-shadow: none;
-    color: #fff;
+    color: var(--error-content);
   }
   .danger:hover:not(:disabled) {
-    background: var(--danger-hover);
-    color: #fff;
+    background: var(--error-bg-hover);
+    color: var(--error-content);
   }
 </style>

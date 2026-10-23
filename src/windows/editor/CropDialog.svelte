@@ -216,38 +216,37 @@
 </dialog>
 
 <style>
-  dialog { max-width: none; max-height: none; padding: 0; border: 0; background: transparent; color: var(--text); overflow: visible; }
+  dialog { max-width: none; max-height: none; padding: 0; border: 0; background: transparent; color: var(--fg-default); overflow: visible; }
   dialog::backdrop { background: rgb(0 0 0 / 0.45); }
   .sheet {
     display: flex; flex-direction: column; width: min(1280px, 100vw - 64px); height: min(900px, 100vh - 64px);
-    border-radius: var(--radius-lg); background: var(--surface-50); box-shadow: var(--shadow-modal); overflow: hidden;
-    animation: enter 180ms var(--ease-out);
+    border-radius: var(--radius-lg); background: var(--surface-root); box-shadow: var(--shadow-modal); overflow: hidden;
+    animation: come var(--come) var(--ease-out);
   }
-  @keyframes enter { from { opacity: 0; transform: translateY(6px) scale(0.98); } }
 
   header { flex: none; display: flex; align-items: center; gap: 6px; height: 52px; padding: 0 12px 0 20px; box-shadow: var(--hairline-b); }
   h2 { margin: 0 auto 0 0; font-size: 13px; font-weight: 600; }
-  .label { margin: 0 2px 0 10px; color: var(--text-dim); font-size: 12.5px; }
-  .times { color: var(--text-faint); font-size: 12px; }
+  .label { margin: 0 2px 0 10px; color: var(--fg-secondary); font-size: 12.5px; }
+  .times { color: var(--fg-faint); font-size: 12px; }
   input {
     width: 64px; height: var(--control-h); padding: 0 6px; border: 0; border-radius: var(--radius-sm);
     background: var(--surface-100); box-shadow: var(--hairline); font-size: 12.5px; text-align: center; font-variant-numeric: tabular-nums;
   }
   input::-webkit-inner-spin-button { display: none; }
   .pick { position: relative; display: flex; align-items: center; height: var(--control-h); margin-left: 4px; border-radius: var(--radius-sm); background: var(--surface-100); box-shadow: var(--hairline); }
-  .pick:hover { background: var(--surface-100-hover); }
-  .pick:has(select:focus-visible) { outline: 2px solid var(--focus-ring); }
-  .pick > :global(.icon:first-child) { position: absolute; left: 8px; color: var(--text-dim); pointer-events: none; }
-  .pick > :global(.icon:last-child) { position: absolute; right: 6px; color: var(--text-dim); pointer-events: none; }
+  .pick:hover { background: var(--surface-hover); }
+  .pick:has(select:focus-visible) { outline: 2px solid var(--brand); }
+  .pick > :global(.icon:first-child) { position: absolute; left: 8px; color: var(--fg-secondary); pointer-events: none; }
+  .pick > :global(.icon:last-child) { position: absolute; right: 6px; color: var(--fg-secondary); pointer-events: none; }
   select { field-sizing: content; min-width: 84px; height: 100%; padding: 0 26px 0 30px; border: 0; background: none; appearance: none; font-size: 12.5px; font-weight: 500; }
   select:focus-visible { outline: none; }
   .reset { margin-left: 10px; padding: 0 10px 0 8px; }
-  .reset :global(.icon) { color: var(--text-dim); }
+  .reset :global(.icon) { color: var(--fg-secondary); }
   .keys { display: grid; grid-template-columns: auto auto; gap: 6px 16px; margin: 0; padding: 6px 8px; font-size: 12px; }
-  .keys dt { color: var(--text); }
-  .keys dd { margin: 0; color: var(--text-dim); }
+  .keys dt { color: var(--fg-default); }
+  .keys dd { margin: 0; color: var(--fg-secondary); }
 
-  .stage { flex: 1; min-height: 0; display: flex; padding: 32px; background: var(--surface-25); }
+  .stage { flex: 1; min-height: 0; display: flex; padding: 32px; background: var(--control-track); }
   .fit { flex: 1; min-width: 0; container-type: size; display: grid; place-items: center; }
   .frame { position: relative; aspect-ratio: var(--ar); width: min(100cqw, 100cqh * var(--ar)); background: #000; cursor: crosshair; touch-action: none; }
   video { display: block; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
@@ -280,5 +279,4 @@
   footer { flex: none; display: flex; justify-content: center; gap: 8px; padding: 14px; box-shadow: var(--hairline-t); }
   footer .btn { height: 30px; padding: 0 14px; }
   kbd { margin-left: 2px; font: inherit; opacity: 0.55; }
-  @media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
 </style>
