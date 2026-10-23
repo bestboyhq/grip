@@ -35,6 +35,10 @@ test('every clip and its still ship with the page', () => {
 	for (const file of media) assert.ok(existsSync(join(build, file)), file);
 });
 
+test('the page ships no draft quotes', () => {
+	assert.doesNotMatch(page, /Role, Company|\[my old/u);
+});
+
 test('the page loads Logdash from the Grip site and reports to it', () => {
 	assert.match(page, /<script defer="" src="\/grip\/_ld\/script\.js"/u);
 	assert.match(page, new RegExp(`data-site="${LOGDASH_SITE}"`, 'u'));

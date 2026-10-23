@@ -1,9 +1,10 @@
 <!-- Grip's landing page: the hero shows a video Grip made, then beat by beat how a take becomes one (capture,
-     auto-zoom, captions, the editor, the look, export), the bugs it designs out, why it is safe to rely on, the
-     questions, and the close. Every claim and number comes from the README. -->
+     auto-zoom, captions, the editor, the look, export), the bugs it designs out, why it is safe to rely on, what
+     people say, the questions, and the close. Every claim and number comes from the README. -->
 <script lang="ts">
 	import capture from '../../../.github/readme/capture.webp';
 	import editor from '../../../.github/readme/editor.webp';
+	import { dev } from '$app/env';
 	import { asset } from '$app/paths';
 	import Arrow from '#lib/Arrow.svelte';
 	import BeatLabel, { type Beat } from '#lib/BeatLabel.svelte';
@@ -12,12 +13,28 @@
 	import Glow, { type Layer } from '#lib/Glow.svelte';
 	import Head from '#lib/Head.svelte';
 	import Media from '#lib/Media.svelte';
+	import Quotes, { type Quote } from '#lib/Quotes.svelte';
 	import SectionHeading from '#lib/SectionHeading.svelte';
 	import { docHref, DOWNLOAD_URL, GITHUB_URL, SITE_DESCRIPTION } from '#lib/links.ts';
 
 	const HORIZON: readonly Layer[] = [{ box: [0, -0.46, 1, 0.9], peak: [0.42, 0.86], start: 0.18 }];
 
-	const BEATS = [
+	// Drafts of the quotes this section wants, shown only in `npm run dev`. Real quotes, each with the person's name
+	// and permission, replace them before the section ships; the site test fails on a draft.
+	const quotes: readonly Quote[] = dev
+		? [
+				'I switched from [my old recorder] and never looked back. Recording used to feel like paperwork. Now it’s one keystroke.',
+				'It’s so snappy. I press the shortcut, talk, stop, and the link works before the upload is even done.',
+				'Every video I send looks like a product launch. The zooms and the smooth cursor are just there.',
+				'We stopped writing long update docs. A 40-second link shows it better than three paragraphs ever did.',
+				'Comments land on the exact second. Feedback that used to take a call now takes a link.',
+				'I used to lose an afternoon editing a two-minute demo. Now I don’t edit at all.',
+				'People reply to my videos asking how I made them. Honestly, Grip did.',
+				'Our whole team moved over from [my old recorder] in a week. Nobody asked to go back.',
+			].map((quote) => ({ quote, name: 'Name', role: 'Role, Company' }))
+		: [];
+
+	const SECTIONS = [
 		'how',
 		'capture',
 		'zoom',
@@ -27,11 +44,14 @@
 		'export',
 		'bugs',
 		'open',
+		'love',
 		'faq',
 		'start',
 	] as const;
 
-	const beat = (id: (typeof BEATS)[number], kicker?: string): Beat => ({
+	const BEATS = SECTIONS.filter((id) => id !== 'love' || quotes.length > 0);
+
+	const beat = (id: (typeof SECTIONS)[number], kicker?: string): Beat => ({
 		n: BEATS.indexOf(id) + 1,
 		total: BEATS.length,
 		...(kicker ? { kicker } : {}),
@@ -417,6 +437,21 @@
 		</ul>
 	{/snippet}
 </SectionHeading>
+
+{#if quotes.length > 0}
+	<SectionHeading
+		id="love"
+		beat={beat('love', 'From people who switched')}
+		split
+		title="Show, don’t tell."
+		quiet="In their own words."
+		description="People come to Grip from recorders that felt slow and editors that ate the afternoon. This is what they say a week later."
+	>
+		{#snippet after()}
+			<Quotes {quotes} />
+		{/snippet}
+	</SectionHeading>
+{/if}
 
 <section id="faq" class="beat" aria-labelledby="faq-title">
 	<div class="wrap">
