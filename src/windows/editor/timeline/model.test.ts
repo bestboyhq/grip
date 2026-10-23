@@ -79,6 +79,8 @@ test('a dragged clip edge lands exactly under the pointer on a sped-up clip', ()
   // growing stops at the source the neighbours use
   assert.equal(M.trimClip(clips, 1, 'start', M.edgeSource(map, 1, 0), lim)[1].start, 10)
   assert.equal(M.trimClip(clips, 1, 'end', M.edgeSource(map, 1, 99), lim)[1].end, 50)
+  // leaving the trim lens picks the timeline drag up from where the edge is: it does not move
+  for (const src of [12, 20, 33.3, 46]) near(M.edgeSource(map, 1, M.edgeOutput(map, map.clips, 1, src)), src)
 })
 
 test('the preview finds a dragged clip edge, inside the clip or in source being trimmed back in', () => {

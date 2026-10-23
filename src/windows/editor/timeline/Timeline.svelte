@@ -19,10 +19,12 @@
   import { PAD, RULER, draw, hit, rows as layoutRows, thumb, timeOf, xOf, type Audio, type Hit, type View } from './draw.ts'
   import { Waveforms, type PeaksFn } from './waveform.ts'
   import Menu, { type Target } from './Menu.svelte'
+  import Lens, { LENS, type LensVideo } from './Lens.svelte'
 
   let { peaks = enginePeaks }: { peaks?: PeaksFn } = $props()
 
   const MAX_PPS = 1000 // px per second: a 30 fps frame is 33 px wide
+  const SETTLE = 250 // ms: a released start edge closes its gap
   const SCISSORS = `url("data:image/svg+xml,${encodeURIComponent(
     `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><g fill='none' stroke-linecap='round'><g stroke='black' stroke-width='3.6'><path d='M7 3l10 13M17 3L7 16'/><circle cx='6.5' cy='18.5' r='3'/><circle cx='17.5' cy='18.5' r='3'/></g><g stroke='white' stroke-width='1.6'><path d='M7 3l10 13M17 3L7 16'/><circle cx='6.5' cy='18.5' r='3'/><circle cx='17.5' cy='18.5' r='3'/></g></g></svg>`,
   )}") 12 10, crosshair`
@@ -30,7 +32,7 @@
   type Gesture =
     | { kind: 'scrub' }
     | { kind: 'scroll'; x: number; x0: number }
-    | { kind: 'trim'; i: number; side: 'start' | 'end'; lim: { lo: number; hi: number }; off: number; full: Clip[] }
+    | { kind: 'trim'; i: number; side: 'start' | 'end'; lim: { lo: number; hi: number }; off: number; full: Clip[]; fine: { src: number; x: number } | null }
     | { kind: 'move'; track: M.ItemTrack; ids: Set<string>; grab: number }
     | { kind: 'resize'; track: M.ItemTrack; id: string; side: 'start' | 'end'; off: number }
     | { kind: 'create'; track: M.ItemTrack; t0: number }
@@ -44,6 +46,8 @@
   const view: View = { W: 0, H: 0, dpr: 1, x0: 0, pps: 1, duration: 0, shift: null, rows: [] }
   let target = 0 // px per second the zoom animation heads to
   let anchor: { t: number; x: number; to: number } | null = null // playhead time, its screen x, where it settles
+  let refit = false // the zoom animation is a fitted timeline gliding to its new length
+  let closing: { at: number; by: number; t0: number } | null = null // view.shift easing to 0 after a start edge trim
   let base: M.Parts | null = null // committed project data (plain)
   let draft: Partial<M.Parts> | null = null // the drag in progress, drawn instead of base
   let camera = false
@@ -56,6 +60,9 @@
   let drag: Drag | null = null
   let mic: Audio | null = null
   let system: Audio | null = null
+  let video: LensVideo | null = null // the recording the trim lens shows
+  let lens: Lens | undefined
+  let lensOn = false
   let shown = new Set<M.ItemTrack>() // item lanes shown so far, for the project in `lanesFor`
   let lanesFor = ''
   let fitted = ''
@@ -97,6 +104,8 @@
         s && doc.path ? { url: fileUrl(`${doc.path}/${s.file}`), gain: mix.muted ? 0 : mix.volume, voice } : null
       mic = audio(p.sources.mic, p.audio.mic, p.audio.mic.enhance) // the voice as it plays: processed when enhanced
       system = audio(p.sources.system, p.audio.system, false)
+      const v = p.sources.screen ?? p.sources.camera
+      video = v && doc.path ? { url: fileUrl(`${doc.path}/${v.file}`), width: v.width, height: v.height, fps: v.fps } : null
       rebuild()
     })
   })
@@ -171,11 +180,18 @@
     relayout(M.tracks(model, camera, shown))
     const fit = isFit()
     view.duration = duration = model.map.duration
-    if (fit) view.pps = target = minPps() // a fitted timeline stays fitted when edits change its length
+    if (fit && view.pps !== minPps()) {
+      // A fitted timeline stays fitted when edits change its length, gliding there instead of jumping.
+      target = minPps()
+      anchor = { t: 0, x: PAD, to: PAD }
+      refit = true
+    }
     if (key !== fitted && view.W) {
       fitted = key
       view.pps = target = minPps()
       view.x0 = 0
+      anchor = null
+      refit = false
     }
     clampView()
     hovered()
@@ -183,13 +199,13 @@
   }
 
   const minPps = () => (view.W - 2 * PAD) / Math.max(view.duration, 0.5)
-  const isFit = () => view.W > 0 && !anchor && view.pps <= minPps() * 1.0001
+  const isFit = () => view.W > 0 && (refit || (!anchor && view.pps <= minPps() * 1.0001))
   const sliderOf = (pps: number) => Math.round((1000 * Math.log(pps / minPps())) / Math.log(MAX_PPS / minPps()))
 
   function clampView() {
     if (!view.W) return
     const lo = minPps()
-    if (view.pps < lo) view.pps = lo
+    if (view.pps < lo && !refit) view.pps = lo // a refit grows into a shorter timeline from below
     if (target < lo) target = lo
     view.x0 = M.clamp(view.x0, 0, Math.max(0, view.duration - (view.W - 2 * PAD) / view.pps))
     zoomValue = sliderOf(view.pps)
@@ -199,6 +215,7 @@
   function zoomTo(pps: number) {
     if (!model || !view.W) return
     target = M.clamp(pps, minPps(), MAX_PPS)
+    refit = false
     const x = PAD + (player.time - view.x0) * view.pps
     anchor = { t: player.time, x, to: x >= PAD && x <= view.W - PAD ? x : view.W / 2 }
     requestDraw()
@@ -232,9 +249,16 @@
       view.x0 = anchor.t - (anchor.x - PAD) / view.pps
       clampView()
       if (done) anchor = null
+      if (done) refit = false
       again = !done
     }
-    if (drag?.moved && pointer && drag.kind !== 'scroll' && drag.kind !== 'cut') {
+    if (closing) {
+      const u = Math.min(1, (now - closing.t0) / SETTLE)
+      view.shift = u < 1 ? { at: closing.at, by: closing.by * (1 - u) ** 3 } : null
+      if (u < 1) again = true
+      else closing = null
+    }
+    if (drag?.moved && pointer && drag.kind !== 'scroll' && drag.kind !== 'cut' && !(drag.kind === 'trim' && drag.fine)) {
       // Dragging past an edge scrolls, faster the further out.
       const over = pointer.x < PAD + 24 ? pointer.x - PAD - 24 : pointer.x > view.W - PAD - 24 ? pointer.x - view.W + PAD + 24 : 0
       const x0 = view.x0
@@ -251,6 +275,11 @@
       if (model) {
         draw(ctx, { view, model, time: player.time, sel, hover, pointer, armed: armed(), dragging: !!drag, marquee: marqueeRect(), mic, system, waves })
       } else ctx.clearRect(0, 0, canvas!.width, canvas!.height)
+    }
+    if (drag?.kind === 'trim') showLens(drag)
+    else if (lensOn) {
+      lens?.hide()
+      lensOn = false
     }
     if (again) requestDraw()
   }
@@ -325,6 +354,10 @@
   function onpointerdown(e: PointerEvent) {
     if (e.button !== 0 || !model || !base) return
     menu = null
+    if (closing) {
+      closing = null // a gap still closing closes now, so the press lands on what it shows
+      view.shift = null
+    }
     if (e.altKey) syncAlt(true) // ⌥ pressed while another app had focus; release comes as keyup or blur
     const p = local(e)
     const h = hit(view, model, p.x, p.y)
@@ -360,7 +393,7 @@
         if (h.track === 'clips') {
           const lim = M.clipLimits(base.clips, h.block.i, base.duration)
           const full = M.trimClip(base.clips, h.block.i, h.edge, h.edge === 'start' ? lim.lo : lim.hi, lim) // the edge as far out as it goes, for the preview
-          g = { kind: 'trim', i: h.block.i, side: h.edge, lim, off, full }
+          g = { kind: 'trim', i: h.block.i, side: h.edge, lim, off, full, fine: null }
         } else g = { kind: 'resize', track: h.track, id, side: h.edge, off }
       } else {
         if (add) selection.ids = selection.ids.includes(id) ? selection.ids.filter((x) => x !== id) : [...selection.ids, id]
@@ -398,6 +431,7 @@
     if (drag) {
       if (!drag.moved && drag.kind !== 'scrub' && Math.hypot(pointer.x - drag.sx, pointer.y - drag.sy) < 3) return
       drag.moved = true
+      if (drag.kind === 'trim') lensZone(drag, pointer)
       dragTo(pointer)
     } else hovered()
     requestDraw()
@@ -411,7 +445,9 @@
     if (d.moved) commit(d)
     else click(d)
     draft = null
-    view.shift = null
+    // A start edge's gap closes in one glide rather than a jump; the timeline refits alongside (rebuild).
+    closing = d.kind === 'trim' && view.shift?.by ? { ...view.shift, t0: performance.now() } : null
+    if (!closing) view.shift = null
     rebuild()
     hovered()
   }
@@ -437,8 +473,10 @@
     if (d.kind === 'trim') {
       const c = b.clips[d.i]
       // Edges follow the pointer exactly at any speed. A start edge is drawn where the pointer is and
-      // the rest of the timeline stays put until release, when the gap closes (ripple).
-      const clips = M.trimClip(b.clips, d.i, d.side, M.edgeSource(d.map, d.i, timeOf(view, p.x) + d.off), d.lim)
+      // the rest of the timeline stays put until release, when the gap closes (ripple). In the lens the
+      // pointer moves the edge at the lens's scale instead, from where it entered.
+      const src = d.fine ? d.fine.src + (p.x - d.fine.x) / LENS.k : M.edgeSource(d.map, d.i, timeOf(view, p.x) + d.off)
+      const clips = M.trimClip(b.clips, d.i, d.side, src, d.lim)
       draft = { clips }
       view.shift = d.side === 'start' ? { at: d.map.outStarts[d.i], by: (clips[d.i].start - c.start) / c.speed } : null
       trimPreview(d, clips)
@@ -462,6 +500,31 @@
     const src = clips[d.i][d.side]
     player.hover = M.edgeOutput(d.map, d.map.clips, d.i, src)
     showEdge({ clips: d.full, t: M.edgeOutput(d.map, d.full, d.i, src) })
+  }
+
+  /** Where the lens's bottom sits, in canvas px: just above the clip track. */
+  const lensBottom = () => (view.rows.find((r) => r.id === 'clips')?.y ?? RULER) - 10
+
+  /** Moving up into the lens trades reach for precision, and back down returns; the edge stays put either way. */
+  function lensZone(d: Extract<Drag, { kind: 'trim' }>, p: { x: number; y: number }) {
+    const y = lensBottom()
+    const src = (draft?.clips ?? base!.clips)[d.i][d.side]
+    if (!d.fine && p.y < y - 4) d.fine = { src, x: p.x }
+    else if (d.fine && p.y > y + 14) {
+      d.off = M.edgeOutput(d.map, d.map.clips, d.i, src) - timeOf(view, p.x)
+      d.fine = null
+    }
+  }
+
+  function showLens(d: Extract<Drag, { kind: 'trim' }>) {
+    if (!lens || !model || !base || !canvas) return
+    const c = (draft?.clips ?? base.clips)[d.i]
+    const m = model.map
+    const out = d.side === 'start' ? m.outStarts[d.i] : m.outStarts[d.i] + (c.end - c.start) / c.speed
+    const r = canvas.getBoundingClientRect()
+    const scene = { side: d.side, clip: c, was: base.clips[d.i], lim: d.lim, duration: base.duration, fine: !!d.fine, video, mic, system, waves, words }
+    lens.show(scene, r.left + xOf(view, out), r.top + lensBottom(), r.left, r.right)
+    lensOn = true
   }
 
   function commit(d: Drag) {
@@ -515,6 +578,7 @@
   function hovered() {
     if (!model || !pointer || drag) return
     hover = hit(view, model, pointer.x, pointer.y)
+    if (hover.kind === 'block' && hover.track === 'clips' && hover.edge) lens?.warm(video) // its frames are ready when the trim starts
     // Hover scrub: the preview shows the moment under the pointer while paused; the playhead stays put.
     player.hover = player.playing || hover.kind === 'scrollbar' || hover.kind === 'none' ? null : outTime(pointer.x)
     cursor = hoverCursor(hover)
@@ -652,6 +716,7 @@
   <Menu x={menu.x} y={menu.y} t={menu.t} target={menu.target} trigger={menu.from} onclose={closeMenu} />
 {/if}
 <CommandMenu />
+<Lens bind:this={lens} redraw={requestDraw} />
 
 <style>
   .timeline {
