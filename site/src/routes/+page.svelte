@@ -28,7 +28,7 @@
 				'Every video I send looks like a product launch. The zooms and the smooth cursor are just there.',
 				'Our engineers used to be shy about sharing updates. With Grip, the hesitation is gone.',
 				'Comments land on the exact second. Feedback that used to take a call now takes a link.',
-				'I used to lose an afternoon editing a two-minute demo. Now I don’t edit at all.',
+				'I used to think about recording, prepare for it, skip it, then wish I had. Now it just happens.',
 				'People reply to my videos asking how I made them. Honestly, Grip did.',
 				'Our whole team moved over from [my old recorder] in a week. Nobody asked to go back.',
 			].map((quote) => ({ quote, name: 'Name', role: 'Role, Company' }))
