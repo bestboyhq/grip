@@ -65,8 +65,8 @@ const dmg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 380">
   <path d="M16 132h8M20 128v8M516 132h8M520 128v8" stroke="rgb(255 255 255 / .35)"/>
   <path d="M${corner(20, 328, -1, 0)}L${corner(520, 328, 1, 1)}" fill="none" stroke="url(#border)" stroke-width="3" mask="url(#fade)"/>
   <g font-family="-apple-system, system-ui" text-anchor="middle">
-    <text x="270" y="78" font-size="24" font-weight="600" letter-spacing="-.6" fill="#f4f4f2">Drag Grip into Applications</text>
-    <text x="270" y="104" font-size="13" fill="rgb(244 244 242 / .55)">Once open, Grip waits in your menu bar.</text>
+    <text x="270" y="78" font-size="24" font-weight="600" letter-spacing="-.6" fill="#f4f4f2">Show, don’t tell.</text>
+    <text x="270" y="104" font-size="13" fill="rgb(244 244 242 / .55)">Drag Grip into Applications to start.</text>
   </g>
   <path d="${mark(-42, 42, 18, 9)}" transform="translate(130 218)" fill="none" stroke="rgb(255 255 255 / .22)" stroke-width="2.5" stroke-linecap="round"/>
   <path d="M198 220H330" fill="none" stroke="url(#dot)" stroke-width="3" stroke-linecap="round" stroke-dasharray="0 9"/>
