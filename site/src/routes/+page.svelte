@@ -27,7 +27,7 @@
 				'It’s so snappy. I press the shortcut, talk, stop, and the link works before the upload is even done.',
 				'Every video I send looks like a product launch. The zooms and the smooth cursor are just there.',
 				'If your engineers are shy about sharing updates, try giving them Grip.',
-				'People leave comments right on the moment in the video. Feedback that used to need a call now takes a link.',
+				'I send a two-minute video instead of booking a call, and the answers come back in the comments.',
 				'I used to think about recording, prepare for it, skip it, then wish I had. Now it just happens.',
 				'People reply to my videos asking how I made them. Honestly, Grip did.',
 			].map((quote) => ({ quote, name: 'Name', role: 'Role, Company' }))
