@@ -30,7 +30,6 @@
 				'Comments land on the exact second. Feedback that used to take a call now takes a link.',
 				'I used to think about recording, prepare for it, skip it, then wish I had. Now it just happens.',
 				'People reply to my videos asking how I made them. Honestly, Grip did.',
-				'Our whole team moved over from [my old recorder] in a week. Nobody asked to go back.',
 			].map((quote) => ({ quote, name: 'Name', role: 'Role, Company' }))
 		: [];
 
