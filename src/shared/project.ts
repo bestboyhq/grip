@@ -195,6 +195,9 @@ export interface Project {
   /** Auto zooms were generated, once, on the first open after recording or import; zooms the user
    *  deletes never come back. Absent in older files = not yet (migrate fills false). */
   autoZoomed: boolean
+  /** The preset (electron/presets.ts id) the style came from; the style differing from it shows as
+   *  edited. Absent: none. */
+  preset?: string
 }
 
 export const defaultStyle = (): Style => ({
@@ -239,6 +242,19 @@ export const defaultStyle = (): Style => ({
 })
 
 export const uid = () => crypto.randomUUID().slice(0, 8)
+
+/** A preset's look on a project: all of `look` but the camera's corner, which stays where the
+ *  recording put it (where the bubble sat, clear of the content). */
+export const lookOn = (look: Style, style: Style): Style => ({ ...look, camera: { ...look.camera, position: style.camera.position } })
+
+/** Whether `style` is still `look` as applied (lookOn): equal as data, key order aside. */
+export function sameLook(look: Style, style: Style): boolean {
+  const plain = (x: unknown): unknown =>
+    Array.isArray(x) ? x.map(plain)
+    : x && typeof x === 'object' ? Object.fromEntries(Object.entries(x).filter(([, v]) => v !== undefined).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => [k, plain(v)]))
+    : x
+  return JSON.stringify(plain(lookOn(look, style))) === JSON.stringify(plain(style))
+}
 
 export const screenCrop = (p: Project): NRect => p.crop ?? { x: 0, y: 0, w: 1, h: 1 }
 

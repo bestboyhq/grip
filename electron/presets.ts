@@ -1,10 +1,13 @@
 // Owner: projects. Style presets: one portable `.grippreset` file each (JSON, assets embedded as
 // base64), stored in <userData>/presets/<id>.grippreset. Export copies the file; import validates
 // it. Applying writes the assets into the bundle under content-addressed names and returns the style
-// for the editor to apply as an undoable edit. A missing asset falls back to the default.
+// for the editor to apply as an undoable edit. A missing asset falls back to the default. Listing
+// also writes each preset's assets out to <userData>/presets/assets, so a preset can be previewed
+// on a project before it is applied (Preset.look).
 //
 //   projects:presets:list() -> Preset[]
-//   projects:presets:save(name, bundlePath, style) -> Preset   (assets read from the bundle)
+//   projects:presets:save(name, bundlePath, style, id?) -> Preset   (assets read from the bundle; id: update that preset)
+//   projects:presets:rename(id, name)
 //   projects:presets:apply(id, bundlePath) -> { style }
 //   projects:presets:import(file?) -> Preset | null      (no file: open dialog)
 //   projects:presets:export(id, file?) -> string | null  (no file: save dialog)
@@ -26,6 +29,9 @@ export interface Preset {
   id: string
   name: string
   style: Style
+  /** `style` with its assets as absolute paths into <presets>/assets: what previews of the preset
+   *  load before it is applied (the player and the renderer take absolute paths as they are). */
+  look: Style
 }
 interface PresetFile {
   format: typeof FORMAT
@@ -46,7 +52,7 @@ export async function listPresets(dir = presetsDir()): Promise<Preset[]> {
     if (!f.endsWith(EXT)) continue
     try {
       const p = await readPreset(join(dir, f))
-      out.push({ id: f.slice(0, -EXT.length), name: p.name, style: p.style })
+      out.push({ id: f.slice(0, -EXT.length), name: p.name, style: p.style, look: await lookOf(p, dir) })
     } catch (e) {
       console.warn(`[presets] skipped ${f}:`, (e as Error).message)
     }
@@ -54,8 +60,9 @@ export async function listPresets(dir = presetsDir()): Promise<Preset[]> {
   return out.sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** Save `style` as a preset, embedding the background image and LUT it references in `bundle`. */
-export async function savePreset(name: string, bundle: string, style: unknown, dir = presetsDir()): Promise<Preset> {
+/** Save `style` as a preset, embedding the background image and LUT it references in `bundle`.
+ *  `id`: overwrite that preset (Update), else a new one. */
+export async function savePreset(name: string, bundle: string, style: unknown, dir = presetsDir(), id: string = randomUUID()): Promise<Preset> {
   const s = normalizeStyle(structuredClone(style))
   const assets: Record<string, string> = {}
   const embed = async (rel: string) => {
@@ -67,27 +74,41 @@ export async function savePreset(name: string, bundle: string, style: unknown, d
   }
   await relink(s, embed)
   const preset: PresetFile = { format: FORMAT, version: VERSION, name: presetName(name), style: s, assets }
-  const id = randomUUID()
+  const file = presetFile(id, dir)
   await mkdir(dir, { recursive: true })
-  await writeFileAtomic(join(dir, id + EXT), JSON.stringify(preset))
-  return { id, name: preset.name, style: s }
+  await writeFileAtomic(file, JSON.stringify(preset))
+  return { id, name: preset.name, style: s, look: await lookOf(preset, dir) }
+}
+
+export async function renamePreset(id: string, name: string, dir = presetsDir()): Promise<void> {
+  const file = presetFile(id, dir)
+  const p = await readPreset(file)
+  await writeFileAtomic(file, JSON.stringify({ ...p, name: presetName(name) }))
 }
 
 /** Write the preset's assets into `bundle`/assets and return its style pointing at them. */
 export async function applyPreset(id: string, bundle: string, dir = presetsDir()): Promise<Style> {
   const p = await readPreset(presetFile(id, dir))
-  await locked(() => relink(p.style, async (key) => {
-    if (!Object.hasOwn(p.assets, key)) return undefined
-    const data = Buffer.from(p.assets[key], 'base64')
-    const rel = assetName(data, key)
-    const file = join(bundle, rel)
-    if (!(await stat(file).catch(() => null))) {
-      await mkdir(join(bundle, 'assets')).catch((e) => { if (e.code !== 'EEXIST') throw e }) // never recreate a moved bundle
-      await writeFileAtomic(file, data)
-    }
-    return rel
-  }))
+  await locked(() => relink(p.style, async (key) => (Object.hasOwn(p.assets, key) ? writeAsset(bundle, key, Buffer.from(p.assets[key], 'base64')) : undefined)))
   return p.style
+}
+
+/** The preset's style pointing at its assets written out to `dir`/assets, by absolute path. */
+async function lookOf(p: PresetFile, dir: string): Promise<Style> {
+  const s = structuredClone(p.style)
+  await relink(s, async (key) => (Object.hasOwn(p.assets, key) ? join(dir, await writeAsset(dir, key, Buffer.from(p.assets[key], 'base64'))) : undefined))
+  return s
+}
+
+/** Write an asset into `root`/assets under its content-addressed name, unless it is there already. Returns that name. */
+async function writeAsset(root: string, key: string, data: Buffer): Promise<string> {
+  const rel = assetName(data, key)
+  const file = join(root, rel)
+  if (!(await stat(file).catch(() => null))) {
+    await mkdir(join(root, 'assets')).catch((e) => { if (e.code !== 'EEXIST') throw e }) // never recreate a moved bundle
+    await writeFileAtomic(file, data)
+  }
+  return rel
 }
 
 export async function importPreset(file: string, dir = presetsDir()): Promise<Preset> {
@@ -95,7 +116,7 @@ export async function importPreset(file: string, dir = presetsDir()): Promise<Pr
   const id = randomUUID()
   await mkdir(dir, { recursive: true })
   await writeFileAtomic(join(dir, id + EXT), JSON.stringify(p))
-  return { id, name: p.name, style: p.style }
+  return { id, name: p.name, style: p.style, look: await lookOf(p, dir) }
 }
 
 export async function exportPreset(id: string, file: string, dir = presetsDir()): Promise<void> {
@@ -157,7 +178,8 @@ const presetName = (name: unknown) => (typeof name === 'string' && name.trim() ?
 export function registerPresets() {
   const { ipcMain, dialog, BrowserWindow } = electron
   ipcMain.handle('projects:presets:list', () => listPresets())
-  ipcMain.handle('projects:presets:save', (_e, name: unknown, path: unknown, style: unknown) => savePreset(name as string, bundleArg(path), style))
+  ipcMain.handle('projects:presets:save', (_e, name: unknown, path: unknown, style: unknown, id?: unknown) => savePreset(name as string, bundleArg(path), style, presetsDir(), id as string | undefined))
+  ipcMain.handle('projects:presets:rename', (_e, id: unknown, name: unknown) => renamePreset(id as string, name as string))
   ipcMain.handle('projects:presets:apply', async (_e, id: unknown, path: unknown) => ({ style: await applyPreset(id as string, bundleArg(path)) }))
   ipcMain.handle('projects:presets:delete', (_e, id: unknown) => deletePreset(id as string))
   ipcMain.handle('projects:presets:import', async (e, file?: unknown) => {

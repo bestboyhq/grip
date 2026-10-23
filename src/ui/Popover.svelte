@@ -31,7 +31,7 @@
   popover="auto"
   role="dialog"
   aria-label={label}
-  class="popover {align}"
+  class="popover drop {align}"
   style:position-anchor={anchor}
   ontoggle={(e) => {
     open = e.newState === 'open'
@@ -44,14 +44,10 @@
 <style>
   .popover {
     inset: auto; margin: 6px 0 0; padding: 6px; min-width: 220px; max-height: 70vh; overflow: auto;
-    border: 0; border-radius: var(--radius-lg); background: var(--surface-50); color: var(--text);
+    border: 0; border-radius: var(--radius-lg); background: var(--surface-elevated); color: var(--fg-default);
     box-shadow: var(--shadow-pop);
     position-try-fallbacks: flip-block;
-    opacity: 0; transform: translateY(-4px) scale(0.98); transform-origin: top right;
-    transition: opacity 140ms var(--ease-out), transform 140ms var(--ease-out), display 140ms allow-discrete, overlay 140ms allow-discrete;
   }
   .popover.end { position-area: bottom span-left; }
   .popover.start { position-area: bottom span-right; transform-origin: top left; }
-  .popover:popover-open { opacity: 1; transform: none; }
-  @starting-style { .popover:popover-open { opacity: 0; transform: translateY(-4px) scale(0.98); } }
 </style>

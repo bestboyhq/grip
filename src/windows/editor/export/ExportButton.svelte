@@ -61,6 +61,7 @@
   import { canEncodeVideo } from 'mediabunny'
   import Icon from '../../../ui/Icon.svelte'
   import { tooltip } from '../../../ui/tooltip.ts'
+  import { submenuAim } from '../../../ui/aim.ts'
   import { registerCommands } from '../commands/registry.ts'
   import { timeMap } from '../../../shared/timemap.ts'
   import { formatTime } from '../helpers.ts'
@@ -82,8 +83,7 @@
   let hevc = $state(true)
   let fit = $state<{ width: number; height: number } | null>(null)
   let sub = $state<Key | ''>('') // the setting whose submenu is open
-  let subTimer: ReturnType<typeof setTimeout> | undefined
-  let pending: Key | '' | undefined // the row about to take over the submenu
+  const aim = submenuAim(() => sub, (k) => (sub = k as Key | ''))
   let menu: HTMLElement
 
   const duration = $derived(doc.project ? timeMap(doc.project.clips).duration : 0)
@@ -198,24 +198,15 @@
     }
   }
 
-  /** Like a macOS menu: moving onto a setting opens its submenu at once, and once one is open
-   *  another row takes over only after a beat, so the pointer can cross rows on its way into it.
-   *  Anything else in the menu closes it the same way. Movement only: a resting pointer leaves the
-   *  keyboard in charge. */
-  function hover(e: PointerEvent) {
-    const k = (((e.target as Element).closest('[data-key]') as HTMLElement | null)?.dataset.key ?? '') as Key | ''
-    if (k === sub) return void (clearTimeout(subTimer), (pending = undefined))
-    if (!sub) return void (sub = k)
-    if (k === pending) return
-    clearTimeout(subTimer)
-    pending = k
-    subTimer = setTimeout(() => ((sub = k), (pending = undefined)), 180)
-  }
+  /** Like a macOS menu: moving onto a setting opens its submenu, anything else in the menu closes it, and
+   *  rows crossed on the way into the open submenu wait (ui/aim.ts). Movement only: a resting pointer
+   *  leaves the keyboard in charge. */
+  const hover = (e: PointerEvent) =>
+    aim.move(e, ((e.target as Element).closest('[data-key]') as HTMLElement | null)?.dataset.key ?? '', menu.querySelector('.submenu'))
 
   /** Open a submenu from a click or the keyboard and move into it, on its checked item. */
   async function enterSub(k: Key, row: HTMLElement) {
-    clearTimeout(subTimer)
-    pending = undefined
+    aim.stop()
     sub = k
     await tick()
     row.parentElement?.querySelector<HTMLElement>('.submenu [aria-checked="true"]')?.focus()
@@ -223,8 +214,7 @@
 
   /** Close the open submenu and hand focus back to its row. */
   function leaveSub(inside: HTMLElement) {
-    clearTimeout(subTimer)
-    pending = undefined
+    aim.stop()
     sub = ''
     inside.closest('.has-sub')?.querySelector<HTMLElement>(':scope > .mi')?.focus()
   }
@@ -270,14 +260,14 @@
   bind:this={menu}
   id="{uid}-menu"
   popover="auto"
-  class="menu"
+  class="menu drop"
   role="menu"
   aria-label="Export"
   tabindex="-1"
   style:position-anchor="--{uid}-export"
   ontoggle={(e) => {
     open = e.newState === 'open'
-    clearTimeout(subTimer)
+    aim.stop()
     sub = ''
     if (open) menu.querySelector<HTMLElement>('.mi')?.focus({ focusVisible: false } as FocusOptions)
   }}
@@ -377,10 +367,9 @@
     transition: stroke-dasharray 0.2s;
   }
 
-  /* A macOS menu: translucent, the system's blue selection. Visible overflow, so submenus can hang
-     out of it. */
+  /* The platform's menu: an elevated card that grows out of the Export button (.drop in theme.css). Visible
+     overflow, so submenus can hang out of it. */
   .menu {
-    --pick: #2f6bd8;
     inset: auto;
     width: 264px;
     margin: 6px 0 0;
@@ -389,38 +378,14 @@
     border-radius: 10px;
     box-sizing: border-box;
     overflow: visible;
-    background: rgb(36 36 40 / 0.92);
-    backdrop-filter: blur(24px) saturate(1.6);
+    background: var(--surface-elevated);
     box-shadow: var(--shadow-pop);
-    color: var(--text);
+    color: var(--fg-default);
     position-area: bottom span-left;
     position-try-fallbacks: flip-block;
-    opacity: 0;
-    transform: translateY(-4px) scale(0.98);
-    transform-origin: top right;
-    transition: opacity 140ms var(--ease-out), transform 140ms var(--ease-out), display 140ms allow-discrete, overlay 140ms allow-discrete;
   }
   .menu:popover-open {
     display: grid;
-    opacity: 1;
-    transform: none;
-  }
-  @starting-style {
-    .menu:popover-open {
-      opacity: 0;
-      transform: translateY(-4px) scale(0.98);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .menu {
-      transform: none;
-      transition: opacity 140ms, display 140ms allow-discrete, overlay 140ms allow-discrete;
-    }
-    @starting-style {
-      .menu:popover-open {
-        transform: none;
-      }
-    }
   }
   .mi {
     display: flex;
@@ -434,21 +399,18 @@
     text-align: left;
     font-size: 13px;
     font-weight: 400;
-    color: var(--text);
+    color: var(--fg-default);
     white-space: nowrap;
   }
-  .mi:hover:not(:disabled),
+  /* [data-aiming]: on its way into the open submenu, the pointer lights up no row it crosses */
+  .menu:not([data-aiming]) .mi:hover:not(:disabled),
   .mi:focus-visible,
   .mi.on {
-    background: var(--pick);
-    color: #fff;
+    background: var(--surface-hover);
     outline: none;
   }
-  .mi:is(:hover:not(:disabled), :focus-visible, .on) :is(kbd, .val, .caret, small) {
-    color: rgb(255 255 255 / 0.8);
-  }
   .mi:disabled {
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   .tick {
     display: grid;
@@ -457,7 +419,7 @@
     width: 20px;
   }
   .caret {
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   .caret :global(.icon) {
     transform: rotate(90deg); /* points left, where the submenu opens */
@@ -472,24 +434,24 @@
     padding-left: 12px;
     font: inherit;
     font-size: 12.5px;
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   .val {
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     font-variant-numeric: tabular-nums;
   }
   small {
     margin-left: auto;
     padding-left: 16px;
     font-size: 11.5px;
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   hr {
     width: calc(100% - 20px);
     height: 0.5px;
     margin: 5px 10px;
     border: 0;
-    background: var(--edge-strong);
+    background: var(--border-default);
   }
   .has-sub {
     position: relative;
@@ -505,7 +467,7 @@
     min-width: 140px;
     padding: 5px;
     border-radius: 10px;
-    background: rgb(36 36 40); /* opaque: inside the menu's blur, its own backdrop blur sees nothing */
+    background: var(--surface-elevated);
     box-shadow: var(--shadow-pop);
   }
   .submenu .mi {
@@ -515,7 +477,7 @@
   .note {
     margin: 2px 10px 6px 22px;
     font-size: 11.5px;
-    color: var(--text-faint);
+    color: var(--fg-faint);
     font-variant-numeric: tabular-nums;
   }
   .note {
@@ -523,6 +485,6 @@
     line-height: 1.35;
   }
   .note.danger {
-    color: var(--danger);
+    color: var(--error-content);
   }
 </style>

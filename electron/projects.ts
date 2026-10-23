@@ -30,7 +30,7 @@ import { createProject, type CameraPosition, type Project, type Sources, type Zo
 import { migrate, newerError, validateProject } from '../src/shared/migrate.ts'
 import { parseEvents } from '../src/shared/events.ts'
 import { generateAutoZooms } from '../src/engine/zoom/index.ts'
-import { registerPresets } from './presets.ts'
+import { applyPreset, registerPresets } from './presets.ts'
 import { plainError } from './shell/errors.ts'
 import { moveCapture } from './shell/captures.ts'
 
@@ -66,12 +66,15 @@ export async function createBundle(name: string, dir = projectsDir()): Promise<s
 }
 
 /** project.json for a recording that just finished (or was recovered): defaults plus auto zooms
- *  from its clicks and typing, so it opens already directed. `camera`: the corner the camera bubble
- *  sat in while recording, where the video puts the camera. `autoZoom: false`: no auto zooms.
- *  `zoomLook`: the look of the auto zooms (settings.zoomLook). */
-export async function writeNewRecording(bundle: string, sources: Sources, o: { created?: Date; camera?: CameraPosition; autoZoom?: boolean; zoomLook?: ZoomLook } = {}): Promise<Project> {
+ *  from its clicks and typing, so it opens already directed. `preset`: the look it starts with
+ *  (settings.preset); a deleted or damaged preset leaves the default. `camera`: the corner the camera
+ *  bubble sat in while recording, where the video puts the camera whatever the preset says.
+ *  `autoZoom: false`: no auto zooms. `zoomLook`: the look of the auto zooms (settings.zoomLook). */
+export async function writeNewRecording(bundle: string, sources: Sources, o: { created?: Date; preset?: string | null; camera?: CameraPosition; autoZoom?: boolean; zoomLook?: ZoomLook } = {}): Promise<Project> {
   const p = createProject(basename(bundle, '.grip'), sources)
   p.createdAt = (o.created ?? new Date()).toISOString()
+  const look = o.preset ? await applyPreset(o.preset, bundle).catch(() => null) : null
+  if (look) Object.assign(p, { style: look, preset: o.preset })
   if (o.camera) p.style.camera.position = o.camera
   if (o.autoZoom === false) p.style.autoZoom.enabled = false
   if (sources.events) {

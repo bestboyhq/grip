@@ -66,11 +66,11 @@
 
 <style>
   .mute { width: 24px; height: 24px; }
-  .mute[aria-pressed='true'] { color: var(--danger); }
-  .file { display: flex; align-items: center; gap: 8px; min-height: 30px; color: var(--text-dim); }
-  .file span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 12.5px; }
+  .mute[aria-pressed='true'] { color: var(--error-content); }
+  .file { display: flex; align-items: center; gap: 8px; min-height: 30px; color: var(--fg-secondary); }
+  .file span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-default); font-size: 12.5px; }
   .small { width: 24px; height: 24px; }
   .wide { width: 100%; }
-  .hint { margin: 6px 0 0; font-size: 11.5px; color: var(--text-faint); }
-  .error { margin: 6px 0 0; font-size: 12px; color: var(--danger); }
+  .hint { margin: 6px 0 0; font-size: 11.5px; color: var(--fg-faint); }
+  .error { margin: 6px 0 0; font-size: 12px; color: var(--error-content); }
 </style>

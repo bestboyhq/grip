@@ -37,7 +37,7 @@
     gap: 12px;
     height: 100vh;
     padding: 0 12px 0 14px;
-    background: var(--surface-50);
+    background: var(--surface-root);
     border-radius: var(--radius-lg);
     box-shadow: var(--hairline);
     cursor: grab;
@@ -64,6 +64,6 @@
   .hint {
     margin-top: 1px;
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
 </style>

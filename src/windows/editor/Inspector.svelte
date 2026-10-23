@@ -17,8 +17,10 @@
   import Audio from './inspector/Audio.svelte'
   import Motion from './inspector/Motion.svelte'
   import TranscriptPanel from './transcript/TranscriptPanel.svelte'
+  import Presets from './Presets.svelte'
 
   const tabs = [
+    { id: 'presets', label: 'Presets', icon: 'sparkle' },
     { id: 'background', label: 'Background', icon: 'frame' },
     { id: 'cursor', label: 'Cursor', icon: 'cursor' },
     { id: 'camera', label: 'Camera', icon: 'camera' },
@@ -82,10 +84,12 @@
   </div>
 
   <div class="panel" id="panel" role="tabpanel" aria-labelledby="tab-{tab}">
-    <!-- The transcript brings its own title bar (with subtitle export) and scrolls its text itself. -->
-    {#if tab !== 'transcript'}<h2>{current.label}</h2>{/if}
-    {#key tab}<div class="content" class:bare={tab === 'transcript'}>
-      {#if tab === 'background'}
+    <!-- The transcript and presets bring their own title bar (subtitle export, Save current look) and scroll themselves. -->
+    {#if tab !== 'transcript' && tab !== 'presets'}<h2>{current.label}</h2>{/if}
+    {#key tab}<div class="content" class:bare={tab === 'transcript' || tab === 'presets'}>
+      {#if tab === 'presets'}
+        <Presets />
+      {:else if tab === 'background'}
         <Background />
       {:else if tab === 'cursor'}
         <Cursor />
@@ -118,17 +122,17 @@
   .rail button {
     flex: none;
     display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 9px;
-    background: none; color: var(--text-faint); transition: background-color 120ms, color 120ms;
+    background: none; color: var(--fg-faint);
   }
   @media (max-height: 700px) {
     .rail { gap: 2px; }
     .rail button { height: 32px; }
   }
-  .rail button:hover { color: var(--text); background: var(--surface-root-hover); }
-  .rail button.on { color: var(--accent-text); background: var(--surface-root-selected); box-shadow: var(--hairline); }
+  .rail button:hover { color: var(--fg-default); background: var(--surface-hover); }
+  .rail button.on { color: var(--fg-default); background: var(--surface-150); box-shadow: var(--hairline); }
   .panel {
     width: 328px; display: flex; flex-direction: column; min-height: 0; border-radius: var(--radius-lg);
-    background: var(--surface-50); box-shadow: var(--hairline);
+    background: var(--surface-root); box-shadow: var(--hairline);
   }
   h2 { flex: none; margin: 0; padding: 14px 16px 4px; font-size: 13px; font-weight: 600; }
   /* Content fades out under the title instead of being cut by a hard edge when scrolled. */

@@ -205,7 +205,7 @@
     height: 100%;
     overflow: auto;
     padding: 16px;
-    background: var(--surface-root);
+    background: var(--surface-frame);
   }
   .tiles {
     display: flex;
@@ -239,7 +239,7 @@
   p {
     margin: 10px 0;
     font: 12px var(--mono);
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .canvases {
     display: flex;

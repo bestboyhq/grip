@@ -70,5 +70,5 @@
 </Section>
 
 <style>
-  .note { margin: 14px 0 0; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-25); box-shadow: var(--hairline); color: var(--text-dim); font-size: 12px; line-height: 1.45; }
+  .note { margin: 14px 0 0; padding: 10px 12px; border-radius: var(--radius); background: var(--control-track); box-shadow: var(--hairline); color: var(--fg-secondary); font-size: 12px; line-height: 1.45; }
 </style>

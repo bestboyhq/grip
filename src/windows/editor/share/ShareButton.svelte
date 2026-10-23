@@ -1,5 +1,5 @@
 <!-- Owner: sharing. The editor top bar's Share button: a popover that shares the video or the whole editable project
-     as a link, with upload progress, copy link, and a private toggle; signed out, it offers sign-in first, and
+     as a link, with upload progress, copy link, and who can watch (anyone with the link, or a private link); signed out, it offers sign-in first, and
      signed in, it shows the team's uploads this month. Uploads run in the main process
      (electron/share.ts) and carry on when the popover closes, the window closes, or the app restarts.
      Mount: <ShareButton exportVideo={...} />, where exportVideo(progress?, signal?) exports the open project and resolves
@@ -9,6 +9,12 @@
   import type { Job } from '../../../../electron/share.ts'
   import { doc, save } from '../../../lib/doc.svelte.ts'
   import { invoke, on } from '../../../lib/ipc.ts'
+  import Select from '../../../ui/Select.svelte'
+
+  const VISIBILITY: { value: 'public' | 'private'; label: string }[] = [
+    { value: 'public', label: 'Anyone with the link' },
+    { value: 'private', label: 'Private link' },
+  ]
 
   let { exportVideo }: { exportVideo?: (progress?: (p: number) => void, signal?: AbortSignal) => Promise<string> } = $props()
 
@@ -141,7 +147,7 @@
   Share
 </button>
 
-<div id="{uid}-share" class="pop" popover ontoggle={toggled} style:position-anchor="--{uid}-share">
+<div id="{uid}-share" class="pop drop" popover ontoggle={toggled} style:position-anchor="--{uid}-share">
   <div class="head">
     <h2>Share</h2>
     {#if toast}<span class="toast" role="status">{toast}</span>{/if}
@@ -222,17 +228,10 @@
     {/if}
   </div>
 
-  <label class="private">
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-      <rect x="3" y="7" width="10" height="7" rx="2" />
-      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
-    </svg>
-    <span>
-      <b>Private</b>
-      <small>{isPrivate ? 'Only this exact link opens it.' : 'Anyone with the link can open it.'}</small>
-    </span>
-    <input type="checkbox" role="switch" checked={isPrivate} onchange={(e) => setPrivate(e.currentTarget.checked)} />
-  </label>
+  <div class="visibility">
+    <Select label="Visibility" value={isPrivate ? 'private' : 'public'} options={VISIBILITY} onchange={(v) => setPrivate(v === 'private')} />
+    <small>{isPrivate ? 'Only your team, and people you send this exact link to.' : 'Anyone you send the link to can watch, no account needed.'}</small>
+  </div>
 </div>
 
 <style>
@@ -249,7 +248,7 @@
     font-weight: 500;
   }
   .trigger:hover {
-    background: var(--surface-100-hover);
+    background: var(--surface-hover);
   }
   .ring {
     transform: rotate(-90deg);
@@ -258,7 +257,7 @@
     stroke: var(--surface-200);
   }
   .ring .fill {
-    stroke: var(--accent);
+    stroke: var(--brand);
     stroke-linecap: round;
     transition: stroke-dasharray 0.2s;
   }
@@ -273,8 +272,8 @@
     padding: 0;
     border: 0;
     border-radius: var(--radius-lg);
-    background: var(--surface-50);
-    color: var(--text);
+    background: var(--surface-elevated);
+    color: var(--fg-default);
     box-shadow: var(--shadow-pop);
     overflow: hidden;
   }
@@ -301,7 +300,7 @@
     margin: 0 14px;
     padding: 2px;
     border-radius: var(--radius);
-    background: var(--surface-25);
+    background: var(--control-track);
     box-shadow: var(--hairline);
   }
   .seg button {
@@ -309,16 +308,16 @@
     border: 0;
     border-radius: var(--radius-sm);
     background: none;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     font-weight: 500;
   }
   .seg button:hover {
-    background: var(--surface-25-hover);
-    color: var(--text);
+    background: var(--surface-hover);
+    color: var(--fg-default);
   }
   .seg button[aria-selected='true'] {
     background: var(--surface-150);
-    color: var(--text);
+    color: var(--fg-default);
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), var(--hairline);
   }
 
@@ -330,7 +329,7 @@
   }
   .lead {
     margin: 0;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .status {
     margin: 0;
@@ -343,17 +342,17 @@
   }
   .num {
     font-variant-numeric: tabular-nums;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .hint {
     margin: 0;
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .error {
     margin: 0;
     font-size: 12px;
-    color: var(--danger);
+    color: var(--error-content);
   }
 
   button.primary {
@@ -361,12 +360,12 @@
     padding: 0 12px;
     border: 0;
     border-radius: var(--radius-sm);
-    background: var(--accent);
-    color: var(--accent-ink);
+    background: var(--surface-inverse);
+    color: var(--fg-inverse);
     font-weight: 500;
   }
   button.primary:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--surface-inverse-hover);
   }
   button.wide {
     width: 100%;
@@ -381,17 +380,17 @@
     border: 0;
     border-radius: var(--radius-xs);
     background: none;
-    color: var(--accent-text);
+    color: var(--fg-default);
     font-weight: 500;
   }
   button.text:hover:not(:disabled) {
-    background: var(--surface-50-hover);
+    background: var(--surface-hover);
   }
   button.text.danger {
-    color: var(--danger);
+    color: var(--error-content);
   }
   button.text.danger:hover {
-    background: rgb(255 95 87 / 0.12);
+    background: var(--error-bg);
   }
   .actions {
     justify-content: flex-start;
@@ -404,7 +403,7 @@
     gap: 6px;
     padding: 3px 3px 3px 10px;
     border-radius: calc(var(--radius-sm) + 3px); /* concentric around the Copy button, 3 px in */
-    background: var(--surface-25);
+    background: var(--control-track);
     box-shadow: var(--hairline);
   }
   .url {
@@ -427,11 +426,11 @@
   .bar > div {
     height: 100%;
     border-radius: 2px;
-    background: var(--accent);
+    background: var(--brand);
     transition: width 0.2s linear;
   }
   .bar.paused > div {
-    background: var(--warning);
+    background: var(--warm);
   }
   .bar.indeterminate > div {
     width: 35%;
@@ -453,56 +452,21 @@
     }
   }
 
-  .private {
+  .visibility {
+    --label-w: 72px;
     display: grid;
-    grid-template-columns: 16px 1fr auto;
-    align-items: center;
-    gap: 10px;
-    padding: 11px 14px;
-    background: var(--surface-25);
+    gap: 4px;
+    padding: 10px 14px 12px;
+    background: var(--control-track);
     box-shadow: var(--hairline-t);
-    color: var(--text-dim);
   }
-  .private b {
-    display: block;
-    color: var(--text);
-    font-weight: 500;
-  }
-  .private small {
+  .visibility small {
+    padding-left: calc(var(--label-w) + 6px); /* under the dropdown, past its label */
     font-size: 12px;
-  }
-  input[role='switch'] {
-    appearance: none;
-    position: relative;
-    width: 30px;
-    height: 18px;
-    margin: 0;
-    border-radius: 9px;
-    background: var(--surface-200);
-    box-shadow: var(--hairline);
-    transition: background 0.15s;
-  }
-  input[role='switch']::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--knob);
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
-    transition: transform 0.15s;
-  }
-  input[role='switch']:checked {
-    background: var(--accent);
-  }
-  input[role='switch']:checked::after {
-    transform: translateX(12px);
-    background: var(--accent-ink);
+    color: var(--fg-secondary);
   }
   :focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
 </style>

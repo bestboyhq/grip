@@ -191,14 +191,14 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
-    background: var(--surface-root);
+    background: var(--surface-frame);
   }
   header {
     display: flex;
     gap: 12px;
     align-items: center;
     padding: 8px 12px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   pre {
     margin: 0 12px 8px;
@@ -210,7 +210,7 @@
     flex: 1;
     display: grid;
     place-items: center;
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   /* The editor's timeline panel. */
   .panel {
@@ -219,7 +219,7 @@
     overflow: auto;
     margin: var(--gutter);
     border-radius: var(--radius-lg);
-    background: var(--surface-50);
+    background: var(--surface-root);
     box-shadow: var(--hairline);
   }
 </style>

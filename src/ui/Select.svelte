@@ -42,12 +42,12 @@
 <style>
   .row { display: flex; align-items: center; gap: 6px; min-height: 30px; }
   .row.disabled { opacity: 0.4; }
-  label { flex: none; width: var(--label-w, 92px); color: var(--text-dim); font-size: 12px; }
+  label { flex: none; width: var(--label-w, 92px); color: var(--fg-secondary); font-size: 12px; }
   .box { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
-  .box :global(.icon) { position: absolute; right: 7px; color: var(--text-dim); pointer-events: none; }
+  .box :global(.icon) { position: absolute; right: 7px; color: var(--fg-secondary); pointer-events: none; }
   select {
     width: 100%; height: var(--control-h); padding: 0 26px 0 9px; border: 0; border-radius: var(--radius-sm); appearance: none;
     background: var(--surface-100); box-shadow: var(--hairline); font-size: 12.5px; text-overflow: ellipsis;
   }
-  select:hover { background: var(--surface-100-hover); }
+  select:hover { background: var(--surface-hover); }
 </style>

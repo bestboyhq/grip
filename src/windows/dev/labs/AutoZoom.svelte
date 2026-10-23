@@ -241,9 +241,9 @@
     padding: 16px;
     display: grid;
     gap: 10px;
-    color: var(--text);
+    color: var(--fg-default);
     font: 12px var(--font);
-    background: var(--surface-root);
+    background: var(--surface-frame);
     height: 100vh;
     overflow: auto;
   }
@@ -263,7 +263,7 @@
   .plot {
     width: 100%;
     height: 56px;
-    background: var(--surface-25);
+    background: var(--control-track);
     box-shadow: var(--hairline);
     border-radius: var(--radius);
   }
@@ -281,10 +281,10 @@
   }
   figcaption {
     text-align: center;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     margin-top: 2px;
   }
   .error {
-    color: var(--danger);
+    color: var(--error-content);
   }
 </style>

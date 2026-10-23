@@ -769,7 +769,7 @@ export function openOnboarding(query = '') {
     maximizable: false,
     fullscreenable: false,
     titleBarStyle: 'hiddenInset',
-    backgroundColor: '#111113', // var(--surface-root): no flash of another gray while the page loads
+    backgroundColor: '#111110', // var(--surface-frame): no flash of another gray while the page loads
   })
 }
 

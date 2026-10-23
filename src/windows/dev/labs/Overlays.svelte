@@ -233,7 +233,7 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: var(--surface-root);
+    background: var(--surface-frame);
   }
   header {
     display: flex;
@@ -248,11 +248,11 @@
   }
   .time {
     font: 12px var(--mono);
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     min-width: 56px;
   }
   .error {
-    color: var(--danger);
+    color: var(--error-content);
   }
   .views {
     flex: 1;
