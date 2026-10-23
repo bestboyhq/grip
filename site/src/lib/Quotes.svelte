@@ -149,7 +149,7 @@
 		-webkit-background-clip: text;
 		background-clip: text;
 		color: transparent;
-		opacity: 0.4;
+		opacity: 0.85;
 	}
 
 	blockquote {
