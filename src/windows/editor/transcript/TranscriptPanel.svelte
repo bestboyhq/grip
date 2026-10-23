@@ -343,14 +343,14 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    color: var(--text);
+    color: var(--fg-default);
   }
   .export {
     display: flex;
     align-items: center;
     gap: 4px;
     margin-top: 8px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     font-size: 12px;
   }
   .export span {
@@ -367,31 +367,31 @@
     white-space: nowrap;
   }
   button:hover:not(:disabled) {
-    background: var(--surface-100-hover);
+    background: var(--surface-hover);
   }
   button:disabled {
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     opacity: 0.6;
   }
   button:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--brand);
     outline-offset: 1px;
   }
   .primary {
-    background: var(--accent);
+    background: var(--surface-inverse);
     box-shadow: none;
-    color: var(--accent-ink);
+    color: var(--fg-inverse);
     font-weight: 500;
   }
   .primary:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--surface-inverse-hover);
   }
   .ghost {
     background: transparent;
     box-shadow: none;
   }
   .ghost:hover:not(:disabled) {
-    background: var(--surface-50-hover);
+    background: var(--surface-hover);
   }
   .bar {
     display: flex;
@@ -425,7 +425,7 @@
     cursor: text;
   }
   .text:focus-visible {
-    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--accent) 60%, transparent);
+    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--brand) 60%, transparent);
   }
   .text p {
     margin: 12px 0 0;
@@ -433,48 +433,47 @@
     contain-intrinsic-size: auto 120px;
   }
   .text ::selection {
-    background: color-mix(in oklab, var(--accent) 30%, transparent);
+    background: color-mix(in oklab, var(--brand) 30%, transparent);
   }
   .w {
     border-radius: 3px;
     padding: 1px 2px;
     margin: 0 -2px; /* highlight past the glyphs without moving them */
-    transition: background-color 80ms;
   }
   .w:hover {
-    background: var(--surface-50-hover);
+    background: var(--surface-hover);
   }
   .w:global([data-on]) {
-    background: var(--accent);
-    color: var(--accent-ink);
+    background: var(--brand);
+    color: var(--color-white);
   }
   .filler {
-    text-decoration: underline dotted rgb(255 189 89 / 0.75);
+    text-decoration: underline dotted color-mix(in srgb, var(--warm) 75%, transparent);
     text-underline-offset: 3px;
   }
   .fixed {
-    text-decoration: underline dashed color-mix(in oklab, var(--accent) 80%, white);
+    text-decoration: underline dashed var(--brand-text);
     text-underline-offset: 3px;
   }
   .cut {
-    color: var(--text-faint);
-    text-decoration: line-through var(--text-faint);
+    color: var(--fg-faint);
+    text-decoration: line-through var(--fg-faint);
   }
   .doomed,
   .confirming .pause.doomed {
-    background: color-mix(in srgb, var(--danger) 28%, transparent);
-    color: #fff;
+    background: color-mix(in srgb, var(--error-content) 28%, transparent);
+    color: var(--color-white);
   }
   .pause.busy {
     background: none;
-    box-shadow: inset 0 0 0 0.5px var(--edge-strong);
+    box-shadow: inset 0 0 0 0.5px var(--border-default);
   }
   .pause {
     display: inline-block;
     padding: 0 6px;
     border-radius: var(--radius-xs);
     background: var(--surface-150);
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     font: 11px/18px var(--font);
     font-variant-numeric: tabular-nums;
     vertical-align: 1px;
@@ -486,9 +485,9 @@
     padding: 0 3px;
     font: inherit;
     line-height: 1.35;
-    color: var(--text);
+    color: var(--fg-default);
     background: var(--surface-100);
-    border: 1px solid var(--accent);
+    border: 1px solid var(--brand);
     border-radius: var(--radius-xs);
     outline: none;
   }
@@ -497,7 +496,7 @@
     margin: 0 -16px;
     padding: 10px 16px 2px;
     box-shadow: var(--hairline-t);
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     font-size: 11px;
     line-height: 1.45;
   }
@@ -518,7 +517,7 @@
     font-weight: 600;
   }
   .dim {
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     font-size: 12px;
     line-height: 1.5;
   }
@@ -535,7 +534,7 @@
   }
   .meter div {
     height: 100%;
-    background: var(--accent);
+    background: var(--brand);
     transition: width 120ms linear;
   }
   .waiting div {
@@ -559,7 +558,7 @@
   }
   .error {
     margin: 10px 0 0;
-    color: var(--danger);
+    color: var(--error-content);
     font-size: 12px;
   }
   .state .error {

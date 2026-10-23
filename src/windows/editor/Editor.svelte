@@ -3,6 +3,7 @@
      timeline (which owns the one transport bar). Keys go through the command registry (CommandMenu). -->
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { fade } from 'svelte/transition'
   import { doc, canUndo, canRedo, save, selection } from '../../lib/doc.svelte.ts'
   import { player, stats } from '../../lib/player.svelte.ts'
   import { dropFiles, invoke, on } from '../../lib/ipc.ts'
@@ -245,7 +246,7 @@
             <button class="btn ghost crop" onclick={() => (cropOpen = true)} {@attach tooltip('Crop the recording')}><Icon name="crop" size={16} />Crop</button>
             <button class="btn ghost crop" onclick={() => run('timeline.addMask')} {@attach tooltip('Blur a name or email for a few seconds', 'B')}><Icon name="blur" size={16} />Blur</button>
           {/if}
-          {#if aiming}<span class="aim-hint"><Icon name="target" size={15} /><span>Click the preview to aim the selected zoom</span></span>
+          {#if aiming}<span class="aim-hint" transition:fade={{ duration: 180 }}><Icon name="target" size={15} /><span>Click the preview to aim the selected zoom</span></span>
           {:else if masking}<span class="aim-hint"><Icon name="target" size={15} /><span>Drag on the preview to place the mask</span></span>{/if}
         </div>
         <Preview />
@@ -257,8 +258,8 @@
 </div>
 
 <style>
-  :global(html[data-window='editor']), :global(html[data-window='editor'] body) { background: var(--surface-root); }
-  .editor { display: flex; flex-direction: column; height: 100vh; background: var(--surface-root); }
+  :global(html[data-window='editor']), :global(html[data-window='editor'] body) { background: var(--surface-frame); }
+  .editor { display: flex; flex-direction: column; height: 100vh; background: var(--surface-frame); }
 
   /* Three columns: the name stays centered in the window while both sides fit, and in a narrow window
      it shrinks between them instead of covering their buttons. */
@@ -268,45 +269,45 @@
   }
   .titlebar :global(button), .titlebar :global(input), .titlebar :global(a), .titlebar :global([popover]) { -webkit-app-region: no-drag; }
   .file { display: flex; align-items: center; gap: 2px; margin-left: 68px; /* 80 px from the edge, clear of the traffic lights */ }
-  .saved { display: flex; align-items: center; gap: 3px; margin-right: 8px; color: var(--text-faint); font-size: 12px; white-space: nowrap; -webkit-app-region: no-drag; }
-  .saved.failed { color: var(--warning-text); }
+  .saved { display: flex; align-items: center; gap: 3px; margin-right: 8px; color: var(--fg-faint); font-size: 12px; white-space: nowrap; -webkit-app-region: no-drag; }
+  .saved.failed { color: var(--warm); }
   .name {
     width: 100%; height: 28px; padding: 0 10px;
     border: 0; border-radius: 6px; background: transparent; text-align: center; font-size: 13px; font-weight: 600; text-overflow: ellipsis;
   }
-  .name:hover { background: var(--surface-root-hover); }
+  .name:hover { background: var(--surface-hover); }
   .name:focus { background: var(--surface-100); box-shadow: var(--hairline); }
   .actions { justify-self: end; display: flex; align-items: center; gap: 4px; }
-  .sep { width: 0.5px; height: 18px; margin: 0 6px; background: var(--edge-strong); }
+  .sep { width: 0.5px; height: 18px; margin: 0 6px; background: var(--border-default); }
   .confirm { width: 280px; padding: 6px 6px 2px; }
-  .confirm p { margin: 0 0 12px; font-size: 12.5px; line-height: 1.45; color: var(--text-dim); }
-  .confirm strong { display: block; margin-bottom: 4px; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+  .confirm p { margin: 0 0 12px; font-size: 12.5px; line-height: 1.45; color: var(--fg-secondary); }
+  .confirm strong { display: block; margin-bottom: 4px; color: var(--fg-default); font-weight: 600; overflow-wrap: anywhere; }
   .buttons { display: flex; justify-content: flex-end; gap: 6px; }
-  .btn.danger { background: var(--danger); color: #fff; }
-  .btn.danger:hover { background: var(--danger-hover); }
+  .btn.danger { background: var(--error-bg); color: var(--error-content); }
+  .btn.danger:hover { background: var(--error-bg-hover); }
 
   .body { flex: 1; min-height: 0; display: flex; }
   .stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .toolbar { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; }
   .crop { height: 28px; padding: 0 10px 0 8px; }
-  .crop :global(.icon) { color: var(--text-dim); }
-  .aim-hint { display: flex; align-items: center; gap: 6px; min-width: 0; margin-left: auto; color: var(--text-faint); font-size: 12px; white-space: nowrap; }
+  .crop :global(.icon) { color: var(--fg-secondary); }
+  .aim-hint { display: flex; align-items: center; gap: 6px; min-width: 0; margin-left: auto; color: var(--fg-faint); font-size: 12px; white-space: nowrap; }
   .aim-hint span { overflow: hidden; text-overflow: ellipsis; }
 
   /* A panel as tall as its lanes, so every lane shows; the preview takes the rest. 60vh fits all six lanes
      (312 px) at the 600 px minimum window height, so lanes never scroll out of reach (the canvas takes the wheel). */
   .timeline {
     flex: none; max-height: 60vh; overflow: auto; margin: var(--gutter); border-radius: var(--radius-lg);
-    background: var(--surface-50); box-shadow: var(--hairline);
+    background: var(--surface-root); box-shadow: var(--hairline);
   }
 
   .notice {
     position: fixed; z-index: 10; top: 46px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; margin: 0;
-    padding: 4px 4px 4px 12px; border-radius: var(--radius-lg); background: var(--surface-50); box-shadow: var(--shadow-pop);
+    padding: 4px 4px 4px 12px; border-radius: var(--radius-lg); background: var(--surface-root); box-shadow: var(--shadow-pop);
     width: max-content; max-width: calc(100vw - 48px); font-size: 12.5px; line-height: 1.4;
   }
   .notice .icon-btn { width: 22px; height: 22px; }
-  .error { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 40px; color: var(--text-dim); text-align: center; }
-  .error h1 { margin: 10px 0 0; font-size: 15px; font-weight: 600; color: var(--text); }
+  .error { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 40px; color: var(--fg-secondary); text-align: center; }
+  .error h1 { margin: 10px 0 0; font-size: 15px; font-weight: 600; color: var(--fg-default); }
   .error p { margin: 0; max-width: 460px; user-select: text; }
 </style>

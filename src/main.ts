@@ -1,6 +1,7 @@
 // Renderer entry. One bundle, one window component per hash route (see electron/windows.ts).
 import { mount, type Component } from 'svelte'
 import './ui/theme.css'
+import { installPress } from './ui/motion.ts'
 
 const routes: Record<string, () => Promise<{ default: Component<{ params: URLSearchParams }> }>> = {
   editor: () => import('./windows/editor/Editor.svelte'),
@@ -20,4 +21,5 @@ const [name, query = ''] = location.hash.replace(/^#\/?/, '').split('?')
 const load = routes[name] ?? routes.recorder
 const { default: Window } = await load()
 document.documentElement.dataset.window = name
+installPress()
 mount(Window, { target: document.body, props: { params: new URLSearchParams(query) } })

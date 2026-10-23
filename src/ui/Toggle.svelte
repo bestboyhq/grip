@@ -22,16 +22,16 @@
   .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; padding: 2px 0; }
   .row:has(small) { padding: 5px 0; }
   .row.disabled { opacity: 0.4; }
-  label { display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; color: var(--text); }
-  small { font-size: 11.5px; line-height: 1.35; color: var(--text-faint); }
+  label { display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; color: var(--fg-default); }
+  small { font-size: 11.5px; line-height: 1.35; color: var(--fg-faint); }
   input {
     flex: none; position: relative; width: 28px; height: 16px; margin: 0; border-radius: 8px; appearance: none;
-    background: var(--surface-200); box-shadow: var(--hairline); transition: background-color 160ms;
+    background: var(--surface-200); box-shadow: var(--hairline);
   }
   input::before {
     content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
-    background: var(--knob); box-shadow: 0 1px 2px rgb(0 0 0 / 0.35); transition: transform 180ms var(--ease-out);
+    background: var(--color-white); box-shadow: 0 1px 2px rgb(0 0 0 / 0.35); transition: transform 180ms var(--ease-out);
   }
-  input:checked { background: var(--accent); }
-  input:checked::before { transform: translateX(12px); background: var(--accent-ink); }
+  input:checked { background: var(--brand); }
+  input:checked::before { transform: translateX(12px); background: var(--color-white); }
 </style>

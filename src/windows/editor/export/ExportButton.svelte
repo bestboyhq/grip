@@ -260,7 +260,7 @@
   bind:this={menu}
   id="{uid}-menu"
   popover="auto"
-  class="menu"
+  class="menu drop"
   role="menu"
   aria-label="Export"
   tabindex="-1"
@@ -367,10 +367,9 @@
     transition: stroke-dasharray 0.2s;
   }
 
-  /* A macOS menu: translucent, the system's blue selection. Visible overflow, so submenus can hang
-     out of it. */
+  /* The platform's menu: an elevated card that grows out of the Export button (.drop in theme.css). Visible
+     overflow, so submenus can hang out of it. */
   .menu {
-    --pick: #2f6bd8;
     inset: auto;
     width: 264px;
     margin: 6px 0 0;
@@ -379,38 +378,14 @@
     border-radius: 10px;
     box-sizing: border-box;
     overflow: visible;
-    background: rgb(36 36 40 / 0.92);
-    backdrop-filter: blur(24px) saturate(1.6);
+    background: var(--surface-elevated);
     box-shadow: var(--shadow-pop);
-    color: var(--text);
+    color: var(--fg-default);
     position-area: bottom span-left;
     position-try-fallbacks: flip-block;
-    opacity: 0;
-    transform: translateY(-4px) scale(0.98);
-    transform-origin: top right;
-    transition: opacity 140ms var(--ease-out), transform 140ms var(--ease-out), display 140ms allow-discrete, overlay 140ms allow-discrete;
   }
   .menu:popover-open {
     display: grid;
-    opacity: 1;
-    transform: none;
-  }
-  @starting-style {
-    .menu:popover-open {
-      opacity: 0;
-      transform: translateY(-4px) scale(0.98);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .menu {
-      transform: none;
-      transition: opacity 140ms, display 140ms allow-discrete, overlay 140ms allow-discrete;
-    }
-    @starting-style {
-      .menu:popover-open {
-        transform: none;
-      }
-    }
   }
   .mi {
     display: flex;
@@ -424,23 +399,18 @@
     text-align: left;
     font-size: 13px;
     font-weight: 400;
-    color: var(--text);
+    color: var(--fg-default);
     white-space: nowrap;
   }
   /* [data-aiming]: on its way into the open submenu, the pointer lights up no row it crosses */
   .menu:not([data-aiming]) .mi:hover:not(:disabled),
   .mi:focus-visible,
   .mi.on {
-    background: var(--pick);
-    color: #fff;
+    background: var(--surface-hover);
     outline: none;
   }
-  .menu:not([data-aiming]) .mi:hover:not(:disabled) :is(kbd, .val, .caret, small),
-  .mi:is(:focus-visible, .on) :is(kbd, .val, .caret, small) {
-    color: rgb(255 255 255 / 0.8);
-  }
   .mi:disabled {
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   .tick {
     display: grid;
@@ -449,7 +419,7 @@
     width: 20px;
   }
   .caret {
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   .caret :global(.icon) {
     transform: rotate(90deg); /* points left, where the submenu opens */
@@ -464,24 +434,24 @@
     padding-left: 12px;
     font: inherit;
     font-size: 12.5px;
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   .val {
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     font-variant-numeric: tabular-nums;
   }
   small {
     margin-left: auto;
     padding-left: 16px;
     font-size: 11.5px;
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   hr {
     width: calc(100% - 20px);
     height: 0.5px;
     margin: 5px 10px;
     border: 0;
-    background: var(--edge-strong);
+    background: var(--border-default);
   }
   .has-sub {
     position: relative;
@@ -497,7 +467,7 @@
     min-width: 140px;
     padding: 5px;
     border-radius: 10px;
-    background: rgb(36 36 40); /* opaque: inside the menu's blur, its own backdrop blur sees nothing */
+    background: var(--surface-elevated);
     box-shadow: var(--shadow-pop);
   }
   .submenu .mi {
@@ -507,7 +477,7 @@
   .note {
     margin: 2px 10px 6px 22px;
     font-size: 11.5px;
-    color: var(--text-faint);
+    color: var(--fg-faint);
     font-variant-numeric: tabular-nums;
   }
   .note {
@@ -515,6 +485,6 @@
     line-height: 1.35;
   }
   .note.danger {
-    color: var(--danger);
+    color: var(--error-content);
   }
 </style>

@@ -11,7 +11,7 @@ import { setSettings, settings } from './shell/settings.ts'
 const preload = join(import.meta.dirname, 'preload.cjs')
 // Editor: traffic lights centered on its own 40 px title bar (14 px lights at y 13), opaque so resizing never flashes.
 const editorWindow: BrowserWindowConstructorOptions = {
-  titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 13 }, backgroundColor: '#111113', minWidth: 900, minHeight: 600,
+  titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 13 }, backgroundColor: '#111110', minWidth: 900, minHeight: 600,
 }
 /** STUDIO_HIDDEN=1: never show windows (agents and tests inspect them over CDP). */
 export const hidden = !!process.env.STUDIO_HIDDEN

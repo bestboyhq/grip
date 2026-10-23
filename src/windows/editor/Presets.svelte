@@ -244,37 +244,37 @@
   .naming input:focus-visible, .rename:focus-visible { outline-offset: -1px; }
   .list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 4px 8px 8px; mask-image: linear-gradient(transparent, #000 6px); }
 
-  .edited { display: grid; gap: 8px; margin: 0 2px 8px; padding: 10px; border-radius: var(--radius); background: var(--surface-25); box-shadow: var(--hairline); }
-  .edited p { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; color: var(--text-dim); }
-  .edited b { color: var(--text); font-weight: 500; }
+  .edited { display: grid; gap: 8px; margin: 0 2px 8px; padding: 10px; border-radius: var(--radius); background: var(--control-track); box-shadow: var(--hairline); }
+  .edited p { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; color: var(--fg-secondary); }
+  .edited b { color: var(--fg-default); font-weight: 500; }
   .buttons { display: flex; gap: 6px; }
-  .dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warning); }
+  .dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warm); }
   .rec { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--record); }
 
   .row { position: relative; display: grid; grid-template-columns: 1fr auto; align-items: center; border-radius: 10px; }
-  .row:hover, .row:focus-within { background: var(--surface-50-hover); }
+  .row:hover, .row:focus-within { background: var(--surface-hover); }
   .row:has(.rename) { grid-template-columns: auto 1fr auto; gap: 12px; padding: 6px; }
   .pick { display: grid; grid-template-columns: 112px 1fr; align-items: center; gap: 12px; min-width: 0; padding: 6px; border: 0; border-radius: 10px; background: none; text-align: left; }
   .pick:disabled { cursor: progress; }
   .thumb {
     display: grid; place-items: center; width: 112px; aspect-ratio: 16 / 10; overflow: hidden; border-radius: 5px;
-    background: var(--surface-25); box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.1); transition: box-shadow 120ms;
+    background: var(--control-track); box-shadow: 0 0 0 0.5px var(--ring-faint); transition: box-shadow 120ms;
   }
   .thumb img { width: 100%; height: 100%; object-fit: contain; }
-  .on .thumb { box-shadow: 0 0 0 2px var(--surface-50), 0 0 0 3.5px var(--accent); }
-  .row.on:is(:hover, :focus-within) .thumb { box-shadow: 0 0 0 2px var(--surface-50-hover), 0 0 0 3.5px var(--accent); }
+  .on .thumb { box-shadow: 0 0 0 2px var(--surface-root), 0 0 0 3.5px var(--brand); }
+  .row.on:is(:hover, :focus-within) .thumb { box-shadow: 0 0 0 2px var(--surface-hover), 0 0 0 3.5px var(--brand); }
   .text { display: grid; gap: 3px; min-width: 0; }
   .text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-  .text small { display: flex; align-items: center; gap: 5px; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--text-dim); }
+  .text small { display: flex; align-items: center; gap: 5px; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--fg-secondary); }
   .more { margin-right: 6px; opacity: 0; }
   .row:is(:hover, :focus-within) .more, .more:focus-visible { opacity: 1; }
 
-  .empty, .status { margin: 0; padding: 6px 8px; font-size: 12px; line-height: 1.45; color: var(--text-dim); }
-  .status { color: var(--text-faint); }
+  .empty, .status { margin: 0; padding: 6px 8px; font-size: 12px; line-height: 1.45; color: var(--fg-secondary); }
+  .status { color: var(--fg-faint); }
   .foot { flex: none; display: grid; gap: 6px; padding: 10px 16px 12px; box-shadow: var(--hairline-t); --label-w: 104px; }
   .link {
     justify-self: start; height: 24px; margin: 0 -4px; padding: 0 4px; border: 0; border-radius: var(--radius-xs);
-    background: none; color: var(--text-dim); font-size: 12px; font-weight: 500;
+    background: none; color: var(--fg-secondary); font-size: 12px; font-weight: 500;
   }
-  .link:hover:not(:disabled) { background: rgb(255 255 255 / 0.06); color: var(--text); }
+  .link:hover:not(:disabled) { background: var(--ghost-hover); color: var(--fg-default); }
 </style>

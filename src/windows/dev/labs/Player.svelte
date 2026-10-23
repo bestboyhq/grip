@@ -117,12 +117,12 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
-    background: var(--surface-root);
-    color: var(--text);
+    background: var(--surface-frame);
+    color: var(--fg-default);
   }
   .hint {
     margin: auto;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .stage {
     flex: 1;
@@ -151,10 +151,10 @@
     display: grid;
     place-items: center;
     cursor: pointer;
-    fill: var(--text);
+    fill: var(--fg-default);
   }
   .play:hover {
-    background: var(--surface-100-hover);
+    background: var(--surface-hover);
   }
   .time {
     font: 12px var(--mono);
@@ -162,14 +162,14 @@
     min-width: 128px;
   }
   .dim {
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .track {
     position: relative;
     flex: 1;
     height: 40px;
     border-radius: var(--radius-sm);
-    background: var(--surface-25);
+    background: var(--control-track);
     box-shadow: var(--hairline);
     overflow: hidden;
   }
@@ -185,7 +185,7 @@
     bottom: 0;
     width: 2px;
     margin-left: -1px;
-    background: var(--text);
+    background: var(--fg-default);
     pointer-events: none;
   }
   input {
@@ -202,9 +202,9 @@
     margin: 0;
     padding: 2px 16px 10px;
     font: 11px var(--mono);
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .error {
-    color: var(--danger);
+    color: var(--error-content);
   }
 </style>

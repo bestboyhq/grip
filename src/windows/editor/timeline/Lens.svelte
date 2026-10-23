@@ -182,7 +182,7 @@
     g.roundRect(0, 0, W, ROW, 8)
     g.clip()
     // Source another clip uses, or beyond the recording: out of reach.
-    g.fillStyle = '#0e0e10'
+    g.fillStyle = '#111110'
     g.fillRect(0, 0, W, ROW)
     g.fillStyle = hatch
     g.fillRect(0, 0, W, ROW)
@@ -211,7 +211,7 @@
       voice(g, s, sL, xLo, xHi)
       words(g, s, sL, sR, X, kept)
       // Outside the clip, within reach: ghosted, there to bring back.
-      g.fillStyle = 'rgba(14,14,18,0.66)'
+      g.fillStyle = 'rgba(17,17,16,0.66)'
       if (kA > xLo) g.fillRect(xLo, 0, kA - xLo, ROW)
       if (xHi > kB) g.fillRect(kB, 0, xHi - kB, ROW)
       g.fillStyle = hatch
@@ -227,7 +227,7 @@
       g.stroke()
     }
     g.font = `500 10px ${FONT}`
-    g.fillStyle = 'rgba(236,236,239,0.4)'
+    g.fillStyle = 'rgba(244,244,243,0.4)'
     g.textBaseline = 'middle'
     if (xLo > 120) {
       g.textAlign = 'right'
@@ -296,7 +296,7 @@
       const x = X(w[i].start)
       if (x < right + 6) continue
       const inside = w[i].start >= kept[0] - 0.02 && w[i].end <= kept[1] + 0.02
-      g.fillStyle = inside && !w[i].dim ? 'rgba(236,236,239,0.88)' : 'rgba(236,236,239,0.34)'
+      g.fillStyle = inside && !w[i].dim ? 'rgba(244,244,243,0.88)' : 'rgba(244,244,243,0.34)'
       g.fillText(w[i].label, Math.max(x, 2), FRAMES + WORDS - 4)
       right = Math.max(x, 2) + g.measureText(w[i].label).width
     }
@@ -333,18 +333,18 @@
     width: 560px;
     padding: 0 8px 8px;
     border-radius: var(--radius-lg);
-    background: var(--surface-50);
-    box-shadow: inset 0 0 0 0.5px var(--edge-strong), 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 12px 32px rgb(0 0 0 / 0.5);
+    background: var(--surface-root);
+    box-shadow: var(--shadow-pop);
     pointer-events: none;
     opacity: 0;
-    scale: 0.97;
+    scale: var(--drop-scale);
     transform-origin: 50% 100%;
-    transition: opacity 110ms ease-out, scale 110ms ease-out;
+    transition: opacity var(--drop-out) var(--ease-out), scale var(--drop-out) var(--ease-out);
   }
   .lens:global(.on) {
     opacity: 1;
     scale: 1;
-    transition-duration: 140ms;
+    transition-duration: var(--come);
   }
   .head {
     display: flex;
@@ -357,25 +357,25 @@
     white-space: nowrap;
   }
   .what {
-    color: var(--text);
+    color: var(--fg-default);
   }
   .hint {
     flex: 1;
     text-align: center;
     font: 500 10.5px var(--font);
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   .hint:global(.fine) {
-    color: var(--text);
+    color: var(--fg-default);
   }
   .delta {
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   .delta:global([data-sign='more']) {
-    color: #9fb4ff; /* towards the clip's blue: more of the recording */
+    color: var(--brand-text); /* towards the clip's blue: more of the recording */
   }
   .delta:global([data-sign='less']) {
-    color: #ffb27a; /* towards the cut marker's orange: more cut away */
+    color: var(--record-text); /* towards the cut marker's orange: more cut away */
   }
   canvas {
     display: block;
@@ -388,7 +388,7 @@
     width: 12px;
     height: 12px;
     background: inherit;
-    box-shadow: inset -0.5px -0.5px 0 var(--edge-strong);
+    box-shadow: inset -0.5px -0.5px 0 var(--border-default);
     transform: translateX(-50%) rotate(45deg);
   }
   @media (prefers-reduced-motion: reduce) {

@@ -133,12 +133,12 @@ const F_SMALL = `500 10px ${FONT}`
 
 const C = {
   // Neutral chrome takes theme.css values: text tokens for labels, surfaces for chips.
-  rulerText: '#6c6c75', // --text-faint
-  major: '#6c6c75',
-  minor: '#3b3b41', // --surface-200
+  rulerText: '#636362', // --fg-faint
+  major: '#636362',
+  minor: '#343433', // --surface-200
   grid: 'rgba(255,255,255,0.035)',
-  lane: 'rgba(0,0,0,0.2)', // wells sunk into the timeline panel (theme.css --surface-25 over --surface-50)
-  hint: '#6c6c75',
+  lane: 'rgba(0,0,0,0.2)', // wells sunk into the timeline panel (theme.css --control-track over --surface-root)
+  hint: '#636362',
   // Colours follow the logo's gradient: blue clips, violet zooms, mauve layouts, red masks, orange cuts.
   // The clips are the one solid colour that anchors the timeline; items are greys tinted a fifth of the way
   // to their colour, which their grips carry in full.
@@ -159,7 +159,7 @@ const C = {
   waveSysEdge: 'rgba(255,154,64,0.95)',
   // Fill, grips, top edge; selected: fill, hairline ring, glow.
   zooms: ['#35334a', '#8f80f5', 'rgba(255,255,255,0.12)', '#433d6b', 'rgba(186,175,255,0.95)', 'rgba(143,128,245,0.55)'],
-  zoomOff: ['#2a2a2f', '#55555d', 'rgba(255,255,255,0.08)', '#36363c', 'rgba(205,205,215,0.75)', 'rgba(170,170,180,0.3)'],
+  zoomOff: ['#292928', '#545453', 'rgba(255,255,255,0.08)', '#343433', 'rgba(205,205,215,0.75)', 'rgba(170,170,180,0.3)'],
   layouts: ['#3b3039', '#cf72bf', 'rgba(255,255,255,0.12)', '#4b3a48', 'rgba(238,165,224,0.95)', 'rgba(207,114,191,0.55)'],
   masks: ['#3c302e', '#e8604c', 'rgba(255,255,255,0.12)', '#4d3934', 'rgba(255,165,145,0.95)', 'rgba(232,96,76,0.55)'],
   // Where zooms overlap: a hairline outline per layer, brighter the more zooms it holds; the + between them.
@@ -169,14 +169,14 @@ const C = {
   text: '#ffffff',
   textOff: 'rgba(255,255,255,0.45)',
   meta: 'rgba(255,255,255,0.72)',
-  chip: '#2c2c31', // --surface-150: keycaps and caption words rise out of the lane
-  chipEdge: 'rgba(255,255,255,0.14)', // --edge-strong, as a top highlight
-  chipText: '#a0a0a8', // --text-dim
-  chipDim: '#232327', // --surface-100
-  chipDimText: '#6c6c75',
-  word: '#2c2c31',
+  chip: '#292928', // --surface-150: keycaps and caption words rise out of the lane
+  chipEdge: 'rgba(255,255,255,0.14)', // a top highlight
+  chipText: '#a0a09e', // --fg-secondary
+  chipDim: '#20201f', // --surface-100
+  chipDimText: '#636362',
+  word: '#292928',
   filler: 'rgba(255,95,87,0.16)', // filler words: the ones worth cutting
-  playhead: '#e8e8ec', // --accent
+  playhead: '#f4f4f3', // --fg-default
   ghost: 'rgba(255,255,255,0.22)',
   split: '#ff5f57',
   cut: '#f47a1c',

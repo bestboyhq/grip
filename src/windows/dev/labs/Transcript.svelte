@@ -85,7 +85,7 @@
     display: grid;
     grid-template-columns: 1fr 360px;
     height: 100vh;
-    background: var(--surface-root);
+    background: var(--surface-frame);
   }
   main {
     display: flex;
@@ -127,16 +127,16 @@
     overflow: auto;
     margin: 0;
     font: 11px/1.4 var(--mono);
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     user-select: text;
   }
   aside {
     box-shadow: var(--hairline-l);
     min-height: 0;
     padding: 0 16px 8px; /* as the editor's inspector */
-    background: var(--surface-50);
+    background: var(--surface-root);
   }
   .error {
-    color: var(--danger);
+    color: var(--error-content);
   }
 </style>

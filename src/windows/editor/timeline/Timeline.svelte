@@ -722,7 +722,7 @@
   .timeline {
     display: flex;
     flex-direction: column;
-    background: var(--surface-50);
+    background: var(--surface-root);
   }
   .bar {
     position: sticky; /* the transport stays put while lanes scroll in a short window */
@@ -755,11 +755,11 @@
     min-width: 76px;
     font-size: 12px;
     font-variant-numeric: tabular-nums;
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   .time.now {
     text-align: right;
-    color: var(--text);
+    color: var(--fg-default);
   }
   button {
     border: 0;
@@ -771,11 +771,11 @@
     width: 30px;
     height: 28px;
     border-radius: var(--radius-sm);
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .icon:hover {
-    background: var(--surface-50-hover);
-    color: var(--text);
+    background: var(--surface-hover);
+    color: var(--fg-default);
   }
   .icon.play {
     width: 34px;
@@ -783,14 +783,14 @@
     border-radius: 50%;
     background: var(--surface-100);
     box-shadow: var(--hairline);
-    color: var(--text);
+    color: var(--fg-default);
   }
   .icon.play:hover {
-    background: var(--surface-100-hover);
+    background: var(--surface-hover);
   }
   .icon.armed {
-    background: var(--danger);
-    color: #fff;
+    background: var(--error-content);
+    color: var(--color-white);
   }
   svg {
     width: 18px;
@@ -812,12 +812,12 @@
     height: 28px;
     padding: 0 8px 0 7px;
     border-radius: var(--radius-sm);
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .labeled:hover,
   .labeled[aria-expanded='true'] {
-    background: var(--surface-50-hover);
-    color: var(--text);
+    background: var(--surface-hover);
+    color: var(--fg-default);
   }
   .labeled svg {
     width: 15px;
@@ -831,7 +831,7 @@
   }
   button:focus-visible,
   input:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--brand);
     outline-offset: -2px;
   }
   input[type='range'] {
@@ -851,7 +851,7 @@
     height: 14px;
     margin-top: -5px;
     border-radius: 50%;
-    background: var(--knob);
+    background: var(--color-white);
     box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.35), 0 1px 3px rgb(0 0 0 / 0.45);
     appearance: none;
   }

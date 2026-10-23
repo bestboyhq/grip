@@ -275,7 +275,7 @@
   .kind { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 6px; }
   .stack { display: flex; flex-direction: column; gap: 8px; }
   /* Tiles sit in a well; corners stay concentric (well radius - padding = tile radius). */
-  .well { padding: var(--gutter); border-radius: var(--radius-xl); background: var(--surface-25); box-shadow: var(--hairline); }
+  .well { padding: var(--gutter); border-radius: var(--radius-xl); background: var(--control-track); box-shadow: var(--hairline); }
   .grid { display: grid; grid-template-columns: repeat(var(--cols, 6), 1fr); gap: var(--gutter); }
   /* Collections: a row of pills that scrolls sideways without a scrollbar; an edge fades where more
      pills hide. The vertical padding keeps focus rings and shadows from being clipped; the scroll padding
@@ -289,11 +289,10 @@
   .pills.fade-end { --end: 40px; }
   .pills button {
     flex: none; height: 24px; padding: 0 10px; border: 0; border-radius: var(--radius-sm);
-    background: none; color: var(--text-dim); font-size: 12px; font-weight: 500;
-    transition: background-color 120ms, color 120ms;
+    background: none; color: var(--fg-secondary); font-size: 12px; font-weight: 500;
   }
-  .pills button:hover { background: var(--surface-50-hover); color: var(--text); }
-  .pills button[aria-selected='true'] { background: var(--surface-150); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), var(--hairline); }
+  .pills button:hover { background: var(--surface-hover); color: var(--fg-default); }
+  .pills button[aria-selected='true'] { background: var(--surface-150); color: var(--fg-default); box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), var(--hairline); }
   .pills button:focus-visible { outline-offset: -2px; }
   /* Native radios: the group is one tab stop and arrow keys move the choice. Selection rings the tile;
      keyboard focus rings its inside (light over dark, visible on any wallpaper), so the two never merge. */
@@ -306,11 +305,11 @@
   .tile:hover { transform: scale(1.06); }
   .tile[aria-busy='true'] { animation: converting 700ms ease-in-out infinite alternate; }
   @keyframes converting { to { opacity: 0.5; } }
-  .tile:checked { --selected: 0 0 0 2px var(--surface-25), 0 0 0 4px var(--accent); }
-  .tile:focus-visible { outline: none; --focused: inset 0 0 0 2px var(--text), inset 0 0 0 3.5px rgb(0 0 0 / 0.5); }
+  .tile:checked { --selected: 0 0 0 2px var(--control-track), 0 0 0 4px var(--brand); }
+  .tile:focus-visible { outline: none; --focused: inset 0 0 0 2px var(--fg-default), inset 0 0 0 3.5px rgb(0 0 0 / 0.5); }
   .wide { width: 100%; }
-  .preview { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: var(--radius); box-shadow: var(--hairline); background: var(--surface-25); }
-  .missing { display: grid; place-items: center; margin: 0; padding: 16px; font-size: 12px; line-height: 1.45; text-align: center; color: var(--text-dim); }
-  .error { margin: 0; padding: 4px 0; font-size: 12px; line-height: 1.45; color: var(--text-faint); }
-  .error { color: var(--danger); }
+  .preview { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: var(--radius); box-shadow: var(--hairline); background: var(--control-track); }
+  .missing { display: grid; place-items: center; margin: 0; padding: 16px; font-size: 12px; line-height: 1.45; text-align: center; color: var(--fg-secondary); }
+  .error { margin: 0; padding: 4px 0; font-size: 12px; line-height: 1.45; color: var(--fg-faint); }
+  .error { color: var(--error-content); }
 </style>

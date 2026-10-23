@@ -59,9 +59,9 @@
     inset: 16px;
     overflow: hidden;
     border-radius: 50%;
-    background: var(--surface-50);
+    background: var(--surface-root);
     box-shadow:
-      0 0 0 1.5px rgb(255 255 255 / 0.2),
+      0 0 0 1.5px var(--ring-faint),
       0 8px 22px rgb(0 0 0 / 0.38);
     -webkit-app-region: drag;
   }
@@ -86,6 +86,6 @@
     text-align: center;
     font-size: 12px;
     line-height: 1.3;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
 </style>

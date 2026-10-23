@@ -147,7 +147,7 @@
   Share
 </button>
 
-<div id="{uid}-share" class="pop" popover ontoggle={toggled} style:position-anchor="--{uid}-share">
+<div id="{uid}-share" class="pop drop" popover ontoggle={toggled} style:position-anchor="--{uid}-share">
   <div class="head">
     <h2>Share</h2>
     {#if toast}<span class="toast" role="status">{toast}</span>{/if}
@@ -248,7 +248,7 @@
     font-weight: 500;
   }
   .trigger:hover {
-    background: var(--surface-100-hover);
+    background: var(--surface-hover);
   }
   .ring {
     transform: rotate(-90deg);
@@ -257,7 +257,7 @@
     stroke: var(--surface-200);
   }
   .ring .fill {
-    stroke: var(--accent);
+    stroke: var(--brand);
     stroke-linecap: round;
     transition: stroke-dasharray 0.2s;
   }
@@ -272,8 +272,8 @@
     padding: 0;
     border: 0;
     border-radius: var(--radius-lg);
-    background: var(--surface-50);
-    color: var(--text);
+    background: var(--surface-elevated);
+    color: var(--fg-default);
     box-shadow: var(--shadow-pop);
     overflow: hidden;
   }
@@ -300,7 +300,7 @@
     margin: 0 14px;
     padding: 2px;
     border-radius: var(--radius);
-    background: var(--surface-25);
+    background: var(--control-track);
     box-shadow: var(--hairline);
   }
   .seg button {
@@ -308,16 +308,16 @@
     border: 0;
     border-radius: var(--radius-sm);
     background: none;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     font-weight: 500;
   }
   .seg button:hover {
-    background: var(--surface-25-hover);
-    color: var(--text);
+    background: var(--surface-hover);
+    color: var(--fg-default);
   }
   .seg button[aria-selected='true'] {
     background: var(--surface-150);
-    color: var(--text);
+    color: var(--fg-default);
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), var(--hairline);
   }
 
@@ -329,7 +329,7 @@
   }
   .lead {
     margin: 0;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .status {
     margin: 0;
@@ -342,17 +342,17 @@
   }
   .num {
     font-variant-numeric: tabular-nums;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .hint {
     margin: 0;
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .error {
     margin: 0;
     font-size: 12px;
-    color: var(--danger);
+    color: var(--error-content);
   }
 
   button.primary {
@@ -360,12 +360,12 @@
     padding: 0 12px;
     border: 0;
     border-radius: var(--radius-sm);
-    background: var(--accent);
-    color: var(--accent-ink);
+    background: var(--surface-inverse);
+    color: var(--fg-inverse);
     font-weight: 500;
   }
   button.primary:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--surface-inverse-hover);
   }
   button.wide {
     width: 100%;
@@ -380,17 +380,17 @@
     border: 0;
     border-radius: var(--radius-xs);
     background: none;
-    color: var(--accent-text);
+    color: var(--fg-default);
     font-weight: 500;
   }
   button.text:hover:not(:disabled) {
-    background: var(--surface-50-hover);
+    background: var(--surface-hover);
   }
   button.text.danger {
-    color: var(--danger);
+    color: var(--error-content);
   }
   button.text.danger:hover {
-    background: rgb(255 95 87 / 0.12);
+    background: var(--error-bg);
   }
   .actions {
     justify-content: flex-start;
@@ -403,7 +403,7 @@
     gap: 6px;
     padding: 3px 3px 3px 10px;
     border-radius: calc(var(--radius-sm) + 3px); /* concentric around the Copy button, 3 px in */
-    background: var(--surface-25);
+    background: var(--control-track);
     box-shadow: var(--hairline);
   }
   .url {
@@ -426,11 +426,11 @@
   .bar > div {
     height: 100%;
     border-radius: 2px;
-    background: var(--accent);
+    background: var(--brand);
     transition: width 0.2s linear;
   }
   .bar.paused > div {
-    background: var(--warning);
+    background: var(--warm);
   }
   .bar.indeterminate > div {
     width: 35%;
@@ -457,16 +457,16 @@
     display: grid;
     gap: 4px;
     padding: 10px 14px 12px;
-    background: var(--surface-25);
+    background: var(--control-track);
     box-shadow: var(--hairline-t);
   }
   .visibility small {
     padding-left: calc(var(--label-w) + 6px); /* under the dropdown, past its label */
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   :focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
 </style>

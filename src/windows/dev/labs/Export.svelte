@@ -36,9 +36,9 @@
     justify-content: space-between;
     height: 40px;
     padding: 0 12px 0 84px;
-    background: var(--surface-root);
+    background: var(--surface-frame);
   }
   :global(body) {
-    background: var(--surface-root);
+    background: var(--surface-frame);
   }
 </style>

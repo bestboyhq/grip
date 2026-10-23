@@ -4,6 +4,7 @@
      renderer draws, so it matches. -->
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { fade } from 'svelte/transition'
   import { doc, edit, selection } from '../../lib/doc.svelte.ts'
   import { player, attach, currentScene, previewTime } from '../../lib/player.svelte.ts'
   import { outputSize, type Scene } from '../../engine/scene.ts'
@@ -185,7 +186,7 @@
         <span class="quadrant {drag.corner}" aria-hidden="true"></span>
         <span class="ghost" style:left={pct(drag.x, drag.W)} style:top={pct(drag.y, drag.H)} style:width={pct(drag.w, drag.W)} style:height={pct(drag.h, drag.H)} style:border-radius="{pct(drag.r, drag.w)} / {pct(drag.r, drag.h)}" aria-hidden="true"></span>
       {/if}
-      {#if player.look}<span class="looking" role="status">Previewing <b>{player.look.name}</b> · click to apply</span>{/if}
+      {#if player.look}<span class="looking" role="status" transition:fade={{ duration: 180 }}>Previewing <b>{player.look.name}</b> · click to apply</span>{/if}
       {#if failed}<p class="failed" role="alert">Preview unavailable: {failed}</p>
       {:else if player.error}<p class="failed" role="alert">{player.error}</p>{/if}
     </div>
@@ -197,7 +198,7 @@
   .fit { flex: 1; min-width: 0; container-type: size; display: grid; place-items: center; }
   .frame {
     position: relative; aspect-ratio: var(--ar); width: min(100cqw, 100cqh * var(--ar));
-    background: #0a0a0b; box-shadow: 0 0 0 0.5px var(--edge-color); overflow: hidden; touch-action: none;
+    background: #0a0a0b; box-shadow: 0 0 0 0.5px var(--ring-faint); overflow: hidden; touch-action: none;
   }
   .frame.aim { cursor: crosshair; }
   .frame.move { cursor: move; }
@@ -206,11 +207,11 @@
   canvas { display: block; width: 100%; height: 100%; }
   .marker {
     position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; pointer-events: none;
-    border: 2px solid #fff; background: var(--accent); box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 2px 8px rgb(0 0 0 / 0.5);
+    border: 2px solid #fff; background: var(--brand); box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35), 0 2px 8px rgb(0 0 0 / 0.5);
   }
   .mask-box { position: absolute; border: 1.5px dashed #fff; border-radius: 3px; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35); pointer-events: none; }
   .ghost { position: absolute; border: 2px solid #fff; background: rgb(255 255 255 / 0.12); box-shadow: 0 6px 24px rgb(0 0 0 / 0.45); pointer-events: none; }
-  .quadrant { position: absolute; width: 50%; height: 50%; background: var(--accent-soft); pointer-events: none; transition: inset 160ms var(--ease-out); }
+  .quadrant { position: absolute; width: 50%; height: 50%; background: color-mix(in srgb, var(--brand) 24%, transparent); pointer-events: none; transition: inset 160ms var(--ease-out); }
   .quadrant.top-left { left: 0; top: 0; }
   .quadrant.top-right { left: 50%; top: 0; }
   .quadrant.bottom-left { left: 0; top: 50%; }
@@ -218,8 +219,8 @@
   .looking {
     position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 5px;
     height: 26px; padding: 0 11px; border-radius: 13px; background: rgb(17 17 19 / 0.84); backdrop-filter: blur(14px);
-    box-shadow: var(--hairline), 0 4px 14px rgb(0 0 0 / 0.3); font-size: 12px; color: var(--text-dim); white-space: nowrap; pointer-events: none;
+    box-shadow: var(--hairline), 0 4px 14px rgb(0 0 0 / 0.3); font-size: 12px; color: var(--fg-secondary); white-space: nowrap; pointer-events: none;
   }
-  .looking b { color: var(--text); font-weight: 500; }
-  .failed { position: absolute; inset: auto 0 0; margin: 0; padding: 10px 14px; background: rgb(0 0 0 / 0.6); color: var(--text-dim); font-size: 12px; text-align: center; }
+  .looking b { color: var(--fg-default); font-weight: 500; }
+  .failed { position: absolute; inset: auto 0 0; margin: 0; padding: 10px 14px; background: rgb(0 0 0 / 0.6); color: var(--fg-secondary); font-size: 12px; text-align: center; }
 </style>
