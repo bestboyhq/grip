@@ -8,8 +8,8 @@
 //   PUT    /api/items/:id/poster <jpeg>         PATCH /api/items/:id {private}   DELETE /api/items/:id
 //
 // Every mutating call names a Content-Type (the server refuses one without, as it would a cross-site form).
-// Errors are JSON {error, ...extra}. 409 {offset}: resume from there. 401: signed out. 402: the team's uploads
-// for the month are used up. 408 (a part arrived short), 425, 429, and 5xx pass; other 4xx are final.
+// Errors are JSON {error, ...extra}. 409 {offset}: resume from there. 401: signed out. 402 {resetsAt}: the team's
+// uploads for the month are used. 408 (a part arrived short), 425, 429, and 5xx pass; other 4xx are final.
 //
 // An upload survives anything transient (network loss, server restart, app restart): every attempt asks the
 // server for its offset and continues from there. A part cut off midway is dropped whole by the server and sent
@@ -62,10 +62,21 @@ export interface Hooks {
 /** A failure that retrying will not fix (signed out, over the limit, bad request, gone, file changed). */
 export class ShareError extends Error {
   status?: number
+  opensAt?: string // 402: when uploads open again (ISO)
   constructor(message: string, status?: number) {
     super(message)
     this.status = status
   }
+}
+
+/** 402 at item creation: why the share was refused, and the day (UTC) uploads open again. */
+export function usedUp(resetsAt: unknown): ShareError {
+  const at = new Date(typeof resetsAt === 'string' ? resetsAt : NaN)
+  const valid = !isNaN(at.getTime())
+  const when = valid ? `on ${at.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' })}` : 'next month'
+  const e = new ShareError(`This month’s uploads are used. Your links keep playing, and uploads open again ${when}.`, 402)
+  if (valid) e.opensAt = at.toISOString()
+  return e
 }
 
 export class RemoteError extends Error {
@@ -96,6 +107,7 @@ export async function api(server: string, token: string, method: string, path: s
   const data = r.status === 204 ? null : await r.json().catch(() => null)
   if (r.ok) return data
   if (r.status === 401) throw new ShareError('Sign in to share links.', 401)
+  if (r.status === 402) throw usedUp(data?.resetsAt)
   if (r.status < 500 && ![408, 409, 425, 429].includes(r.status)) throw new ShareError(new RemoteError(r.status, data).message, r.status)
   throw new RemoteError(r.status, data)
 }

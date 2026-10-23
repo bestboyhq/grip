@@ -1,6 +1,6 @@
 <!-- Owner: sharing. The editor top bar's Share button: a popover that shares the video or the whole editable project
-     as a link, with upload progress, copy link, and a private toggle; signed out, it offers sign-in first, and
-     signed in, it shows the team's uploads this month. Uploads run in the main process
+     as a link, with upload progress, copy link, and a private toggle; signed out, it offers sign-in first. It says
+     nothing about upload limits until a share is refused at one. Uploads run in the main process
      (electron/share.ts) and carry on when the popover closes, the window closes, or the app restarts.
      Mount: <ShareButton exportVideo={...} />, where exportVideo(progress?, signal?) exports the open project and resolves
      to the MP4 path (the file must stay until the upload is done), reporting 0..1 progress and stopping when signal aborts. -->
@@ -28,10 +28,8 @@
   invoke('account:get').then((a: Account | null) => (account = a))
   $effect(() =>
     on('share:progress', (j: Job) => {
-      const finished = j.state === 'done' && jobs.find((x) => x.id === j.id)?.state !== 'done'
       const rest = jobs.filter((x) => x.id !== j.id)
       jobs = j.state === 'canceled' ? rest : [...rest, j]
-      if (finished) invoke('account:get').then((a: Account | null) => (account = a)) // one upload more this month
     }),
   )
   $effect(() => on('account:changed', (a: Account | null) => (account = a)))
@@ -50,6 +48,9 @@
     jobs.filter((j) => j.kind === k && j.project === doc.path).sort((a, b) => b.createdAt - a.createdAt)[0]
   const job = $derived(latest(kind))
   const busy = (j?: Job) => !!j && !['done', 'failed'].includes(j.state)
+  let now = $state(Date.now()) // as of the last open
+  // Refused at the monthly limit: trying again before uploads open would only be refused again.
+  const refused = (j: Job) => j.state === 'failed' && !!j.opensAt && now < Date.parse(j.opensAt)
   const active = $derived([latest('video'), latest('project')].find(busy))
   const isPrivate = $derived(job && job.state !== 'failed' ? job.private : wantPrivate)
   const pct = (j: Job) => (j.size ? Math.min(100, Math.floor((j.sent / j.size) * 100)) : 0)
@@ -121,7 +122,7 @@
   function toggled(e: ToggleEvent) {
     if (e.newState !== 'open') return
     error = ''
-    invoke('account:get').then((a: Account | null) => (account = a)) // this month's uploads
+    now = Date.now()
     for (const j of [latest('video'), latest('project')]) if (j?.state === 'done') invoke('share:status', j.id)
   }
 </script>
@@ -161,7 +162,7 @@
       <div class="bar"><div style:width="{exporting.p * 100}%"></div></div>
       <div class="row actions"><button class="text" onclick={() => exporting?.stop.abort()}>Cancel</button></div>
     {:else if !job && account === null}
-      <p class="lead">Links live on bestboy.dev and need a free account. Sign in once, in your browser.</p>
+      <p class="lead">Links live on bestboy.dev and need an account. Sign in once, in your browser.</p>
       <button class="primary wide" onclick={signIn} disabled={signing}>{signing ? 'Finish signing in in your browser…' : 'Sign in'}</button>
     {:else if !job}
       <p class="lead">
@@ -207,19 +208,18 @@
         <p class="error">{job.note}</p>
       {/if}
 
-      <div class="row actions">
-        {#if busy(job)}
-          <button class="text" onclick={remove}>Cancel upload</button>
-        {:else}
-          <button class="text" onclick={share} disabled={kind === 'video' && !exportVideo}>{job.state === 'failed' ? 'Try again' : 'New link'}</button>
-          {#if job.state === 'done'}<button class="text danger" onclick={remove}>Delete link</button>{/if}
-        {/if}
-      </div>
+      {#if !refused(job)}
+        <div class="row actions">
+          {#if busy(job)}
+            <button class="text" onclick={remove}>Cancel upload</button>
+          {:else}
+            <button class="text" onclick={share} disabled={kind === 'video' && !exportVideo}>{job.state === 'failed' ? 'Try again' : 'New link'}</button>
+            {#if job.state === 'done'}<button class="text danger" onclick={remove}>Delete link</button>{/if}
+          {/if}
+        </div>
+      {/if}
     {/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
-    {#if account?.usage.limit != null}
-      <p class="hint">{account.usage.uploads} of {account.usage.limit} uploads this month · {account.team.name}</p>
-    {/if}
   </div>
 
   <label class="private">

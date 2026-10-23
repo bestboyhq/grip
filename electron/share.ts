@@ -37,6 +37,7 @@ export interface Job extends Upload {
   state: 'preparing' | 'uploading' | 'waiting' | 'processing' | 'done' | 'failed' | 'canceled'
   sent: number // bytes up
   note?: string // why it waits or failed, in plain language
+  opensAt?: string // refused at the monthly limit: when uploads open again (ISO)
   link?: string
   createdAt: number
 }
@@ -154,7 +155,10 @@ async function drive(job: Job) {
     if (e instanceof ShareError && e.status === 401) forget()
     job.state = 'failed'
     job.note = plain(e)
-    waiters.get(job.id)?.reject(new Error(job.note))
+    job.opensAt = (e as ShareError).opensAt
+    // A failed job is never resumed: its packed copy of the project only takes space.
+    if (job.kind === 'project') await rm(join(app.getPath('userData'), 'share', `${job.id}.tar`), { force: true }).catch(() => {})
+    waiters.get(job.id)?.reject(e instanceof ShareError ? e : new Error(job.note))
     waiters.delete(job.id)
   } finally {
     running.delete(job.id)
