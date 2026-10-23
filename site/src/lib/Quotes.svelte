@@ -10,16 +10,21 @@
 	let paused = $state(false);
 
 	const FILLS = ['painting', 'paper', 'blue', 'orange'] as const;
+
+	// Colors cycle; when the list would end on the color it starts with, the last card takes blue so no two cards
+	// in a row match across the loop's seam.
+	const fill = (index: number) =>
+		FILLS[index === quotes.length - 1 && index % FILLS.length === 0 && index > 0 ? 2 : index % FILLS.length];
 </script>
 
 <div class="quotes rise">
 	<div class={['lane', { paused }]}>
-		<ul class="track">
+		<ul class="track" style:--count={quotes.length}>
 			<!-- The list twice, so the drift loops without a seam; the copy is hidden from assistive tech. -->
 			{#each [false, true] as copy (copy)}
 				{#each quotes as item, index (item.quote)}
 					<li class={index % 2 ? 'narrow' : 'wide'} aria-hidden={copy || undefined}>
-						<figure class={FILLS[index % FILLS.length]}>
+						<figure class={fill(index)}>
 							<blockquote><p>{item.quote}</p></blockquote>
 							<figcaption><b>{item.name}</b><span>{item.role}</span></figcaption>
 						</figure>
@@ -64,7 +69,7 @@
 		gap: 12px;
 		width: max-content;
 		list-style: none;
-		animation: drift 120s linear infinite;
+		animation: drift calc(var(--count) * 15s) linear infinite;
 	}
 
 	.paused .track {
@@ -147,16 +152,7 @@
 		font-weight: 550;
 		line-height: 1.18;
 		letter-spacing: -0.03em;
-		text-indent: -0.42em;
 		text-wrap: pretty;
-	}
-
-	p::before {
-		content: '“';
-	}
-
-	p::after {
-		content: '”';
 	}
 
 	figcaption {
