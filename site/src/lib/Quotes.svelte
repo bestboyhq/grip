@@ -9,7 +9,7 @@
 
 	let paused = $state(false);
 
-	const FILLS = ['painting', 'paper', 'blue', 'orange'] as const;
+	const FILLS = ['painting', 'paper', 'blue', 'graphite'] as const;
 
 	// Colors cycle; when the list would end on the color it starts with, the last card takes blue so no two cards
 	// in a row match across the loop's seam.
@@ -138,9 +138,18 @@
 		color: #fff;
 	}
 
-	.orange {
-		background: #fb8400;
-		color: #181817;
+	.graphite {
+		background: light-dark(#ececea, #232322);
+		box-shadow: inset 0 0 0 1px var(--border-subtle);
+		color: var(--fg-default);
+	}
+
+	.graphite::after {
+		background: var(--painting);
+		-webkit-background-clip: text;
+		background-clip: text;
+		color: transparent;
+		opacity: 0.4;
 	}
 
 	blockquote {
