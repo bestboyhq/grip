@@ -544,7 +544,6 @@
           {/if}
         {:else}
           {#if dragging && drag?.kind !== 'move'}
-            <div class="plus"></div>
             {#each [1, 2] as k (k)}
               <span class="third v" style:left="calc({k} * 100% / 3)"></span>
               <span class="third h" style:top="calc({k} * 100% / 3)"></span>
@@ -872,29 +871,15 @@
     inset: 0;
     background: rgb(0 0 0 / 0.42);
   }
-  /* Center mark while resizing: a small plus, solid at the crossing and fading toward its tips,
-     there to compose by, not to look at. The soft dark edge keeps it visible over white content. */
-  .plus {
-    --fade: transparent, #fff, transparent;
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 40px;
-    height: 40px;
-    margin: -20px 0 0 -20px; /* its own size, not the region's: a resize repaints 40 px, not the region */
-    background: linear-gradient(var(--fade)) center / 1px 40px no-repeat, linear-gradient(90deg, var(--fade)) center / 40px 1px no-repeat;
-    filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.5));
-    pointer-events: none;
-    animation: plus-in 200ms ease-out;
-  }
-  /* Thirds while resizing: faint dashes beside the plus, found when looked for and easy to ignore.
-     Each is a 1 px strip, so a resize repaints four hairlines, not the region. */
+  /* Thirds while resizing: faint dashes to compose by, found when looked for and easy to ignore.
+     The soft dark edge keeps them visible over white content. Each is a 1 px strip, so a resize
+     repaints four hairlines, not the region. */
   .third {
     --dash: rgb(255 255 255 / 0.35) 0 4px, transparent 0 8px;
     position: absolute;
     filter: drop-shadow(0 0 0.5px rgb(0 0 0 / 0.28));
     pointer-events: none;
-    animation: plus-in 200ms ease-out;
+    animation: third-in 200ms ease-out;
   }
   .third.v {
     top: 0;
@@ -910,7 +895,7 @@
     margin-top: -0.5px;
     background: repeating-linear-gradient(90deg, var(--dash));
   }
-  @keyframes plus-in {
+  @keyframes third-in {
     from { opacity: 0; }
   }
   /* Crop handles: the hairline thickens into brackets at the corners and bars mid-edge, centered
@@ -1024,7 +1009,7 @@
     translate: -50% 0;
   }
   @media (prefers-reduced-motion: reduce) {
-    .plus, .third { animation: none; }
+    .third { animation: none; }
     .frame { transition: none; }
   }
   /* Secondary action beside the accent one: same height, a control on the panel. */
