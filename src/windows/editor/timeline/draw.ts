@@ -125,7 +125,7 @@ export interface Scene {
   waves: Waveforms
 }
 
-const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif'
+const FONT = '"Inter Variable", -apple-system, BlinkMacSystemFont, system-ui, sans-serif' // --font in theme.css
 const F_RULER = `500 10px ${FONT}`
 const F_TITLE = `600 11px ${FONT}`
 const F_META = `500 10.5px ${FONT}`

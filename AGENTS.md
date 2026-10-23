@@ -35,7 +35,7 @@ Every domain obeys these invariants:
   A setting added before its default was tuned usually ends up removed.
 - **One family.** Every window looks, moves, and behaves like the other Bestboy apps.
   The platform's `docs/design.md` and `.agents/skills/design/SKILL.md` are the source; read them before changing a window's look or motion (`gh api repos/bestboyhq/platform/contents/<path> --jq .content | base64 -d`).
-  `src/ui/theme.css` and `src/ui/motion.ts` copy their tokens and motion by hand, and `src/ui/design.test.ts` fails on raw colors, stray curves, and hovers that fade.
+  `src/ui/theme.css` and `src/ui/motion.ts` copy their tokens, type, and motion by hand, and `src/ui/design.test.ts` fails on raw colors, stray curves, and hovers that fade.
 
 ## Stack
 

@@ -43,7 +43,7 @@
   const HEIGHT = 28 + ROW + 8 // head, row, bottom padding: .lens in css
   const FRAMES = 64
   const WORDS = 16 // the words' line under the frames; the voice rises from the row's bottom edge below it
-  const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif'
+  const FONT = '"Inter Variable", -apple-system, BlinkMacSystemFont, system-ui, sans-serif' // --font in theme.css
 
   let box: HTMLDivElement
   let canvas: HTMLCanvasElement

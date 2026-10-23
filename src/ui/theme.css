@@ -4,8 +4,11 @@
    roles the platform has no token for, marked "Grip". Components in src/ui/ read only these variables. */
 :root {
   color-scheme: dark;
-  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
-  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  /* The platform's type: Inter carries all text and JetBrains Mono what a machine would print (timecodes, sizes,
+     links), bundled from @fontsource-variable in main.ts. Each falls back to a local font matched to its metrics, so
+     nothing moves if it is ever late. */
+  --font: 'Inter Variable', 'Inter Fallback', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --mono: 'JetBrains Mono Variable', 'JetBrains Mono Fallback', ui-monospace, Menlo, monospace;
 
   --color-white: #ffffff;
   --color-grey-50: #fafaf8;
@@ -125,8 +128,11 @@
   --hairline-b: inset 0 -0.5px 0 var(--ring-faint);
 }
 
+@font-face { font-family: 'Inter Fallback'; src: local('Arial'); size-adjust: 107.12%; ascent-override: 90.2%; descent-override: 22.48%; line-gap-override: 0%; }
+@font-face { font-family: 'JetBrains Mono Fallback'; src: local('Menlo'), local('Consolas'); size-adjust: 96%; ascent-override: 109%; descent-override: 27%; }
+
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; font: 13px/1.4 var(--font); color: var(--fg-default); background: transparent; -webkit-font-smoothing: antialiased; user-select: none; overflow: hidden; }
+html, body { margin: 0; height: 100%; font: 13px/1.4 var(--font); color: var(--fg-default); background: transparent; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-optical-sizing: auto; user-select: none; overflow: hidden; }
 button, input, select, textarea { font: inherit; color: inherit; }
 input, textarea { user-select: text; }
 /* Everything that acts on a click shows the pointing hand; disabled controls don't. */
