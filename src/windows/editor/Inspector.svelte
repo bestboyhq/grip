@@ -17,8 +17,10 @@
   import Audio from './inspector/Audio.svelte'
   import Motion from './inspector/Motion.svelte'
   import TranscriptPanel from './transcript/TranscriptPanel.svelte'
+  import Presets from './Presets.svelte'
 
   const tabs = [
+    { id: 'presets', label: 'Presets', icon: 'sparkle' },
     { id: 'background', label: 'Background', icon: 'frame' },
     { id: 'cursor', label: 'Cursor', icon: 'cursor' },
     { id: 'camera', label: 'Camera', icon: 'camera' },
@@ -82,10 +84,12 @@
   </div>
 
   <div class="panel" id="panel" role="tabpanel" aria-labelledby="tab-{tab}">
-    <!-- The transcript brings its own title bar (with subtitle export) and scrolls its text itself. -->
-    {#if tab !== 'transcript'}<h2>{current.label}</h2>{/if}
-    {#key tab}<div class="content" class:bare={tab === 'transcript'}>
-      {#if tab === 'background'}
+    <!-- The transcript and presets bring their own title bar (subtitle export, Save current look) and scroll themselves. -->
+    {#if tab !== 'transcript' && tab !== 'presets'}<h2>{current.label}</h2>{/if}
+    {#key tab}<div class="content" class:bare={tab === 'transcript' || tab === 'presets'}>
+      {#if tab === 'presets'}
+        <Presets />
+      {:else if tab === 'background'}
         <Background />
       {:else if tab === 'cursor'}
         <Cursor />

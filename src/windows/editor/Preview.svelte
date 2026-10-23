@@ -11,7 +11,7 @@
   import { cornerAt, outputPoint, reason, screenPoint } from './helpers.ts'
 
   const project = $derived(doc.project!)
-  const size = $derived(outputSize(project, 1080)) // the frame's aspect
+  const size = $derived(outputSize(player.look ? { ...project, style: player.look.style } : project, 1080)) // the frame's aspect, a previewed look's own
   const zooms = $derived(project.zooms.filter((z) => selection.ids.includes(z.id)))
   const mask = $derived(zooms.length ? undefined : project.masks.find((m) => selection.ids.includes(m.id)))
 
@@ -185,6 +185,7 @@
         <span class="quadrant {drag.corner}" aria-hidden="true"></span>
         <span class="ghost" style:left={pct(drag.x, drag.W)} style:top={pct(drag.y, drag.H)} style:width={pct(drag.w, drag.W)} style:height={pct(drag.h, drag.H)} style:border-radius="{pct(drag.r, drag.w)} / {pct(drag.r, drag.h)}" aria-hidden="true"></span>
       {/if}
+      {#if player.look}<span class="looking" role="status">Previewing <b>{player.look.name}</b> · click to apply</span>{/if}
       {#if failed}<p class="failed" role="alert">Preview unavailable: {failed}</p>
       {:else if player.error}<p class="failed" role="alert">{player.error}</p>{/if}
     </div>
@@ -214,5 +215,11 @@
   .quadrant.top-right { left: 50%; top: 0; }
   .quadrant.bottom-left { left: 0; top: 50%; }
   .quadrant.bottom-right { left: 50%; top: 50%; }
+  .looking {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 5px;
+    height: 26px; padding: 0 11px; border-radius: 13px; background: rgb(17 17 19 / 0.84); backdrop-filter: blur(14px);
+    box-shadow: var(--hairline), 0 4px 14px rgb(0 0 0 / 0.3); font-size: 12px; color: var(--text-dim); white-space: nowrap; pointer-events: none;
+  }
+  .looking b { color: var(--text); font-weight: 500; }
   .failed { position: absolute; inset: auto 0 0; margin: 0; padding: 10px 14px; background: rgb(0 0 0 / 0.6); color: var(--text-dim); font-size: 12px; text-align: center; }
 </style>

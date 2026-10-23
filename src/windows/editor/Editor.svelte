@@ -15,7 +15,6 @@
   import { tooltip } from '../../ui/tooltip.ts'
   import Preview from './Preview.svelte'
   import Inspector from './Inspector.svelte'
-  import Presets from './Presets.svelte'
   import AspectPicker from './AspectPicker.svelte'
   import CropDialog from './CropDialog.svelte'
   import Timeline from './timeline/Timeline.svelte'
@@ -192,8 +191,6 @@
         <span class="sep"></span>
         <button class="icon-btn" aria-label="Undo" disabled={!undoable.undo} onclick={() => run('timeline.undo')} {@attach tooltip('Undo', '⌘Z')}><Icon name="undo" /></button>
         <button class="icon-btn" aria-label="Redo" disabled={!undoable.redo} onclick={() => run('timeline.redo')} {@attach tooltip('Redo', '⇧⌘Z')}><Icon name="redo" /></button>
-        <span class="sep"></span>
-        <Presets />
       </div>
       <input
         bind:this={nameInput}

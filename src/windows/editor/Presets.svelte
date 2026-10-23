@@ -1,43 +1,73 @@
-<!-- Presets menu in the title bar: apply a saved look, save the current one, import, export, and delete
-     preset files. Storage, asset bundling, and file dialogs live in the main process (electron/presets.ts,
-     projects:presets:*). Applying is an ordinary edit, so undo reverts it. -->
-<script lang="ts">
-  import { doc, edit, zoomLook } from '../../lib/doc.svelte.ts'
-  import { invoke } from '../../lib/ipc.ts'
+<!-- Owner: projects. The inspector's Presets tab: every saved look, each shown on this project's own frame.
+     Hovering a preset previews it in the player, nothing applied; a click applies it as one undoable edit.
+     The project remembers the preset its look came from (project.preset), so changes since show as Edited,
+     with Update and Revert. One preset can be the look new recordings start with (settings.preset).
+     Storage, assets, and file dialogs live in the main process (electron/presets.ts, projects:presets:*). -->
+<script lang="ts" module>
+  import { invoke, on } from '../../lib/ipc.ts'
+  import { player } from '../../lib/player.svelte.ts'
   import type { Style } from '../../shared/project.ts'
-  import { setAutoZoom } from '../../engine/zoom/index.ts'
-  import Icon from '../../ui/Icon.svelte'
-  import Popover from '../../ui/Popover.svelte'
-  import { tooltip } from '../../ui/tooltip.ts'
   import { reason } from './helpers.ts'
+  import { renderStills } from './thumbnail.ts'
 
-  type Preset = { id: string; name: string }
-  let open = $state(false)
-  let presets = $state<Preset[]>([])
-  let unavailable = $state(false)
-  let status = $state('')
-  let name = $state('')
-  let busy = $state(false)
-  let doomed = $state('') // id of the preset whose delete awaits confirmation
+  type Preset = { id: string; name: string; style: Style; look: Style }
+
+  // Kept for the window, not the tab, which remounts on every visit: the list, the new-recordings
+  // preset, and the thumbnails show at once and refresh behind. The list loads when the editor opens.
+  let presets = $state.raw<Preset[] | null>(null) // null until the first list arrives
+  let def = $state<string | null>(null) // the preset new recordings start with
+  const thumbs = $state<Record<string, string>>({}) // look as JSON -> PNG of this project in it
+  const pending = new Set<string>() // looks being rendered
 
   async function refresh() {
-    try {
-      const list = (await invoke('projects:presets:list')) as unknown
-      presets = (Array.isArray(list) ? list : [])
-        .map((p) => ({ id: String(p?.id ?? p?.name ?? ''), name: String(p?.name ?? p?.id ?? '') }))
-        .filter((p) => p.id)
-      unavailable = false
-    } catch (e) {
-      unavailable = /No handler registered/.test(String(e))
-      if (!unavailable) status = reason(e)
-    }
+    presets = await invoke('projects:presets:list')
   }
+  refresh().catch((e) => console.warn('[presets] list:', reason(e)))
+  invoke('settings:get').then((s: { preset: string | null }) => (def = s.preset))
+  on('settings:changed', (s: { preset: string | null }) => (def = s.preset))
+
+  /** This project at the playhead in each look not rendered yet; thumbnails of looks no preset has any
+   *  more are let go. */
+  // ponytail: a thumbnail keeps the frame of its first render; render again on edits if they drift visibly.
+  function thumbnails(looks: Style[]) {
+    const keys = looks.map((l) => JSON.stringify(l))
+    for (const k of Object.keys(thumbs)) if (!keys.includes(k)) (URL.revokeObjectURL(thumbs[k]), delete thumbs[k])
+    const todo = looks.filter((_, i) => !(keys[i] in thumbs) && !pending.has(keys[i]))
+    const todoKeys = todo.map((l) => JSON.stringify(l))
+    if (!todo.length) return
+    for (const k of todoKeys) pending.add(k)
+    renderStills(todo, 180, player.time, (i, png) => (thumbs[todoKeys[i]] = URL.createObjectURL(png)))
+      .catch((e) => console.warn('[presets] thumbnails:', reason(e)))
+      .finally(() => todoKeys.forEach((k) => pending.delete(k)))
+  }
+</script>
+
+<script lang="ts">
+  import { untrack } from 'svelte'
+  import { fade } from 'svelte/transition'
+  import { doc, edit, zoomLook } from '../../lib/doc.svelte.ts'
+  import { showLook } from '../../lib/player.svelte.ts'
+  import { lookOn, sameLook } from '../../shared/project.ts'
+  import { setAutoZoom } from '../../engine/zoom/index.ts'
+  import { wallpaper } from '../../engine/backgrounds/index.ts'
+  import Icon from '../../ui/Icon.svelte'
+  import Select from '../../ui/Select.svelte'
+
+  let naming = $state(false)
+  let renaming = $state('') // id of the preset whose name is being edited
+  let status = $state('')
+  let busy = $state(false)
+
+  const list = $derived(presets ?? [])
+  const base = $derived(list.find((p) => p.id === doc.project?.preset))
+  const edited = $derived(!!base && !!doc.project && !sameLook(base.style, doc.project.style))
+  const options = $derived([{ value: '', label: 'No preset' }, ...list.map((p) => ({ value: p.id, label: p.name }))])
+
+  refresh().catch((e) => (status = reason(e))) // behind what is already shown
+  $effect(() => () => showLook(null)) // leaving the tab ends a preview
   $effect(() => {
-    if (open) {
-      status = ''
-      doomed = ''
-      refresh()
-    }
+    const looks = list.map((p) => p.look)
+    untrack(() => thumbnails(looks))
   })
 
   /** Run a preset action, reporting failures inline instead of throwing. */
@@ -53,29 +83,69 @@
     }
   }
 
-  const isStyle = (s: unknown): s is Style => !!s && typeof s === 'object' && 'background' in s && 'cursor' in s && 'camera' in s
+  /** Show `p` in the player while the pointer is on it; the look already in use needs no preview. */
+  function preview(p: Preset) {
+    if (p !== base || edited) showLook({ name: p.name, style: p.look })
+  }
 
-  const apply = (p: Preset, close: () => void) =>
+  const apply = (p: Preset) =>
     run(async () => {
-      const r = (await invoke('projects:presets:apply', p.id, doc.path)) as unknown
-      const style = isStyle(r) ? r : isStyle((r as { style?: unknown })?.style) ? (r as { style: Style }).style : null
-      if (!style) throw new Error(`“${p.name}” is not a valid preset.`)
+      showLook(null)
+      const { style } = (await invoke('projects:presets:apply', p.id, doc.path)) as { style: Style }
       edit((pr) => {
-        setAutoZoom(pr, doc.events, style.autoZoom, zoomLook()) // the auto zooms follow the preset's auto zoom
-        pr.style = style
+        pr.style = lookOn(style, pr.style)
+        pr.preset = p.id
+        setAutoZoom(pr, doc.events, pr.style.autoZoom, zoomLook()) // the auto zooms follow the preset's auto zoom
       })
-      close()
     })
 
-  const saveNew = () =>
+  const save = (name: string, id?: string) => invoke('projects:presets:save', name, doc.path, $state.snapshot(doc.project!.style), id) as Promise<Preset>
+
+  const saveNew = (name: string) =>
     run(async () => {
-      const n = name.trim()
-      if (!n) return
-      await invoke('projects:presets:save', n, doc.path, $state.snapshot(doc.project!.style))
-      name = ''
-      status = `Saved “${n}”.`
+      const p = await save(name.trim())
+      edit((pr) => (pr.preset = p.id))
+      naming = false
+      status = `Saved “${p.name}”.`
       await refresh()
     })
+
+  const update = () =>
+    run(async () => {
+      await save(base!.name, base!.id)
+      status = `Saved the changes to “${base!.name}”.`
+      await refresh()
+    })
+
+  const rename = (p: Preset, name: string) =>
+    run(async () => {
+      renaming = ''
+      if (!name.trim() || name.trim() === p.name) return
+      await invoke('projects:presets:rename', p.id, name.trim())
+      await refresh()
+    })
+
+  async function more(p: Preset, e: MouseEvent) {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const items = [
+      { id: 'default', label: 'Use for New Recordings', checked: def === p.id },
+      { separator: true },
+      { id: 'rename', label: 'Rename…' },
+      { id: 'export', label: 'Export Preset File…' },
+      { separator: true },
+      { id: 'delete', label: 'Delete…' },
+    ]
+    const picked = await invoke('shell:popup', items, r.left, r.bottom + 4)
+    if (picked === 'default') await invoke('settings:set', { preset: def === p.id ? null : p.id })
+    else if (picked === 'rename') renaming = p.id
+    else if (picked === 'export') await run(async () => (await invoke('projects:presets:export', p.id)) && (status = `Exported “${p.name}”.`))
+    else if (picked === 'delete' && confirm(`Delete the preset “${p.name}”? Projects keep their look; the preset itself can’t be brought back.`))
+      await run(async () => {
+        await invoke('projects:presets:delete', p.id)
+        if (def === p.id) await invoke('settings:set', { preset: null })
+        await refresh()
+      })
+  }
 
   const importOne = () =>
     run(async () => {
@@ -85,79 +155,126 @@
       await refresh()
     })
 
-  const exportOne = (p: Preset) =>
-    run(async () => {
-      if (await invoke('projects:presets:export', p.id)) status = `Exported “${p.name}”.`
-    })
+  /** The background, in words: what tells looks apart besides the picture. */
+  function describe(s: Style) {
+    const b = s.background
+    return b.kind === 'wallpaper' ? `Wallpaper, ${wallpaper(b.id).name}` : b.kind === 'color' ? `Color, ${b.color.toUpperCase()}` : b.kind === 'gradient' ? 'Gradient' : 'Image'
+  }
 
-  const remove = (p: Preset) =>
-    run(async () => {
-      await invoke('projects:presets:delete', p.id)
-      doomed = ''
-      status = `Deleted “${p.name}”.`
-      await refresh()
-    })
+  const focus = (node: HTMLInputElement) => {
+    node.focus()
+    node.select()
+  }
 </script>
 
-<Popover label="Presets" align="start" bind:open>
-  {#snippet trigger(props)}
-    <button class="btn ghost" {...props}><Icon name="sparkle" size={16} />Presets<Icon name="chevron" size={14} /></button>
-  {/snippet}
-  {#snippet children(close)}
-    <div class="menu">
-      {#if unavailable}
-        <p class="empty">Presets aren’t available in this build yet.</p>
-      {:else}
-        {#if presets.length}
-          <ul aria-label="Saved presets">
-            {#each presets as p (p.id)}
-              <li>
-                {#if doomed === p.id}
-                  <!-- Deleting can't be undone, so it asks first, in place. -->
-                  <span class="ask">Delete “{p.name}”?</span>
-                  <button class="btn ghost confirm" onclick={() => (doomed = '')}>Cancel</button>
-                  <button class="btn danger confirm" disabled={busy} onclick={() => remove(p)}>Delete</button>
-                {:else}
-                  <button class="item" disabled={busy} onclick={() => apply(p, close)}>{p.name}</button>
-                  <button class="icon-btn small" disabled={busy} onclick={() => exportOne(p)} {@attach tooltip(`Export “${p.name}”…`)}><Icon name="download" size={14} /></button>
-                  <button class="icon-btn small" disabled={busy} onclick={() => (doomed = p.id)} {@attach tooltip(`Delete “${p.name}”`)}><Icon name="trash" size={14} /></button>
-                {/if}
-              </li>
-            {/each}
-          </ul>
+<div class="presets">
+  <div class="head">
+    <h2>Presets</h2>
+    {#if !naming}<button class="btn" disabled={busy} onclick={() => (naming = true)}><Icon name="plus" size={14} />Save current look</button>{/if}
+  </div>
+  {#if naming}
+    <form class="naming" onsubmit={(e) => (e.preventDefault(), saveNew(new FormData(e.currentTarget).get('name') as string))}>
+      <input name="name" placeholder="Preset name" aria-label="Preset name" maxlength="100" {@attach focus} onkeydown={(e) => e.key === 'Escape' && (naming = false)} />
+      <button class="btn primary" disabled={busy}>Save</button>
+    </form>
+  {/if}
+
+  <div class="list">
+    {#if base && edited}
+      <div class="edited">
+        <p><span class="dot"></span>You changed <b>{base.name}</b> in this project.</p>
+        <div class="buttons">
+          <button class="btn primary" disabled={busy} onclick={update}>Update “{base.name}”</button>
+          <button class="btn" disabled={busy} onclick={() => apply(base!)}>Revert</button>
+        </div>
+      </div>
+    {/if}
+    {#each list as p (p.id)}
+      {@const thumb = thumbs[JSON.stringify(p.look)]}
+      <div class="row" class:on={p === base} {@attach (node) => void (p === base && node.scrollIntoView({ block: 'nearest' }))}>
+        {#if renaming === p.id}
+          <span class="thumb">{#if thumb}<img src={thumb} alt="" decoding="sync" in:fade={{ duration: 150 }} />{/if}</span>
+          <input
+            class="rename"
+            value={p.name}
+            aria-label="Preset name"
+            maxlength="100"
+            {@attach focus}
+            onblur={(e) => rename(p, e.currentTarget.value)}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+              if (e.key === 'Escape') ((e.currentTarget.value = p.name), (renaming = '')) // its blur then renames nothing
+            }}
+          />
         {:else}
-          <p class="empty">No presets yet. Save this project’s look to reuse it on the next recording.</p>
+          <button class="pick" disabled={busy} onclick={() => apply(p)} onpointerenter={() => preview(p)} onpointerleave={() => showLook(null)}>
+            <span class="thumb">{#if thumb}<img src={thumb} alt="" decoding="sync" in:fade={{ duration: 150 }} />{/if}</span>
+            <span class="text">
+              <b>{p.name}</b>
+              <small>{#if p === base}{#if edited}<span class="dot"></span>In use, edited{:else}In use{/if}{:else}{describe(p.style)}{/if}</small>
+              {#if def === p.id}<small><span class="rec"></span>New recordings</small>{/if}
+            </span>
+          </button>
         {/if}
-        <form class="save" onsubmit={(e) => (e.preventDefault(), saveNew())}>
-          <input bind:value={name} placeholder="New preset name" aria-label="New preset name" maxlength="80" />
-          <button class="btn primary" disabled={busy || !name.trim()}>Save</button>
-        </form>
-        <button class="item import" disabled={busy} onclick={importOne}><Icon name="upload" size={14} />Import preset…</button>
-      {/if}
-      {#if status}<p class="status" role="status">{status}</p>{/if}
-    </div>
-  {/snippet}
-</Popover>
+        <button class="icon-btn more" aria-label="More for {p.name}" onclick={(e) => more(p, e)}><Icon name="more" size={16} /></button>
+      </div>
+    {:else}
+      {#if presets}<p class="empty">No presets yet. Save this project’s look to apply it to any recording in one click.</p>{/if}
+    {/each}
+    {#if status}<p class="status" role="status">{status}</p>{/if}
+  </div>
+
+  <div class="foot">
+    <Select label="New recordings" value={def ?? ''} {options} onchange={(v) => invoke('settings:set', { preset: v || null })} />
+    <button class="link" disabled={busy} onclick={importOne}>Import preset file…</button>
+  </div>
+</div>
 
 <style>
-  .menu { width: 260px; display: flex; flex-direction: column; gap: 4px; }
-  ul { margin: 0; padding: 0; list-style: none; max-height: 260px; overflow-y: auto; }
-  li { display: flex; align-items: center; gap: 2px; }
-  .item {
-    flex: 1; min-width: 0; display: block; height: 28px; padding: 0 8px; border: 0; border-radius: var(--radius-sm);
-    background: none; font-size: 12.5px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* The tab's own title bar and edges: it fills the inspector panel (Inspector.svelte gives it a bare
+     content box, 16 px in from each side). */
+  .presets { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 -16px; }
+  .head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 10px 12px 4px 16px; } /* the title where the other tabs have theirs */
+  h2 { margin: 0; font-size: 13px; font-weight: 600; }
+  .naming { flex: none; display: flex; gap: 6px; padding: 2px 12px 8px 16px; }
+  .naming input, .rename {
+    flex: 1; min-width: 0; height: var(--control-h); padding: 0 8px; border: 0; border-radius: var(--radius-sm);
+    background: var(--surface-100); box-shadow: var(--hairline); font-size: 12.5px;
   }
-  .item:hover { background: var(--surface-50-hover); }
-  .item:disabled { opacity: 0.5; }
-  .small { width: 26px; height: 26px; }
-  .ask { flex: 1; min-width: 0; padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
-  .confirm { height: 24px; padding: 0 8px; font-size: 12px; }
-  .danger { background: var(--danger); color: #fff; }
-  .danger:hover { background: var(--danger-hover); }
-  .import { display: flex; align-items: center; gap: 6px; color: var(--text-dim); box-shadow: var(--hairline-t); border-radius: 0 0 var(--radius-sm) var(--radius-sm); margin-top: 2px; height: 32px; }
-  .save { display: flex; gap: 6px; padding: 6px 2px 2px; box-shadow: var(--hairline-t); margin-top: 2px; }
-  .save input { flex: 1; min-width: 0; height: var(--control-h); padding: 0 8px; border: 0; border-radius: var(--radius-sm); background: var(--surface-100); box-shadow: var(--hairline); font-size: 12.5px; }
-  .save input:focus-visible { outline-offset: -1px; }
+  .naming input:focus-visible, .rename:focus-visible { outline-offset: -1px; }
+  .list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 4px 8px 8px; mask-image: linear-gradient(transparent, #000 6px); }
+
+  .edited { display: grid; gap: 8px; margin: 0 2px 8px; padding: 10px; border-radius: var(--radius); background: var(--surface-25); box-shadow: var(--hairline); }
+  .edited p { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; color: var(--text-dim); }
+  .edited b { color: var(--text); font-weight: 500; }
+  .buttons { display: flex; gap: 6px; }
+  .dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warning); }
+  .rec { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--record); }
+
+  .row { position: relative; display: grid; grid-template-columns: 1fr auto; align-items: center; border-radius: 10px; }
+  .row:hover, .row:focus-within { background: var(--surface-50-hover); }
+  .row:has(.rename) { grid-template-columns: auto 1fr auto; gap: 12px; padding: 6px; }
+  .pick { display: grid; grid-template-columns: 112px 1fr; align-items: center; gap: 12px; min-width: 0; padding: 6px; border: 0; border-radius: 10px; background: none; text-align: left; }
+  .pick:disabled { cursor: progress; }
+  .thumb {
+    display: grid; place-items: center; width: 112px; aspect-ratio: 16 / 10; overflow: hidden; border-radius: 5px;
+    background: var(--surface-25); box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.1); transition: box-shadow 120ms;
+  }
+  .thumb img { width: 100%; height: 100%; object-fit: contain; }
+  .on .thumb { box-shadow: 0 0 0 2px var(--surface-50), 0 0 0 3.5px var(--accent); }
+  .row.on:is(:hover, :focus-within) .thumb { box-shadow: 0 0 0 2px var(--surface-50-hover), 0 0 0 3.5px var(--accent); }
+  .text { display: grid; gap: 3px; min-width: 0; }
+  .text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .text small { display: flex; align-items: center; gap: 5px; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--text-dim); }
+  .more { margin-right: 6px; opacity: 0; }
+  .row:is(:hover, :focus-within) .more, .more:focus-visible { opacity: 1; }
+
   .empty, .status { margin: 0; padding: 6px 8px; font-size: 12px; line-height: 1.45; color: var(--text-dim); }
   .status { color: var(--text-faint); }
+  .foot { flex: none; display: grid; gap: 6px; padding: 10px 16px 12px; box-shadow: var(--hairline-t); --label-w: 104px; }
+  .link {
+    justify-self: start; height: 24px; margin: 0 -4px; padding: 0 4px; border: 0; border-radius: var(--radius-xs);
+    background: none; color: var(--text-dim); font-size: 12px; font-weight: 500;
+  }
+  .link:hover:not(:disabled) { background: rgb(255 255 255 / 0.06); color: var(--text); }
 </style>
