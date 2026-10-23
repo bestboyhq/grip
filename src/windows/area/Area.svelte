@@ -543,7 +543,13 @@
             ></textarea>
           {/if}
         {:else}
-          {#if dragging && drag?.kind !== 'move'}<div class="plus"></div>{/if}
+          {#if dragging && drag?.kind !== 'move'}
+            <div class="plus"></div>
+            {#each [1, 2] as k (k)}
+              <span class="third v" style:left="calc({k} * 100% / 3)"></span>
+              <span class="third h" style:top="calc({k} * 100% / 3)"></span>
+            {/each}
+          {/if}
           {#each HANDLES as h (h)}
             <span class="handle {h}" role="presentation" onpointerdown={(e) => down(e, h)}><i></i></span>
           {/each}
@@ -881,6 +887,29 @@
     pointer-events: none;
     animation: plus-in 200ms ease-out;
   }
+  /* Thirds while resizing: faint dashes beside the plus, found when looked for and easy to ignore.
+     Each is a 1 px strip, so a resize repaints four hairlines, not the region. */
+  .third {
+    --dash: rgb(255 255 255 / 0.35) 0 4px, transparent 0 8px;
+    position: absolute;
+    filter: drop-shadow(0 0 0.5px rgb(0 0 0 / 0.28));
+    pointer-events: none;
+    animation: plus-in 200ms ease-out;
+  }
+  .third.v {
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    margin-left: -0.5px;
+    background: repeating-linear-gradient(var(--dash));
+  }
+  .third.h {
+    left: 0;
+    right: 0;
+    height: 1px;
+    margin-top: -0.5px;
+    background: repeating-linear-gradient(90deg, var(--dash));
+  }
   @keyframes plus-in {
     from { opacity: 0; }
   }
@@ -995,7 +1024,7 @@
     translate: -50% 0;
   }
   @media (prefers-reduced-motion: reduce) {
-    .plus { animation: none; }
+    .plus, .third { animation: none; }
     .frame { transition: none; }
   }
   /* Secondary action beside the accent one: same height, a control on the panel. */
