@@ -23,6 +23,7 @@ import { hidden, openWindow } from './windows.ts'
 import { projectsDir, readProject } from './projects.ts'
 import { accountToken, signIn } from './account.ts'
 import { shareFile } from './share.ts'
+import { ShareError } from './upload.ts'
 import type { Project } from '../src/shared/project.ts'
 import { DESTINATIONS, jobOptions, safeFileName, uniqueName, type ExportOptions, type ExportRequest, type JobInfo, type JobSpec, type JobState } from '../src/engine/export/options.ts'
 
@@ -362,7 +363,8 @@ export function registerExport() {
         if (typeof url === 'string' && /^https?:\/\//.test(url)) return finish(Object.assign(j, { url }), 'done')
         return url === null ? finish(j, 'canceled') : finish(j, 'failed', 'The upload finished without a link.')
       },
-      (err: unknown) => finish(j, 'failed', `The video was saved, but the upload failed: ${String((err as Error)?.message ?? err)}`),
+      // Refused at the monthly limit: the reason stands on its own, it is no failure to retry.
+      (err: unknown) => finish(j, 'failed', err instanceof ShareError && err.status === 402 ? err.message : `The video was saved, but the upload failed: ${String((err as Error)?.message ?? err)}`),
     )
   })
 

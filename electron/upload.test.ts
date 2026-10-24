@@ -5,7 +5,7 @@ import { createServer, type IncomingMessage } from 'node:http'
 import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ShareError, upload, type Upload } from './upload.ts'
+import { ShareError, upload, usedUp, type Upload } from './upload.ts'
 
 const PART = 64 * 1024
 const TOKEN = 't'.repeat(43)
@@ -28,7 +28,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url!, 'http://fake')
   if (req.method === 'POST' && url.pathname === '/api/items') {
     const b = JSON.parse((await body(req)).toString())
-    if (fake.limitReached) return send(402, { error: 'Your team used its 25 uploads for this month.', limit: 25 })
+    if (fake.limitReached) return send(402, { error: 'Your team used its 25 uploads for this month.', limit: 25, resetsAt: '2026-11-01T00:00:00.000Z' })
     Object.assign(fake, { parts: [], size: b.size, ready: false })
     return send(201, item())
   }
@@ -77,10 +77,12 @@ test('parts resume after a lost answer and a dropped connection, and arrive whol
 
 test('the monthly limit and a signed-out token end the upload with the reason', async () => {
   fake.limitReached = true
-  await assert.rejects(
-    upload(URL_, TOKEN, job('over.mp4', 10), { progress() {}, created() {} }),
-    (e: ShareError) => e instanceof ShareError && e.status === 402 && /25 uploads/.test(e.message),
-  )
+  await assert.rejects(upload(URL_, TOKEN, job('over.mp4', 10), { progress() {}, created() {} }), (e: ShareError) => {
+    // Why and when, in UTC, without a count; no retry.
+    assert.equal(e.message, 'This month’s uploads are used. Your links keep playing, and uploads open again on November 1.')
+    return e instanceof ShareError && e.status === 402 && e.opensAt === '2026-11-01T00:00:00.000Z'
+  })
+  assert.match(usedUp(undefined).message, /open again next month\.$/)
   fake.limitReached = false
   await assert.rejects(
     upload(URL_, 'nope', job('signed-out.mp4', 10), { progress() {}, created() {} }),

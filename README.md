@@ -51,7 +51,7 @@ The same keystroke grabs one, lets you mark it up, and puts it on your clipboard
 - **Everything runs on your Mac.** Recording, editing, transcription, background removal, and face tracking.
 - **Nothing is baked in.** Raw tracks stay untouched, and every zoom, cut, and caption is an edit you can undo.
 - **What you preview is what you export.** One GPU renderer and one audio graph draw both, frame for frame.
-- **Links your team comments on.** Share links live on bestboy.dev with a free account; teammates, viewers, and comments never cost anything.
+- **Links your team comments on.** Share links live on bestboy.dev; teammates, viewers, and comments never cost anything.
 - **Keyboard first.** One shortcut to capture, single keys to edit, `⌘K` for everything else, and `grip://` links for scripts.
 
 ### The usual screen recorder bugs, designed out
