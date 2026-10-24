@@ -1,7 +1,6 @@
-<!-- Grip's landing page: the hero shows a video Grip made and what one person says about theirs, then beat by beat
-     how a take becomes one (capture, auto-zoom, captions, the editor, the look, export), the bugs it designs out, why
-     it is safe to rely on, what people say, the questions, and the close. Every claim and number comes from the
-     README. -->
+<!-- Grip's landing page: the hero shows a video Grip made and what people say about theirs, then beat by beat how a
+     take becomes one (capture, auto-zoom, captions, the editor, the look, export), the bugs it designs out, why it is
+     safe to rely on, the questions, and the close. Every claim and number comes from the README. -->
 <script lang="ts">
 	import capture from '../../../.github/readme/capture.webp';
 	import editor from '../../../.github/readme/editor.webp';
@@ -19,13 +18,6 @@
 
 	const HORIZON: readonly Layer[] = [{ box: [0, -0.46, 1, 0.9], peak: [0.42, 0.86], start: 0.18 }];
 
-	// The proof under the hero clip; the quotes section shows it again among the others.
-	const proof: Quote = {
-		quote: 'People reply to my videos asking how I made them. Honestly, Grip did.',
-		name: 'Bartosz',
-		role: 'Product Engineer, Netflix',
-	};
-
 	// Each quote is the person's own, published with their permission.
 	const quotes: readonly Quote[] = [
 		{
@@ -38,7 +30,11 @@
 			name: 'Mike',
 			role: 'GTM Engineer',
 		},
-		proof,
+		{
+			quote: 'People reply to my videos asking how I made them. Honestly, Grip did.',
+			name: 'Bartosz',
+			role: 'Product Engineer, Netflix',
+		},
 		{
 			quote: 'If your engineers are shy about sharing updates, try giving them Grip.',
 			name: 'Anna',
@@ -47,6 +43,7 @@
 	];
 
 	const BEATS = [
+		'love',
 		'how',
 		'capture',
 		'zoom',
@@ -56,7 +53,6 @@
 		'export',
 		'bugs',
 		'open',
-		'love',
 		'faq',
 		'start',
 	] as const;
@@ -265,12 +261,21 @@
 				are automatic.
 			</figcaption>
 		</figure>
-		<figure class="proof rise">
-			<blockquote><p>“{proof.quote}”</p></blockquote>
-			<figcaption><b>{proof.name}</b> · {proof.role}</figcaption>
-		</figure>
 	</div>
 </section>
+
+<SectionHeading
+	id="love"
+	beat={beat('love', 'From people who switched')}
+	split
+	title="Show, don’t tell."
+	quiet="In their own words."
+	description="People come to Grip from recorders that felt slow and editors that ate the afternoon. This is what they say a week later."
+>
+	{#snippet after()}
+		<Quotes {quotes} />
+	{/snippet}
+</SectionHeading>
 
 <SectionHeading
 	id="how"
@@ -451,19 +456,6 @@
 				</li>
 			{/each}
 		</ul>
-	{/snippet}
-</SectionHeading>
-
-<SectionHeading
-	id="love"
-	beat={beat('love', 'From people who switched')}
-	split
-	title="Show, don’t tell."
-	quiet="In their own words."
-	description="People come to Grip from recorders that felt slow and editors that ate the afternoon. This is what they say a week later."
->
-	{#snippet after()}
-		<Quotes {quotes} />
 	{/snippet}
 </SectionHeading>
 
@@ -743,34 +735,6 @@
 		line-height: 1.55;
 		text-align: center;
 		text-wrap: balance;
-	}
-
-	.proof {
-		max-width: 640px;
-		margin: 48px auto 0;
-		padding-inline: var(--pad);
-		text-align: center;
-	}
-
-	.proof blockquote {
-		margin: 0;
-	}
-
-	.proof p {
-		font-size: 19px;
-		font-weight: 500;
-		line-height: 1.5;
-		letter-spacing: -0.01em;
-		text-wrap: balance;
-	}
-
-	.proof figcaption {
-		margin-top: 12px;
-	}
-
-	.proof b {
-		color: var(--fg-secondary);
-		font-weight: 500;
 	}
 
 	@keyframes grow {
@@ -1083,7 +1047,6 @@
 
 	@media (max-width: 859px) {
 		.lede,
-		.proof p,
 		.faq-intro p,
 		.sub {
 			font-size: 17px;
