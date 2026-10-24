@@ -1,6 +1,7 @@
-<!-- Grip's landing page: the hero shows a video Grip made, then beat by beat how a take becomes one (capture,
-     auto-zoom, captions, the editor, the look, export), the bugs it designs out, why it is safe to rely on, what
-     people say, the questions, and the close. Every claim and number comes from the README. -->
+<!-- Grip's landing page: the hero shows a video Grip made and what one person says about theirs, then beat by beat
+     how a take becomes one (capture, auto-zoom, captions, the editor, the look, export), the bugs it designs out, why
+     it is safe to rely on, what people say, the questions, and the close. Every claim and number comes from the
+     README. -->
 <script lang="ts">
 	import capture from '../../../.github/readme/capture.webp';
 	import editor from '../../../.github/readme/editor.webp';
@@ -18,6 +19,13 @@
 
 	const HORIZON: readonly Layer[] = [{ box: [0, -0.46, 1, 0.9], peak: [0.42, 0.86], start: 0.18 }];
 
+	// The proof under the hero clip; the quotes section shows it again among the others.
+	const proof: Quote = {
+		quote: 'People reply to my videos asking how I made them. Honestly, Grip did.',
+		name: 'Bartosz',
+		role: 'Product Engineer, Netflix',
+	};
+
 	// Each quote is the person's own, published with their permission.
 	const quotes: readonly Quote[] = [
 		{
@@ -30,11 +38,7 @@
 			name: 'Mike',
 			role: 'GTM Engineer',
 		},
-		{
-			quote: 'People reply to my videos asking how I made them. Honestly, Grip did.',
-			name: 'Bartosz',
-			role: 'Product Engineer, Netflix',
-		},
+		proof,
 		{
 			quote: 'If your engineers are shy about sharing updates, try giving them Grip.',
 			name: 'Anna',
@@ -115,23 +119,23 @@
 	const bugs = [
 		{
 			bug: 'Subtitles drift or ignore your cuts',
-			fix: 'Captions, zooms, keystrokes, and audio all map through one shared time map of cuts and speed changes.',
+			fix: 'Captions, zooms, keystrokes, and audio stay in sync through every cut and speed change.',
 		},
 		{
 			bug: 'Zooms shift when you trim the clip before them',
-			fix: 'Every timed item lives in source time, so a zoom stays on its moment however you cut around it.',
+			fix: 'Every zoom, caption, and keystroke stays on its moment, however you cut around it.',
 		},
 		{
 			bug: 'The cursor is baked into the video',
-			fix: 'The screen is recorded without the cursor, and Grip redraws it from the event stream.',
+			fix: 'Grip records the screen without the cursor and draws it back in, so you can smooth, resize, or hide it later.',
 		},
 		{
 			bug: 'The export doesn’t match the preview',
-			fix: 'The frame at any moment is a pure function of the project, drawn by one renderer for both.',
+			fix: 'One renderer draws both, so the export matches the preview frame for frame.',
 		},
 		{
 			bug: 'A crash or power loss eats the take',
-			fix: 'Tracks are written in fragments, and an interrupted recording is rebuilt at the next launch.',
+			fix: 'Grip writes the take to disk as it records and rebuilds an interrupted one at the next launch.',
 		},
 		{
 			bug: 'A full disk corrupts the recording',
@@ -261,6 +265,10 @@
 				are automatic.
 			</figcaption>
 		</figure>
+		<figure class="proof rise">
+			<blockquote><p>“{proof.quote}”</p></blockquote>
+			<figcaption><b>{proof.name}</b> · {proof.role}</figcaption>
+		</figure>
 	</div>
 </section>
 
@@ -326,10 +334,10 @@
 	id="captions"
 	beat={beat('captions', 'Captions and voice')}
 	title="Captions written on your Mac."
-	body="NVIDIA Parakeet v3 transcribes your voice on device, with timing for every word. Noise reduction, a compressor, and a limiter make it sound produced."
+	body="Grip transcribes your voice on your Mac and times every word. It cuts background noise, keeps quiet phrases audible, and makes sure nothing clips, so you sound produced."
 	href={docHref('polished-by-default')}
 	linkLabel="How your voice sounds"
-	checks={['25 European languages', 'Loudness normalized to -14 LUFS']}
+	checks={['25 European languages', 'As loud as online video']}
 >
 	<Media
 		{...clip('captions')}
@@ -405,7 +413,7 @@
 	split
 	title="The usual recorder bugs."
 	quiet="Designed out."
-	description="Each one shipped in a real screen recorder. Grip rules them out from the first commit: raw tracks, one time map, and one renderer for preview and export."
+	description="Each one shipped in a real screen recorder. Grip designs them out from the first commit instead of patching them later."
 >
 	{#snippet after()}
 		<ol class="cells bugs">
@@ -737,6 +745,34 @@
 		text-wrap: balance;
 	}
 
+	.proof {
+		max-width: 640px;
+		margin: 48px auto 0;
+		padding-inline: var(--pad);
+		text-align: center;
+	}
+
+	.proof blockquote {
+		margin: 0;
+	}
+
+	.proof p {
+		font-size: 19px;
+		font-weight: 500;
+		line-height: 1.5;
+		letter-spacing: -0.01em;
+		text-wrap: balance;
+	}
+
+	.proof figcaption {
+		margin-top: 12px;
+	}
+
+	.proof b {
+		color: var(--fg-secondary);
+		font-weight: 500;
+	}
+
 	@keyframes grow {
 		from {
 			--grow: 0;
@@ -1047,6 +1083,7 @@
 
 	@media (max-width: 859px) {
 		.lede,
+		.proof p,
 		.faq-intro p,
 		.sub {
 			font-size: 17px;
