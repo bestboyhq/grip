@@ -165,6 +165,49 @@ test('adjacent zooms pan across instead of zooming out and back in', () => {
   assert.ok(view(6.9).scale < 1.05, 'a long gap zooms out')
 })
 
+/** Largest movement of an output corner from view a to view b, in output px. */
+function shift(a: View, b: View, W = 1920, H = 1200) {
+  let m = 0
+  for (const [x, y] of [[0, 0], [W, 0], [0, H], [W, H]]) {
+    const u = { x: (x - W / 2) / a.scale + a.center.x, y: (y - H / 2) / a.scale + a.center.y }
+    m = Math.max(m, Math.hypot((u.x - b.center.x) * b.scale + W / 2 - x, (u.y - b.center.y) * b.scale + H / 2 - y))
+  }
+  return m
+}
+
+test('zooms back to back or over one another glide from one framing to the next: no jump, no jolt', () => {
+  // The cursor rests at the bottom left; every change of zooms happens between 2.9 and 10.4 s.
+  const still = moves([[0, 700, 1300], [12, 700, 1300]])
+  const cases: Array<[string, Zoom[]]> = [
+    ['a point to another', [zoom({ start: 1, end: 4, target: point(0.2, 0.2) }), zoom({ start: 4, end: 11, target: point(0.8, 0.8) })]],
+    ['a point to the cursor far from it', [zoom({ start: 1, end: 4, target: point(0.8, 0.2) }), zoom({ start: 4, end: 11 })]],
+    ['the cursor to a deeper point far from it', [zoom({ start: 1, end: 4 }), zoom({ start: 4, end: 11, level: 3, target: point(0.8, 0.2) })]],
+    ['corner to corner at 3x', [zoom({ start: 1, end: 4, level: 3, target: point(0.9, 0.9) }), zoom({ start: 4, end: 11, level: 3, target: point(0.1, 0.1) })]],
+    ['a deeper zoom over a wider one, on and off', [zoom({ start: 1, end: 11, level: 1.5 }), zoom({ start: 4, end: 7, level: 3 })]],
+    // A gentle zoom all along, a click's zoom on it, and a point far from the cursor on that.
+    ['zooms stacked three deep', [zoom({ start: 1, end: 11, level: 1.2 }), zoom({ start: 3, end: 5 }), zoom({ start: 4.5, end: 9, target: point(0.53, 0) })]],
+  ]
+  for (const style of ['focused', 'smooth'] as const) {
+    for (const [name, zooms] of cases) {
+      const project = createProject('t', { duration: 12, screen: SCREEN, events: 'sources/events.jsonl' })
+      project.style.screenAnimation = style
+      const { view } = setup(zooms, still, { project })
+      let speed = 0
+      for (const t of frames(2.9, 10.4, 60).slice(1)) {
+        const v = shift(view(t - 1 / 60), view(t))
+        assert.ok(v < 120, `${style}, ${name}: the view jumps ${v.toFixed(0)} px at t=${t.toFixed(3)}`)
+        assert.ok(Math.abs(v - speed) < 8, `${style}, ${name}: the view jolts from ${speed.toFixed(1)} to ${v.toFixed(1)} px a frame at t=${t.toFixed(3)}`)
+        speed = v
+      }
+    }
+  }
+  // Two zooms on the cursor at one level, back to back, play as one.
+  const drift = moves([[0, 600, 500], [3, 700, 550], [6, 2300, 1400], [12, 2400, 1450]])
+  const split = setup([zoom({ start: 1, end: 4.5 }), zoom({ start: 4.5, end: 9 })], drift)
+  const whole = setup([zoom({ start: 1, end: 9 })], drift)
+  for (const t of frames(0, 12)) assert.ok(shift(split.view(t), whole.view(t)) < 0.01, `t=${t}`)
+})
+
 test('instant zooms cut in and out on the exact frame', () => {
   const { view } = setup([zoom({ start: 2.0037, end: 5.0041, instant: true, target: point(0.3, 0.3) })])
   near(view(2.0036).scale, 1, 1e-6)
