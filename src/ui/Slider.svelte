@@ -64,19 +64,19 @@
 <style>
   .row { display: flex; align-items: center; gap: 6px; min-height: 28px; }
   .row.disabled { opacity: 0.4; }
-  label { flex: none; width: var(--label-w, 92px); color: var(--text-dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  label { flex: none; width: var(--label-w, 92px); color: var(--fg-secondary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   input { flex: 1; min-width: 0; height: 18px; margin: 0; background: transparent; appearance: none; -webkit-appearance: none; }
   input:focus-visible { outline: none; }
-  input::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--p), var(--surface-200) var(--p)); }
+  input::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--brand) var(--p), var(--surface-200) var(--p)); }
   input::-webkit-slider-thumb {
-    -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: var(--knob);
+    -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: var(--color-white);
     box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.35), 0 1px 3px rgb(0 0 0 / 0.45); transition: transform 120ms var(--ease-out);
   }
   input:active::-webkit-slider-thumb { transform: scale(1.1); }
-  input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--focus-ring); }
-  .reset { flex: none; display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--radius-xs); background: none; color: var(--text-faint); opacity: 0; pointer-events: none; }
+  input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--brand); }
+  .reset { flex: none; display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--radius-xs); background: none; color: var(--fg-faint); opacity: 0; pointer-events: none; }
   .reset.shown { pointer-events: auto; }
   .row:hover .reset.shown, .reset.shown:focus-visible { opacity: 1; }
-  .reset:hover { color: var(--text); background: var(--surface-50-hover); }
-  output { flex: none; width: 38px; text-align: right; font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; }
+  .reset:hover { color: var(--fg-default); background: var(--surface-hover); }
+  output { flex: none; width: 38px; text-align: right; font-size: 12px; color: var(--fg-default); font-variant-numeric: tabular-nums; }
 </style>

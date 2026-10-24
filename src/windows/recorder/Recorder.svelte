@@ -384,7 +384,7 @@
     <button class="pick mic" class:off={!mic} onclick={(e) => pickInput('mic', e.currentTarget)} {@attach follow}>
       {#key !mic}<span class="glyph" in:blur={SWAP}><Icon name={mic ? 'mic' : 'mic-off'} width={12} height={17} stroke={1.5} /></span>{/key}
       {@render label(mic ? short(mic.name) : 'No microphone')}
-      {#if mic}<span class="meter" aria-hidden="true" transition:fade={{ duration: 150 }}><span style:width="max(3px, {level * 100}%)"></span></span>{/if}
+      {#if mic}<span class="meter" aria-hidden="true" transition:fade={{ duration: 180 }}><span style:width="max(3px, {level * 100}%)"></span></span>{/if}
     </button>
     <button class="pick system" class:off={!s?.systemAudio} aria-pressed={!!s?.systemAudio} onclick={() => setSettings({ systemAudio: !s?.systemAudio })} {@attach follow}>
       {#key !s?.systemAudio}<span class="glyph" in:blur={SWAP}><Icon name={s?.systemAudio ? 'speaker' : 'speaker-off'} width={20} height={16} stroke={1.5} /></span>{/key}
@@ -398,7 +398,7 @@
   {/if}
 </main>
 {#if shell.update}
-  <div class="update hud" role="status" transition:fade={{ duration: 150 }}>
+  <div class="update hud" role="status" transition:fade={{ duration: 180 }}>
     <span class="note">Grip {shell.update} is ready to install.</span>
     <button class="action" onclick={() => invoke('update:later')}>Later</button>
     <button class="action primary" onclick={() => invoke('update:restart')}>Restart to Update</button>
@@ -413,9 +413,9 @@
     align-items: center;
     padding: 0 10px; /* the end buttons' boxes; the close circle starts 20 px in, like the gear's chevron ends */
     border-radius: var(--radius-lg);
-    background: var(--surface-50);
+    background: var(--surface-root);
     box-shadow: var(--hairline);
-    color: var(--text);
+    color: var(--fg-default);
     -webkit-app-region: drag;
   }
   button {
@@ -426,12 +426,9 @@
     display: flex;
     align-items: center;
     border-radius: var(--radius-sm); /* concentric: 6 px inside the 12 px bar */
-    transition:
-      background-color 120ms,
-      color 120ms;
   }
   button:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--brand);
     outline-offset: -2px;
   }
   .close {
@@ -445,12 +442,11 @@
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: var(--accent);
-    color: var(--accent-ink);
-    transition: background-color 120ms;
+    background: var(--surface-inverse);
+    color: var(--fg-inverse);
   }
   .close:hover .circle {
-    background: var(--accent-hover);
+    background: var(--surface-inverse-hover);
   }
   /* Every hover box is 52 px tall, 6 px inside the bar, and the camera, microphone, and system audio
      boxes touch: the highlight moves along one track from button to button without dropping out. */
@@ -458,7 +454,7 @@
     width: 0.5px;
     height: 44px;
     margin: 1px 6.25px 0;
-    background: var(--edge-strong);
+    background: var(--border-default);
   }
   .close {
     margin-right: 1.5px;
@@ -470,7 +466,7 @@
     justify-content: flex-start;
     padding-top: 6.75px;
     gap: 4.15px;
-    color: var(--text);
+    color: var(--fg-default);
   }
   /* Icons of different heights share one centered box, so the labels line up. */
   .mode .icon {
@@ -481,11 +477,11 @@
   .mode .name {
     font-size: 10.3px;
     line-height: 13px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   /* The hover and chosen-mode bubbles, under the buttons' content (the fixed bar is a stacking
      context). The veil draws both as solid shapes and fades their union to the hover veil's 7%
-     (--surface-50-hover). */
+     (--surface-hover). */
   .veil {
     position: absolute;
     inset: 0;
@@ -497,7 +493,7 @@
     position: absolute;
     left: 0;
     top: 0;
-    background: #fff;
+    background: var(--color-white);
     opacity: 0;
     pointer-events: none;
     transition: opacity 140ms ease;
@@ -506,7 +502,7 @@
     opacity: 1;
   }
   .mode.on .name {
-    color: var(--text);
+    color: var(--fg-default);
   }
   /* The three share the room between the separators, content centered: equal padding on both sides
      of every box, whatever the device names. */
@@ -518,10 +514,10 @@
     gap: 10px;
     padding: 1.5px 12px 0;
     font-size: 13.2px;
-    color: var(--text);
+    color: var(--fg-default);
   }
   .pick.off {
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   .glyph {
     display: flex;
@@ -559,20 +555,20 @@
     top: 42.5px;
     height: 3px;
     border-radius: 1.5px;
-    background: var(--surface-25);
+    background: var(--control-track);
   }
   .meter span {
     display: block;
     height: 3px;
     border-radius: 1.5px;
-    background: var(--text-dim);
+    background: var(--fg-secondary);
     transition: width 60ms linear;
   }
   .gear {
     height: 52px;
     padding: 0 10px;
     gap: 6.5px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .gear :global(svg + svg) {
     margin-top: 2px;
@@ -601,7 +597,7 @@
     justify-content: center;
     gap: 8px;
     border-radius: var(--radius-lg);
-    background: rgb(20 20 22 / 0.78);
+    background: var(--surface-veil);
     box-shadow: var(--hairline);
     backdrop-filter: blur(2px);
     -webkit-app-region: drag;
@@ -620,14 +616,14 @@
     font-size: 13px;
   }
   .action:hover {
-    background: var(--surface-100-hover);
+    background: var(--surface-hover);
   }
   .action.primary {
-    background: var(--accent);
-    color: var(--accent-ink);
+    background: var(--surface-inverse);
+    color: var(--fg-inverse);
     font-weight: 500;
   }
   .action.primary:hover {
-    background: var(--accent-hover);
+    background: var(--surface-inverse-hover);
   }
 </style>

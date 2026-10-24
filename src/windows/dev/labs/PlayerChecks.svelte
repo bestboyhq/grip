@@ -359,7 +359,7 @@
 <style>
   main {
     padding: 20px 24px;
-    background: var(--surface-root);
+    background: var(--surface-frame);
     height: 100vh;
     overflow: auto;
     font: 12px var(--mono);
@@ -375,9 +375,9 @@
     color: var(--success);
   }
   .fail b {
-    color: var(--danger);
+    color: var(--error-content);
   }
   small {
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
 </style>

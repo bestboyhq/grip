@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { createProject, PROJECT_VERSION } from '../src/shared/project.ts'
 import { createBundle, followFile, importVideo, openBundle, readProject, recentProjects, recoverBundles, renameBundle, sanitizeName, saveProject, saveThumbnail, updateProject, updateRecent, writeNewRecording, writeProject } from './projects.ts'
-import { applyPreset, deletePreset, exportPreset, importPreset, listPresets, savePreset } from './presets.ts'
+import { applyPreset, deletePreset, exportPreset, importPreset, listPresets, renamePreset, savePreset } from './presets.ts'
 
 const root = await mkdtemp(join(tmpdir(), 'studio #1 ✨ café '))
 const ff = (...args: string[]) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args])
@@ -290,6 +290,15 @@ test('presets bundle their assets, apply anywhere, and fall back to defaults for
 
   const saved = await savePreset('Warm ✨ #1', from, style, dir)
   assert.deepEqual((await listPresets(dir)).map((p) => p.name), ['Warm ✨ #1'])
+  // Previews load the preset's assets from the presets folder, before any bundle has them.
+  const { look } = (await listPresets(dir))[0]
+  assert.ok(look.background.kind === 'image' && look.background.file.startsWith(join(dir, 'assets') + '/'))
+  assert.equal(await readFile(look.background.file, 'utf8'), 'image bytes')
+  // Update in place and rename keep one preset.
+  await savePreset('Warm ✨ #1', from, { ...style, padding: 20 }, dir, saved.id)
+  await renamePreset(saved.id, 'Warmer', dir)
+  assert.deepEqual((await listPresets(dir)).map((p) => [p.id, p.name, p.style.padding]), [[saved.id, 'Warmer', 20]])
+  await savePreset('Warm ✨ #1', from, style, dir, saved.id)
   const applied = await applyPreset(saved.id, to, dir)
   assert.equal(applied.padding, 12)
   assert.ok(applied.background.kind === 'image' && /^assets\/[0-9a-f]{16}\.jpg$/.test(applied.background.file))

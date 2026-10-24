@@ -126,24 +126,16 @@
     align-items: flex-start;
     padding-top: 14vh;
     background: rgb(0 0 0 / 0.28);
-    animation: fade 120ms ease-out;
+    animation: fade-in var(--come) ease-out;
   }
   .menu {
     width: min(560px, calc(100vw - 48px));
     overflow: hidden;
-    background: var(--surface-50);
+    background: var(--surface-elevated);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-modal);
-    animation: rise 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-  @keyframes fade {
-    from { opacity: 0; }
-  }
-  @keyframes rise {
-    from { opacity: 0; transform: translateY(-6px) scale(0.98); }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .scrim, .menu { animation: none; }
+    transform-origin: top center;
+    animation: come var(--come) var(--ease-out);
   }
   input {
     width: 100%;
@@ -152,12 +144,12 @@
     border: 0;
     background: none;
     box-shadow: var(--hairline-b);
-    color: var(--text);
+    color: var(--fg-default);
     font: 15px var(--font);
     outline: none;
   }
   input::placeholder {
-    color: var(--text-faint);
+    color: var(--fg-faint);
   }
   .list {
     max-height: min(400px, 56vh);
@@ -169,7 +161,7 @@
     padding: 10px 12px 4px;
     font-size: 11px;
     font-weight: 500;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
   }
   .item {
     display: flex;
@@ -180,13 +172,13 @@
     border-radius: var(--radius-sm);
   }
   .item[aria-selected='true'] {
-    background: var(--surface-50-selected);
+    background: var(--surface-150);
   }
   .title {
     white-space: nowrap;
   }
   .hint {
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -202,14 +194,14 @@
     border-radius: var(--radius-xs);
     background: var(--surface-150);
     box-shadow: var(--hairline);
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     font: 11px/18px var(--font);
     text-align: center;
   }
   .empty {
     margin: 0;
     padding: 18px 12px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     text-align: center;
   }
 </style>

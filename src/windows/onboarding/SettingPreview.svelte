@@ -313,7 +313,7 @@
     width: 14%;
     height: 8%;
     border-radius: 3px;
-    background: var(--accent);
+    background: var(--brand);
   }
   .target::after {
     content: '';

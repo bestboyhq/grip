@@ -16,7 +16,7 @@
 
 import { doc, save } from './doc.svelte.ts'
 import type { InputEvent } from '../shared/events.ts'
-import type { Clip, Project, Transcript } from '../shared/project.ts'
+import type { Clip, Project, Style, Transcript } from '../shared/project.ts'
 import { mapRange, timeMap, toOutput, toSource } from '../shared/timemap.ts'
 import { outputSize, prepare, sceneAt, type FaceSample, type Paths, type Prepared, type Scene, type SceneInput } from '../engine/scene.ts'
 import { prefetchCut, renderFrame, type Media } from '../engine/compose.ts'
@@ -31,8 +31,9 @@ import workletUrl from '../engine/audio/playback.worklet.ts?worker&url'
 /** `prepared` counts preparations of the project for the preview (after edits, resizes, a face track
  *  or speech arriving), so views derived from currentScene() know when to look again.
  *  `hover`: output time under the pointer on the timeline while paused; the preview shows that moment
- *  instead of the playhead's (the playhead stays put). Play and seek clear it. */
-export const player = $state({ time: 0, duration: 0, playing: false, error: null as string | null, prepared: 0, hover: null as number | null })
+ *  instead of the playhead's (the playhead stays put). Play and seek clear it.
+ *  `look`: a style shown instead of the project's, nothing applied (showLook). */
+export const player = $state({ time: 0, duration: 0, playing: false, error: null as string | null, prepared: 0, hover: null as number | null, look: null as { name: string; style: Style } | null })
 
 /** The output time the preview shows: the hovered moment, else the playhead. */
 export const previewTime = () => player.hover ?? player.time
@@ -70,6 +71,7 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined
 let detachCurrent: (() => void) | null = null
 let edge: { clips: Clip[]; t: number; timing: string } | null = null // see showEdge
 let edgePrep: { timing: string; p: Prepared | null } | null = null // edge.clips prepared from `prepared`; p is null while in flight
+let lookPrep: { key: string; from: Prepared; p: Prepared | null } | null = null // player.look prepared from `from`; p is null while in flight
 
 // Audio
 let ctx: AudioContext | null = null
@@ -139,7 +141,8 @@ export function attach(c: HTMLCanvasElement): () => void {
     canvas = null
     shown = { t: NaN, p: null }
     player.hover = null
-    edge = edgePrep = null
+    player.look = null
+    edge = edgePrep = lookPrep = null
     void ctx?.close()
     ctx = node = null
     audioReady = null
@@ -183,6 +186,13 @@ export const loadedExtras = () => ({ faces: faces.value, speech: speech.value })
 export function showEdge(e: { clips: Clip[]; t: number } | null) {
   edge = e && { ...e, timing: e.clips === edge?.clips ? edge.timing : timingOf(e.clips) }
   if (!e) edgePrep = null
+}
+
+/** Preview the project in another style (a hovered preset): the frame, its size, and its aspect follow
+ *  `look` until null ends it. Nothing is edited. */
+export function showLook(look: { name: string; style: Style } | null) {
+  player.look = look
+  if (!look) lookPrep = null
 }
 
 export function seek(t: number) {
@@ -230,8 +240,8 @@ function frame(ts: number) {
   raf = requestAnimationFrame(frame)
   const project = doc.project
   if (!canvas || !project) return
-  // Pixel size: the CSS box times devicePixelRatio, fitted to the output aspect.
-  const out = outputSize(project, 1080)
+  // Pixel size: the CSS box times devicePixelRatio, fitted to the output aspect (a previewed look's own).
+  const out = outputSize(player.look ? { ...project, style: player.look.style } : project, 1080)
   const cw = canvas.clientWidth
   const ch = canvas.clientHeight
   if (!cw || !ch) return
@@ -261,8 +271,8 @@ function frame(ts: number) {
     return
   }
   if (preparedTiming !== timing) return // the old timeline would show another moment than this one
-  const p = edge ? edgePrepared(edge) : prepared
-  if (!p) return // the edge's clips are still being prepared: keep the last frame
+  const p = edge ? edgePrepared(edge) : player.look ? lookPrepared(player.look.style, w, h) : prepared
+  if (!p) return // the edge's clips or the look are still being prepared: keep the last frame
   const t = edge ? edge.t : Math.min(previewTime(), player.duration) // latest wins: hovers between two frames are never drawn
   if (t === shown.t && p === shown.p) return
   shown = { t, p }
@@ -295,6 +305,23 @@ function edgePrepared(e: { clips: Clip[]; timing: string }): Prepared | null {
       if (edgePrep === mine) mine.p = prepare(input, paths)
     })
     .catch(fail) // stays in flight, so a failure is not retried every frame; the next drag asks again
+  return null
+}
+
+/** The preparation that shows a previewed look: the preview's own input in that style and at the canvas
+ *  size, prepared in the worker. Null until that lands, and while the preview catches up with a resize. */
+function lookPrepared(style: Style, width: number, height: number): Prepared | null {
+  const from = prepared!
+  if (from.input.width !== width || from.input.height !== height) return null
+  const key = JSON.stringify(style)
+  if (lookPrep?.key === key && lookPrep.from === from) return lookPrep.p
+  const mine = (lookPrep = { key, from, p: null as Prepared | null })
+  const input = { ...from.input, project: { ...from.input.project, style: $state.snapshot(style) as Style } }
+  pathsOffThread(input)
+    .then((paths) => {
+      if (lookPrep === mine) mine.p = prepare(input, paths)
+    })
+    .catch(fail)
   return null
 }
 

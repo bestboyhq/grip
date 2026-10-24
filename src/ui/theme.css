@@ -1,62 +1,89 @@
-/* Design tokens shared by every window. Native macOS feel: system font, dark graphite chrome,
-   dense controls, one accent. Components in src/ui/ read only these variables. */
+/* Design tokens shared by every window, copied by hand from the Bestboy platform (`bestboyhq/platform`:
+   src/styles/tokens/primitives.css and semantic.css, dark values) so every Bestboy app and site looks alike.
+   Its docs/design.md is the source: a change lands there first, then here. Grip is dark only and adds the few
+   roles the platform has no token for, marked "Grip". Components in src/ui/ read only these variables. */
 :root {
   color-scheme: dark;
-  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
-  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  /* The platform's type: Inter carries all text and JetBrains Mono what a machine would print (timecodes, sizes,
+     links), bundled from @fontsource-variable in main.ts. Each falls back to a local font matched to its metrics, so
+     nothing moves if it is ever late. */
+  --font: 'Inter Variable', 'Inter Fallback', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --mono: 'JetBrains Mono Variable', 'JetBrains Mono Fallback', ui-monospace, Menlo, monospace;
 
-  /* Surfaces, by depth. The window is the root; panels (inspector, timeline, popovers) sit on it; wells
-     sink into a panel, darker than it (segmented tracks, the wallpaper grid, timeline lanes); controls
-     and selected tiles rise above it. Hover and selected are per surface: an element takes the states
-     of the surface it sits on, so a hover always reads one step up from its own background. */
-  --surface-root: #111113;
-  --surface-root-hover: #18181b;
-  --surface-root-selected: #212125;
-  --surface-25: #151518; /* wells */
-  --surface-25-hover: #1b1b1f;
-  --surface-25-selected: #2c2c31;
-  --surface-50: #1a1a1d; /* panels */
-  --surface-50-hover: #222226;
-  --surface-50-selected: #2a2a2f;
-  --surface-100: #232327; /* controls: buttons, inputs, selects */
-  --surface-100-hover: #2b2b30;
-  --surface-100-selected: #34343a;
-  --surface-150: #2c2c31; /* raised: selected tiles, tooltips */
-  --surface-150-hover: #34343a;
-  --surface-200: #3b3b41; /* tracks of switches and sliders */
-  --surface-200-hover: #47474e;
+  --color-white: #ffffff;
+  --color-grey-50: #fafaf8;
+  --color-grey-100: #f4f4f3;
+  --color-grey-150: #eeeeec;
+  --color-grey-200: #e7e7e6;
+  --color-grey-250: #dededc;
+  --color-grey-300: #d4d4d2;
+  --color-grey-350: #babab8;
+  --color-grey-400: #a0a09e;
+  --color-grey-450: #898987;
+  --color-grey-500: #737371;
+  --color-grey-525: #6b6b69;
+  --color-grey-550: #636362;
+  --color-grey-600: #545453;
+  --color-grey-650: #4a4a49;
+  --color-grey-700: #40403f;
+  --color-grey-750: #343433;
+  --color-grey-800: #292928;
+  --color-grey-850: #20201f;
+  --color-grey-875: #1c1c1b;
+  --color-grey-900: #181817;
+  --color-grey-925: #111110;
+  --color-grey-950: #070707;
+
+  /* Surfaces, by depth, as the platform's app lays them out in dark: the window frame sinks to grey 925 and
+     panels (inspector, timeline, popovers) take --surface-root. Tracks sink back into a panel; controls and
+     menus rise above it. A hovered row or control takes --surface-hover. */
+  --surface-frame: var(--color-grey-925); /* Grip: the window behind the panels */
+  --surface-root: var(--color-grey-900);
+  --surface-elevated: var(--color-grey-850);
+  --surface-100: var(--color-grey-850);
+  --surface-150: var(--color-grey-800);
+  --surface-200: var(--color-grey-750); /* Grip: tracks of switches and sliders */
+  --surface-well: var(--color-grey-875);
+  --surface-hover: var(--color-grey-800);
+  --surface-inverse: var(--color-grey-50);
+  --surface-inverse-hover: var(--color-grey-200);
+  --surface-veil: rgb(24 24 23 / 0.8); /* Grip: a dark veil for controls floating over the desktop or a video */
+  --ghost-hover: rgb(255 255 255 / 0.06); /* Grip: a hover that sits on any surface */
+  --control-track: var(--color-grey-925);
+  --control-raised: var(--color-grey-800);
+
+  --fg-default: var(--color-grey-100);
+  --fg-secondary: var(--color-grey-400);
+  --fg-muted: var(--color-grey-450);
+  --fg-faint: var(--color-grey-550);
+  --fg-inverse: var(--color-grey-900); /* Grip: text on --surface-inverse; the platform uses --surface-root, which HUD windows turn into a veil */
+
+  --border-subtle: var(--color-grey-850);
+  --border-default: var(--color-grey-750);
+  --border-strong: var(--color-grey-650);
+  --ring-faint: rgb(255 255 255 / 0.1);
+
+  /* Greyscale, and one blue for focus, progress, and what is selected or on. The logo dot's orange marks
+     recording, the only other color. */
+  --brand: oklch(51.51% 0.2307 257.85);
+  --brand-text: oklch(72% 0.13 262); /* Grip: the brand blue legible as text on dark surfaces */
+  --brand-soft: var(--color-grey-800);
+  --record-text: #ffb27a; /* Grip: the record orange legible as text on dark surfaces */
+  --error-content: oklch(67.76% 0.2104 25.12);
+  --error-bg: color-mix(in srgb, var(--error-content) 16%, transparent);
+  --error-bg-hover: color-mix(in srgb, var(--error-content) 26%, transparent);
+  --success: oklch(63.31% 0.1776 147.5);
+  --warm: oklch(82% 0.13 85);
+  --record: #f04600; /* Grip: the logo dot's orange */
+  --record-hover: #fb8600;
 
   /* Hairlines: half-point inset shadows, one device pixel on Retina. They take no layout space,
      follow the corner radius, and stack with other shadows (box-shadow: var(--hairline), ...). */
-  --edge-color: rgb(255 255 255 / 0.08);
-  --edge-strong: rgb(255 255 255 / 0.14);
-  --hairline: inset 0 0 0 0.5px var(--edge-color);
-  --hairline-t: inset 0 0.5px 0 var(--edge-color);
-  --hairline-b: inset 0 -0.5px 0 var(--edge-color);
-  --hairline-l: inset 0.5px 0 0 var(--edge-color);
-  --hairline-r: inset -0.5px 0 0 var(--edge-color);
-
-  --text: #ececef;
-  --text-dim: #a0a0a8;
-  --text-faint: #6c6c75;
-
-  /* Grayscale UI: color comes only from the logo dot, its orange for recording, its blue for auto zoom. */
-  --accent: #e8e8ec; /* primary buttons, toggles, sliders, progress, selection */
-  --accent-hover: #f6f6f8;
-  --accent-ink: #111113; /* text and knobs on --accent */
-  --accent-text: #fff; /* accent text on dark surfaces */
-  --accent-soft: rgb(255 255 255 / 0.1);
-  --knob: #f5f5f7; /* slider and switch thumbs */
-  --danger: #ff5f57;
-  --danger-hover: #ff7a73;
-  --success: #5fd38d;
-  --warning: #ffd60a; /* paused, needs attention */
-  --warning-text: #ffe58a;
-  --record: #f04600; /* recording: the logo dot's orange */
-  --record-hover: #fb8600;
-  --zoom: #1957fa; /* auto zoom on: the logo dot's blue */
-  --zoom-text: #86a8ff; /* the same blue, legible on dark surfaces */
-  --focus-ring: rgb(255 255 255 / 0.55);
+  --hairline: inset 0 0 0 0.5px var(--ring-faint);
+  --hairline-t: inset 0 0.5px 0 var(--ring-faint);
+  --hairline-b: inset 0 -0.5px 0 var(--ring-faint);
+  --hairline-l: inset 0.5px 0 0 var(--ring-faint);
+  --hairline-r: inset -0.5px 0 0 var(--ring-faint);
 
   /* Concentric corners: a box nested in another with padding p has radius (outer - p), so the gap
      between the two curves stays even. A 16 px well with 8 px padding holds 8 px tiles. */
@@ -67,73 +94,101 @@
   --radius-xl: 16px;
   --gutter: 8px; /* between the window edge and panels, between panels, and inside wells */
   --control-h: 26px;
-  --shadow-pop: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 12px 32px rgb(0 0 0 / 0.5), var(--hairline); /* popovers, menus */
-  --shadow-modal: 0 0 0 0.5px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.18), 0 10px 28px rgb(0 0 0 / 0.22), var(--hairline); /* dialogs, command menu; the backdrop already sets them apart, so a light lift */
-  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  /* The platform's menu shell, its shadow deepened for a dark window. */
+  --shadow-pop: 0 0 0 1px var(--ring-faint), 0 1px 1px rgb(0 0 0 / 0.12), 0 16px 40px -8px rgb(0 0 0 / 0.6);
+  --shadow-modal: 0 0 0 1px var(--ring-faint), 0 2px 6px rgb(0 0 0 / 0.18), 0 10px 28px rgb(0 0 0 / 0.32);
+
+  /* Motion, from the platform's docs/design.md: what comes, goes, or moves eases out on --ease-out, steep at the
+     start and then a long settle, and stays under 300 ms. A dropdown grows from 0.935 of its size out of its
+     control over 200 ms and goes over 150 ms; other things that come and go take 180 ms. Things that glide from
+     one place to the next (a segmented control's thumb, the tooltip between anchors) take --ease-glide; a
+     crossfade takes --ease-enter and blurs 2px at its faintest. A hover never animates: it switches. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-glide: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-enter: cubic-bezier(0.33, 1, 0.68, 1);
+  --drop-in: 200ms;
+  --drop-out: 150ms;
+  --come: 180ms;
+  --drop-scale: 0.935;
 }
 
 /* HUD windows (recorder bar, widget, notes) float over native HUD vibrancy. Their panel is a veil the
    blur shows through, and states are white veils instead of opaque grays. Hairlines are re-declared
    because a custom property resolves its var()s where it is declared. */
 .hud {
-  --surface-50: rgb(40 40 42 / 0.38);
-  --surface-50-hover: rgb(255 255 255 / 0.07);
-  --surface-50-selected: rgb(255 255 255 / 0.1);
+  --surface-root: rgb(40 40 42 / 0.38);
+  --surface-hover: rgb(255 255 255 / 0.16);
+  --surface-150: rgb(255 255 255 / 0.1);
   --surface-100: rgb(255 255 255 / 0.12);
-  --surface-100-hover: rgb(255 255 255 / 0.18);
   --surface-200: rgb(255 255 255 / 0.22);
-  --edge-color: rgb(255 255 255 / 0.13);
-  --edge-strong: rgb(255 255 255 / 0.105);
-  --hairline: inset 0 0 0 0.5px var(--edge-color);
-  --hairline-t: inset 0 0.5px 0 var(--edge-color);
-  --hairline-b: inset 0 -0.5px 0 var(--edge-color);
+  --ring-faint: rgb(255 255 255 / 0.13);
+  --border-default: rgb(255 255 255 / 0.105);
+  --hairline: inset 0 0 0 0.5px var(--ring-faint);
+  --hairline-t: inset 0 0.5px 0 var(--ring-faint);
+  --hairline-b: inset 0 -0.5px 0 var(--ring-faint);
 }
 
+@font-face { font-family: 'Inter Fallback'; src: local('Arial'); size-adjust: 107.12%; ascent-override: 90.2%; descent-override: 22.48%; line-gap-override: 0%; }
+@font-face { font-family: 'JetBrains Mono Fallback'; src: local('Menlo'), local('Consolas'); size-adjust: 96%; ascent-override: 109%; descent-override: 27%; }
+
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; font: 13px/1.4 var(--font); color: var(--text); background: transparent; -webkit-font-smoothing: antialiased; user-select: none; overflow: hidden; }
+html, body { margin: 0; height: 100%; font: 13px/1.4 var(--font); color: var(--fg-default); background: transparent; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-optical-sizing: auto; user-select: none; overflow: hidden; }
 button, input, select, textarea { font: inherit; color: inherit; }
 input, textarea { user-select: text; }
 /* Everything that acts on a click shows the pointing hand; disabled controls don't. */
 button, select, [role='option'], input:is([type='checkbox'], [type='radio'], [type='color']), label:has(> input:is([type='checkbox'], [type='radio'])) { cursor: pointer; }
 button:disabled, select:disabled, input:disabled, label:has(> input:disabled), [aria-disabled='true'] { cursor: default; }
 :focus { outline: none; }
-:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.12); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-thumb:hover { background-color: rgb(255 255 255 / 0.22); }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 
-/* Buttons. `.btn` text button, `.btn.primary` filled accent, `.icon-btn` square icon button. */
+/* Buttons. `.btn` text button, `.btn.primary` the one main action (inverted, as the platform's), `.icon-btn`
+   square icon button. Hovers switch at once; a press scales the button (installPress in motion.ts). */
 .btn, .icon-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  height: var(--control-h); padding: 0 10px; border: 0; border-radius: var(--radius-sm);
-  background: var(--surface-100); color: var(--text); font-size: 12.5px; font-weight: 500; white-space: nowrap;
-  transition: background-color 120ms, color 120ms, opacity 120ms;
+  height: var(--control-h); padding: 0 10px; border: 0; border-radius: var(--radius);
+  background: var(--surface-100); box-shadow: inset 0 0 0 0.5px var(--border-default); color: var(--fg-default);
+  font-size: 12.5px; font-weight: 500; white-space: nowrap;
 }
-.btn:hover, .icon-btn:hover { background: var(--surface-100-hover); }
-.btn:active, .icon-btn:active { background: var(--surface-100-selected); }
-.btn.primary { background: var(--accent); color: var(--accent-ink); }
-.btn.primary:hover { background: var(--accent-hover); }
-.btn.ghost, .icon-btn { background: transparent; }
-.btn.ghost:hover, .icon-btn:hover { background: rgb(255 255 255 / 0.06); } /* ghosts sit on any surface */
-.icon-btn { width: 28px; height: 28px; padding: 0; color: var(--text-dim); }
-.icon-btn:hover { color: var(--text); }
+.btn:hover, .icon-btn:hover { background: var(--surface-hover); }
+.btn.primary { background: var(--surface-inverse); box-shadow: none; color: var(--fg-inverse); }
+.btn.primary:hover { background: var(--surface-inverse-hover); }
+.btn.ghost, .icon-btn { background: transparent; box-shadow: none; }
+.btn.ghost:hover, .icon-btn:hover { background: var(--ghost-hover); }
+.icon-btn { width: 28px; height: 28px; padding: 0; border-radius: var(--radius-sm); color: var(--fg-secondary); }
+.icon-btn:hover { color: var(--fg-default); }
 .btn:disabled, .icon-btn:disabled { opacity: 0.35; pointer-events: none; }
+
+/* Dropdowns: every popover and menu grows from 0.935 of its size out of the control that opened it, over 200 ms,
+   and goes over 150 ms. Give a native [popover] the `drop` class and a transform-origin on the side that faces its
+   control; a menu Svelte renders takes `transition:drop` from motion.ts. Dialogs come in with `come`. */
+.drop {
+  opacity: 0; transform: scale(var(--drop-scale)); transform-origin: top right;
+  transition: opacity var(--drop-out) var(--ease-out), transform var(--drop-out) var(--ease-out),
+    display var(--drop-out) allow-discrete, overlay var(--drop-out) allow-discrete;
+}
+.drop:popover-open { opacity: 1; transform: none; transition-duration: var(--drop-in); }
+@starting-style { .drop:popover-open { opacity: 0; transform: scale(var(--drop-scale)); } }
+@keyframes come { from { opacity: 0; transform: scale(var(--drop-scale)); } }
+@keyframes fade-in { from { opacity: 0; } }
 
 /* Shared tooltip (src/ui/tooltip.ts). `.tooltip` is a zero-size point at the anchor edge that glides between
    anchors; the bubble hangs off it, fades and scales in, and morphs its size when the text changes. */
 .tooltip {
   position: fixed; inset: 0 auto auto 0; width: 0; height: 0; margin: 0; padding: 0; border: 0; overflow: visible;
-  background: none; pointer-events: none; transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
+  background: none; pointer-events: none; transition: transform 220ms var(--ease-glide);
 }
 .tooltip.snap { transition: none; }
 .tooltip-bubble {
   position: absolute; bottom: 0; left: 0; width: max-content; max-width: min(20rem, calc(100vw - 16px));
   padding: 4px 8px; border-radius: var(--radius-sm); background: var(--surface-150); box-shadow: var(--hairline), var(--shadow-pop);
-  color: var(--text); font-size: 12px; line-height: 16px; white-space: nowrap; text-align: center; user-select: none;
+  color: var(--fg-default); font-size: 12px; line-height: 16px; white-space: nowrap; text-align: center; user-select: none;
   transform-origin: bottom center; visibility: hidden; opacity: 0; transform: translateX(-50%) translateY(4px) scale(0.96);
-  transition: opacity 160ms cubic-bezier(0.33, 1, 0.68, 1), transform 160ms cubic-bezier(0.33, 1, 0.68, 1), visibility 0s linear 160ms;
+  transition: opacity 160ms var(--ease-enter), transform 160ms var(--ease-enter), visibility 0s linear 160ms;
 }
 .tooltip.open .tooltip-bubble { visibility: visible; opacity: 1; transform: translateX(-50%); transition-delay: 0s; }
 .tooltip.below .tooltip-bubble { top: 0; bottom: auto; transform-origin: top center; transform: translateX(-50%) translateY(-4px) scale(0.96); }
@@ -143,22 +198,23 @@ button:disabled, select:disabled, input:disabled, label:has(> input:disabled), [
 .tooltip.right.open .tooltip-bubble, .tooltip.left.open .tooltip-bubble { transform: translateY(-50%); }
 .tooltip-bubble.morph {
   overflow: hidden;
-  transition: opacity 160ms cubic-bezier(0.33, 1, 0.68, 1), transform 160ms cubic-bezier(0.33, 1, 0.68, 1),
-    width 240ms cubic-bezier(0.32, 0.72, 0, 1), height 240ms cubic-bezier(0.32, 0.72, 0, 1);
+  transition: opacity 160ms var(--ease-enter), transform 160ms var(--ease-enter),
+    width 240ms var(--ease-glide), height 240ms var(--ease-glide);
 }
 .tooltip-view { position: relative; display: block; width: 100%; height: 100%; overflow: hidden; }
 .tooltip-text { display: block; }
 .tooltip-text.enter, .tooltip-ghost { position: absolute; top: 0; left: 50%; }
-.tooltip-text.enter { animation: tooltip-text-in 240ms cubic-bezier(0.33, 1, 0.68, 1) both; }
-.tooltip-ghost { animation: tooltip-text-out 160ms cubic-bezier(0.33, 1, 0.68, 1) both; }
-.tooltip kbd { margin-left: 6px; color: var(--text-dim); font: inherit; }
+.tooltip-text.enter { animation: tooltip-text-in 240ms var(--ease-enter) both; }
+.tooltip-ghost { animation: tooltip-text-out 160ms var(--ease-enter) both; }
+.tooltip kbd { margin-left: 6px; color: var(--fg-secondary); font: inherit; }
+/* A crossfade blurs 2px at its faintest, so the old and new text read as one change. */
 @keyframes tooltip-text-in {
-  from { opacity: 0; transform: translate(calc(-50% + var(--dx, 0px)), var(--dy, 0px)); }
-  to { opacity: 1; transform: translate(-50%, 0); }
+  from { opacity: 0; filter: blur(2px); transform: translate(calc(-50% + var(--dx, 0px)), var(--dy, 0px)); }
+  to { opacity: 1; filter: blur(0); transform: translate(-50%, 0); }
 }
 @keyframes tooltip-text-out {
-  from { opacity: 1; transform: translate(-50%, 0); }
-  to { opacity: 0; transform: translate(calc(-50% - var(--dx, 0px)), calc(0px - var(--dy, 0px))); }
+  from { opacity: 1; filter: blur(0); transform: translate(-50%, 0); }
+  to { opacity: 0; filter: blur(2px); transform: translate(calc(-50% - var(--dx, 0px)), calc(0px - var(--dy, 0px))); }
 }
 
 @media (prefers-reduced-motion: reduce) {

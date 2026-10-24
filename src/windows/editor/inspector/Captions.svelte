@@ -69,7 +69,7 @@
 </Section>
 
 <style>
-  .note { margin: 4px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--text-faint); }
-  .error { color: var(--danger); }
+  .note { margin: 4px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--fg-faint); }
+  .error { color: var(--error-content); }
   .btn { align-self: flex-start; margin-top: 8px; }
 </style>

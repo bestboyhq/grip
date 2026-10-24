@@ -668,8 +668,8 @@
     place-items: center;
   }
   .display:has(.card) {
-    background: color-mix(in oklab, var(--accent) 5%, transparent);
-    box-shadow: inset 0 0 0 3px color-mix(in oklab, var(--accent) 90%, transparent);
+    background: color-mix(in oklab, var(--brand) 5%, transparent);
+    box-shadow: inset 0 0 0 3px color-mix(in oklab, var(--brand) 90%, transparent);
   }
   .card {
     display: flex;
@@ -679,9 +679,9 @@
     min-width: 220px;
     padding: 20px 22px 18px;
     border-radius: var(--radius-xl);
-    background: var(--surface-50);
+    background: var(--surface-root);
     box-shadow: var(--shadow-pop);
-    color: var(--text);
+    color: var(--fg-default);
   }
   .window-card {
     position: absolute;
@@ -695,7 +695,7 @@
   }
   .sub {
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     font-variant-numeric: tabular-nums;
   }
   .ellipsis {
@@ -712,18 +712,18 @@
     padding: 0 16px 0 13px;
     border: 0;
     border-radius: var(--radius);
-    background: var(--accent);
-    color: var(--accent-ink);
+    background: var(--surface-inverse);
+    color: var(--fg-inverse);
     font-size: 13px;
     font-weight: 600;
     white-space: nowrap;
   }
   .start:hover {
-    background: var(--accent-hover);
+    background: var(--surface-inverse-hover);
   }
   .start:focus-visible,
   .segmented button:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
   /* The logo's record dot, cropped out of its 1024 icon canvas (r 129 around the center). */
@@ -735,13 +735,13 @@
   .frame {
     position: absolute;
     border-radius: 10px;
-    background: color-mix(in oklab, var(--accent) 5%, transparent);
-    box-shadow: inset 0 0 0 3px color-mix(in oklab, var(--accent) 90%, transparent);
+    background: color-mix(in oklab, var(--brand) 5%, transparent);
+    box-shadow: inset 0 0 0 3px color-mix(in oklab, var(--brand) 90%, transparent);
     transition:
-      left 120ms ease-out,
-      top 120ms ease-out,
-      width 120ms ease-out,
-      height 120ms ease-out;
+      left 120ms var(--ease-out),
+      top 120ms var(--ease-out),
+      width 120ms var(--ease-out),
+      height 120ms var(--ease-out);
     pointer-events: none;
   }
   .segmented {
@@ -750,7 +750,7 @@
     gap: 2px;
     padding: 2px;
     border-radius: var(--radius);
-    background: var(--surface-25);
+    background: var(--control-track);
     box-shadow: var(--hairline);
   }
   .segmented button {
@@ -759,22 +759,21 @@
     border: 0;
     border-radius: var(--radius-sm);
     background: none;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     font-size: 12px;
     font-weight: 500;
     white-space: nowrap;
-    transition: background-color 120ms, color 120ms;
   }
   .segmented button:hover:not(:disabled) {
-    background: var(--surface-25-hover);
-    color: var(--text);
+    background: var(--surface-hover);
+    color: var(--fg-default);
   }
   .segmented button:disabled {
     opacity: 0.35;
   }
   .segmented button.on {
     background: var(--surface-150);
-    color: var(--text);
+    color: var(--fg-default);
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), var(--hairline);
   }
   .hint {
@@ -787,20 +786,20 @@
     /* The text is the top layer: gray, with the logo dot's colors (widget/dot.ts) in the middle third,
        which passes through it once, left to right, as the hint comes on screen. The pill is the bottom one. */
     background:
-      linear-gradient(90deg, var(--text-dim) 33.3%, #1957fa, #8b67a8, #e44730, #f04600, #fb8600, var(--text-dim) 66.7%) 0 0 / 300% 100%,
-      var(--surface-50);
+      linear-gradient(90deg, var(--fg-secondary) 33.3%, #1957fa, #8b67a8, #e44730, #f04600, #fb8600, var(--fg-secondary) 66.7%) 0 0 / 300% 100%,
+      var(--surface-root);
     background-clip: text, padding-box;
     color: transparent;
     /* A strong hairline inside and a dark one outside: the edge reads on any wallpaper. */
     box-shadow:
       0 0 0 0.5px rgb(0 0 0 / 0.6),
       0 4px 12px rgb(0 0 0 / 0.3),
-      inset 0 0 0 0.5px var(--edge-strong);
+      inset 0 0 0 0.5px var(--border-default);
     font-size: 13px;
     pointer-events: none;
   }
   .shown .hint {
-    animation: sweep 2.5s cubic-bezier(0.37, 0, 0.63, 1); /* slow enough to read the colors as they pass */
+    animation: sweep 2.5s ease-in-out; /* slow enough to read the colors as they pass */
     animation-delay: 150ms;
   }
   @keyframes sweep {
@@ -830,7 +829,6 @@
     position: absolute;
     background: rgb(0 0 0 / 0.14);
     box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.28); /* the dim around it, painted once: it never resizes */
-    transition: background-color 120ms;
   }
   .last::before {
     --dash: #fff 0 6px, rgb(0 0 0 / 0.45) 0 10px;
@@ -855,12 +853,12 @@
     top: 8px;
     padding: 4px 9px;
     border-radius: var(--radius);
-    background: var(--surface-50);
+    background: var(--surface-root);
     box-shadow: /* the hint's edges: it reads on any content */
       0 0 0 0.5px rgb(0 0 0 / 0.6),
       0 2px 6px rgb(0 0 0 / 0.25),
-      inset 0 0 0 0.5px var(--edge-strong);
-    color: var(--text);
+      inset 0 0 0 0.5px var(--border-default);
+    color: var(--fg-default);
     font-size: 12px;
     font-weight: 500;
     white-space: nowrap;
@@ -879,7 +877,7 @@
     position: absolute;
     filter: drop-shadow(0 0 0.5px rgb(0 0 0 / 0.28));
     pointer-events: none;
-    animation: third-in 200ms ease-out;
+    animation: third-in 200ms var(--ease-out);
   }
   .third.v {
     top: 0;
@@ -957,9 +955,9 @@
     gap: 10px;
     padding: 8px 8px 8px 12px;
     border-radius: var(--radius-xl); /* concentric: 8 px controls inside 8 px padding */
-    background: var(--surface-50);
+    background: var(--surface-root);
     box-shadow: var(--shadow-pop);
-    color: var(--text);
+    color: var(--fg-default);
     cursor: default;
   }
   .form .segmented {
@@ -974,7 +972,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    color: var(--text-faint);
+    color: var(--fg-faint);
     font-size: 12px;
   }
   .size input {
@@ -985,13 +983,13 @@
     border-radius: var(--radius-sm);
     background: var(--surface-100);
     box-shadow: var(--hairline);
-    color: var(--text);
+    color: var(--fg-default);
     font: 13px var(--font);
     font-variant-numeric: tabular-nums;
     text-align: center;
   }
   .size input:focus {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--brand);
   }
   .size input::-webkit-inner-spin-button {
     display: none;
@@ -1023,17 +1021,16 @@
     border-radius: var(--radius);
     background: var(--surface-100);
     box-shadow: var(--hairline);
-    color: var(--text);
+    color: var(--fg-default);
     font-size: 13px;
     font-weight: 500;
     white-space: nowrap;
-    transition: background-color 120ms;
   }
   .action:hover {
-    background: var(--surface-100-hover);
+    background: var(--surface-hover);
   }
   .action:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
   kbd {
@@ -1043,7 +1040,7 @@
   }
   .readout {
     padding: 0 6px 0 2px;
-    color: var(--text-dim);
+    color: var(--fg-secondary);
     font-size: 12.5px;
     font-variant-numeric: tabular-nums;
   }
@@ -1089,7 +1086,7 @@
     gap: 2px;
     padding: 6px;
     border-radius: var(--radius-lg); /* concentric: 6 px buttons inside 6 px padding */
-    background: var(--surface-50);
+    background: var(--surface-root);
     box-shadow: var(--shadow-pop);
     cursor: default;
   }
@@ -1102,31 +1099,30 @@
     border: 0;
     border-radius: var(--radius-sm);
     background: none;
-    color: var(--text-dim);
-    transition: background-color 120ms, color 120ms;
+    color: var(--fg-secondary);
   }
   .tool:hover:not(:disabled) {
-    background: var(--surface-50-hover);
-    color: var(--text);
+    background: var(--surface-hover);
+    color: var(--fg-default);
   }
   .tool.on {
-    background: var(--surface-50-selected);
+    background: var(--surface-150);
     box-shadow: var(--hairline);
-    color: var(--text);
+    color: var(--fg-default);
   }
   .tool:disabled {
     opacity: 0.35;
   }
   .tool:focus-visible,
   .swatch:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--brand);
     outline-offset: -2px;
   }
   .rule {
     width: 20px;
     height: 0.5px;
     margin: 4px 0;
-    background: var(--edge-strong);
+    background: var(--border-default);
   }
   /* One column under the tools, each color centered on the tools' axis. */
   .swatches {
@@ -1151,8 +1147,8 @@
   .swatch[aria-checked='true'] {
     box-shadow:
       inset 0 0 0 0.5px rgb(255 255 255 / 0.25),
-      0 0 0 2px var(--surface-50),
-      0 0 0 3.5px var(--text);
+      0 0 0 2px var(--surface-root),
+      0 0 0 3.5px var(--fg-default);
   }
   /* The pen while recording: ink everywhere, the mouse only while it is on. A dot in the ink's color
      is the cursor, so the recorded cursor reads as the pen's tip. */
@@ -1176,9 +1172,9 @@
     gap: 7px;
     padding: 7px 12px 7px 10px;
     border-radius: var(--radius-lg);
-    background: var(--surface-50);
+    background: var(--surface-root);
     box-shadow: var(--shadow-pop);
-    color: var(--text);
+    color: var(--fg-default);
     font-size: 13px;
     pointer-events: none;
   }
