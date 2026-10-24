@@ -18,7 +18,7 @@ export const SERVER = (process.env.STUDIO_SHARE_URL ?? 'https://bestboy.dev').re
 export interface Account {
   user: { id: string; email: string; name: string; avatar: string | null }
   team: { id: string; name: string; plan: string }
-  usage: { uploads: number; limit: number | null; resetsAt: string; maxFile: number | null; keepDays: number | null }
+  // Its `usage` stays unread: Grip says nothing about uploads until the server refuses one (electron/upload.ts).
 }
 
 let file = ''

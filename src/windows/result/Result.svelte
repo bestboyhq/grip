@@ -315,6 +315,9 @@
   .status.failed {
     color: var(--error-content);
   }
+  .status.failed .text {
+    white-space: normal; /* a reason is read whole, not cut at the card's edge */
+  }
   .text {
     display: inline-flex;
     align-items: center;

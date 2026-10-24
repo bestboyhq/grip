@@ -159,7 +159,7 @@
 		{
 			question: 'Is Grip free?',
 			answer:
-				'Yes. Grip is free and open source under AGPL-3.0, with no subscription, no account, and no watermark. Share links live on bestboy.dev with a free account, and watching one takes nothing.',
+				'Yes. Grip is free and open source under AGPL-3.0, with no subscription, no account, and no watermark.',
 		},
 		{
 			question: 'What do I need?',
