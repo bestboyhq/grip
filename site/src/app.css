@@ -52,6 +52,7 @@
 	--cross: rgb(128 128 128 / 0.7);
 	--brand: light-dark(oklch(51.51% 0.2399 257.85), oklch(51.51% 0.2307 257.85));
 	--success: light-dark(oklch(51.56% 0.1507 147.5), oklch(63.31% 0.1776 147.5));
+	--stage-ink: light-dark(#181817, #fafaf8);
 	--painting: linear-gradient(
 		100deg,
 		#1957fa 6%,
@@ -232,6 +233,28 @@
 	pointer-events: none;
 }
 
+/* Side by side, a feature row followed by another closes with its own line on its last pixel row, and 64px of page
+   separate it from the next row's line. Here, not in FeatureRow, since a scoped selector cannot see the next row. */
+@media (min-width: 1024px) {
+	.feature:has(+ .feature) {
+		margin-bottom: 64px;
+	}
+
+	.feature:has(+ .feature)::after {
+		content: '';
+		position: absolute;
+		z-index: 1;
+		bottom: -4px;
+		left: 50%;
+		width: 100vw;
+		height: 9px;
+		margin-left: -50vw;
+		background: var(--crosses);
+		background-repeat: no-repeat;
+		pointer-events: none;
+	}
+}
+
 @property --rail-l {
 	syntax: '<number>';
 	inherits: false;
@@ -284,12 +307,14 @@
 	}
 
 	.beat::before,
+	.feature::after,
 	.site:has(.hero) .sitemap::before {
 		animation: draw-in calc(900ms * var(--pace)) var(--enter-ease)
 			calc(var(--delay, 600ms) * var(--pace)) backwards;
 	}
 
-	:is(.beat, .sitemap)[data-reveal='wait']::before {
+	:is(.beat, .sitemap)[data-reveal='wait']::before,
+	.feature[data-reveal='wait']::after {
 		clip-path: inset(0 100% 0 0);
 		animation: none;
 	}
