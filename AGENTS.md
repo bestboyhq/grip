@@ -46,6 +46,7 @@ Every domain obeys these invariants:
 - Rendering runs in Chromium: a WebGPU compositor, WebCodecs for hardware (VideoToolbox) decode and encode, mediabunny for demuxing and muxing.
   Frames stay on the GPU as `VideoFrame` handles; JS never touches pixel bytes.
 - Transcription: NVIDIA Parakeet v3 on device via parakeet-rs, downloaded on first use.
+- Voice: DeepFilterNet3 (tract) and Silero VAD (ONNX Runtime) in the native addon, run once per recording into a voice track.
 - macOS 15+, Apple silicon first.
 
 ## Layout

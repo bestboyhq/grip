@@ -11,7 +11,9 @@ mod capture; // capture: ScreenCaptureKit screen + system audio, recording sessi
 mod mic; // audio: microphone capture + level meter
 mod camera; // camera: AVFoundation capture + Vision effects
 mod input; // input-events: event tap, cursor images, key mapping
+mod reader; // the one AVAssetReader decoder
 mod transcript; // transcript: Parakeet speech to text
+mod voice; // audio: the voice pass (DeepFilterNet3 and the voice chain)
 mod shell; // app-shell: the menu bar's appearance
 
 #[napi_derive::napi]

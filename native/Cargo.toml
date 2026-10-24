@@ -26,6 +26,11 @@ objc2-vision = "0.3"
 block2 = "0.6"
 dispatch2 = "0.3"
 parakeet-rs = "0.3.8"
+# DeepFilterNet3 voice cleaning (MIT/Apache-2.0) on tract, model embedded; crates.io stops at 0.2.
+deep_filter = { git = "https://github.com/Rikorose/DeepFilterNet", rev = "978576aa8400552a4ce9730838c635aa30db5e61", default-features = false, features = ["tract", "default-model"] }
+ndarray = "0.15"
+# Silero VAD runs on the ONNX Runtime parakeet-rs already links (same version: one copy).
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std"] }
 
 [build-dependencies]
 napi-build = "2"

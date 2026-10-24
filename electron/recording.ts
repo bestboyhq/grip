@@ -30,6 +30,7 @@ import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Permission, PermissionStatus, RecordingEvent, RecordingSources, Rect, StartOptions, Still } from '../native/index.d.ts'
 import { analyzeCamera } from './camera.ts'
+import { analyzeVoice } from './audio.ts'
 import { native } from './native.ts'
 import { setSettings, settings } from './shell/settings.ts'
 import { createBundle, projectEvents, projectsDir, readProject, writeNewRecording } from './projects.ts'
@@ -104,6 +105,7 @@ function finish(dir: string, sources: RecordingSources, reason = 'user', message
       }
       await writeNewRecording(dir, sources, { preset: settings().preset, camera: settings().cameraCorner, autoZoom: settings().autoZoom, zoomLook: settings().zoomLook })
       if (sources.camera) analyzeCamera(dir).catch((err) => console.error('analyzeCamera', dir, err))
+      if (sources.mic) void analyzeVoice(dir)
       broadcast('recording:finished', dir, { reason, message })
       recordingEvents.emit('finished', dir, { reason, message })
     })()
@@ -159,11 +161,13 @@ async function stop() {
 }
 
 /** A crash or power loss leaves a bundle with sources but no project.json. projects.ts rebuilds it
- *  at launch (repairing the files through native.repairRecording); tell the user and finish its camera. */
+ *  at launch (repairing the files through native.repairRecording); tell the user and finish its
+ *  camera analysis and voice track. */
 async function recovered(dir: string) {
   broadcast('recording:recovered', dir)
   recordingEvents.emit('recovered', dir)
-  if ((await readProject(dir)).sources.camera) await analyzeCamera(dir)
+  const { sources } = await readProject(dir)
+  await Promise.all([sources.camera && analyzeCamera(dir), sources.mic && analyzeVoice(dir)])
 }
 
 export function registerRecording() {

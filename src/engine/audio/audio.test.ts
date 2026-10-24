@@ -2,22 +2,17 @@
 // in plain node). Decoding of real AAC/H.264/HEVC files runs in Electron: src/engine/media/media.test.ts.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { BlobSource } from 'mediabunny'
 import type { Clip } from '../../shared/project.ts'
 import { createProject } from '../../shared/project.ts'
 import { timeMap, toOutput } from '../../shared/timemap.ts'
 import { CEILING, Limiter, LoudnessMeter, SR, VOICE_LUFS, scrubGrain, sincTable, interpolate, voiceGain } from './dsp.ts'
-import { Mixer, planOf, voiced as chain, type Env, type Plan } from './mix.ts'
-import { analyze, loudness, openAudio, queryPeaks, rawPeaks, Reader } from './source.ts'
+import { Mixer, planOf, type Env, type Plan } from './mix.ts'
+import { analyze, openAudio, queryPeaks, rawPeaks, Reader } from './source.ts'
 import type { PlaybackMessage } from './playback.worklet.ts'
 
 const files = new Map<string, Blob>()
-const env: Env = {
-  open: (url) => new BlobSource(files.get(url)!),
-  rnnoise: async () => new WebAssembly.Module(readFileSync(createRequire(import.meta.url).resolve('@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm'))),
-}
+const env: Env = { open: (url) => new BlobSource(files.get(url)!) }
 
 /** 32-bit float WAV. */
 function wav(chs: Float32Array[], rate = SR): Blob {
@@ -204,91 +199,12 @@ test('the limiter holds the true-peak ceiling', async () => {
 })
 
 const rms = (a: Float32Array, s: number, e: number) => Math.sqrt(a.subarray(s, e).reduce((acc, v) => acc + v * v, 0) / (e - s))
-async function gainOf(url: string) {
-  const l = await loudness(await openAudio(new BlobSource(files.get(url)!), url), await env.rnnoise())
-  return l ? voiceGain(l.speech, l.compressed) : 1
-}
-/** Integrated loudness of a mono voice track as the mixer plays it. */
-async function played(url: string, seconds: number) {
-  const [L, R] = await render(plan([clip(0, seconds)], [{ url, label: url, volume: 1, voice: true }]))
-  const m = new LoudnessMeter()
-  m.push([L, R])
-  return m.integrated()!
-}
-/** A harmonic "voice" at 160 Hz, peak about 3: RNNoise hears it as speech. */
+/** A harmonic "voice" at 160 Hz, peak about 3. */
 function voiced(i: number) {
   let v = 0
   for (let h = 1; h < 12; h++) v += Math.sin((2 * Math.PI * 160 * h * i) / SR) / h
   return v
 }
-
-test('voice chain: RNNoise removes noise in pauses, keeps timing, the voice plays at the target loudness', async () => {
-  // A harmonic "voice" from 1.0 s to 2.0 s over fan rumble and mains hum.
-  let seed = 7
-  let lp = 0
-  const x = Float32Array.from({ length: 3 * SR }, (_, i) => {
-    seed = (seed * 1103515245 + 12345) % 2147483648
-    lp += 0.2 * (seed / 1073741824 - 1 - lp)
-    return (i >= SR && i < 2 * SR ? 0.15 * voiced(i) : 0) + 0.03 * lp + 0.005 * Math.sin((2 * Math.PI * 60 * i) / SR)
-  })
-  files.set('voice', wav([x]))
-  const dry = (await render(plan([clip(0, 3)], [{ url: 'voice', label: 'voice.wav', volume: 1 }])))[0]
-  const wet = (await render(plan([clip(0, 3)], [{ url: 'voice', label: 'voice.wav', volume: 1, voice: true }])))[0]
-  const g = await gainOf('voice')
-  assert.ok(rms(wet, 0.3 * SR, 0.9 * SR) / g < rms(dry, 0.3 * SR, 0.9 * SR) / 4, 'noise in the pause drops by more than 12 dB')
-  const voice = new LoudnessMeter()
-  voice.push([wet, wet])
-  near(voice.integrated()!, VOICE_LUFS, 0.5, 'the voice plays at the target loudness')
-  // Onset of the voice (latency compensated): within 10 ms of the dry onset.
-  const onset = (a: Float32Array) => a.findIndex((v, i) => i > 0.9 * SR && Math.abs(v) > 0.05) / SR
-  near(onset(wet), onset(dry), 0.01, 'voice onset')
-})
-
-test('a quiet voice plays normalized from the first chunk a fresh mixer renders, the same in preview and export', async () => {
-  // 20 s of "speech" at about -38 LUFS: a harmonic voice in 1.5 s phrases.
-  const x = Float32Array.from({ length: 20 * SR }, (_, i) => ((i / SR) % 2 < 1.5 ? 0.012 * voiced(i) : 0))
-  files.set('quiet', wav([x]))
-  const p = plan([clip(0, 20)], [{ url: 'quiet', label: 'quiet.wav', volume: 1, voice: true }])
-  const g = await gainOf('quiet')
-  assert.ok(g > 8, `a quiet voice gets a large gain (${g})`)
-  // Preview: a fresh mixer, 200 ms at a time. Export: another fresh mixer, one pass.
-  const [preview] = await render(p, 0, 20 * SR, 9600)
-  const [exported] = await render(p)
-  assert.ok(preview.every((v, i) => v === exported[i]), 'preview and export are bit-identical from the first chunk')
-  near(rms(preview, 0.05 * SR, 0.2 * SR) / rms(preview, 4.05 * SR, 4.2 * SR), 1, 0.1, 'the first chunk already plays as loud as the same phrase later')
-  const m = new LoudnessMeter()
-  m.push([preview, preview])
-  near(m.integrated()!, VOICE_LUFS, 0.5, 'voice loudness')
-})
-
-test('voice loudness: a short file is measured whole, a long one from evenly spread windows', async () => {
-  // A voice whose level changes every 5 s within 6 dB, in 4 s phrases.
-  const level = (k: number) => 0.03 * 10 ** ((Math.abs((Math.sin(k * 12.9898 + 1) * 43758.5453) % 1) * 6 - 3) / 20)
-  const x = Float32Array.from({ length: 100 * SR }, (_, i) => ((i / SR) % 5 < 4 ? level(Math.floor(i / SR / 5)) * voiced(i) : 0))
-  files.set('speech', wav([x]))
-  near(await played('speech', 100), VOICE_LUFS, 0.3, 'up to 64 windows: every block, the voice plays at the target')
-  const f = await openAudio(new BlobSource(files.get('speech')!), 'speech.wav')
-  const rnnoise = await env.rnnoise()
-  const db = (l: Awaited<ReturnType<typeof loudness>>) => 20 * Math.log10(voiceGain(l!.speech, l!.compressed))
-  near(db(await loudness(f, rnnoise, 10)), db(await loudness(f, rnnoise)), 0.3, 'more: windows spread evenly estimate the same gain')
-  assert.equal(await loudness(await openAudio(new BlobSource(wav([new Float32Array(SR)])), 'silence.wav'), rnnoise), null)
-})
-
-test('voice loudness counts speech only: a mic that caught room tone and trackpad clicks gets no gain', async () => {
-  // Room tone near -60 dBFS and a trackpad click (a 30 ms burst peaking near -40 dBFS) every 1.5 s.
-  let seed = 3
-  const noise = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 1073741824 - 1
-  const room = Float32Array.from({ length: 20 * SR }, (_, i) => {
-    const k = i % (1.5 * SR)
-    return 0.001 * noise() + (k < 0.03 * SR ? 0.01 * noise() * Math.exp(-k / (0.005 * SR)) : 0)
-  })
-  const rnnoise = await env.rnnoise()
-  const open = (x: Float32Array, label: string) => openAudio(new BlobSource(wav([x])), label)
-  assert.equal(await loudness(await open(room, 'room.wav'), rnnoise), null, 'no speech, no loudness: the voice gain stays 1')
-  // Speech over the same room: measured as the speech alone.
-  const voice = Float32Array.from(room, (_, i) => ((i / SR) % 4 < 2 ? 0.01 * voiced(i) : 0))
-  near((await loudness(await open(room.map((v, i) => v + voice[i]), 'talk.wav'), rnnoise))!.speech, (await loudness(await open(voice, 'voice.wav'), rnnoise))!.speech, 0.5, 'speech over clicks')
-})
 
 test('music made to loop plays straight through its seams', async () => {
   // 1 s of 440 Hz is exactly 440 periods: looped, it is one continuous sine. At 44.1 kHz it is resampled.
@@ -335,7 +251,39 @@ test('planOf maps clicks through cuts and leaves muted tracks out', () => {
   assert.deepEqual(plan.clicks, [1, 3]) // 3 s is cut; 5 s plays at 2 + 1
   assert.equal(plan.tracks.length, 1)
   assert.equal(plan.tracks[0].url, 'media://local/' + encodeURIComponent('/x/A #1.grip/sources/mic.m4a'))
-  assert.equal(plan.tracks[0].voice, true)
+})
+
+test('an enhanced mic plays its voice track at -14 LUFS, and the raw mic until the voice pass made it', async () => {
+  // A voice track at its natural level (about -38 LUFS): a harmonic voice in 1.5 s phrases.
+  const x = Float32Array.from({ length: 12 * SR }, (_, i) => ((i / SR) % 2 < 1.5 ? 0.012 * voiced(i) : 0))
+  const natural = new LoudnessMeter()
+  natural.push([x], x.length, 2) // a mono track plays on both channels
+  const lufs = natural.integrated()!
+  const bundle = '/x/Voice #1 ✨.grip'
+  const voice = { file: 'sources/mic-voice-1.m4a', chain: 1, lufs }
+  const p = createProject('t', { duration: 12, mic: { file: 'sources/mic.m4a', channels: 1, sampleRate: SR, voice } })
+  p.audio.mic.volume = 0.5
+  const url = (file: string) => 'media://local/' + encodeURIComponent(`${bundle}/${file}`)
+  const track = (q: typeof p) => planOf(q, [], bundle).tracks[0]
+  assert.equal(track(p).url, url(voice.file))
+  near(track(p).volume, 0.5 * voiceGain(lufs), 1e-9, 'track volume times the voice gain')
+  // Played: the speech lands on the target (at volume 1).
+  p.audio.mic.volume = 1
+  files.set(url(voice.file), wav([x]))
+  const [L, R] = await render(planOf(p, [], bundle))
+  const played = new LoudnessMeter()
+  played.push([L, R])
+  near(played.integrated()!, VOICE_LUFS, 0.3, 'the voice plays at the target loudness')
+  // Enhance off, or no voice track yet: the raw mic at its volume.
+  const off = structuredClone(p)
+  off.audio.mic.enhance = false
+  const pending = structuredClone(p)
+  delete pending.sources.mic!.voice
+  for (const q of [off, pending]) assert.deepEqual([track(q).url, track(q).volume], [url('sources/mic.m4a'), 1])
+  // A take without speech is never boosted; the boost stays within -20..+30 dB.
+  assert.equal(voiceGain(null), 1)
+  near(20 * Math.log10(voiceGain(-80)), 30, 1e-9, 'boost cap')
+  near(20 * Math.log10(voiceGain(10)), -20, 1e-9, 'cut cap')
 })
 
 test('a scrub grain plays the crossed audio in one grain, backward when dragging back', () => {
@@ -364,7 +312,7 @@ test('reader resamples 44.1 kHz onto the 48 kHz grid', async () => {
 test('peaks: shape, exactness against brute force, any zoom, across parallel segments', async () => {
   const x = bursts(10, [1, 4.2, 9.5])
   const f = await openAudio(new BlobSource(wav([x])), 'p.wav')
-  const a = analyze(f, () => new Reader(f), 76800) // 1.6 s segments: ranges below span several, decoded 4 at a time
+  const a = analyze(f, 76800) // 1.6 s segments: ranges below span several, decoded 4 at a time
   await a.ready(9.4, 9.6) // the last segment only; earlier ones may still be decoding
   near(queryPeaks(a.base, 9.4, 9.6, 1)[1], 0.5, 0.01, 'last segment ready on its own')
   await a.ready(0, 10)
@@ -380,27 +328,6 @@ test('peaks: shape, exactness against brute force, any zoom, across parallel seg
       assert.ok(pk[2 * k] <= 0 && pk[2 * k] >= -1)
     }
   }
-})
-
-test('an enhanced mic draws as it plays: the quiet voice comes up, the noise in its pauses goes', async () => {
-  // A quiet voice in 1.5 s phrases over fan noise, 10 s.
-  let seed = 11
-  const x = Float32Array.from({ length: 10 * SR }, (_, i) => {
-    seed = (seed * 1103515245 + 12345) % 2147483648
-    return ((i / SR) % 2 < 1.5 ? 0.012 * voiced(i) : 0) + 0.003 * (seed / 1073741824 - 1)
-  })
-  files.set('drawn', wav([x]))
-  const f = await openAudio(new BlobSource(files.get('drawn')!), 'drawn.wav')
-  const raw = analyze(f, () => new Reader(f))
-  const voice = analyze(f, () => chain(env, 'drawn', f))
-  await Promise.all([raw.ready(0, 10), voice.ready(0, 10)])
-  const peak = (a: typeof raw, from: number, to: number) => queryPeaks(a.base, from, to, 1)[1]
-  const [rawTalk, rawPause, talk, pause] = [peak(raw, 4.2, 5.3), peak(raw, 5.6, 5.9), peak(voice, 4.2, 5.3), peak(voice, 5.6, 5.9)]
-  assert.ok(talk > 5 * rawTalk, `the voice draws at its played level (${talk} vs raw ${rawTalk})`)
-  assert.ok(pause / talk < rawPause / rawTalk / 4, `the pause draws denoised (${pause / talk} vs raw ${rawPause / rawTalk})`)
-  // Zoomed in, peaks come from the chain on the spot, primed by a seek's pre-roll: the same drawing
-  // as the analysis to well under a pixel.
-  near(Math.max(...(await rawPeaks(chain(env, 'drawn', f), 4.2, 5.3, 10))), talk, 0.05 * talk, 'on the spot matches the analysis')
 })
 
 test('preview worklet: a first chunk that arrives late fades in instead of starting mid-wave', async () => {

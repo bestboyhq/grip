@@ -298,7 +298,7 @@
 	id="captions"
 	beat={beat('captions', 'Captions and voice')}
 	title="Captions written on your Mac."
-	body="NVIDIA Parakeet v3 transcribes your voice on device, with timing for every word. Noise reduction, a compressor, and a limiter make it sound produced."
+	body="NVIDIA Parakeet v3 transcribes your voice on device, with timing for every word. DeepFilterNet3 noise reduction, a de-esser, and a slow leveler make it sound produced."
 	href={docHref('polished-by-default')}
 	linkLabel="How your voice sounds"
 	checks={['25 European languages', 'Loudness normalized to -14 LUFS']}

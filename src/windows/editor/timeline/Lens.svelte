@@ -260,7 +260,7 @@
       const top = new Path2D()
       for (let x = Math.floor(x0); x <= Math.ceil(x1); x++) {
         const t = sL + x / k
-        const p = s.waves.peak(src.url, level, t, t + 1 / k, src.voice)
+        const p = s.waves.peak(src.url, level, t, t + 1 / k)
         const y = base - (p > 0 ? Math.min(1, Math.sqrt(p * gain)) * max : 0)
         if (x === Math.floor(x0)) top.moveTo(x, y)
         else top.lineTo(x, y)
