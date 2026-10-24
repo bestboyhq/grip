@@ -16,12 +16,12 @@ use std::sync::{Arc, Mutex, OnceLock, mpsc};
 
 use df::tract::{DfParams, DfTract, RuntimeParams};
 use napi::bindgen_prelude::{AbortSignal, PromiseRaw};
-use ort::session::Session;
-use ort::value::Tensor;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi::{Env, Error, Status};
 use napi_derive::napi;
 use ndarray::Array2;
+use ort::session::Session;
+use ort::value::Tensor;
 
 use crate::reader::decode;
 use crate::writer::AudioWriter;
@@ -68,8 +68,8 @@ pub fn voice_chain() -> u32 {
 
 #[napi(ts_return_type = "Promise<VoiceAnalysis>")]
 /// The voice track of the mic at `micPath` (`channels` 1 or 2), written to `outPath` (atomically) on a
-/// background thread. Progress is 0..1; a 6-minute take takes a few seconds. Aborting the signal stops it and removes partial output; the
-/// promise then rejects with "Voice enhancement cancelled".
+/// background thread; a 6-minute take takes about 5 s. Progress is 0..1. Aborting the signal stops it
+/// and removes partial output; the promise then rejects with "Voice enhancement cancelled".
 pub fn analyze_voice<'env>(
     env: &'env Env,
     mic_path: String,
@@ -105,7 +105,7 @@ fn run(mic: &Path, out: &Path, ch: usize, cancel: &AtomicBool, progress: impl Fn
     let _ = std::fs::remove_file(&cleaned);
     let result = passes(mic, &partial, &cleaned, ch, cancel, progress);
     let _ = std::fs::remove_file(&cleaned);
-    let (lufs, _) = result.inspect_err(|_| {
+    let lufs = result.inspect_err(|_| {
         let _ = std::fs::remove_file(&partial);
     })?;
     std::fs::rename(&partial, out).map_err(|e| format!("Could not save the voice track: {e}"))?;
@@ -113,8 +113,8 @@ fn run(mic: &Path, out: &Path, ch: usize, cancel: &AtomicBool, progress: impl Fn
 }
 
 /// Pass 1 cleans the take (saving the cleaned voice to `cleaned`) and measures what it needs; pass 2
-/// renders the chain into `partial`. Returns the voice's speech loudness and its length in frames.
-fn passes(mic: &Path, partial: &Path, cleaned: &Path, ch: usize, cancel: &AtomicBool, progress: impl Fn(f64)) -> Result<(Option<f64>, usize), String> {
+/// renders the chain into `partial`. Returns the voice's speech loudness.
+fn passes(mic: &Path, partial: &Path, cleaned: &Path, ch: usize, cancel: &AtomicBool, progress: impl Fn(f64)) -> Result<Option<f64>, String> {
     let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).saturating_sub(2).clamp(1, 8);
     progress(0.0);
     let mut stats = Stats::new(ch)?;
@@ -148,7 +148,7 @@ fn passes(mic: &Path, partial: &Path, cleaned: &Path, ch: usize, cancel: &Atomic
     write(&y, &mut writer);
     writer.finish(written as f64 / RATE as f64)?;
     progress(1.0);
-    Ok((chain.loudness(), written))
+    Ok(chain.loudness())
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -430,8 +430,8 @@ fn lufs(p: f64) -> f64 {
     -0.691 + 10.0 * p.log10()
 }
 
-/// BS.1770 gated loudness of 100 ms blocks (400 ms windows, 75% overlap), only windows that are
-/// mostly speech, and none under about a second of them (as dsp.ts integratedLoudness).
+/// BS.1770 gated loudness of 100 ms blocks (400 ms windows, 75% overlap), counting only windows that
+/// are mostly speech; under about a second of them counts as no speech (a click mistaken for a word).
 fn integrated(blocks: &[f64], speech: &[f32]) -> Option<f64> {
     let mut wins = Vec::new();
     for i in 3..blocks.len().min(speech.len()) {

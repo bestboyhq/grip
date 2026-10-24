@@ -10,8 +10,8 @@ export declare function analyzeCamera(path: string, outDir: string, onProgress: 
 
 /**
  * The voice track of the mic at `micPath` (`channels` 1 or 2), written to `outPath` (atomically) on a
- * background thread. Progress is 0..1; a 6-minute take takes a few seconds. Aborting the signal stops it and removes partial output; the
- * promise then rejects with "Voice enhancement cancelled".
+ * background thread; a 6-minute take takes about 5 s. Progress is 0..1. Aborting the signal stops it
+ * and removes partial output; the promise then rejects with "Voice enhancement cancelled".
  */
 export declare function analyzeVoice(micPath: string, outPath: string, channels: number, onProgress: (progress: number) => void, signal?: AbortSignal | undefined | null): Promise<VoiceAnalysis>
 

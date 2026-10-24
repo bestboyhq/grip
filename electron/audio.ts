@@ -7,6 +7,7 @@
 //     On success sources.mic.voice is in project.json (updateProject), and open editors already got it
 //     through projects:sources.
 import { app, BrowserWindow, ipcMain } from 'electron'
+import { existsSync } from 'node:fs'
 import { readdir, rm } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import { native } from './native.ts'
@@ -54,6 +55,8 @@ async function analyze(bundle: string) {
   try {
     const mic = (await readProject(bundle)).sources.mic
     if (!mic) return
+    // Already made by this pass: nothing to do (and a track an editor plays is never rewritten).
+    if (mic.voice?.chain === native.voiceChain() && existsSync(join(bundle, mic.voice.file))) return
     const out = await native.analyzeVoice(
       join(bundle, mic.file),
       join(bundle, voiceFile(mic.file)),
