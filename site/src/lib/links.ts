@@ -2,7 +2,7 @@ import { asset, resolve } from '$app/paths';
 
 export const SITE_URL = 'https://bestboy.dev/grip';
 export const SITE_DESCRIPTION =
-	'Grip is a free, open source screen recorder for the Mac. It zooms where you click, glides your cursor, and captions your voice, so one take becomes a video worth watching.';
+	'Grip is a free, open source screen recorder for the Mac: professional recordings and screenshots within seconds. It zooms where you click, glides your cursor, and captions your voice.';
 
 // The DMG's name carries its version, so bestboy.dev looks up the latest release's and redirects to it.
 export const DOWNLOAD_URL = 'https://bestboy.dev/download/grip';
@@ -62,7 +62,7 @@ export const MENUS: readonly Menu[] = [
 						tag: 'Share it',
 						href: HOME,
 						icon: asset('icons/grip.webp'),
-						line: 'Record your screen. Get a video worth watching.',
+						line: 'Professional recordings and screenshots within seconds.',
 					},
 				],
 			},

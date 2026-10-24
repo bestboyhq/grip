@@ -206,7 +206,7 @@
 	];
 </script>
 
-<Head title="Grip: record your screen, get a video worth watching" description={SITE_DESCRIPTION} path="" />
+<Head title="Grip: professional recordings and screenshots within seconds" description={SITE_DESCRIPTION} path="" />
 
 <svelte:head>
 	<link rel="preload" as="image" href={clip('hero').still} fetchpriority="high" />
@@ -222,12 +222,12 @@
 			<Arrow class="ahead" />
 		</a>
 		<h1 id="hero-title">
-			<span>Record your screen.</span>
-			<span class="quiet">Get a video worth watching.</span>
+			<span>Professional recordings</span>
+			<span class="quiet">and screenshots within seconds.</span>
 		</h1>
 		<p class="lede">
-			Grip zooms where you click, glides your cursor, and captions your voice for you. Record once,
-			skip the editing, and share a link before you leave the flow.
+			Press ⌥⌘↩︎ and talk. Grip zooms where you click, glides your cursor, and captions your voice.
+			The link works before the upload finishes.
 		</p>
 		<div class="actions">
 			<a class="button primary" href={DOWNLOAD_URL}>
@@ -237,7 +237,9 @@
 			<a class="button secondary" href={docHref()}>Read the docs</a>
 		</div>
 		<p class="fine">
-			macOS 15 or later on Apple silicon · No&nbsp;account · No&nbsp;watermark
+			<span>macOS 15 or later on Apple silicon</span>
+			<span>No account</span>
+			<span>No watermark</span>
 		</p>
 	</div>
 	<div class="plate beat">
@@ -503,7 +505,7 @@
 						</a>
 						<a class="button secondary" href={docHref()}>Read the docs</a>
 					</div>
-					<p class="fine">Free and open source · AGPL-3.0</p>
+					<p class="fine"><span>Free and open source</span> <span>AGPL-3.0</span></p>
 				</div>
 			</div>
 		</div>
@@ -644,9 +646,23 @@
 		--duration: 1300ms;
 		--delay: 300ms;
 		margin-top: 16px;
+		margin-left: -0.6em;
+		clip-path: inset(-1em -1em -1em 0.6em);
 		color: var(--fg-muted);
 		font-size: 13px;
 		line-height: 1.55;
+	}
+
+	/* Each item leads with its dot, and the line starts one dot early behind the clip, so no line starts or ends on a
+	   dot however the items wrap. */
+	.fine span {
+		white-space: nowrap;
+	}
+
+	.fine span::before {
+		content: '·';
+		display: inline-block;
+		width: 0.6em;
 	}
 
 	.plate {
