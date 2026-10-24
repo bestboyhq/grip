@@ -5,7 +5,7 @@
 <h1 align="center">Grip</h1>
 
 <p align="center">
-  <b>Record your screen. Get a video worth watching.</b><br>
+  <b>Professional recordings and screenshots within seconds.</b><br>
   Grip zooms where you click, glides your cursor, and captions your voice for you.<br>
   Free and open source, for the Mac.
 </p>

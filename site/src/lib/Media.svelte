@@ -91,10 +91,12 @@
 </div>
 
 <style>
+	/* Opaque before the media loads, so a stage light's shadow cast under the frame never shows through it. */
 	.frame {
 		position: relative;
 		width: 100%;
 		overflow: hidden;
+		background: var(--surface-elevated);
 		box-shadow:
 			0 0 0 1px var(--ring-faint),
 			0 2px 4px rgb(0 0 0 / 0.08),

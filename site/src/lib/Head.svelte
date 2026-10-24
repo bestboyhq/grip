@@ -26,7 +26,7 @@
 	<meta property="og:image:height" content="630" />
 	<meta
 		property="og:image:alt"
-		content="Grip's page: Record your screen. Get a video worth watching, over a deployments dashboard Grip zoomed and polished."
+		content="Grip's page: Professional recordings and screenshots within seconds, over a deployments dashboard Grip zoomed and polished."
 	/>
 	<meta name="twitter:card" content="summary_large_image" />
 </svelte:head>

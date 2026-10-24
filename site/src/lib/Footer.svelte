@@ -16,7 +16,7 @@
 					<img class="app-icon" src={asset('icons/grip.webp')} width="28" height="28" alt="" />
 					Grip
 				</a>
-				<p>Record your screen. Get a video worth watching.</p>
+				<p>Professional recordings and screenshots within seconds.</p>
 			</div>
 			{#each SITEMAP as column (column.label)}
 				<nav aria-label={column.label}>

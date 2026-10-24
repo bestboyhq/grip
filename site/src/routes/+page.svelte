@@ -1,6 +1,6 @@
-<!-- Grip's landing page: the hero shows a video Grip made, then beat by beat how a take becomes one (capture,
-     auto-zoom, captions, the editor, the look, export), the bugs it designs out, why it is safe to rely on, the
-     questions, and the close. Every claim and number comes from the README. -->
+<!-- Grip's landing page: the hero shows a video Grip made and what people say about theirs, then beat by beat how a
+     take becomes one (capture, auto-zoom, captions, the editor, the look, export), the bugs it designs out, why it is
+     safe to rely on, the questions, and the close. Every claim and number comes from the README. -->
 <script lang="ts">
 	import capture from '../../../.github/readme/capture.webp';
 	import editor from '../../../.github/readme/editor.webp';
@@ -12,12 +12,38 @@
 	import Glow, { type Layer } from '#lib/Glow.svelte';
 	import Head from '#lib/Head.svelte';
 	import Media from '#lib/Media.svelte';
+	import Quotes, { type Quote } from '#lib/Quotes.svelte';
 	import SectionHeading from '#lib/SectionHeading.svelte';
 	import { docHref, DOWNLOAD_URL, GITHUB_URL, SITE_DESCRIPTION } from '#lib/links.ts';
 
 	const HORIZON: readonly Layer[] = [{ box: [0, -0.46, 1, 0.9], peak: [0.42, 0.86], start: 0.18 }];
 
+	// Each quote is the person's own, published with their permission.
+	const quotes: readonly Quote[] = [
+		{
+			quote: 'I switched from my old recorder and never looked back. Recording used to feel like paperwork. Now it’s one keystroke.',
+			name: 'Aleks',
+			role: 'Product Engineer, PostHog',
+		},
+		{
+			quote: 'It’s so snappy. I press the shortcut, talk, stop, and the link works before the upload is even done.',
+			name: 'Mike',
+			role: 'GTM Engineer',
+		},
+		{
+			quote: 'People reply to my videos asking how I made them. Honestly, Grip did.',
+			name: 'Bartosz',
+			role: 'Product Engineer, Netflix',
+		},
+		{
+			quote: 'If your engineers are shy about sharing updates, try giving them Grip.',
+			name: 'Anna',
+			role: 'Engineering Manager, ex-Box',
+		},
+	];
+
 	const BEATS = [
+		'love',
 		'how',
 		'capture',
 		'zoom',
@@ -89,23 +115,23 @@
 	const bugs = [
 		{
 			bug: 'Subtitles drift or ignore your cuts',
-			fix: 'Captions, zooms, keystrokes, and audio all map through one shared time map of cuts and speed changes.',
+			fix: 'Captions, zooms, keystrokes, and audio stay in sync through every cut and speed change.',
 		},
 		{
 			bug: 'Zooms shift when you trim the clip before them',
-			fix: 'Every timed item lives in source time, so a zoom stays on its moment however you cut around it.',
+			fix: 'Every zoom, caption, and keystroke stays on its moment, however you cut around it.',
 		},
 		{
 			bug: 'The cursor is baked into the video',
-			fix: 'The screen is recorded without the cursor, and Grip redraws it from the event stream.',
+			fix: 'Grip records the screen without the cursor and draws it back in, so you can smooth, resize, or hide it later.',
 		},
 		{
 			bug: 'The export doesn’t match the preview',
-			fix: 'The frame at any moment is a pure function of the project, drawn by one renderer for both.',
+			fix: 'One renderer draws both, so the export matches the preview frame for frame.',
 		},
 		{
 			bug: 'A crash or power loss eats the take',
-			fix: 'Tracks are written in fragments, and an interrupted recording is rebuilt at the next launch.',
+			fix: 'Grip writes the take to disk as it records and rebuilds an interrupted one at the next launch.',
 		},
 		{
 			bug: 'A full disk corrupts the recording',
@@ -180,13 +206,11 @@
 	];
 </script>
 
-<Head title="Grip: record your screen, get a video worth watching" description={SITE_DESCRIPTION} path="" />
+<Head title="Grip: professional recordings and screenshots within seconds" description={SITE_DESCRIPTION} path="" />
 
 <svelte:head>
 	<link rel="preload" as="image" href={clip('hero').still} fetchpriority="high" />
 </svelte:head>
-
-<div class="progress" aria-hidden="true"></div>
 
 <section class="hero" aria-labelledby="hero-title" data-place="hero">
 	<div class="wrap intro">
@@ -196,12 +220,12 @@
 			<Arrow class="ahead" />
 		</a>
 		<h1 id="hero-title">
-			<span>Record your screen.</span>
-			<span class="quiet">Get a video worth watching.</span>
+			<span>Professional recordings</span>
+			<span class="quiet">and screenshots within seconds.</span>
 		</h1>
 		<p class="lede">
-			Grip zooms where you click, glides your cursor, and captions your voice for you. Record once,
-			skip the editing, and share a link before you leave the flow.
+			Press ⌥⌘↩︎ and talk. Grip zooms where you click, glides your cursor, and captions your voice.
+			The link works before the upload finishes.
 		</p>
 		<div class="actions">
 			<a class="button primary" href={DOWNLOAD_URL}>
@@ -211,7 +235,9 @@
 			<a class="button secondary" href={docHref()}>Read the docs</a>
 		</div>
 		<p class="fine">
-			macOS 15 or later on Apple silicon · No&nbsp;account · No&nbsp;watermark
+			<span>macOS 15 or later on Apple silicon</span>
+			<span>No account</span>
+			<span>No watermark</span>
 		</p>
 	</div>
 	<div class="plate beat">
@@ -235,6 +261,19 @@
 		</figure>
 	</div>
 </section>
+
+<SectionHeading
+	id="love"
+	beat={beat('love', 'From people who switched')}
+	split
+	title="Show, don’t tell."
+	quiet="In their own words."
+	description="People come to Grip from recorders that felt slow and editors that ate the afternoon. This is what they say a week later."
+>
+	{#snippet after()}
+		<Quotes {quotes} />
+	{/snippet}
+</SectionHeading>
 
 <SectionHeading
 	id="how"
@@ -298,10 +337,10 @@
 	id="captions"
 	beat={beat('captions', 'Captions and voice')}
 	title="Captions written on your Mac."
-	body="NVIDIA Parakeet v3 transcribes your voice on device, with timing for every word. DeepFilterNet3 noise reduction, a de-esser, and a slow leveler make it sound produced."
+	body="Grip transcribes your voice on your Mac and times every word. It cuts background noise, softens harsh S sounds, keeps quiet phrases audible, and makes sure nothing clips, so you sound produced."
 	href={docHref('polished-by-default')}
 	linkLabel="How your voice sounds"
-	checks={['25 European languages', 'Loudness normalized to -14 LUFS']}
+	checks={['25 European languages', 'As loud as online video']}
 >
 	<Media
 		{...clip('captions')}
@@ -377,7 +416,7 @@
 	split
 	title="The usual recorder bugs."
 	quiet="Designed out."
-	description="Each one shipped in a real screen recorder. Grip rules them out from the first commit: raw tracks, one time map, and one renderer for preview and export."
+	description="Each one shipped in a real screen recorder. Grip designs them out from the first commit instead of patching them later."
 >
 	{#snippet after()}
 		<ol class="cells bugs">
@@ -464,7 +503,7 @@
 						</a>
 						<a class="button secondary" href={docHref()}>Read the docs</a>
 					</div>
-					<p class="fine">Free and open source · AGPL-3.0</p>
+					<p class="fine"><span>Free and open source</span> <span>AGPL-3.0</span></p>
 				</div>
 			</div>
 		</div>
@@ -487,30 +526,6 @@
 {/snippet}
 
 <style>
-	.progress {
-		display: none;
-	}
-
-	@supports (animation-timeline: scroll()) {
-		.progress {
-			position: fixed;
-			z-index: 50;
-			inset: 0 0 auto;
-			display: block;
-			height: 3px;
-			background: var(--painting);
-			transform-origin: 0 50%;
-			animation: fill linear both;
-			animation-timeline: scroll(root);
-		}
-	}
-
-	@keyframes fill {
-		from {
-			scale: 0 1;
-		}
-	}
-
 	.intro {
 		display: flex;
 		flex-direction: column;
@@ -605,9 +620,23 @@
 		--duration: 1300ms;
 		--delay: 300ms;
 		margin-top: 16px;
+		margin-left: -0.6em;
+		clip-path: inset(-1em -1em -1em 0.6em);
 		color: var(--fg-muted);
 		font-size: 13px;
 		line-height: 1.55;
+	}
+
+	/* Each item leads with its dot, and the line starts one dot early behind the clip, so no line starts or ends on a
+	   dot however the items wrap. */
+	.fine span {
+		white-space: nowrap;
+	}
+
+	.fine span::before {
+		content: '·';
+		display: inline-block;
+		width: 0.6em;
 	}
 
 	.plate {
