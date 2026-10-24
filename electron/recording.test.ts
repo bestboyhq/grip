@@ -22,7 +22,8 @@ const projects = 'export const projectEvents = { on() {} }, createBundle = 0, pr
 register(
   stub(`export async function resolve(specifier, context, next) {
     const to = { electron: ${JSON.stringify(stub(electron))}, './native.ts': ${JSON.stringify(stub(native))},
-      './projects.ts': ${JSON.stringify(stub(projects))}, './camera.ts': ${JSON.stringify(stub('export const analyzeCamera = 0'))} }[specifier]
+      './projects.ts': ${JSON.stringify(stub(projects))}, './camera.ts': ${JSON.stringify(stub('export const analyzeCamera = 0'))},
+      './audio.ts': ${JSON.stringify(stub('export const analyzeVoice = 0'))} }[specifier]
     return to ? { url: to, shortCircuit: true } : next(specifier, context)
   }`),
 )

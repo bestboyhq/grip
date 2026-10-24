@@ -240,7 +240,7 @@
         src.close()
         return `${src.width}x${src.height}, sequential ${ms.toFixed(1)} ms/frame, random ${seekMs.toFixed(0)} ms/seek`
       })
-      await check('fixture mix: exact length, voice chain, peaks cached in the bundle', async () => {
+      await check('fixture mix: exact length, under the limiter ceiling, peaks cached in the bundle', async () => {
         const p = prepared(project)
         const t0 = performance.now()
         let n = 0

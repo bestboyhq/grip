@@ -1,6 +1,38 @@
 <!-- Track mix: microphone, system audio, and background music. Per-clip volume lives on the timeline. -->
+<script lang="ts" module>
+  import { doc } from '../../../lib/doc.svelte.ts'
+  import { invoke, listen } from '../../../lib/ipc.ts'
+  import { reason } from '../helpers.ts'
+
+  // "Enhance voice" plays the voice track the voice pass makes after recording (electron/audio.ts).
+  // When it is missing (a project from before it, Enhance turned on for an import, a pass cut short
+  // or failed), the editor asks for it (the main process dedupes a run in progress). State is per
+  // window, so it survives switching inspector tabs.
+  const voice = $state({ progress: null as number | null, failed: '' })
+  let tried = ''
+  listen('audio:progress', (e: { bundle: string; progress: number }) => e.bundle === doc.path && (voice.progress = e.progress))
+  listen('audio:analyzed', (e: { bundle: string; error?: string }) => {
+    if (e.bundle !== doc.path) return
+    voice.progress = null
+    voice.failed = e.error ?? ''
+  })
+
+  /** Start the voice pass if an enhanced mic has no voice track. Once per project unless `retry`. */
+  export function ensureVoice(retry = false) {
+    const p = doc.project
+    if (!p?.sources.mic || !p.audio.mic.enhance || p.sources.mic.voice || (tried === doc.path && !retry)) return
+    tried = doc.path
+    voice.failed = ''
+    voice.progress ??= 0
+    invoke('audio:analyze', doc.path).catch((e) => {
+      voice.progress = null
+      voice.failed = reason(e)
+    })
+  }
+</script>
+
 <script lang="ts">
-  import { doc, edit } from '../../../lib/doc.svelte.ts'
+  import { edit } from '../../../lib/doc.svelte.ts'
   import Section from '../../../ui/Section.svelte'
   import Slider from '../../../ui/Slider.svelte'
   import Toggle from '../../../ui/Toggle.svelte'
@@ -12,6 +44,12 @@
   const a = $derived(project.audio)
   const pct = (v: number) => `${Math.round(v * 100)}%`
   let error = $state('')
+  // The voice track plays as soon as it exists; a newer pass replacing it reports progress too.
+  const enhanceHint = $derived(
+    !a.mic.enhance || (project.sources.mic?.voice && voice.progress === null) ? 'Removes background noise, softens harsh S sounds, and evens out your level.'
+    : voice.failed ? `Voice enhancement failed: ${voice.failed}`
+    : `Enhancing your voice… ${Math.round((voice.progress ?? 0) * 100)}%`,
+  )
 
   async function addMusic() {
     error = ''
@@ -32,7 +70,7 @@
       </button>
     {/snippet}
     <Slider label="Volume" value={a.mic.volume} min={0} max={2} step={0.01} initial={1} disabled={a.mic.muted} format={pct} onchange={(v, m) => edit((p) => (p.audio.mic.volume = v), m)} />
-    <Toggle label="Enhance voice" hint="Reduces noise, evens out loudness, and never clips." checked={a.mic.enhance} disabled={a.mic.muted} onchange={(v) => edit((p) => (p.audio.mic.enhance = v))} />
+    <Toggle label="Enhance voice" hint={enhanceHint} checked={a.mic.enhance} disabled={a.mic.muted} onchange={(v) => (edit((p) => (p.audio.mic.enhance = v)), v && ensureVoice(true))} />
   </Section>
 {/if}
 

@@ -4,11 +4,11 @@
      only plain variables and redraw the canvas in the next frame: no reactive churn per frame. -->
 <script lang="ts">
   import { untrack } from 'svelte'
-  import type { AudioSource, Clip } from '../../../shared/project.ts'
+  import type { Clip } from '../../../shared/project.ts'
   import { timeMap, toSource, type TimeMap } from '../../../shared/timemap.ts'
   import { doc, edit, selection } from '../../../lib/doc.svelte.ts'
   import { pause, player, previewTime, scrub, seek, showEdge, toggle } from '../../../lib/player.svelte.ts'
-  import { peaks as enginePeaks } from '../../../engine/audio/index.ts'
+  import { peaks as enginePeaks, voiceGain } from '../../../engine/audio/index.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
   import CommandMenu from '../commands/CommandMenu.svelte'
   import { consumesKey, registerCommands, run } from '../commands/registry.ts'
@@ -100,10 +100,11 @@
         duration: p.sources.duration,
       }
       camera = !!p.sources.camera
-      const audio = (s: AudioSource | undefined, mix: { volume: number; muted: boolean }, voice: boolean) =>
-        s && doc.path ? { url: fileUrl(`${doc.path}/${s.file}`), gain: mix.muted ? 0 : mix.volume, voice } : null
-      mic = audio(p.sources.mic, p.audio.mic, p.audio.mic.enhance) // the voice as it plays: processed when enhanced
-      system = audio(p.sources.system, p.audio.system, false)
+      const audio = (file: string | undefined, gain: number) => (file && doc.path ? { url: fileUrl(`${doc.path}/${file}`), gain } : null)
+      // The voice as it plays: an enhanced mic is its voice track, at the gain the mixer gives it.
+      const voice = p.audio.mic.enhance ? p.sources.mic?.voice : undefined
+      mic = audio(voice?.file ?? p.sources.mic?.file, p.audio.mic.muted ? 0 : p.audio.mic.volume * (voice ? voiceGain(voice.lufs) : 1))
+      system = audio(p.sources.system?.file, p.audio.system.muted ? 0 : p.audio.system.volume)
       const v = p.sources.screen ?? p.sources.camera
       video = v && doc.path ? { url: fileUrl(`${doc.path}/${v.file}`), width: v.width, height: v.height, fps: v.fps } : null
       rebuild()

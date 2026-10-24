@@ -8,6 +8,13 @@
  */
 export declare function analyzeCamera(path: string, outDir: string, onProgress: (progress: number) => void, signal?: AbortSignal | undefined | null): Promise<CameraAnalysis>
 
+/**
+ * The voice track of the mic at `micPath` (`channels` 1 or 2), written to `outPath` (atomically) on a
+ * background thread; a 6-minute take takes about 5 s. Progress is 0..1. Aborting the signal stops it
+ * and removes partial output; the promise then rejects with "Voice enhancement cancelled".
+ */
+export declare function analyzeVoice(micPath: string, outPath: string, channels: number, onProgress: (progress: number) => void, signal?: AbortSignal | undefined | null): Promise<VoiceAnalysis>
+
 /** Matches AudioSource in src/shared/project.ts. */
 export interface AudioSourceInfo {
   file: string
@@ -61,10 +68,10 @@ export declare function captureStill(displayId: number): Promise<Still>
 export declare function captureWindowScreenshot(windowId: number, frame?: Rect | undefined | null): Promise<Buffer>
 
 /**
- * While `on_key` is set, the user can type any shortcut into a shortcut field, macOS's own (⇧⌘4,
+ * While `onKey` is set, the user can type any shortcut into a shortcut field, macOS's own (⇧⌘4,
  * ⌘Space) included. macOS lets its shortcuts through only to the active app, and only with
  * Accessibility on; accessibility shortcuts still fire. Chromium then drops the keys macOS reserves
- * before the page sees them, so each press with ⌘ or ⌃, and each F key, goes to `on_key` instead.
+ * before the page sees them, so each press with ⌘ or ⌃, and each F key, goes to `onKey` instead.
  */
 export declare function catchShortcutKeys(onKey?: ((press: KeyPress) => void) | null): void
 
@@ -288,6 +295,21 @@ export interface VideoSourceInfo {
   /** iPhone/iPad rotation changes (see camera::Rotation). */
   rotations?: Array<Rotation>
 }
+
+export interface VoiceAnalysis {
+  /** Absolute path of the voice track: AAC, the mic's timing and channels, at its natural level. */
+  file: string
+  /** The VOICE_CHAIN that made it. */
+  chain: number
+  /**
+   * Speech loudness of the voice track as heard (LUFS; a mono track plays on both channels).
+   * None when the take holds no speech: the mixer then leaves it unboosted.
+   */
+  lufs?: number
+}
+
+/** The VOICE_CHAIN of this build: a project's voice track made by another one is redone. */
+export declare function voiceChain(): number
 
 /**
  * Call `onChange` whenever a camera or iPhone/iPad is plugged in or out (then re-list).

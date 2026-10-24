@@ -21,6 +21,7 @@ import { basename, dirname, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { hidden, openWindow } from './windows.ts'
 import { projectsDir, readProject } from './projects.ts'
+import { analyzeVoice, owesVoice } from './audio.ts'
 import { accountToken, signIn } from './account.ts'
 import { shareFile } from './share.ts'
 import { ShareError } from './upload.ts'
@@ -142,6 +143,16 @@ async function pump() {
     return finish(j, 'failed', fsMessage(err, j.path))
   }
   Object.assign(j, { state: 'running', phase: 'Starting', startedAt: Date.now() })
+  // An enhanced mic exports as it plays: its voice track first (made now if it never was). A pass that
+  // fails leaves the raw mic, as the preview plays it.
+  if (j.project && owesVoice(j.project)) {
+    j.phase = 'Enhancing voice'
+    broadcast(j)
+    await analyzeVoice(j.bundle)
+    if (j.state !== 'running' || !j.project) return // canceled meanwhile
+    j.project.sources.mic = (await readProject(j.bundle)).sources.mic ?? j.project.sources.mic
+    j.phase = 'Starting'
+  }
   const win = (j.win = openWindow(`export?job=${encodeURIComponent(j.id)}`, { show: false, width: 480, height: 320, webPreferences: { backgroundThrottling: false } }))
   win.webContents.on('render-process-gone', (_e, d) => j.win === win && void finish(j, 'failed', `The export stopped unexpectedly (${d.reason}).`))
   win.on('closed', () => j.win === win && void finish(j, 'failed', 'The export window closed.'))

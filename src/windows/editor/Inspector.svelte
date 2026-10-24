@@ -14,7 +14,7 @@
   import Camera, { ensureCameraAnalysis } from './inspector/Camera.svelte'
   import Zoom from './inspector/Zoom.svelte'
   import Captions from './inspector/Captions.svelte'
-  import Audio from './inspector/Audio.svelte'
+  import Audio, { ensureVoice } from './inspector/Audio.svelte'
   import Motion from './inspector/Motion.svelte'
   import TranscriptPanel from './transcript/TranscriptPanel.svelte'
   import Presets from './Presets.svelte'
@@ -47,6 +47,7 @@
 
   // Owed camera analysis (an effect on, its matte or face track missing) runs whatever tab is open.
   $effect(() => ensureCameraAnalysis())
+  $effect(() => ensureVoice())
 
   const rail = $state<HTMLButtonElement[]>([])
   function onkeydown(e: KeyboardEvent) {

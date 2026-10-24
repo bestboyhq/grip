@@ -337,7 +337,7 @@
 	id="captions"
 	beat={beat('captions', 'Captions and voice')}
 	title="Captions written on your Mac."
-	body="Grip transcribes your voice on your Mac and times every word. It cuts background noise, keeps quiet phrases audible, and makes sure nothing clips, so you sound produced."
+	body="Grip transcribes your voice on your Mac and times every word. It cuts background noise, softens harsh S sounds, keeps quiet phrases audible, and makes sure nothing clips, so you sound produced."
 	href={docHref('polished-by-default')}
 	linkLabel="How your voice sounds"
 	checks={['25 European languages', 'As loud as online video']}

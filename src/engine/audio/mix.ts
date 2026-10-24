@@ -1,9 +1,9 @@
 // The audio graph: one pure mixer for preview and export (parity). Output samples [start, start+n)
 // at 48 kHz stereo are a function of (plan, start): sources mapped through the shared time map,
-// pitch-preserving stretch for speed != 1, 10 ms crossfades at cuts, clip and track volume, the
-// voice chain on the mic (RNNoise -> compressor -> static loudness gain), looped music, click sounds,
-// and a true-peak limiter on the master so the mix never clips. Stateful stages (stretch, RNNoise,
-// compressor, limiter) run sequentially; any jump re-primes them with a pre-roll, so chunk boundaries
+// pitch-preserving stretch for speed != 1, 10 ms crossfades at cuts, clip and track volume, an
+// enhanced mic as its voice track (made once, natively) with a static gain to -14 LUFS, looped music,
+// click sounds, and a true-peak limiter on the master so the mix never clips. Stateful stages
+// (stretch, limiter) run sequentially; any jump re-primes them with a pre-roll, so chunk boundaries
 // never click.
 
 import type { Source } from 'mediabunny'
@@ -11,14 +11,13 @@ import type { Clip, Project } from '../../shared/project.ts'
 import type { InputEvent } from '../../shared/events.ts'
 import { timeMap, toOutput } from '../../shared/timemap.ts'
 import { fileUrl } from '../media/index.ts'
-import { COMP_DEPTH, Compressor, DENOISE_FRAME, DENOISE_LATENCY, Denoiser, Limiter, SR, Stretcher, clickSound, voiceGain } from './dsp.ts'
-import { Reader, loudness, openAudio, type AudioFile, type Samples } from './source.ts'
+import { Limiter, SR, Stretcher, clickSound, voiceGain } from './dsp.ts'
+import { Reader, openAudio, type AudioFile } from './source.ts'
 
 export interface PlanTrack {
   url: string
   label: string // bundle-relative path, for error messages
-  volume: number
-  voice?: boolean // enhance: noise reduction, a compressor, and a static loudness gain, which the mixer measures
+  volume: number // includes an enhanced voice's loudness gain
   system?: boolean // follows the clips' systemVolume instead of their volume
 }
 
@@ -39,7 +38,10 @@ export function planOf(project: Project, events: InputEvent[], bundle: string): 
   const url = (file: string) => fileUrl(file.startsWith('/') ? file : `${bundle}/${file}`)
   const tracks: PlanTrack[] = []
   if (src.mic && !mic.muted && mic.volume > 0) {
-    tracks.push({ url: url(src.mic.file), label: src.mic.file, volume: mic.volume, ...(mic.enhance ? { voice: true } : {}) })
+    // Enhanced: the voice track, once the voice pass made it (electron/audio.ts); the raw mic until then.
+    const voice = mic.enhance ? src.mic.voice : undefined
+    const file = voice?.file ?? src.mic.file
+    tracks.push({ url: url(file), label: file, volume: mic.volume * (voice ? voiceGain(voice.lufs) : 1) })
   }
   if (src.system && !system.muted && system.volume > 0) tracks.push({ url: url(src.system.file), label: src.system.file, volume: system.volume, system: true })
   const clicks = project.style.cursor.clickSound
@@ -56,23 +58,14 @@ export function planOf(project: Project, events: InputEvent[], bundle: string): 
   }
 }
 
-/** `f` (opened from `url`) as the voice chain plays it, in source time at full volume: what the
- *  timeline draws for an enhanced mic. The same mixer as playback, so the drawing matches the sound. */
-export function voiced(env: Env, url: string, f: AudioFile): Samples {
-  const m = new Mixer(env)
-  m.setPlan({ duration: f.duration, clips: [{ id: 'voice', start: 0, end: f.duration, speed: 1, volume: 1 }], tracks: [{ url, label: f.label, volume: 1, voice: true }], music: null, clicks: [] })
-  return { read: (start, n) => m.render(start, n), close: () => m.dispose() }
-}
-
 /** Platform hooks, so the same mixer runs in the browser worker and in node tests. */
 export interface Env {
   open(url: string): Source
-  rnnoise(): Promise<WebAssembly.Module>
 }
 
 const H = 240 // half crossfade (5 ms): cuts, speed and volume changes blend over 10 ms
-const PRE = SR / 2 // pre-roll after a jump, primes RNNoise, the limiter, and stretch
-const BLOCK = 480 // stretch and RNNoise work on 10 ms blocks of the absolute output grid
+const PRE = SR / 2 // pre-roll after a jump, primes the limiter and stretch
+const BLOCK = 480 // stretch works on 10 ms blocks of the absolute output grid
 const STRETCH_PRE = 10 // blocks of stretch pre-roll (its output fades in over ~60 ms after a seek)
 const MAX_SPEED = 16 // beyond this, speech is noise: the segment is silent
 const MUSIC_FADE = 2 * SR // music fades out over the last 2 s
@@ -121,19 +114,6 @@ export function openFile(env: Env, url: string, label: string): Promise<AudioFil
     files.set(url, f)
   }
   return f
-}
-
-type Levels = Awaited<ReturnType<typeof loudness>>
-const levels = new WeakMap<AudioFile, Promise<Levels>>()
-/** The loudness of a voice (see loudness()), measured once per file in this thread and awaited
- *  before the first sample is mixed, so its compressor and gain never change while playing. */
-function levelsOf(env: Env, f: AudioFile): Promise<Levels> {
-  let l = levels.get(f)
-  if (!l) {
-    levels.set(f, (l = env.rnnoise().then((m) => loudness(f, m))))
-    l.catch(() => levels.delete(f)) // a later attempt may succeed
-  }
-  return l
 }
 
 /** Renders one segment's audio on the output grid. Sequential reads are cheap; jumps re-seek. */
@@ -281,75 +261,16 @@ class Loop {
   }
 }
 
-/** RNNoise and the compressor in front of a track, on the absolute 10 ms grid, latency compensated. */
-class Voice {
-  private track: Track
-  private den: Denoiser
-  private comp: Compressor | null // null without speech to set its threshold
-  private v: Float32Array[] // denoised audio aligned to its input: v[i] is sample vStart + i
-  private vStart = NaN
-  private vLen = 0
-  private uNext = 0 // next input frame to feed
-
-  constructor(track: Track, den: Denoiser, comp: Compressor | null) {
-    this.track = track
-    this.den = den
-    this.comp = comp
-    this.v = zeros(track.ch, 4 * PRE)
-  }
-
-  async read(pos: number, n: number): Promise<Float32Array[]> {
-    if (!(pos >= this.vStart && pos <= this.vStart + this.vLen)) {
-      this.vStart = this.uNext = Math.floor(pos / DENOISE_FRAME) * DENOISE_FRAME
-      this.vLen = 0
-      this.den.reset()
-      this.comp?.reset()
-      await this.feed() // its output belongs to the frame before vStart: warm-up only
-    }
-    while (this.vStart + this.vLen < pos + n) {
-      const out = await this.feed() // frame q in, denoised frame q - 1 out
-      this.comp?.process(out)
-      if (this.vLen + DENOISE_FRAME > this.v[0].length) this.v = this.v.map((ch) => grow(ch, 2 * ch.length))
-      for (let c = 0; c < out.length; c++) this.v[c].set(out[c], this.vLen)
-      this.vLen += DENOISE_FRAME
-    }
-    const drop = pos - this.vStart
-    for (const ch of this.v) ch.copyWithin(0, drop, this.vLen)
-    this.vStart = pos
-    this.vLen -= drop
-    return this.v.map((ch) => ch.slice(0, n))
-  }
-
-  private async feed() {
-    const raw = await this.track.assemble(this.uNext, DENOISE_FRAME)
-    this.den.frame(raw)
-    this.uNext += DENOISE_FRAME
-    return raw
-  }
-
-  reset() {
-    this.vStart = NaN
-    this.track.reset()
-  }
-}
-
-function grow(a: Float32Array, size: number) {
-  const b = new Float32Array(size)
-  b.set(a)
-  return b
-}
-
 export class Mixer {
   private env: Env
   private plan: Plan | null = null
   private key = ''
   private ready: Promise<void> | null = null
-  private tracks: Array<{ t: Track; voice: Voice | null; gain: number; segs: GainSeg[] }> = []
+  private tracks: Array<{ t: Track; gain: number; segs: GainSeg[] }> = []
   private music: { t: Loop; volume: number } | null = null
   private clicks: number[] = []
   private total = 0
   private limiter = new Limiter()
-  private denoisers = new Map<number, Promise<Denoiser>>() // by channel count, reused across plans
   private next = NaN
 
   constructor(env: Env) {
@@ -391,12 +312,7 @@ export class Mixer {
         last: i === plan.clips.length - 1,
       }))
     this.tracks = await Promise.all(
-      plan.tracks.map(async (p) => {
-        const t = new Track(await openFile(this.env, p.url, p.label), segs)
-        const l = p.voice ? await levelsOf(this.env, t.file) : null
-        const voice = p.voice ? new Voice(t, await this.denoiser(t.ch), l && new Compressor(l.speech - COMP_DEPTH)) : null
-        return { t, voice, gain: p.volume * (l ? voiceGain(l.speech, l.compressed) : 1), segs: gainSegs(!!p.system) }
-      }),
+      plan.tracks.map(async (p) => ({ t: new Track(await openFile(this.env, p.url, p.label), segs), gain: p.volume, segs: gainSegs(!!p.system) })),
     )
     if (plan.music) {
       const f = await openFile(this.env, plan.music.url, plan.music.label)
@@ -406,15 +322,9 @@ export class Mixer {
     this.clicks = plan.clicks.map((t) => Math.round(t * SR))
   }
 
-  private denoiser(ch: number) {
-    let d = this.denoisers.get(ch)
-    if (!d) this.denoisers.set(ch, (d = this.env.rnnoise().then((m) => Denoiser.create(m, ch))))
-    return d
-  }
-
   /** Re-prime every stateful stage so output from `start` sounds as if played from the beginning. */
   private async jump(start: number) {
-    for (const t of this.tracks) (t.voice ?? t.t).reset()
+    for (const t of this.tracks) t.t.reset()
     this.music?.t.reset()
     this.limiter.reset()
     let p = start - PRE
@@ -435,9 +345,9 @@ export class Mixer {
     if (b <= a) return [L, R]
     const len = b - a
     const off = a - pos
-    for (const { t, voice, gain, segs } of this.tracks) {
+    for (const { t, gain, segs } of this.tracks) {
       const G = this.gain(segs, a, len)
-      const chs = voice ? await voice.read(a, len) : await t.assemble(a, len)
+      const chs = await t.assemble(a, len)
       const l = chs[0]
       const r = chs[1] ?? chs[0] // a mono source plays centered on both channels
       for (let i = 0; i < len; i++) {

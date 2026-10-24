@@ -13,6 +13,7 @@ import { completeSignIn, registerAccount } from './account.ts'
 import { openSharedLink, registerShare } from './share.ts'
 import { registerTranscript } from './transcript.ts'
 import { registerCamera } from './camera.ts'
+import { registerAudio } from './audio.ts'
 import { registerEditor } from './editor.ts'
 import { registerWallpapers } from './wallpapers.ts'
 import { registerSettings, settings } from './shell/settings.ts'
@@ -103,6 +104,7 @@ app.whenReady().then(() => {
   registerShare()
   registerTranscript()
   registerCamera()
+  registerAudio()
   registerEditor()
   registerWallpapers()
   if (!app.isPackaged && process.env.STUDIO_FAKE_RECORDING) registerFakeRecording(process.env.STUDIO_FAKE_RECORDING)

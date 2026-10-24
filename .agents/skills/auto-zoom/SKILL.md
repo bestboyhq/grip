@@ -25,6 +25,12 @@ Turning clicks and typing into camera direction.
 - A loupe appears by growing its magnification from 1 with its content opaque; fading its content in shows the screen twice, magnified over unmagnified.
 - Zooms may overlap, and none of them wins: overlapping zooms combine.
   The camera takes the deepest level on and keeps every targeted point, and the followed cursor, in frame; it backs out to fit them, never past the shallowest zoom on.
+- Zoomed in, a change of zooms (back to back, or one coming on or off over another) glides the camera to the new framing: it eases in and out, longer the further the framing moves.
+  A spring as stiff as a snappy zoom in, given that change as one step, whips a pan across the zoomed screen half way in a tenth of a second, which reads as a jump.
+- A zoom on the cursor taking over from one that already followed it carries on from where the view was.
+  Re-aiming at the cursor there lurches the view across the seam for no reason the viewer can see.
+- A view that starts following the cursor from a framing elsewhere glides to it, and holds the cursor in frame only once it is in view.
+  Pulling the view to the cursor at once snaps it across the screen in a single frame.
   A loupe over a full zoom magnifies the zoomed view.
   Loupes on different targets show as separate lenses; loupes on one target share one lens at the largest size and deepest level.
 - Loupes back to back, or less than a second apart, share one lens: it glides to the next target and eases into the next level, size, and shape.

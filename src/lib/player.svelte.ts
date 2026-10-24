@@ -490,7 +490,7 @@ function syncAudio(p: Project, splice: boolean) {
   const next = planOf(p, events.value, doc.path)
   const key = JSON.stringify(next)
   if (key === planKey) return
-  if (!plan) void mix(session, next, Math.round(player.time * SR), 480).catch(() => {}) // warm the worker (and measure the voice loudness) before play
+  if (!plan) void mix(session, next, Math.round(player.time * SR), 480).catch(() => {}) // warm the worker before play
   plan = next
   planKey = key
   if (player.playing && splice) startRun(true) // an edit while playing: splice in the new mix, clock continues

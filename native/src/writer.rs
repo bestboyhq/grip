@@ -157,6 +157,20 @@ fn failed(w: &AVAssetWriter) -> bool {
     (unsafe { w.status() }) == AVAssetWriterStatus::Failed
 }
 
+/// Wait until the encoder takes more: up to 100 ms when `bounded` (live capture), else as long as it takes.
+fn ready(w: &AVAssetWriter, input: &AVAssetWriterInput, bounded: bool) -> bool {
+    for waited in 0.. {
+        if unsafe { input.isReadyForMoreMediaData() } {
+            return true;
+        }
+        if (bounded && waited >= 100) || failed(w) {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    false
+}
+
 fn finish(w: &AVAssetWriter) -> Result<(), String> {
     let (tx, rx) = mpsc::channel();
     let done = RcBlock::new(move || {
@@ -262,7 +276,7 @@ impl VideoWriter {
         let Some(pb) = self.latest.clone() else { return false };
         // The first frame opens the track at 0, so it has no leading gap.
         let tick = if self.last.is_none() { 0 } else { ticks(t) };
-        if self.last.is_some_and(|l| tick <= l) || failed(&self.writer) || !self.ready(self.spec.realtime) {
+        if self.last.is_some_and(|l| tick <= l) || failed(&self.writer) || !ready(&self.writer, &self.input, self.spec.realtime) {
             self.dropped += 1;
             return false;
         }
@@ -277,19 +291,6 @@ impl VideoWriter {
         }
     }
 
-    /// Wait until the encoder takes more: up to 100 ms when `bounded`, else as long as it takes.
-    fn ready(&self, bounded: bool) -> bool {
-        for waited in 0.. {
-            if unsafe { self.input.isReadyForMoreMediaData() } {
-                return true;
-            }
-            if (bounded && waited >= 100) || failed(&self.writer) {
-                return false;
-            }
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        false
-    }
 
     /// Repeat the latest frame when nothing was appended for a while: the file keeps its
     /// fragments coming and the right duration while the screen is still.
@@ -335,7 +336,7 @@ impl VideoWriter {
         if end - last > 1.5 / self.spec.fps {
             let d = (1.0 / self.spec.fps).min((end - last) / 3.0);
             for t in [end - 2.0 * d, end - d] {
-                if self.ready(false) {
+                if ready(&self.writer, &self.input, false) {
                     self.append(t);
                 }
             }
@@ -441,6 +442,8 @@ pub struct AudioWriter {
     written: u64,
     /// Source time where the previous buffer ended, by its own timestamp.
     last_end: Option<f64>,
+    /// Captured live: a busy encoder drops samples (the clock realigns). Offline, appends wait.
+    realtime: bool,
 }
 
 // SAFETY: see VideoWriter.
@@ -448,17 +451,26 @@ unsafe impl Send for AudioWriter {}
 
 impl AudioWriter {
     pub fn new(path: &Path, rate: f64, channels: usize) -> Result<Self, String> {
+        Self::open(path, rate, channels, 128_000.0 * channels as f64, true)
+    }
+
+    /// A track made from a file rather than a device (the voice pass): nothing is ever dropped.
+    pub fn offline(path: &Path, rate: f64, channels: usize, bitrate: f64) -> Result<Self, String> {
+        Self::open(path, rate, channels, bitrate, false)
+    }
+
+    fn open(path: &Path, rate: f64, channels: usize, bitrate: f64, realtime: bool) -> Result<Self, String> {
         let writer = open_writer(path)?;
         let settings = dict(&[
             ("AVFormatIDKey", num(u32::from_be_bytes(*b"aac ") as f64)),
             ("AVSampleRateKey", num(rate)),
             ("AVNumberOfChannelsKey", num(channels as f64)),
-            ("AVEncoderBitRateKey", num(128_000.0 * channels as f64)),
+            ("AVEncoderBitRateKey", num(bitrate)),
         ]);
-        let input = add_input(&writer, false, &settings, true)?;
+        let input = add_input(&writer, false, &settings, realtime)?;
         let format = pcm_format(rate, channels).ok_or("Audio format error")?;
         start(&writer)?;
-        Ok(Self { writer, input, format, path: path.to_owned(), rate, channels, written: 0, last_end: None })
+        Ok(Self { writer, input, format, path: path.to_owned(), rate, channels, written: 0, last_end: None, realtime })
     }
 
     /// Append interleaved samples whose first frame was captured at source time `t`.
@@ -489,7 +501,8 @@ impl AudioWriter {
     }
 
     fn append(&mut self, samples: &[f32]) {
-        if failed(&self.writer) || !unsafe { self.input.isReadyForMoreMediaData() } {
+        let ready = if self.realtime { unsafe { self.input.isReadyForMoreMediaData() } } else { ready(&self.writer, &self.input, false) };
+        if failed(&self.writer) || !ready {
             return; // dropped: the next push realigns to the clock
         }
         let pts = unsafe { CMTime::new(self.written as i64, self.rate as i32) };

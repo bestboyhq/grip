@@ -26,6 +26,10 @@ export interface AudioSource {
   file: string // e.g. "sources/mic.m4a"
   channels: number
   sampleRate: number
+  /** The mic as "Enhance voice" plays it: cleaned, de-essed, and leveled once on device by the voice
+   *  pass (electron/audio.ts), same timing, at its natural level. `chain` is the pass that made it (a
+   *  newer app redoes an older one); `lufs` its speech loudness as heard, null without speech. */
+  voice?: { file: string; chain: number; lufs: number | null }
 }
 
 export interface Sources {
@@ -170,7 +174,7 @@ export interface Style {
 }
 
 export interface AudioMix {
-  mic: { volume: number; muted: boolean; enhance: boolean } // enhance = noise reduction + compressor + loudness + limiter
+  mic: { volume: number; muted: boolean; enhance: boolean } // enhance = the voice track (sources.mic.voice) at -14 LUFS
   system: { volume: number; muted: boolean }
   music?: { file: string; volume: number }
 }

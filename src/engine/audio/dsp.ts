@@ -1,6 +1,7 @@
-// Audio DSP building blocks for the mixer (./mix.ts): time stretch, noise reduction, true-peak
-// limiter, loudness meter, resampling, click sound. Plain JS plus two small WASM cores and no Web
-// Audio, so the same code runs in the audio worker (preview and export) and in node tests.
+// Audio DSP building blocks for the mixer (./mix.ts): time stretch, true-peak limiter, loudness
+// meter, resampling, click sound. Plain JS plus one small WASM core and no Web Audio, so the same code
+// runs in the audio worker (preview and export) and in node tests. The voice itself is cleaned once,
+// natively (native/src/voice.rs): the mixer plays that track with a static gain.
 
 export const SR = 48000
 
@@ -99,84 +100,6 @@ export class Stretcher {
       const o = base + (this.channels + c) * STRETCH_BUF
       out[c].set(h.subarray(o, o + nOut), at)
     }
-  }
-}
-
-// ---- Noise reduction: RNNoise (BSD-3) ----
-// The standalone WASM build shipped by @sapphi-red/web-noise-suppressor (MIT). It needs only three
-// trivial imports, so we instantiate it directly instead of loading its worklet glue.
-
-export const DENOISE_FRAME = 480 // RNNoise works on 10 ms frames at 48 kHz
-export const DENOISE_LATENCY = 480 // output frame k is input frame k-1
-
-interface RnnoiseExports {
-  memory: WebAssembly.Memory
-  __wasm_call_ctors(): void
-  rnnoise_create(model: number): number
-  rnnoise_destroy(state: number): void
-  rnnoise_process_frame(state: number, out: number, input: number): number
-  malloc(n: number): number
-}
-
-export class Denoiser {
-  private x: RnnoiseExports
-  private states: number[]
-  private inp: number
-  private out: number
-
-  static async create(module: WebAssembly.Module, channels: number): Promise<Denoiser> {
-    let mem: WebAssembly.Memory | undefined
-    const instance = await WebAssembly.instantiate(module, {
-      env: {
-        emscripten_memcpy_big: (d: number, s: number, n: number) => {
-          new Uint8Array(mem!.buffer).copyWithin(d, s, s + n)
-          return d // an i32 result: returning the array would stringify all of memory per call
-        },
-        emscripten_resize_heap: (size: number) => {
-          try {
-            mem!.grow(Math.ceil((size - mem!.buffer.byteLength) / 65536))
-            return 1
-          } catch {
-            return 0
-          }
-        },
-        __assert_fail: () => {
-          throw new Error('noise reduction failed')
-        },
-      },
-    })
-    const x = instance.exports as unknown as RnnoiseExports
-    mem = x.memory
-    x.__wasm_call_ctors()
-    return new Denoiser(x, channels)
-  }
-
-  private constructor(x: RnnoiseExports, channels: number) {
-    this.x = x
-    this.states = Array.from({ length: channels }, () => x.rnnoise_create(0))
-    this.inp = x.malloc(DENOISE_FRAME * 4)
-    this.out = x.malloc(DENOISE_FRAME * 4)
-  }
-
-  /** Forget all history (after a jump). */
-  reset() {
-    this.states = this.states.map((s) => (this.x.rnnoise_destroy(s), this.x.rnnoise_create(0)))
-  }
-
-  /** Denoise one frame per channel in place (floats in -1..1). Returns the probability (0..1) that
-   *  the frame holds speech, the highest over the channels. */
-  frame(chs: Float32Array[]): number {
-    const pi = this.inp >> 2
-    const po = this.out >> 2
-    let speech = 0
-    chs.forEach((ch, c) => {
-      const h = new Float32Array(this.x.memory.buffer)
-      for (let i = 0; i < DENOISE_FRAME; i++) h[pi + i] = ch[i] * 32768 // RNNoise expects 16-bit scale
-      speech = Math.max(speech, this.x.rnnoise_process_frame(this.states[c], this.out, this.inp))
-      const o = new Float32Array(this.x.memory.buffer)
-      for (let i = 0; i < DENOISE_FRAME; i++) ch[i] = o[po + i] / 32768
-    })
-    return speech
   }
 }
 
@@ -357,16 +280,10 @@ export class LoudnessMeter {
   }
 }
 
-/** BS.1770 gated loudness of 100 ms mean-square blocks (400 ms windows, 75% overlap). With `speech`
- *  (each block's mean speech probability), only windows that are mostly speech count, and under
- *  about a second of them is no speech at all: RNNoise takes the odd click for a word. */
-export function integratedLoudness(sub: number[], speech?: number[]): number | null {
+/** BS.1770 gated loudness of 100 ms mean-square blocks (400 ms windows, 75% overlap). */
+export function integratedLoudness(sub: number[]): number | null {
   const blocks: number[] = []
-  for (let i = 3; i < sub.length; i++) {
-    if (speech && speech[i - 3] + speech[i - 2] + speech[i - 1] + speech[i] < 2) continue
-    blocks.push((sub[i - 3] + sub[i - 2] + sub[i - 1] + sub[i]) / 4)
-  }
-  if (speech && blocks.length < 10) return null
+  for (let i = 3; i < sub.length; i++) blocks.push((sub[i - 3] + sub[i - 2] + sub[i - 1] + sub[i]) / 4)
   const lufs = (p: number) => -0.691 + 10 * Math.log10(p)
   const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length
   const abs = blocks.filter((p) => lufs(p) > -70)
@@ -375,58 +292,15 @@ export function integratedLoudness(sub: number[], speech?: number[]): number | n
   return lufs(mean(abs.filter((p) => lufs(p) > rel)))
 }
 
-// ---- Voice compressor: quiet phrases stay audible next to loud ones ----
-// Feed-forward in the log domain: a 10 ms RMS detector on the louder channel, a soft-knee 3:1 curve,
-// 5 ms attack and 150 ms release on the gain. The threshold sits COMP_DEPTH under the voice's speech
-// loudness, so every voice gets the same treatment (about 6 dB of gain reduction while talking),
-// whatever its level. Tuned on real laptop and USB mic recordings: the quiet tenth of a talk comes
-// up about 4 dB, and the limiter behind it touches about 1% of the speech.
+// ---- Voice gain ----
 
 export const VOICE_LUFS = -14 // the level online video plays at
-export const VOICE_CHAIN = 1 // bump whenever the chain sounds different: cached voice waveforms are redrawn
-export const COMP_DEPTH = 10 // dB under the speech loudness
-const RATIO = 3
-const KNEE = 10
-const smoothing = (seconds: number) => 1 - Math.exp(-1 / (seconds * SR))
-const RMS = smoothing(0.01)
-const ATTACK = smoothing(0.005)
-const COMP_RELEASE = smoothing(0.15)
 
-export class Compressor {
-  private ms = 0 // mean square of the louder channel
-  private gr = 0 // gain in dB, <= 0
-  private threshold: number
-
-  /** `threshold` in dBFS of the detector (an RMS level). */
-  constructor(threshold: number) {
-    this.threshold = threshold
-  }
-
-  reset() {
-    this.ms = 0
-    this.gr = 0
-  }
-
-  /** Compress 1 or 2 channels in place, linked: both get the louder one's gain. */
-  process(chs: Float32Array[], n = chs[0].length) {
-    for (let i = 0; i < n; i++) {
-      let x = 0
-      for (const ch of chs) x = Math.max(x, ch[i] * ch[i])
-      this.ms += (x - this.ms) * RMS
-      const over = 10 * Math.log10(this.ms + 1e-12) - this.threshold
-      const want = 2 * over <= -KNEE ? 0 : 2 * over >= KNEE ? over * (1 / RATIO - 1) : ((1 / RATIO - 1) * (over + KNEE / 2) ** 2) / (2 * KNEE)
-      this.gr += (want - this.gr) * (want < this.gr ? ATTACK : COMP_RELEASE)
-      const g = 10 ** (this.gr / 20)
-      for (const ch of chs) ch[i] *= g
-    }
-  }
-}
-
-/** Static gain after the compressor that brings the voice to VOICE_LUFS, from its speech loudness
- *  before and its loudness after the compressor. The boost a quiet mic gets stays within sane
- *  bounds; on top of it, the gain makes up what the compressor took. */
-export function voiceGain(speech: number, compressed: number): number {
-  return 10 ** ((Math.min(24, Math.max(-20, VOICE_LUFS - speech)) + speech - compressed) / 20)
+/** Static gain that brings a voice track whose speech plays at `lufs` (as heard) to VOICE_LUFS, within
+ *  -20..+30 dB: a laptop mic at arm's length speaks near -40 LUFS, and the voice pass has already taken
+ *  its room down 30 dB. A take without speech (null) stays as it is: room tone and clicks are never boosted. */
+export function voiceGain(lufs: number | null): number {
+  return lufs === null ? 1 : 10 ** (Math.min(30, Math.max(-20, VOICE_LUFS - lufs)) / 20)
 }
 
 // ---- Click sound: our own, synthesized (no asset) ----

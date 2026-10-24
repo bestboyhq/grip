@@ -107,7 +107,6 @@ export function hit(v: View, m: M.Model, x: number, y: number): Hit {
 export interface Audio {
   url: string
   gain: number
-  voice: boolean // drawn as the voice chain plays it (an enhanced mic)
 }
 
 export interface Scene {
@@ -386,7 +385,7 @@ function wave(ctx: CanvasRenderingContext2D, s: Scene, c: Clip, b: M.Block, xa: 
     const top = new Path2D()
     for (let x = x0; x <= x1; x++) {
       const s0 = c.start + (timeOf(v, x) - off - b.a) * c.speed
-      const p = s0 < c.start || s0 >= c.end ? 0 : s.waves.peak(src.url, level, s0, s0 + perPx, src.voice)
+      const p = s0 < c.start || s0 >= c.end ? 0 : s.waves.peak(src.url, level, s0, s0 + perPx)
       const yy = base - (p > 0 ? Math.min(1, Math.sqrt(p * gain)) * max : 0)
       if (x === x0) top.moveTo(x, yy)
       else top.lineTo(x, yy)

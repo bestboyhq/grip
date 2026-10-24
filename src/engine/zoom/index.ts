@@ -4,6 +4,9 @@
 // The camera is three critically damped springs (center x, center y, scale) chasing a target.
 // Springing scale itself, not its log, front-loads a zoom in (it pops in, then lands softly on the
 // content) and eases a zoom out away from the content before it opens up.
+// A change of zooms while zoomed in (back to back, or one coming on or off over another) glides the
+// target to the new framing, eased in and out, instead of stepping it: a spring that stiff turns a
+// step across the zoomed screen into a whip pan.
 // prepareZoom steps them exactly (closed form per step) at 120 Hz in output time; viewAt only reads
 // those samples, so a frame is a pure function of (project, t) and matches one rendered in sequence.
 // Output time means cuts and speed changes never shift or stretch an animation, and a cut that
@@ -49,6 +52,10 @@ const SPRINGS: Record<Style['screenAnimation'], SpringConfig> = {
   smooth: { stiffness: 49, damping: 14, mass: 1 },
 }
 const BRIDGE = 1 // s: a shorter gap between zooms pans across instead of zooming out and back in
+/** Zoomed in, a change of zooms (back to back, or one coming on or off over another) glides the
+ *  camera to the new framing: this long, plus this much per view it moves, at most this. The springs
+ *  alone would whip a pan across the zoomed screen half way in a tenth of a second. */
+const GLIDE = { min: 0.4, perView: 0.4, max: 1.5 } // s
 const DEAD_ZONE = 0.5 // the cursor roams this fraction of the half view before the camera pans
 const FOCUS_ZONE = 0.4 // clicked elements and typing stay this close to the center, so they show whole
 const EDGE_ZONE = 0.85 // the cursor never gets closer to the frame edge than this
@@ -432,7 +439,11 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   const [h, g, dh, dg] = springStep(DT, spring)
   const pos = [0, 0, 0] // x, y, scale
   const vel = [0, 0, 0]
+  const target = [0, 0, 0] // what the springs chase
+  const drift = [0, 0, 0] // how far it moved over the last step
+  let glide: { t0: number; dur: number; off: number[]; from: number } | null = null
   let aim: Pt | null = null // where the follow camera wants its center
+  let caught = false // the cursor has been in view since the camera began following it
   let prev: Seg | null = null
   let si = 0
   let fi = 0
@@ -468,8 +479,9 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
       // Follow: the cursor roams a dead zone, focus places and targeted points stay central, all stay
       // out from under a picture-in-picture camera, and the cursor stays in frame above all.
       while (fi < frames.length && frames[fi].b < tl) fi++
-      if (seg && seg !== prev && seg.zooms.some((z) => z.target.kind !== 'point' && !prev?.zooms.includes(z))) {
-        // A zoom following the cursor comes on: aim at its first click or typing place, else at the cursor.
+      if (seg && seg !== prev && !prev?.zooms.some((z) => z.target.kind !== 'point')) {
+        // The camera starts following the cursor: aim at the first click or typing place, else at the
+        // cursor. A zoom taking over from one that followed it already carries on from where it was.
         aim = frames.find((f) => f.b >= seg.a && f.a <= seg.a + lead + 0.4)?.p ?? cp ?? aim
       }
       const hw = vp.w / (2 * s)
@@ -491,20 +503,51 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
       c = aim = clampCenter(c, bounds, s, vp)
     }
     c = clampCenter(c, bounds, s, vp)
-    const target = [c.x, c.y, s]
 
-    if (k === 0 || (seg !== prev && cutsTo(prev?.zooms ?? [], zs))) {
+    const cut = k === 0 || (seg !== prev && cutsTo(prev?.zooms ?? [], zs))
+    if (cut || !seg) glide = null // zooming out to rest is the springs' alone
+    else if (prev && seg !== prev) {
+      // Zoomed in on both sides: glide from where the camera was headed (the last target, one step
+      // on) to the new framing. Its center keeps the offset, gliding away, so following the cursor
+      // carries on throughout and two zooms on it play as one; its scale blends, so it never leaves
+      // the range between the two.
+      const from = target[2] + drift[2]
+      const off = [target[0] + drift[0] - c.x, target[1] + drift[1] - c.y]
+      // How far the framing moves, in views: the pan as the view sees it on the way (at the scale half
+      // way), or the zoom (doubling the magnification moves the frame's edges half a view).
+      const halfway = (s + from) / 2
+      const views = Math.max(Math.hypot((off[0] * halfway) / vp.w, (off[1] * halfway) / vp.h), Math.abs(Math.log2(from / s)) / 2)
+      glide = { t0: t, dur: Math.min(GLIDE.min + GLIDE.perView * views, GLIDE.max), off, from }
+    }
+    let next = [c.x, c.y, s]
+    const u = glide ? (t - glide.t0) / glide.dur : 1
+    if (glide && u < 1) {
+      // Smootherstep: the move sets off and lands without a jolt, and the springs round it off.
+      const left = 1 - u * u * u * (u * (6 * u - 15) + 10)
+      const v = mix(s, glide.from, left)
+      const w = clampCenter({ x: c.x + glide.off[0] * left, y: c.y + glide.off[1] * left }, bounds, v, vp)
+      next = [w.x, w.y, v]
+    } else glide = null
+    for (let i = 0; i < 3; i++) (drift[i] = cut ? 0 : next[i] - target[i]), (target[i] = next[i])
+
+    if (cut) {
       // First frame, or an instant zoom cutting in or out: jump, no animation.
       if (k > 0) jumps.set(k - 1, seg ? seg.a : prev!.b)
       for (let i = 0; i < 3; i++) (pos[i] = target[i]), (vel[i] = 0)
     }
     const now = follow ? cursorPt(t, shown) : null
     if (now) {
+      // Never let the cursor out of view once it is in: a fast flick drags the view along. A view that
+      // starts following from a framing elsewhere glides to the cursor instead of snapping to it.
       const v = pos[2]
-      const w = clampCenter(keep({ x: pos[0], y: pos[1] }, now, (WALL_ZONE * vp.w) / (2 * v), (WALL_ZONE * vp.h) / (2 * v)), bounds, v, vp)
+      const rx = (WALL_ZONE * vp.w) / (2 * v)
+      const ry = (WALL_ZONE * vp.h) / (2 * v)
+      caught ||= Math.abs(now.x - pos[0]) <= rx && Math.abs(now.y - pos[1]) <= ry
+      const p = { x: pos[0], y: pos[1] }
+      const w = clampCenter(caught ? keep(p, now, rx, ry) : p, bounds, v, vp)
       pos[0] = w.x
       pos[1] = w.y
-    }
+    } else caught = false
     for (let i = 0; i < 3; i++) {
       data[3 * k + i] = pos[i]
       const d = pos[i] - target[i]

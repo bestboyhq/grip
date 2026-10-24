@@ -17,7 +17,7 @@ const root = join(import.meta.dirname, '../../..')
 
 if (process.versions.electron) {
   // ---- Electron main: open the lab, wait for window.__checks, print it ----
-  const { app } = await import('electron')
+  const { app, ipcMain } = await import('electron')
   const { registerMediaProtocol } = await import('../../../electron/media.ts')
   const { openWindow } = await import('../../../electron/windows.ts')
   // The memory check measures the renderer heap: exact numbers, after a forced collection.
@@ -26,6 +26,7 @@ if (process.versions.electron) {
   // Not awaited: Electron emits 'ready' only after the main module finishes evaluating.
   app.whenReady().then(async () => {
     registerMediaProtocol()
+    ipcMain.handle('settings:get', () => ({})) // the editor's modules read settings when they load
     const win = openWindow(process.env.STUDIO_CHECK_ROUTE!)
     const deadline = Date.now() + 120_000
     let result: unknown = null
