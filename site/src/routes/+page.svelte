@@ -4,7 +4,6 @@
 <script lang="ts">
 	import capture from '../../../.github/readme/capture.webp';
 	import editor from '../../../.github/readme/editor.webp';
-	import { dev } from '$app/env';
 	import { asset } from '$app/paths';
 	import Arrow from '#lib/Arrow.svelte';
 	import BeatLabel, { type Beat } from '#lib/BeatLabel.svelte';
@@ -19,21 +18,31 @@
 
 	const HORIZON: readonly Layer[] = [{ box: [0, -0.46, 1, 0.9], peak: [0.42, 0.86], start: 0.18 }];
 
-	// Drafts of the quotes this section wants, shown only in `npm run dev`. Real quotes, each with the person's name
-	// and permission, replace them before the section ships; the site test fails on a draft.
-	const quotes: readonly Quote[] = dev
-		? [
-				'I switched from [my old recorder] and never looked back. Recording used to feel like paperwork. Now it’s one keystroke.',
-				'It’s so snappy. I press the shortcut, talk, stop, and the link works before the upload is even done.',
-				'Every video I send looks like a product launch. The zooms and the smooth cursor are just there.',
-				'If your engineers are shy about sharing updates, try giving them Grip.',
-				'My phone buzzed at 11pm. One comment on my video: “ohhh, now I get it.” Best notification all week.',
-				'I used to think about recording, prepare for it, skip it, then wish I had. Now it just happens.',
-				'People reply to my videos asking how I made them. Honestly, Grip did.',
-			].map((quote) => ({ quote, name: 'Name', role: 'Role, Company' }))
-		: [];
+	// Each quote is the person's own, published with their permission.
+	const quotes: readonly Quote[] = [
+		{
+			quote: 'I switched from my old recorder and never looked back. Recording used to feel like paperwork. Now it’s one keystroke.',
+			name: 'Aleks',
+			role: 'Product Engineer, PostHog',
+		},
+		{
+			quote: 'It’s so snappy. I press the shortcut, talk, stop, and the link works before the upload is even done.',
+			name: 'Mike',
+			role: 'GTM Engineer',
+		},
+		{
+			quote: 'People reply to my videos asking how I made them. Honestly, Grip did.',
+			name: 'Bartosz',
+			role: 'Product Engineer, Netflix',
+		},
+		{
+			quote: 'If your engineers are shy about sharing updates, try giving them Grip.',
+			name: 'Anna',
+			role: 'Engineering Manager, ex-Box',
+		},
+	];
 
-	const SECTIONS = [
+	const BEATS = [
 		'how',
 		'capture',
 		'zoom',
@@ -48,9 +57,7 @@
 		'start',
 	] as const;
 
-	const BEATS = SECTIONS.filter((id) => id !== 'love' || quotes.length > 0);
-
-	const beat = (id: (typeof SECTIONS)[number], kicker?: string): Beat => ({
+	const beat = (id: (typeof BEATS)[number], kicker?: string): Beat => ({
 		n: BEATS.indexOf(id) + 1,
 		total: BEATS.length,
 		...(kicker ? { kicker } : {}),
@@ -437,20 +444,18 @@
 	{/snippet}
 </SectionHeading>
 
-{#if quotes.length > 0}
-	<SectionHeading
-		id="love"
-		beat={beat('love', 'From people who switched')}
-		split
-		title="Show, don’t tell."
-		quiet="In their own words."
-		description="People come to Grip from recorders that felt slow and editors that ate the afternoon. This is what they say a week later."
-	>
-		{#snippet after()}
-			<Quotes {quotes} />
-		{/snippet}
-	</SectionHeading>
-{/if}
+<SectionHeading
+	id="love"
+	beat={beat('love', 'From people who switched')}
+	split
+	title="Show, don’t tell."
+	quiet="In their own words."
+	description="People come to Grip from recorders that felt slow and editors that ate the afternoon. This is what they say a week later."
+>
+	{#snippet after()}
+		<Quotes {quotes} />
+	{/snippet}
+</SectionHeading>
 
 <section id="faq" class="beat" aria-labelledby="faq-title">
 	<div class="wrap">
