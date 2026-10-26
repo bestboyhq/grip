@@ -852,16 +852,16 @@
 		gap: 16px;
 	}
 
-	/* The page's one poster numeral, painted like the quotes' marks, with no light behind it. */
+	/* The page's one poster numeral, painted like the quotes' marks, with no light behind it. No letter-spacing: it would
+	   narrow the 8's box past its ink, and the paint, clipped to that box, would cut its right side. */
 	.ms {
 		display: flex;
 		align-items: baseline;
-		gap: 0.08em;
+		gap: 0.02em;
 		margin: -0.06em 0 -0.1em -0.05em;
 		font-size: clamp(160px, 22vw, 300px);
 		font-weight: 550;
 		line-height: 1;
-		letter-spacing: -0.06em;
 	}
 
 	.eight {
