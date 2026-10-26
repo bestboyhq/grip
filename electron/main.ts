@@ -17,7 +17,7 @@ import { registerAudio } from './audio.ts'
 import { registerEditor } from './editor.ts'
 import { registerWallpapers } from './wallpapers.ts'
 import { registerSettings, settings } from './shell/settings.ts'
-import { command, editorsDone, isQuitting, openFilesOrAlert, openOnboarding, openProject, recordingStatus, registerRecorder, setQuitting, showPicker, stopAndWait, warmUp } from './shell/recorder.ts'
+import { afterToolbar, command, editorsDone, isQuitting, openFilesOrAlert, openOnboarding, openProject, recordingStatus, registerRecorder, setQuitting, showPicker, stopAndWait, warmUp } from './shell/recorder.ts'
 import { setAppMenu } from './shell/menu.ts'
 import { createTray } from './shell/tray.ts'
 import { registerGrant } from './shell/grant.ts'
@@ -93,10 +93,13 @@ function launch(argv: string[], cwd = process.cwd()): boolean {
   return lab !== undefined || urls.length + files.length > 0
 }
 
+// Before ready, in place of the default menu Electron builds at will-finish-launching.
+app.prependOnceListener('will-finish-launching', setAppMenu)
+
 app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark' // dark UI everywhere, native menus and dialogs included
-  // First the camera, whose device discovery starts on a worker thread, and the toolbar, whose page loads
-  // while the rest registers (its IPC too: this same turn ends before the page can ask anything).
+  // First the camera, whose device discovery starts on a worker thread, and the toolbar, whose renderer
+  // starts while the rest registers (its IPC too: this same turn ends before the page can ask anything).
   registerCamera()
   warmUp()
   if (!app.isPackaged) app.dock?.setIcon(join(import.meta.dirname, '../build/icon.png'))
@@ -115,8 +118,6 @@ app.whenReady().then(() => {
   registerRecorder()
   registerGrant()
   watchDisplays()
-  setAppMenu()
-  if (!hidden) createTray() // agent runs, one per worktree, stay out of the menu bar
   ready = true
 
   const updated = restartedToUpdate()
@@ -127,7 +128,10 @@ app.whenReady().then(() => {
   // (no window hides it). The picker waits for the user to ask.
   if (updated || app.getLoginItemSettings().wasOpenedAtLogin) updateDock()
   else if (!acted && !queued.length) settings().onboarded ? showPicker(null) : openOnboarding(settings().welcomed ? 'page=permissions' : '')
-  startUpdates(logError)
+  afterToolbar(() => {
+    if (!hidden) createTray() // agent runs, one per worktree, stay out of the menu bar
+    startUpdates(logError)
+  })
 })
 
 // Menu bar app: closing the last window keeps Grip running.

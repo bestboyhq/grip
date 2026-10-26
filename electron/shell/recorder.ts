@@ -271,6 +271,20 @@ export function warmUp() {
   controller()
 }
 
+/** Launch work the toolbar does not need, once it has drawn itself: Chromium loads its page only after
+ *  the launch turn ends, and then it needs the main thread for its settings and devices. A toolbar that
+ *  never draws holds `fn` back 2 s at most, so a build whose toolbar broke still gets its update. */
+export function afterToolbar(fn: () => void) {
+  let done = false
+  const once = () => {
+    if (done) return
+    done = true
+    fn()
+  }
+  whenPainted(once)
+  setTimeout(once, 2000)
+}
+
 /** Ask, then delete the recording in progress. The shortcut held down or pressed again while the
  *  question is open asks once. */
 let confirming = false

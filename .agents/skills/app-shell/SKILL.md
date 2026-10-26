@@ -19,6 +19,7 @@ The native macOS app around everything else.
 - A launch shows the toolbar whole in its first frame: it shows once it has drawn itself with its settings and devices (shell:painted).
   A panel that fills in after it appears reads as a blink.
   The main thread stays free until then: device discovery runs on a worker (AVFoundation's first takes ~60 ms), and modules only some features use (the updater, mediabunny) load on first use, since every static import in `electron/` costs every launch.
+  Chromium loads the toolbar's page only once the launch turn ends, so launch work the toolbar does not need (the menu bar icon, the first update check) waits until it has painted (`afterToolbar`).
 - Windows remember positions per display and return on-screen after a display disconnects.
   The recording controls, camera bubble, and result card show on the display the recording was started on, never where the mouse went since.
 - Global shortcuts, a URL scheme for automation (Raycast), and drag-and-drop of project files onto the app or menu bar icon.
