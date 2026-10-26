@@ -1,6 +1,6 @@
 ---
 name: app-shell
-description: The native macOS app shell. Use when changing the menu bar, dock icon, window positions, global shortcuts, URL scheme, quit prompts, updates, crash reporting, or onboarding.
+description: The native macOS app shell. Use when changing the launch, menu bar, dock icon, window positions, global shortcuts, URL scheme, quit prompts, updates, crash reporting, or onboarding.
 ---
 
 # App shell
@@ -8,7 +8,10 @@ description: The native macOS app shell. Use when changing the menu bar, dock ic
 The native macOS app around everything else.
 
 - Menu bar app; the dock icon hides during recording and shows whenever a window is open.
-- One click on the menu bar icon (or the user's record shortcut) opens the area picker, and while recording finishes; the menu is on right-click.
+  It opens at login unless the user turns that off (onboarding's last page proposes it, Settings has the switch): waiting in the menu bar, Grip opens within a frame or two, while a cold launch takes ~350 ms.
+  A launch at login stays in the menu bar; macOS marks it with the launched-as-login-item Apple Event (`wasOpenedAtLogin`).
+  Dev and hidden runs never add a login item: the bare dev Electron would open at login instead.
+- One click on the menu bar icon (or the user's record shortcut) opens the area picker at once (the freeze lands under it, see capture), and while recording finishes; the menu is on right-click.
   Esc closes the whole picker, toolbar included.
   Opening Grip (a launch, the Dock icon, opening it again from Finder or Spotlight, the end of onboarding) shows the toolbar alone, with nothing frozen.
   A frozen screen nobody asked for reads as a hung Mac to a new user.
@@ -16,6 +19,12 @@ The native macOS app around everything else.
   Its copy, GIF, and link use the project's style, which starts plain (see compositor).
   Recent Captures (menu bar menu and the toolbar's gear) reopens the last five cards, across restarts; their screenshots stay in Grip's own folder, since `$TMPDIR` gets purged.
   Recent Projects, with thumbnails, sit in both menus too: a closed editor is one click back, and the editor's title bar says its edits are saved.
+- A launch shows the toolbar whole in its first frame: it shows once it has drawn itself with its settings and devices (shell:painted).
+  A panel that fills in after it appears reads as a blink.
+  The main thread stays free until then: device discovery runs on a worker (AVFoundation's first takes ~60 ms), and modules only some features use (the updater, mediabunny) load on first use, since every static import in `electron/` costs every launch.
+  Chromium loads the toolbar's page only once the launch turn ends, so launch work the toolbar does not need (the menu bar icon, the first update check) waits until it has painted (`afterToolbar`).
+  A window is on screen once `reveal` shows it: AppKit hands window changes to the window server only when the main thread's turn ends, so `reveal` commits them at once (`commitWindows`); the toolbar's turn went on to make the overlays, and it showed 50 ms late.
+  Shown again, the toolbar waits for a frame drawn with that pick's state (`whenDrawn`), never showing the last one's.
 - Windows remember positions per display and return on-screen after a display disconnects.
   The recording controls, camera bubble, and result card show on the display the recording was started on, never where the mouse went since.
 - Global shortcuts, a URL scheme for automation (Raycast), and drag-and-drop of project files onto the app or menu bar icon.

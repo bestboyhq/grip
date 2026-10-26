@@ -38,6 +38,7 @@
   ]
 
   let lists = $state<{ cameras: Device[]; mics: Device[]; devices: Device[] }>({ cameras: [], mics: [], devices: [] })
+  let listed = $state(false) // the devices came in, or took too long to wait for
   let level = $state(0)
   let countdown = $state<{ n: number; name: string; zoom: boolean } | null>(null)
 
@@ -46,7 +47,17 @@
   const mic = $derived(lists.mics.find((m) => m.id === s?.mic))
   /** "FaceTime HD Camera" reads "FaceTime HD" next to a camera icon. Menus keep the full name. */
   const short = (name: string) => name.replace(/\s+(camera|microphone|mic)$/i, '')
-  const refresh = () => inputs().then((x) => (lists = x))
+  const refresh = () =>
+    inputs().then((x) => {
+      lists = x
+      listed = true
+    })
+  // The shell shows the toolbar once it has drawn itself with its settings and devices (shell:painted):
+  // never an empty panel, or a label that changes as it appears.
+  const ready = $derived(listed && !!s)
+  $effect(() => {
+    if (ready) requestAnimationFrame(() => setTimeout(() => invoke('shell:painted'))) // after the frame that draws it
+  })
 
   const reduced = matchMedia('(prefers-reduced-motion: reduce)')
   /** A value on a spring (the engine's closed form). A new target mid-glide keeps its velocity, so a
@@ -208,6 +219,8 @@
   })
 
   onMount(() => {
+    refresh()
+    setTimeout(() => (listed = true), 300) // a virtual camera's plugin can take seconds to list: show without the devices then
     const offs = [
       on('recording:micLevel', (l: { peak?: number }) => (level = meterLevel(Number(l?.peak) || 0))),
       on('camera:devices', refresh),
@@ -215,6 +228,8 @@
       on('recording:warning', (w: { message?: string }) => w?.message && invoke('shell:warn', w.message)),
       on('shell:do', run),
       on('shell:escape', () => (countdown = null)),
+      // Hidden, it shows once it has drawn what came before (this pick's state): never a frame of the last one.
+      on('shell:draw', (n: number) => requestAnimationFrame(() => setTimeout(() => invoke('shell:drawn', n)))),
     ]
     return () => offs.forEach((off) => off())
   })
@@ -348,7 +363,9 @@
 {/snippet}
 
 <main class="bar hud" inert={!!shell.update} onpointerover={over} onpointermove={move} onpointerleave={leave}>
-  {#if countdown}
+  {#if !ready}
+    <!-- Its first frame already has its labels, so none plays its swap as it appears. -->
+  {:else if countdown}
     <div class="countdown" role="status">
       <span class="n">{countdown.n}</span>
       <span>Recording {countdown.name}…</span>

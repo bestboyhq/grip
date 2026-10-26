@@ -612,8 +612,19 @@ pub fn screenshot(display_id: u32, r: Rect) -> Result<Vec<u8>, String> {
 }
 
 /// The whole display as `screenshot` sees it, as raw RGBA the picker paints at once: a PNG to
-/// encode here and decode there took longer than the capture.
-pub fn still(display_id: u32) -> Result<(u32, u32, Vec<u8>), String> {
+/// encode here and decode there took longer than the capture. `ours`: windows of ours shown just
+/// before (the picker's overlays), left out once the window server has them on screen, 100 ms at most.
+/// A window ordered in reaches it only after the main thread's turn, and ScreenCaptureKit leaves out
+/// only apps with a window on screen when it lists the content: listed sooner, the overlay showed in its
+/// own still.
+pub fn still(display_id: u32, ours: &[u32]) -> Result<(u32, u32, Vec<u8>), String> {
+    for _ in 0..100 {
+        let on = stacking();
+        if ours.iter().all(|id| on.contains(id)) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
     let b = CGDisplayBounds(display_id);
     grab(display_id, Rect { x: 0.0, y: 0.0, w: b.size.width, h: b.size.height }, rgba)
 }
@@ -636,7 +647,8 @@ pub fn window_screenshot(id: u32, frame: Option<Rect>) -> Result<Vec<u8>, String
 /// Capture `r` of the display, turned into `T` by `encode` on the capture queue.
 fn grab<T: Send + 'static>(display_id: u32, r: Rect, encode: fn(&CGImage) -> Option<T>) -> Result<T, String> {
     // On-screen windows only: listing those on every Space took up to seconds on a busy Mac. What it
-    // keeps out is on screen, or shows only after the capture (the picker waits for its stills).
+    // keeps out is on screen (the picker shows its overlays first), or shows only after the capture: an
+    // app with no window on screen is not listed, so nothing of it is left out.
     let content = content(true)?;
     let display = find_display(&content, display_id).ok_or("That display is no longer connected.")?;
     let (apps, keep) = excluded(&content, false);

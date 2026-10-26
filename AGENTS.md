@@ -41,6 +41,7 @@ Every domain obeys these invariants:
 
 - Electron shell.
   The main process is TypeScript run directly by Electron's Node (type stripping, no bundler).
+  Packaged builds run it as JavaScript that `scripts/strip.ts` strips at build time, so a launch never loads Node's stripper.
   Renderers are Svelte 5 + Vite, one bundle with a hash route per window.
 - Rust native addon in `native/` (napi-rs + objc2 crates) for everything that talks to macOS frameworks: ScreenCaptureKit, AVFoundation, CoreGraphics event taps, Vision, transcription.
 - Rendering runs in Chromium: a WebGPU compositor, WebCodecs for hardware (VideoToolbox) decode and encode, mediabunny for demuxing and muxing.

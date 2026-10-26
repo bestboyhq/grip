@@ -12,7 +12,7 @@ use napi::Env;
 use napi::bindgen_prelude::{PromiseRaw, spawn_blocking};
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
-use objc2::rc::Retained;
+use objc2::rc::{Retained, autoreleasepool};
 use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject};
 use objc2::{AllocAnyThread, DefinedClass, define_class, msg_send};
 use objc2_av_foundation::{
@@ -42,8 +42,13 @@ fn audio() -> &'static objc2_av_foundation::AVMediaType {
     unsafe { AVMediaTypeAudio }.expect("AVMediaTypeAudio")
 }
 
+/// Off the JS thread, like listCameras: device discovery can take AVFoundation a while.
 #[napi]
-pub fn list_microphones() -> Vec<Microphone> {
+pub async fn list_microphones() -> napi::Result<Vec<Microphone>> {
+    spawn_blocking(|| autoreleasepool(|_| microphones())).await.map_err(|e| napi::Error::from_reason(e.to_string()))
+}
+
+fn microphones() -> Vec<Microphone> {
     let default =
         unsafe { AVCaptureDevice::defaultDeviceWithMediaType(audio()) }.map(|d| unsafe { d.uniqueID() }.to_string());
     let types =
@@ -318,7 +323,7 @@ mod tests {
 
     #[test]
     fn listing_needs_no_permission_and_missing_mic_fails_cleanly() {
-        for m in list_microphones() {
+        for m in microphones() {
             assert!(!m.id.is_empty() && !m.name.is_empty());
         }
         let err = MicRecorder::start(Some("no-such-mic"), Path::new("/tmp/studio-mic-test.m4a")).err().unwrap();

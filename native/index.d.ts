@@ -58,8 +58,11 @@ export declare function cancelRecording(): Promise<RecState>
  */
 export declare function captureScreenshot(displayId: number, rect: Rect): Promise<Buffer>
 
-/** The display frozen for the picker: the screenshot without its PNG round trip. */
-export declare function captureStill(displayId: number): Promise<Still>
+/**
+ * The display frozen for the picker: the screenshot without its PNG round trip. `ours`: ids of our
+ * windows shown just before (CGWindowID), left out like the rest of Grip.
+ */
+export declare function captureStill(displayId: number, ours?: Array<number> | undefined | null): Promise<Still>
 
 /**
  * PNG of window `window_id` alone (clear corners, nothing in front of it, no shadow or cursor) at
@@ -74,6 +77,13 @@ export declare function captureWindowScreenshot(windowId: number, frame?: Rect |
  * before the page sees them, so each press with ⌘ or ⌃, and each F key, goes to `onKey` instead.
  */
 export declare function catchShortcutKeys(onKey?: ((press: KeyPress) => void) | null): void
+
+/**
+ * What the main thread changed so far (a window just shown) goes to the window server now. AppKit sends it
+ * only when the main thread's turn ends, and work after a show in the same turn (more windows to make)
+ * held the window back: the toolbar showed 50 ms late at launch.
+ */
+export declare function commitWindows(): void
 
 /**
  * No zoom when the window shows: AppKit scales a window in over 150 ms, which would set the
@@ -102,12 +112,16 @@ export interface KeyPress {
   metaKey: boolean
 }
 
-/** Webcams, Continuity Cameras, and iPhone/iPad screens connected over USB. */
-export declare function listCameras(): Array<CameraDevice>
+/**
+ * Webcams, Continuity Cameras, and iPhone/iPad screens connected over USB. Off the JS thread:
+ * AVFoundation's first discovery in a process takes ~60 ms.
+ */
+export declare function listCameras(): Promise<Array<CameraDevice>>
 
 export declare function listDisplays(): Array<Display>
 
-export declare function listMicrophones(): Array<Microphone>
+/** Off the JS thread, like listCameras: device discovery can take AVFoundation a while. */
+export declare function listMicrophones(): Promise<Array<Microphone>>
 
 export declare function listWindows(): Promise<Array<Window>>
 

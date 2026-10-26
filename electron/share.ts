@@ -21,7 +21,6 @@ import { basename, dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
-import { ALL_FORMATS, FilePathSource, Input } from 'mediabunny'
 import { SERVER, accountToken, forget } from './account.ts'
 import { api, ShareError, upload, type Upload } from './upload.ts'
 import { projectsDir } from './projects.ts'
@@ -169,9 +168,15 @@ async function drive(job: Job) {
   }
 }
 
+/** A video to read with mediabunny, loaded on first use: its ~25 ms of modules stay out of the launch. */
+async function openVideo(path: string) {
+  const { ALL_FORMATS, FilePathSource, Input } = await import('mediabunny')
+  return new Input({ source: new FilePathSource(path), formats: ALL_FORMATS })
+}
+
 /** A video's length and display size, which the link page lays out with before it loads. */
 async function videoMeta(path: string): Promise<Upload['meta'] | null> {
-  const input = new Input({ source: new FilePathSource(path), formats: ALL_FORMATS })
+  const input = await openVideo(path)
   try {
     const track = await input.getPrimaryVideoTrack()
     if (!track) return null
@@ -187,7 +192,7 @@ async function videoMeta(path: string): Promise<Upload['meta'] | null> {
  *  with the generic file icon while it has no thumbnail yet, so the image must have the video's shape.
  *  Optional: null when there is no good frame. */
 async function poster(path: string): Promise<Buffer | null> {
-  const input = new Input({ source: new FilePathSource(path), formats: ALL_FORMATS })
+  const input = await openVideo(path)
   try {
     const track = await input.getPrimaryVideoTrack()
     if (!track) return null

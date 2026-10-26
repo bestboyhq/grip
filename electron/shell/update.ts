@@ -13,7 +13,7 @@
 // IPC: update:restart   the toolbar's Restart to Update
 //      update:later     the toolbar's Later: off the toolbar for a day
 import { app, BrowserWindow, autoUpdater as squirrel, dialog, ipcMain, powerMonitor, type MenuItemConstructorOptions } from 'electron'
-import electronUpdater from 'electron-updater'
+import type { AppUpdater } from 'electron-updater'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { hidden, kindOf } from '../windows.ts'
@@ -22,7 +22,8 @@ import { isQuitting, recordingStatus } from './recorder.ts'
 import { setAppMenu } from './menu.ts'
 import { plainError } from './errors.ts'
 
-const { autoUpdater } = electronUpdater
+/** Loaded by startUpdates: its ~20 ms of modules stay out of the launch. */
+let autoUpdater: AppUpdater
 const EVERY = Number(process.env.STUDIO_UPDATE_EVERY) || 4 * 60 * 60 * 1000 // a menu bar app runs for weeks: check again every few hours
 const DAY = 24 * 60 * 60 * 1000
 const AWAY = Number(process.env.STUDIO_UPDATE_AWAY) || 15 * 60 // seconds without input that mean the user is away
@@ -124,7 +125,7 @@ export function updateMenuItems(): MenuItemConstructorOptions[] {
 }
 
 /** Check now and every few hours; errors (also background ones) go to `log`. */
-export function startUpdates(log: (err: unknown) => void) {
+export async function startUpdates(log: (err: unknown) => void) {
   if (!app.isPackaged) return
   // Squirrel cannot replace an app running from the disk image or from Downloads (App Translocation).
   if (!app.isInApplicationsFolder() && !hidden) {
@@ -143,6 +144,7 @@ export function startUpdates(log: (err: unknown) => void) {
       }
     }
   }
+  ;({ autoUpdater } = (await import('electron-updater')).default)
   autoUpdater.logger = null
   autoUpdater.autoDownload = false // check() downloads, and never the update already waiting
   // Every error is logged (without a listener it would crash the main process). One while checking

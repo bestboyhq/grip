@@ -414,7 +414,7 @@ fn recording_fails_cleanly_without_a_camera() {
 
 #[test]
 fn lists_devices() {
-    for d in list_cameras() {
+    for d in cameras() {
         assert!(["built-in", "external", "continuity", "ios"].contains(&d.kind.as_str()));
         println!("{} [{}] {:?}", d.name, d.kind, d.formats.iter().map(|f| (f.width, f.height, f.fps)).collect::<Vec<_>>());
     }

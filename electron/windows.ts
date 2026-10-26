@@ -5,6 +5,7 @@
 // drive the dock icon: it shows while a normal window is open, and hides during a recording.
 import { app, BrowserWindow, screen, type BrowserWindowConstructorOptions } from 'electron'
 import { join } from 'node:path'
+import { native } from './native.ts'
 import { fit, place, reachable, type Rect } from './shell/bounds.ts'
 import { setSettings, settings } from './shell/settings.ts'
 
@@ -65,11 +66,13 @@ export function sendAll(channel: string, ...args: unknown[]) {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && !w.webContents.isDestroyed()) w.webContents.send(channel, ...args)
 }
 
-/** Show a window unless running hidden. `focus: false` keeps the frontmost app frontmost. */
+/** Show a window unless running hidden. `focus: false` keeps the frontmost app frontmost. It is on screen
+ *  at once, not once the work after it in this turn is done. */
 export function reveal(win: BrowserWindow, focus = true) {
   if (hidden) return
   if (focus) win.show()
   else win.showInactive()
+  native.commitWindows()
 }
 
 // ---- Dock ----

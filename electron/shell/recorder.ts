@@ -16,7 +16,11 @@
 //   shell:pick(mode | null)       enter or leave a picking mode (opens overlays per display)
 //   shell:still(displayId) -> Still | null   overlay: its display frozen as it was when the picker opened (raw
 //                                 RGBA); a loaded overlay asks ahead and gets it when a pick opens
-//   shell:ready                   overlay: painted (its still too), show it
+//   shell:ready                   overlay: painted its still: it takes the mouse and keys (shown before that, out
+//                                 of the way, unless it was still loading: then it shows now)
+//   shell:painted                 toolbar: drawn with its settings and devices; it may show now, and takes commands
+//   shell:draw(n) -> shell:drawn(n)   main -> toolbar: answered after the frame that draws everything sent before
+//                                 it, so a hidden toolbar shows with this pick's state
 //   shell:focus                   overlay: the pointer is on it, picking a display or window: it takes the keyboard
 //   shell:select(area | null)     overlay: the area picked so far ({ display, rect, aspect }), also kept as the last area
 //   shell:close-picker            hide toolbar, overlays, and the idle camera bubble
@@ -42,6 +46,8 @@
 //   shell:open-project(path?)     open a bundle in the editor (no path: Open dialog)
 //   shell:open-files(paths)       dropped files: bundles open, videos import first; rejects with a reason
 //   shell:open-settings           the settings window (onboarding route, settings page)
+//   shell:finish-onboarding(atLogin)   onboarding is done: the login item as its switch says, then the toolbar
+//   shell:login-item(on?) -> on   Grip opens at login (macOS's login item; never in dev or hidden runs)
 //   shell:relaunch                macOS applies a new Screen Recording grant only after a relaunch
 //   notes:prompter                main -> speaker notes window: start or stop the prompter (⌥⌘.)
 // Editor windows: "editor:close" asks one to save and refresh its thumbnail; it answers
@@ -81,7 +87,23 @@ const BUBBLE = 216 // camera bubble window; the circle inside leaves room for it
 const NOTES = { width: 440, height: 260 }
 
 let toolbar: BrowserWindow | null = null
-let loaded: Promise<unknown> = Promise.resolve()
+/** Waiting for the toolbar to draw itself (shell:painted), null once it has: shown before that it is an
+ *  empty panel, and its page may not listen for commands yet. */
+let unpainted: Array<() => void> | null = []
+const whenPainted = (fn: () => void) => (unpainted ? void unpainted.push(fn) : fn())
+/** Waiting for the toolbar to draw what it was sent so far (shell:draw n, answered by shell:drawn n). */
+let draws = 0
+const drawWaiters = new Map<number, () => void>()
+/** Run `fn` once the toolbar has drawn everything sent to it before (its state included), 100 ms at
+ *  most: a hidden toolbar shows in a frame of this pick's, never the last one's. Its first paint draws it all. */
+function whenDrawn(fn: () => void) {
+  if (unpainted) return void unpainted.push(fn)
+  const n = ++draws
+  const once = () => drawWaiters.delete(n) && fn()
+  drawWaiters.set(n, once)
+  setImmediate(() => toolbar?.webContents.send('shell:draw', n)) // after the state this turn broadcasts
+  setTimeout(once, 100)
+}
 let status: Status = 'idle'
 let mode: Mode | null = null
 let picking = false // toolbar on screen
@@ -200,7 +222,7 @@ function controller(): BrowserWindow {
   })
   protect(win, 2)
   native.disableWindowAnimation(win.getNativeWindowHandle()) // shows at once, with the frozen screen
-  loaded = new Promise<void>((r) => win.webContents.once('did-finish-load', () => r()))
+  unpainted = []
   win.on('close', (e) => {
     if (quitting) return
     e.preventDefault()
@@ -226,11 +248,18 @@ export function showPicker(m: Mode | null = settings().mode) {
   const win = controller()
   win.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))
   picking = true
-  // Overlays bring the toolbar with the frozen screen (showOverlay). Ones on screen already: it shows
-  // now, before pick() gives the keyboard back to the area overlay.
-  if (m === null || m === 'device' || windowsOf('area').some((w) => w.isVisible())) reveal(win)
+  // Overlays bring the toolbar with them (openOverlays). Ones on screen already: it shows now, before
+  // pick() gives the keyboard back to the area overlay.
+  if (m === null || m === 'device' || windowsOf('area').some((w) => w.isVisible())) showToolbar()
   pick(m)
   updateHelpers()
+}
+
+/** The toolbar on screen once it has drawn itself with this pick's state, if the picker is still open
+ *  then. `focus` false: out of the way while the screen freezes (openOverlays). */
+function showToolbar(focus = true) {
+  const win = controller()
+  whenDrawn(() => picking && reveal(win, focus))
 }
 
 export function closePicker() {
@@ -245,21 +274,34 @@ export function closePicker() {
 let held: Held = null
 
 /** Send a command to the controller, which calls the capture engine. */
-export async function command(cmd: Command, opts?: unknown) {
+export function command(cmd: Command, opts?: unknown) {
   if ((cmd === 'stop' || cmd === 'cancel') && status === 'starting') return void (held = hold(held, cmd))
   if (cmd === 'restart' && status !== 'idle') {
     clock = { elapsed: 0, at: status === 'recording' ? Date.now() : 0 }
     broadcast()
   }
   const win = controller()
-  await loaded
-  win.webContents.send('shell:do', cmd, opts)
+  whenPainted(() => win.webContents.send('shell:do', cmd, opts))
 }
 
-/** Load the controller and the overlays ahead of first use (tray menu, shortcuts). */
+/** Load the controller ahead of first use (tray menu, shortcuts), and the overlays once it has drawn
+ *  itself (shell:painted): loading beside it, they would hold back its first paint. */
 export function warmUp() {
   controller()
-  loadOverlays()
+}
+
+/** Launch work the toolbar does not need, once it has drawn itself: Chromium loads its page only after
+ *  the launch turn ends, and then it needs the main thread for its settings and devices. A toolbar that
+ *  never draws holds `fn` back 2 s at most, so a build whose toolbar broke still gets its update. */
+export function afterToolbar(fn: () => void) {
+  let done = false
+  const once = () => {
+    if (done) return
+    done = true
+    fn()
+  }
+  whenPainted(once)
+  setTimeout(once, 2000)
 }
 
 /** Ask, then delete the recording in progress. The shortcut held down or pressed again while the
@@ -293,8 +335,8 @@ export function stopAndWait(): Promise<string | null> {
 }
 
 // ---- Overlays: one per display, for display, window, and area picking and the countdown ----
-// They load ahead, hidden, so a pick only captures the stills and hands them over. Used ones go with
-// their state (a drawn screenshot, a countdown), and fresh ones load for the next pick.
+// They load ahead, hidden, so a pick shows them at once and only captures the stills and hands them
+// over. Used ones go with their state (a drawn screenshot, a countdown), and fresh ones load for the next pick.
 
 /** The overlays are in use: picking, or the backdrop of a recording. */
 let overlaysOpen = false
@@ -311,10 +353,11 @@ function pick(m: Mode | null) {
   else if (m === 'area') {
     // Switched to area mode: the overlay under the mouse takes the keyboard (showOverlay does it for new ones).
     const here = windowsOf('area').find((w) => screen.getDisplayMatching(w.getBounds()).id === activeDisplay().id)
-    if (here?.isVisible()) reveal(here)
+    if (here?.isVisible() && !passive.has(here)) reveal(here)
   }
-  // The backdrop never takes a click, except the pen's display while it is on.
-  for (const w of windowsOf('area')) w.setIgnoreMouseEvents(backdrop && !(drawing && screen.getDisplayMatching(w.getBounds()).id === recDisplay))
+  // The backdrop never takes a click, except the pen's display while it is on; nor does an overlay
+  // waiting for its still.
+  for (const w of windowsOf('area')) w.setIgnoreMouseEvents(passive.has(w) || (backdrop && !(drawing && screen.getDisplayMatching(w.getBounds()).id === recDisplay)))
   escape(overlays || drawing)
   broadcast()
   updateBubble()
@@ -331,22 +374,38 @@ let covered = ''
  *  screenshots are cut from it. */
 const stills = new Map<number, PromiseWithResolvers<Still | null>>()
 const stillOf = (id: number) => stills.get(id) ?? stills.set(id, Promise.withResolvers()).get(id)!
-/** Every display is frozen. Nothing of ours shows before: the capture leaves out only what is on screen. */
+/** Every display is frozen. The rest of ours (the camera bubble, speaker notes) shows after it: it takes
+ *  the mouse, which would end a hover under it before the capture. */
 let frozen: Promise<unknown> = Promise.resolve()
+/** Overlays on screen while their display freezes: click-through and never key until their still is in
+ *  (showOverlay), so a menu or a hover under them stays open for the capture. */
+const passive = new Set<BrowserWindow>()
+/** Overlays that have drawn their page: they can show before their still. */
+const loaded = new WeakSet<BrowserWindow>()
 
 function openOverlays() {
   overlaysOpen = true
   const idle = status === 'idle'
-  // Picking: freeze every display now, before anything of ours shows (a menu or a hover stays open).
+  if (windowsOf('area').some((w) => w.webContents.isCrashed())) for (const w of windowsOf('area')) w.destroy() // gone while waiting
+  // Picking: the overlays and the toolbar show at once, out of the way, and only then every display
+  // freezes: the capture leaves out only what of ours is on screen. Overlays still loading show with
+  // their still (shell:ready), and so does the toolbar then: nothing of ours shows before the capture.
+  const early = idle ? windowsOf('area').filter((w) => loaded.has(w)) : []
+  for (const w of early) {
+    passive.add(w)
+    w.setIgnoreMouseEvents(true)
+    reveal(w, false)
+  }
+  if (early.length && picking && !counting) showToolbar(false)
+  const ours = hidden ? [] : early.map((w) => Number(w.getMediaSourceId().split(':')[1])) // "window:<CGWindowID>:0"
   frozen = Promise.all(
     screen.getAllDisplays().map(async (d) => {
       const { resolve } = stillOf(d.id) // this pick's: a capture done after it closed goes nowhere
-      resolve(idle ? await capture.still(d.id).catch(() => null) : null)
+      resolve(idle ? await capture.still(d.id, ours).catch(() => null) : null)
     }),
   )
-  if (windowsOf('area').some((w) => w.webContents.isCrashed())) for (const w of windowsOf('area')) w.destroy() // gone while waiting
   if (!windowsOf('area').length) loadOverlays()
-  // Each shows once it has painted its still (shell:ready); one that never does can't hold the picker back.
+  // Each takes over once it has painted its still (shell:ready); one that never does can't hold the picker back.
   for (const w of windowsOf('area')) setTimeout(() => showOverlay(w), 2000)
 }
 
@@ -354,12 +413,13 @@ function openOverlays() {
 function closeOverlays() {
   overlaysOpen = false
   selection = null
+  passive.clear()
   for (const w of windowsOf('area')) w.destroy()
   stills.clear()
   loadOverlays()
 }
 
-/** One overlay per display, hidden until a pick hands it its still. */
+/** One overlay per display, hidden until a pick. */
 function loadOverlays() {
   for (const d of screen.getAllDisplays()) {
     const w = openWindow(`area?display=${d.id}`, {
@@ -373,15 +433,20 @@ function loadOverlays() {
     })
     protect(w, 0)
     w.setBounds(d.bounds) // over the menu bar too
-    native.disableWindowAnimation(w.getNativeWindowHandle()) // the frozen screen shows at once, without a zoom
+    native.disableWindowAnimation(w.getNativeWindowHandle()) // the picker shows at once, without a zoom
+    w.once('ready-to-show', () => loaded.add(w))
   }
 }
 
-/** An overlay on screen, after the toolbar: the overlay under the mouse takes the keyboard (↩ records,
- *  ⌘C copies, A arrow...). A panel: it takes key focus without bringing Grip forward. */
+/** An overlay with its still in: it takes the mouse, and the one under the mouse the keyboard (↩ records,
+ *  ⌘C copies, A arrow...). One that was still loading shows now, after the toolbar. A panel: it takes key
+ *  focus without bringing Grip forward. */
 function showOverlay(w: BrowserWindow) {
-  if (w.isDestroyed() || w.isVisible()) return
-  if (picking && !counting && toolbar && !toolbar.isVisible()) reveal(toolbar)
+  if (w.isDestroyed()) return
+  const early = passive.delete(w)
+  if (early && status === 'idle') w.setIgnoreMouseEvents(false)
+  if (!early && w.isVisible()) return
+  if (picking && !counting && toolbar && !toolbar.isVisible()) showToolbar()
   reveal(w, screen.getDisplayMatching(w.getBounds()).id === activeDisplay().id)
 }
 
@@ -400,7 +465,7 @@ function escape(on: boolean) {
     if (counting) {
       counting = false
       sendAll('shell:escape')
-      if (picking) reveal(controller())
+      if (picking) showToolbar()
       return broadcast()
     }
     closePicker() // the toolbar too: Esc leaves the picker in one press
@@ -758,6 +823,19 @@ async function unsaved(win: BrowserWindow, error: string): Promise<Choice> {
   return (['save', 'cancel', 'discard'] as const)[response]
 }
 
+/** Open at login: Grip's login item (System Settings, Login Items), so it waits in the menu bar and opens
+ *  at once. Onboarding turns it on unless its switch is off. Dev and hidden runs never add one: the bare
+ *  dev Electron would open at login instead. */
+const loginItems = () => app.isPackaged && !hidden
+const loginItem = () => loginItems() && app.getLoginItemSettings().openAtLogin
+function setLoginItem(on: boolean) {
+  if (!loginItems()) return false
+  app.setLoginItemSettings({ openAtLogin: on })
+  // Turned off for Grip in System Settings: only the user can allow it again, there.
+  if (on && app.getLoginItemSettings().status === 'requires-approval') void shell.openExternal('x-apple.systempreferences:com.apple.LoginItems-Settings.extension')
+  return loginItem()
+}
+
 export function openOnboarding(query = '') {
   closePicker()
   const open = windowsOf('onboarding')[0]
@@ -786,6 +864,17 @@ export function registerRecorder() {
     const w = BrowserWindow.fromWebContents(e.sender)
     if (w && windowsOf('area').includes(w)) showOverlay(w)
   })
+  ipcMain.handle('shell:painted', (e) => {
+    if (e.sender !== toolbar?.webContents || !unpainted) return
+    const waiting = unpainted
+    unpainted = null
+    for (const fn of waiting) fn()
+    if (!windowsOf('area').length) loadOverlays()
+  })
+  ipcMain.handle('shell:drawn', (e, n: number) => {
+    if (e.sender !== toolbar?.webContents) return
+    for (const [k, fn] of drawWaiters) if (k <= n) fn()
+  })
   ipcMain.handle('shell:focus', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender)
     if (w?.isVisible() && !w.isFocused() && picking && !counting && windowsOf('area').includes(w)) reveal(w)
@@ -804,7 +893,9 @@ export function registerRecorder() {
   ipcMain.handle('shell:command', (_e, cmd: Command) => {
     if (['stop', 'pause', 'resume', 'toggle-pause', 'cancel', 'restart'].includes(cmd)) return command(cmd)
   })
-  ipcMain.handle('shell:finish-onboarding', () => {
+  ipcMain.handle('shell:login-item', (_e, on: unknown) => (typeof on === 'boolean' ? setLoginItem(on) : loginItem()))
+  ipcMain.handle('shell:finish-onboarding', (_e, atLogin: unknown) => {
+    if (typeof atLogin === 'boolean') setLoginItem(atLogin)
     setSettings({ onboarded: true })
     for (const w of windowsOf('onboarding')) w.destroy()
     showPicker(null)

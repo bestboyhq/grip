@@ -1,5 +1,5 @@
 //! Owner: app-shell. The menu bar's appearance, for the one menu bar icon that has color, and
-//! windows that show without AppKit's zoom. macOS's own shortcuts, when the record shortcut wants their keys.
+//! windows that show at once and without AppKit's zoom. macOS's own shortcuts, when the record shortcut wants their keys.
 #![cfg_attr(test, allow(dead_code))] // napi exports are only referenced from JS
 
 use std::cell::RefCell;
@@ -10,7 +10,7 @@ use napi::Status;
 use napi::bindgen_prelude::Buffer;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
-use objc2::MainThreadMarker;
+use objc2::{MainThreadMarker, msg_send};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2_app_kit::{
@@ -42,6 +42,18 @@ pub fn disable_window_animation(handle: Buffer) {
     if let Some(window) = view.window() {
         window.setAnimationBehavior(NSWindowAnimationBehavior::None);
     }
+}
+
+/// What the main thread changed so far (a window just shown) goes to the window server now. AppKit sends it
+/// only when the main thread's turn ends, and work after a show in the same turn (more windows to make)
+/// held the window back: the toolbar showed 50 ms late at launch.
+#[napi]
+pub fn commit_windows() {
+    if MainThreadMarker::new().is_none() {
+        return;
+    }
+    // SAFETY: QuartzCore's CATransaction, loaded with AppKit; +flush takes no arguments, on the main thread.
+    let _: () = unsafe { msg_send![objc2::class!(CATransaction), flush] };
 }
 
 // macOS's own shortcuts (System Settings › Keyboard › Keyboard Shortcuts) fire before any app sees

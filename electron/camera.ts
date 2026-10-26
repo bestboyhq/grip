@@ -23,7 +23,10 @@ function broadcast(channel: string, payload: unknown) {
 export function registerCamera() {
   ipcMain.handle('camera:list', () => native.listCameras())
   ipcMain.handle('camera:analyze', (_e, bundle: unknown) => analyzeCamera(bundleArg(bundle)))
-  native.watchCameras(() => broadcast('camera:devices', native.listCameras()))
+  // AVFoundation's first discovery takes ~60 ms: a worker thread pays it now, before the toolbar asks,
+  // and the watch, which would wait for the same setup on the main thread, comes after it.
+  const watch = () => native.watchCameras(() => void native.listCameras().then((list) => broadcast('camera:devices', list)))
+  native.listCameras().then(watch, watch)
   // An analysis cut short (quit, crash) or a recording that never had one finishes on the next open.
   projectEvents.on('opened', (bundle: string, p: Project) => {
     if (p.sources.camera && !(p.sources.camera.matte && p.sources.camera.faces)) void analyzeCamera(bundle)
