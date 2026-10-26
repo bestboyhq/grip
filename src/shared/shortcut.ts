@@ -36,6 +36,9 @@ export function acceleratorOf(e: Press): string | null {
   return fair(mods, key) ? [...mods, key].join('+') : null
 }
 
+/** The modifiers a press holds, in macOS notation: '⇧⌘'. */
+export const modifiersOf = (e: Press) => MODIFIERS.filter((m) => e[m[2]]).map((m) => m[1]).join('')
+
 /** An accelerator acceleratorOf makes, in macOS notation: 'Alt+Command+Return' -> '⌥⌘↩'. Null for
  *  anything else, so a bad setting never reaches globalShortcut. */
 export function symbols(accelerator: string): string | null {

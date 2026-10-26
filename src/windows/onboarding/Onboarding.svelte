@@ -10,7 +10,7 @@
   import Icon, { type IconName } from '../recorder/Icon.svelte'
   import { ensurePermission, setSettings, shell, type Permission, type PermissionStatus, type Settings } from '../recorder/shell.svelte.ts'
   import appIcon from '../../../build/icon.png'
-  import { acceleratorOf, symbols, type Press } from '../../shared/shortcut.ts'
+  import { acceleratorOf, modifiersOf, symbols, type Press } from '../../shared/shortcut.ts'
   import SettingPreview from './SettingPreview.svelte'
 
   let { params }: { params: URLSearchParams } = $props()
@@ -78,12 +78,14 @@
   // old one, ⌫ removes it).
   let typingKeys = $state(false)
   let keysNote = $state('') // why the last one typed can't be used
+  let held = $state('') // the modifiers down while listening, shown as they go down
   const recordKeys = $derived(symbols(shell.settings?.recordShortcut ?? '') ?? '')
 
   function listen() {
     if (typingKeys) return
     typingKeys = true
     keysNote = ''
+    held = ''
     invoke('shell:shortcut', null) // pressing the current one records it, not opens the picker
   }
   function stopListening() {
@@ -91,6 +93,16 @@
     typingKeys = false
     keysNote = ''
     invoke('shell:shortcut', shell.settings?.recordShortcut)
+  }
+  // Onboarding's step listens from the moment it opens, wherever focus is, until keys are set.
+  function toShortcut() {
+    page = 'shortcut'
+    if (!recordKeys) listen()
+  }
+  function stepKeys(e: KeyboardEvent) {
+    if (page !== 'shortcut' || !typingKeys) return
+    held = modifiersOf(e)
+    if (e.type === 'keydown') typeKeys(e)
   }
   function typeKeys(e: KeyboardEvent) {
     if (!typingKeys || (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey)) return // Tab moves on
@@ -107,6 +119,7 @@
     if (keys === '') return // only modifiers so far
     if (!keys) return void (keysNote = 'Use ⌘ or ⌃ with another modifier, like ⌥⌘ or ⇧⌘.')
     typingKeys = false
+    held = ''
     use(keys)
   }
   // macOS's own screenshot and recording keys, one switch away: most people already reach for them.
@@ -173,6 +186,8 @@
   </ul>
 {/snippet}
 
+<svelte:window onkeydown={stepKeys} onkeyup={stepKeys} onblur={() => (held = '')} />
+
 <main class="window">
   <div class="titlebar">{#if page === 'settings'}<span class="name">Settings</span>{/if}</div>
   {#if page === 'welcome'}
@@ -190,25 +205,32 @@
       {@render permissionList()}
     </section>
     <footer>
-      <span>{#if !screenOk}<button class="link" onclick={() => (page = 'shortcut')}>Skip for now</button>{/if}</span>
-      <button class="button primary" disabled={!screenOk} onclick={() => (page = 'shortcut')}>Continue</button>
+      <span>{#if !screenOk}<button class="link" onclick={toShortcut}>Skip for now</button>{/if}</span>
+      <button class="button primary" disabled={!screenOk} onclick={toShortcut}>Continue</button>
     </footer>
   {:else if page === 'shortcut'}
     <!-- People reach for different keys, macOS's screenshot ones among them: Grip presets none and
-         waits for theirs. Focusing the field listens, so the keys can come at once. -->
+         waits for theirs. While it listens, the field reads as an input waiting for them: a caret,
+         and each modifier as it goes down. -->
     <section class="welcome">
-      <!-- svelte-ignore a11y_autofocus -->
-      <button class="caps" class:typing={typingKeys} autofocus={!recordKeys} aria-label="Recording shortcut: {recordKeys || 'none'}. Change" onfocus={listen} onclick={listen} onkeydown={typeKeys} onblur={stopListening}>
-        {#if typingKeys || !recordKeys}<kbd>{typingKeys ? 'Type a shortcut' : 'Set a shortcut'}</kbd>
-        {:else}{#each recordKeys.match(/[⌃⌥⇧⌘]|.+/gu) ?? [] as key, i (i)}<kbd>{key}</kbd>{/each}{/if}
+      <button class="caps" aria-label={typingKeys ? 'Recording shortcut: press your keys' : `Recording shortcut: ${recordKeys || 'none'}. Change`} onclick={listen}>
+        {#if typingKeys}
+          {#each [...held] as key (key)}<kbd>{key}</kbd>{/each}
+          <span class="slot"><span class="caret"></span>{#if !held}Press your shortcut{/if}</span>
+        {:else if recordKeys}
+          {#each recordKeys.match(/[⌃⌥⇧⌘]|.+/gu) ?? [] as key, i (i)}<kbd>{key}</kbd>{/each}
+        {:else}
+          <kbd class="empty">Set a shortcut</kbd>
+        {/if}
       </button>
       <h1>Use your favorite shortcut</h1>
       <p>Press the keys that should open Grip from any app, ready to record. macOS’s screenshot keys work too.</p>
       <p class="after" role="status">
         {#if keysNote}{keysNote}
+        {:else if !typingKeys && recordKeys}Saved. Click the keys to change them.
         {:else if status?.accessibility && status.accessibility !== 'granted'}macOS’s own keys reach Grip with
           <button class="link" onclick={() => request('accessibility')}>Accessibility</button> on.
-        {:else if typingKeys && recordKeys}Press the new keys, or Esc to keep these.{/if}
+        {:else if typingKeys && recordKeys}Press the new keys, or Esc to keep {recordKeys}.{/if}
       </p>
     </section>
     <footer>
@@ -358,9 +380,41 @@
   .caps:hover kbd {
     background: var(--surface-hover);
   }
-  .caps.typing kbd {
+  .caps .empty {
     color: var(--fg-secondary);
     font-size: 15px;
+  }
+  /* Listening: an input waiting for keys, ringed in the focus blue, its caret blinking like the family's. */
+  .slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 64px;
+    height: 64px;
+    padding: 0 20px;
+    border-radius: var(--radius-lg);
+    background: var(--surface-well);
+    box-shadow: inset 0 0 0 1.5px var(--brand);
+    color: var(--fg-muted);
+    font-size: 15px;
+  }
+  .caret {
+    width: 2px;
+    height: 24px;
+    border-radius: 1px;
+    background: var(--brand);
+    animation: blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .caret {
+      animation: none;
+    }
   }
   .welcome .after {
     min-height: 17px; /* a note coming and going never moves the page */
@@ -585,7 +639,6 @@
   .keys:focus-visible,
   .keys.typing,
   .caps:focus-visible,
-  .caps.typing,
   input:focus-visible {
     outline: 2px solid var(--brand);
     outline-offset: 2px;
