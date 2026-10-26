@@ -323,7 +323,14 @@ Run the checks with `npm test`, `npm run check`, and `cd native && cargo test`.
 Issues and pull requests are welcome.
 Read [AGENTS.md](AGENTS.md) for the invariants and the code style, and the skill in [`.agents/skills/`](.agents/skills) for the area you touch: each one lists what screen recorders in that area usually get wrong.
 Pull request titles follow [Conventional Commits](https://www.conventionalcommits.org), and every merged `feat` or `fix` ships to users as an in-app update.
+Before your first pull request is merged, you sign the [Contributor License Agreement](CLA.md) by commenting on the pull request as the CLA bot asks.
+You keep the copyright in your work, and the agreement lets the maintainer also use it under other licenses.
 
 ## License
 
-[AGPL-3.0](LICENSE)
+Copyright (C) 2026 Szymon Grącki and Grip contributors
+
+Licensed under [AGPL-3.0-only](LICENSE).
+As an additional term under AGPL section 7(e), the license grants no rights to the names Grip and Best Boy or their logos: see [TRADEMARKS.md](TRADEMARKS.md).
+Contributions require signing the [CLA](CLA.md).
+Third-party components and their licenses are listed in [NOTICE](NOTICE).

@@ -14,13 +14,13 @@
     "check": "svelte-check --tsconfig ./tsconfig.json --config ./svelte.config.js",
     "pretest": "node -e \"require('electron')\"",
     "test": "node --test 'src/**/*.test.ts' 'electron/**/*.test.ts' 'scripts/**/*.test.ts'",
-    "package": "npm run build && electron-builder --mac --publish never && if [ -n \"$APPLE_KEYCHAIN_PROFILE\" ]; then dmg=release/Grip-$npm_package_version-arm64.dmg && xcrun notarytool submit \"$dmg\" --keychain-profile \"$APPLE_KEYCHAIN_PROFILE\" --wait && xcrun stapler staple \"$dmg\"; fi"
+    "package": "node -e \"require('electron')\" && npm run build && electron-builder --mac --publish never && if [ -n \"$APPLE_KEYCHAIN_PROFILE\" ]; then dmg=release/Grip-$npm_package_version-arm64.dmg && xcrun notarytool submit \"$dmg\" --keychain-profile \"$APPLE_KEYCHAIN_PROFILE\" --wait && xcrun stapler staple \"$dmg\"; fi"
   },
   "build": {
     "appId": "com.bestboyhq.grip",
     "forceCodeSigning": true,
     "productName": "Grip",
-    "copyright": "Copyright © 2026 Grip",
+    "copyright": "Copyright © 2026 Szymon Grącki and Grip contributors",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -41,6 +41,18 @@
     "extraMetadata": {
       "main": "electron/main.js"
     },
+    "extraResources": [
+      "LICENSE",
+      "NOTICE",
+      {
+        "from": "build/Credits.html",
+        "to": "Credits.html"
+      },
+      {
+        "from": "node_modules/electron/dist/LICENSES.chromium.html",
+        "to": "LICENSES.chromium.html"
+      }
+    ],
     "asarUnpack": [
       "native/*.node"
     ],
