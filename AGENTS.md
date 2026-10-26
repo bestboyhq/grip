@@ -84,6 +84,8 @@ Grip's side is `electron/upload.ts` and `electron/account.ts`; `STUDIO_SHARE_URL
 - `npx electron build/icons.ts` renders `build/icon.png` from `build/Grip.icon` (needs Xcode 26+) and the menu bar icons from SVG.
   `build/Grip.icon` (Icon Composer) is the one source of the app icon; electron-builder compiles it, legacy `.icns` included.
 - `npm test` runs node:test on pure modules, `npm run check` type-checks, `cd native && cargo test` tests the addon.
+- `node scripts/notice.ts` rewrites `NOTICE`, every third-party component the app ships with its license and notices; `npm test` fails after a dependency change until it runs.
+  The app ships `NOTICE`, `LICENSE`, and Chromium's notices, and its About panel points to them.
 
 ## Code: lazy senior developer
 
