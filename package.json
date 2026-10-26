@@ -8,10 +8,10 @@
   "main": "electron/main.ts",
   "scripts": {
     "dev": "node scripts/dev.ts",
-    "build": "npm run build:native && vite build",
+    "build": "node --disable-warning=ExperimentalWarning scripts/strip.ts && npm run build:native && vite build",
     "build:native": "cd native && napi build --platform --release --dts index.d.ts --no-js",
     "start": "electron .",
-    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "check": "svelte-check --tsconfig ./tsconfig.json --config ./svelte.config.js",
     "pretest": "node -e \"require('electron')\"",
     "test": "node --test 'src/**/*.test.ts' 'electron/**/*.test.ts' 'scripts/**/*.test.ts'",
     "package": "npm run build && electron-builder --mac --publish never && if [ -n \"$APPLE_KEYCHAIN_PROFILE\" ]; then dmg=release/Grip-$npm_package_version-arm64.dmg && xcrun notarytool submit \"$dmg\" --keychain-profile \"$APPLE_KEYCHAIN_PROFILE\" --wait && xcrun stapler staple \"$dmg\"; fi"
@@ -28,14 +28,19 @@
     "files": [
       "package.json",
       "electron/**/*",
-      "!electron/**/*.test.ts",
-      "src/shared/**/*.ts",
-      "src/engine/**/*.ts",
-      "src/assets/**/*.ts",
-      "!src/**/*.test.ts",
+      "!electron/**/*.ts",
+      {
+        "from": "dist-main",
+        "filter": [
+          "**/*"
+        ]
+      },
       "dist/**/*",
       "native/studio.*.node"
     ],
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
     "asarUnpack": [
       "native/*.node"
     ],
