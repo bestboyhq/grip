@@ -1,7 +1,7 @@
 <!-- Onboarding and settings (#/onboarding?page=welcome|permissions|shortcut|settings[&need=<permission>]).
      Welcome, then permissions: each with a one-line reason, live status, a request button that
      shows the system prompt the first time and System Settings after that, and a way back from a
-     revoked permission (`need`). Then the offer of macOS's screenshot keys (⇧⌘5) for recording. Settings puts recording options and shortcuts first, then the same
+     revoked permission (`need`). Then the record shortcut, in keys the user picks. Settings puts recording options and shortcuts first, then the same
      permission list with every allowed one folded into a single row. Each recording option plays on a
      small desktop beside the list while it is pointed at or focused. -->
 <script lang="ts">
@@ -111,11 +111,9 @@
   // Off goes back to Grip's default.
   const MACOS_KEYS = 'Shift+Command+5'
   const DEFAULT_KEYS = 'Alt+Command+Return'
-  let taken = $state(false) // onboarding offered ⇧⌘5 and another app has it
   async function use(keys: string) {
     const ok = await invoke('shell:shortcut', keys)
     keysNote = !ok ? `Another app uses ${symbols(keys)}. Try another.` : ok === 'macos' ? `Grip takes ${symbols(keys)} over from macOS until you quit Grip.` : ''
-    return ok
   }
 </script>
 
@@ -195,14 +193,20 @@
       <button class="button primary" disabled={!screenOk} onclick={() => (page = 'shortcut')}>Continue</button>
     </footer>
   {:else if page === 'shortcut'}
-    <!-- Most people already reach for macOS's screenshot keys: offer them once, the same switch Settings has. -->
+    <!-- People reach for different keys, macOS's screenshot ones among them: ask for theirs, assume none. -->
     <section class="welcome">
-      <div class="caps" aria-hidden="true"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>5</kbd></div>
-      <h1>Record with ⇧⌘5</h1>
-      <p>The keys you use for screenshots open Grip instead of macOS’s screenshot toolbar. macOS gets them back when you quit Grip.</p>
-      <button class="button primary" onclick={async () => ((await use(MACOS_KEYS)) ? invoke('shell:finish-onboarding') : (taken = true))}>Use ⇧⌘5</button>
-      {#if taken}<p class="after taken" role="alert">Another app uses ⇧⌘5.</p>{/if}
-      <p class="after"><button class="link" onclick={() => invoke('shell:finish-onboarding')}>Keep {recordKeys}</button> · Change it any time in Settings</p>
+      <button class="caps" class:typing={typingKeys} aria-label="Recording shortcut: {recordKeys}. Change" onclick={listen} onkeydown={typeKeys} onblur={stopListening}>
+        {#if typingKeys}<kbd>Type a shortcut</kbd>{:else}{#each recordKeys.match(/[⌃⌥⇧⌘]|.+/gu) ?? [] as key, i (i)}<kbd>{key}</kbd>{/each}{/if}
+      </button>
+      <h1>Use your favorite shortcut</h1>
+      <p>It opens Grip from any app, ready to record. Click the keys above and press your own, even macOS’s screenshot keys.</p>
+      <button class="button primary" onclick={() => invoke('shell:finish-onboarding')}>Continue</button>
+      <p class="after" role="status">
+        {#if keysNote}{keysNote}
+        {:else if status?.accessibility && status.accessibility !== 'granted'}macOS’s own keys reach Grip with
+          <button class="link" onclick={() => request('accessibility')}>Accessibility</button> on.
+        {:else if typingKeys}Press the new keys, or Esc to keep these.{/if}
+      </p>
     </section>
   {:else}
     <section class="body scroll">
@@ -319,16 +323,23 @@
     line-height: 1.5;
     color: var(--fg-secondary);
   }
+  /* The record shortcut as key caps, one per key: a click types new ones. */
   .caps {
     display: flex;
     gap: 10px;
     margin-bottom: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-lg);
+    background: none;
+    color: var(--fg-default);
   }
   .caps kbd {
     display: grid;
     place-items: center;
-    width: 64px;
+    min-width: 64px;
     height: 64px;
+    padding: 0 16px;
     border-radius: var(--radius-lg);
     box-shadow:
       var(--hairline),
@@ -337,12 +348,17 @@
     font-weight: 500;
     letter-spacing: 0;
   }
+  .caps:hover kbd {
+    background: var(--surface-hover);
+  }
+  .caps.typing kbd {
+    color: var(--fg-secondary);
+    font-size: 15px;
+  }
   .welcome .after {
+    min-height: 17px; /* a note coming and going never moves Continue */
     margin: 16px 0 0;
     font-size: 12px;
-  }
-  .welcome .taken {
-    color: var(--warm);
   }
   .body {
     flex: 1;
@@ -561,6 +577,8 @@
   .link:focus-visible,
   .keys:focus-visible,
   .keys.typing,
+  .caps:focus-visible,
+  .caps.typing,
   input:focus-visible {
     outline: 2px solid var(--brand);
     outline-offset: 2px;
