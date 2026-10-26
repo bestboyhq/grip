@@ -57,7 +57,7 @@ async function template(): Promise<MenuItemConstructorOptions[]> {
     { type: 'separator' },
     { label: 'Quit Grip', accelerator: 'Command+Q', registerAccelerator: false, click: () => app.quit() },
   ]
-  const record = settings().recordShortcut
+  const record = settings().recordShortcut || undefined
   if (s === 'idle') return [...exportMenuItems(), { label: 'New Recording', accelerator: record, registerAccelerator: false, click: () => showPicker() }, ...common]
   return [
     ...exportMenuItems(),

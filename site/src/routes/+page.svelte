@@ -99,7 +99,7 @@
 
 	const steps = [
 		{
-			title: 'Press ⌥⌘↩︎',
+			title: 'Press your shortcut',
 			body: 'The screen freezes under Grip’s overlay with your last area selected. Mark it up and copy it, or press Return to record.',
 		},
 		{
@@ -224,7 +224,7 @@
 			<span class="quiet">and screenshots within seconds.</span>
 		</h1>
 		<p class="lede">
-			Press ⌥⌘↩︎ and talk. Grip zooms where you click, glides your cursor, and captions your voice.
+			Press your keys and talk. Grip zooms where you click, glides your cursor, and captions your voice.
 			The link works before the upload finishes.
 		</p>
 		<div class="actions">
@@ -300,7 +300,7 @@
 	id="capture"
 	beat={beat('capture', 'Capture')}
 	title="One keystroke. Screenshot or video."
-	body="Press ⌥⌘↩︎ and the screen freezes in the mode you used last. Draw arrows, boxes, ink, and text on top, pixelate what’s private, then copy it, save it, or record it."
+	body="Press your keys, even macOS’s screenshot ones, and the screen freezes in the mode you used last. Draw arrows, boxes, ink, and text on top, pixelate what’s private, then copy it, save it, or record it."
 	href={docHref('capture-in-one-keystroke')}
 	linkLabel="How capture works"
 	checks={['Five markup tools, one key each', 'Area, display, window, or iPhone']}
@@ -492,7 +492,7 @@
 				<div class="rise">
 					<h2 id="start-title">Record the demo you keep putting off.</h2>
 					<p class="sub">
-						Download Grip, press ⌥⌘↩︎, and have a link to share before the moment passes.
+						Download Grip, press your shortcut, and have a link to share before the moment passes.
 					</p>
 				</div>
 				<div class="close-actions rise">

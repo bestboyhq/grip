@@ -1,7 +1,7 @@
-<!-- Onboarding and settings (#/onboarding?page=welcome|permissions|settings[&need=<permission>]).
+<!-- Onboarding and settings (#/onboarding?page=welcome|permissions|shortcut|settings[&need=<permission>]).
      Welcome, then permissions: each with a one-line reason, live status, a request button that
      shows the system prompt the first time and System Settings after that, and a way back from a
-     revoked permission (`need`). Settings puts recording options and shortcuts first, then the same
+     revoked permission (`need`). Then the record shortcut: none until the user types one, or skips. Settings puts recording options and shortcuts first, then the same
      permission list with every allowed one folded into a single row. Each recording option plays on a
      small desktop beside the list while it is pointed at or focused. -->
 <script lang="ts">
@@ -10,7 +10,7 @@
   import Icon, { type IconName } from '../recorder/Icon.svelte'
   import { ensurePermission, setSettings, shell, type Permission, type PermissionStatus, type Settings } from '../recorder/shell.svelte.ts'
   import appIcon from '../../../build/icon.png'
-  import { acceleratorOf, symbols, type Press } from '../../shared/shortcut.ts'
+  import { acceleratorOf, modifiersOf, symbols, type Press } from '../../shared/shortcut.ts'
   import SettingPreview from './SettingPreview.svelte'
 
   let { params }: { params: URLSearchParams } = $props()
@@ -74,15 +74,18 @@
     if (await ensurePermission(p)) status = { ...status, [p]: 'granted' }
   }
 
-  // The record shortcut is the user's: click it, type a new one (Esc keeps the old one).
+  // The record shortcut is the user's, none until they pick one: click it, type a new one (Esc keeps the
+  // old one, ⌫ removes it).
   let typingKeys = $state(false)
   let keysNote = $state('') // why the last one typed can't be used
+  let held = $state('') // the modifiers down while listening, shown as they go down
   const recordKeys = $derived(symbols(shell.settings?.recordShortcut ?? '') ?? '')
 
   function listen() {
     if (typingKeys) return
     typingKeys = true
     keysNote = ''
+    held = ''
     invoke('shell:shortcut', null) // pressing the current one records it, not opens the picker
   }
   function stopListening() {
@@ -91,10 +94,21 @@
     keysNote = ''
     invoke('shell:shortcut', shell.settings?.recordShortcut)
   }
+  // Onboarding's step listens from the moment it opens, wherever focus is, until keys are set.
+  function toShortcut() {
+    page = 'shortcut'
+    if (!recordKeys) listen()
+  }
+  function stepKeys(e: KeyboardEvent) {
+    if (page !== 'shortcut' || !typingKeys) return
+    held = modifiersOf(e)
+    if (e.type === 'keydown') typeKeys(e)
+  }
   function typeKeys(e: KeyboardEvent) {
     if (!typingKeys || (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey)) return // Tab moves on
     e.preventDefault()
     if (e.key === 'Escape') return stopListening()
+    if (e.key === 'Backspace' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) return void ((typingKeys = false), use(''))
     typed(e)
   }
   // Presses with ⌘ or ⌃ come from Grip instead of the page: Chromium keeps the ones macOS reserves from it.
@@ -105,12 +119,12 @@
     if (keys === '') return // only modifiers so far
     if (!keys) return void (keysNote = 'Use ⌘ or ⌃ with another modifier, like ⌥⌘ or ⇧⌘.')
     typingKeys = false
+    held = ''
     use(keys)
   }
   // macOS's own screenshot and recording keys, one switch away: most people already reach for them.
-  // Off goes back to Grip's default.
+  // Off leaves none.
   const MACOS_KEYS = 'Shift+Command+5'
-  const DEFAULT_KEYS = 'Alt+Command+Return'
   async function use(keys: string) {
     const ok = await invoke('shell:shortcut', keys)
     keysNote = !ok ? `Another app uses ${symbols(keys)}. Try another.` : ok === 'macos' ? `Grip takes ${symbols(keys)} over from macOS until you quit Grip.` : ''
@@ -172,6 +186,8 @@
   </ul>
 {/snippet}
 
+<svelte:window onkeydown={stepKeys} onkeyup={stepKeys} onblur={() => (held = '')} />
+
 <main class="window">
   <div class="titlebar">{#if page === 'settings'}<span class="name">Settings</span>{/if}</div>
   {#if page === 'welcome'}
@@ -189,8 +205,37 @@
       {@render permissionList()}
     </section>
     <footer>
-      <span>{#if !screenOk}<button class="link" onclick={() => invoke('shell:finish-onboarding')}>Skip for now</button>{/if}</span>
-      <button class="button primary" disabled={!screenOk} onclick={() => invoke('shell:finish-onboarding')}>Continue</button>
+      <span>{#if !screenOk}<button class="link" onclick={toShortcut}>Skip for now</button>{/if}</span>
+      <button class="button primary" disabled={!screenOk} onclick={toShortcut}>Continue</button>
+    </footer>
+  {:else if page === 'shortcut'}
+    <!-- People reach for different keys, macOS's screenshot ones among them: Grip presets none and
+         waits for theirs. While it listens, the field reads as an input waiting for them: a caret,
+         and each modifier as it goes down. -->
+    <section class="welcome">
+      <button class="caps" aria-label={typingKeys ? 'Recording shortcut: press your keys' : `Recording shortcut: ${recordKeys || 'none'}. Change`} onclick={listen}>
+        {#if typingKeys}
+          {#each [...held] as key (key)}<kbd>{key}</kbd>{/each}
+          <span class="slot"><span class="caret"></span>{#if !held}Press your shortcut{/if}</span>
+        {:else if recordKeys}
+          {#each recordKeys.match(/[⌃⌥⇧⌘]|.+/gu) ?? [] as key, i (i)}<kbd>{key}</kbd>{/each}
+        {:else}
+          <kbd class="empty">Set a shortcut</kbd>
+        {/if}
+      </button>
+      <h1>Use your favorite shortcut</h1>
+      <p>Press the keys that should open Grip from any app, ready to record. macOS’s screenshot keys work too.</p>
+      <p class="after" role="status">
+        {#if keysNote}{keysNote}
+        {:else if !typingKeys && recordKeys}Saved. Click the keys to change them.
+        {:else if status?.accessibility && status.accessibility !== 'granted'}macOS’s own keys reach Grip with
+          <button class="link" onclick={() => request('accessibility')}>Accessibility</button> on.
+        {:else if typingKeys && recordKeys}Press the new keys, or Esc to keep {recordKeys}.{/if}
+      </p>
+    </section>
+    <footer>
+      <span>{#if !recordKeys}<button class="link" onclick={() => invoke('shell:finish-onboarding')}>Skip for now</button>{/if}</span>
+      <button class="button primary" disabled={!recordKeys} onclick={() => invoke('shell:finish-onboarding')}>Continue</button>
     </footer>
   {:else}
     <section class="body scroll">
@@ -224,13 +269,13 @@
             <!-- macOS's own shortcuts reach this field while it listens, with Accessibility on; Grip turns off the one it takes. -->
             <div class="reason" role="status">
               {keysNote ||
-                (!typingKeys ? 'Works in any app. Click it to change it.'
-                : status?.accessibility === 'granted' ? 'Press the new keys. macOS’s screenshot keys, like ⇧⌘5, work too.'
-                : 'Press the new keys. To use macOS’s own, like ⇧⌘5, allow Accessibility below.')}
+                (!typingKeys ? (recordKeys ? 'Works in any app. Click it to change it.' : 'Opens Grip from any app. Click to set one.')
+                : (recordKeys ? 'Press the new keys, or ⌫ to remove them. ' : 'Press the new keys. ') +
+                  (status?.accessibility === 'granted' ? 'macOS’s screenshot keys work too.' : 'To use macOS’s own, allow Accessibility below.'))}
             </div>
           </div>
-          <button class="keys" class:typing={typingKeys} aria-label="New recording shortcut: {recordKeys}. Change" title="Click to change" onclick={listen} onkeydown={typeKeys} onblur={stopListening}
-            >{typingKeys ? 'Type a shortcut' : recordKeys}</button
+          <button class="keys" class:typing={typingKeys} class:empty={!recordKeys} aria-label="New recording shortcut: {recordKeys || 'none'}. Change" title="Click to change" onclick={listen} onkeydown={typeKeys} onblur={stopListening}
+            >{typingKeys ? 'Type a shortcut' : recordKeys || 'Set a shortcut'}</button
           >
         </li>
         <li>
@@ -239,7 +284,7 @@
               <span class="title">Record with ⇧⌘5</span>
               <span class="reason">Opens Grip instead of macOS’s screenshot toolbar.</span>
             </span>
-            <input type="checkbox" role="switch" checked={shell.settings?.recordShortcut === MACOS_KEYS} onchange={(e) => use(e.currentTarget.checked ? MACOS_KEYS : DEFAULT_KEYS)} />
+            <input type="checkbox" role="switch" checked={shell.settings?.recordShortcut === MACOS_KEYS} onchange={(e) => use(e.currentTarget.checked ? MACOS_KEYS : '')} />
           </label>
         </li>
         {#each SHORTCUTS as [label, keys] (label)}
@@ -306,6 +351,75 @@
     font-size: 14px;
     line-height: 1.5;
     color: var(--fg-secondary);
+  }
+  /* The record shortcut as key caps, one per key: a click types new ones. */
+  .caps {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-lg);
+    background: none;
+    color: var(--fg-default);
+  }
+  .caps kbd {
+    display: grid;
+    place-items: center;
+    min-width: 64px;
+    height: 64px;
+    padding: 0 16px;
+    border-radius: var(--radius-lg);
+    box-shadow:
+      var(--hairline),
+      0 3px 0 var(--color-grey-950);
+    font-size: 26px;
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+  .caps:hover kbd {
+    background: var(--surface-hover);
+  }
+  .caps .empty {
+    color: var(--fg-secondary);
+    font-size: 15px;
+  }
+  /* Listening: an input waiting for keys, ringed in the focus blue, its caret blinking like the family's. */
+  .slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 64px;
+    height: 64px;
+    padding: 0 20px;
+    border-radius: var(--radius-lg);
+    background: var(--surface-well);
+    box-shadow: inset 0 0 0 1.5px var(--brand);
+    color: var(--fg-muted);
+    font-size: 15px;
+  }
+  .caret {
+    width: 2px;
+    height: 24px;
+    border-radius: 1px;
+    background: var(--brand);
+    animation: blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .caret {
+      animation: none;
+    }
+  }
+  .welcome .after {
+    min-height: 17px; /* a note coming and going never moves the page */
+    margin: 0;
+    font-size: 12px;
   }
   .body {
     flex: 1;
@@ -524,6 +638,7 @@
   .link:focus-visible,
   .keys:focus-visible,
   .keys.typing,
+  .caps:focus-visible,
   input:focus-visible {
     outline: 2px solid var(--brand);
     outline-offset: 2px;
@@ -595,7 +710,8 @@
   .keys:hover {
     background: var(--surface-hover);
   }
-  .keys.typing {
+  .keys.typing,
+  .keys.empty {
     color: var(--fg-secondary);
     letter-spacing: 0;
   }

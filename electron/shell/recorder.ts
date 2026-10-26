@@ -146,7 +146,7 @@ function shortcut(accelerator: string, fn: () => void): boolean {
 /** The record shortcut as registered; '' while paused, or when another app has it. */
 let recordKeys = ''
 
-/** Make `keys` (an accelerator from src/shared/shortcut.ts) the record shortcut, or pause it (null)
+/** Make `keys` (an accelerator from src/shared/shortcut.ts) the record shortcut, none (''), or pause it (null)
  *  while the user types a new one, with macOS's own shortcuts let through and caught before Chromium
  *  drops them, so pressing the current one or ⇧⌘5 records it instead of opening the picker or the
  *  screenshot toolbar. A macOS shortcut on the same keys would fire instead of Grip's: it is off while
@@ -160,7 +160,7 @@ function setRecordShortcut(keys: string | null): boolean {
   const before = settings().recordShortcut
   const shown = symbols(keys)
   if (shown && !hidden) borrowShortcuts(native.systemShortcuts(shown))
-  if (!shown || !shortcut(keys, () => (status === 'idle' ? showPicker() : command('stop')))) {
+  if (keys && (!shown || !shortcut(keys, () => (status === 'idle' ? showPicker() : command('stop'))))) {
     borrowShortcuts([])
     if (keys !== before) setRecordShortcut(before)
     return false
