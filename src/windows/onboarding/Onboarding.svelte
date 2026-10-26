@@ -237,10 +237,10 @@
           <button class="link" onclick={() => request('accessibility')}>Accessibility</button> on.
         {:else if typingKeys && recordKeys}Press the new keys, or Esc to keep {recordKeys}.{/if}
       </p>
-      <label class="login">Open at login <input type="checkbox" role="switch" bind:checked={atLogin} /></label>
     </section>
     <footer>
       <span>{#if !recordKeys}<button class="link" onclick={finish}>Skip for now</button>{/if}</span>
+      <label class="login">Open at login <input type="checkbox" role="switch" bind:checked={atLogin} /></label>
       <button class="button primary" disabled={!recordKeys} onclick={finish}>Continue</button>
     </footer>
   {:else}
@@ -446,14 +446,6 @@
     min-height: 17px; /* a note coming and going never moves the page */
     margin: 0;
     font-size: 12px;
-  }
-  .login {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 28px;
-    color: var(--fg-secondary);
-    font-size: 13px;
   }
   .body {
     flex: 1;
@@ -695,6 +687,15 @@
   footer .link {
     font-size: 13px;
     color: var(--fg-secondary);
+  }
+  /* Beside Continue, which sets it as onboarding ends. */
+  footer .login {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 24px 0 auto;
+    color: var(--fg-secondary);
+    font-size: 13px;
   }
   input[role='switch'] {
     appearance: none;
