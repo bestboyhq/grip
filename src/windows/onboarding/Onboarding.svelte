@@ -1,7 +1,7 @@
-<!-- Onboarding and settings (#/onboarding?page=welcome|permissions|settings[&need=<permission>]).
+<!-- Onboarding and settings (#/onboarding?page=welcome|permissions|shortcut|settings[&need=<permission>]).
      Welcome, then permissions: each with a one-line reason, live status, a request button that
      shows the system prompt the first time and System Settings after that, and a way back from a
-     revoked permission (`need`). Settings puts recording options and shortcuts first, then the same
+     revoked permission (`need`). Then the offer of macOS's screenshot keys (⇧⌘5) for recording. Settings puts recording options and shortcuts first, then the same
      permission list with every allowed one folded into a single row. Each recording option plays on a
      small desktop beside the list while it is pointed at or focused. -->
 <script lang="ts">
@@ -111,9 +111,11 @@
   // Off goes back to Grip's default.
   const MACOS_KEYS = 'Shift+Command+5'
   const DEFAULT_KEYS = 'Alt+Command+Return'
+  let taken = $state(false) // onboarding offered ⇧⌘5 and another app has it
   async function use(keys: string) {
     const ok = await invoke('shell:shortcut', keys)
     keysNote = !ok ? `Another app uses ${symbols(keys)}. Try another.` : ok === 'macos' ? `Grip takes ${symbols(keys)} over from macOS until you quit Grip.` : ''
+    return ok
   }
 </script>
 
@@ -189,9 +191,19 @@
       {@render permissionList()}
     </section>
     <footer>
-      <span>{#if !screenOk}<button class="link" onclick={() => invoke('shell:finish-onboarding')}>Skip for now</button>{/if}</span>
-      <button class="button primary" disabled={!screenOk} onclick={() => invoke('shell:finish-onboarding')}>Continue</button>
+      <span>{#if !screenOk}<button class="link" onclick={() => (page = 'shortcut')}>Skip for now</button>{/if}</span>
+      <button class="button primary" disabled={!screenOk} onclick={() => (page = 'shortcut')}>Continue</button>
     </footer>
+  {:else if page === 'shortcut'}
+    <!-- Most people already reach for macOS's screenshot keys: offer them once, the same switch Settings has. -->
+    <section class="welcome">
+      <div class="caps" aria-hidden="true"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>5</kbd></div>
+      <h1>Record with ⇧⌘5</h1>
+      <p>The keys you use for screenshots open Grip instead of macOS’s screenshot toolbar. macOS gets them back when you quit Grip.</p>
+      <button class="button primary" onclick={async () => ((await use(MACOS_KEYS)) ? invoke('shell:finish-onboarding') : (taken = true))}>Use ⇧⌘5</button>
+      {#if taken}<p class="after taken" role="alert">Another app uses ⇧⌘5.</p>{/if}
+      <p class="after"><button class="link" onclick={() => invoke('shell:finish-onboarding')}>Keep {recordKeys}</button> · Change it any time in Settings</p>
+    </section>
   {:else}
     <section class="body scroll">
       {@render needBanner()}
@@ -306,6 +318,31 @@
     font-size: 14px;
     line-height: 1.5;
     color: var(--fg-secondary);
+  }
+  .caps {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+  .caps kbd {
+    display: grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    border-radius: var(--radius-lg);
+    box-shadow:
+      var(--hairline),
+      0 3px 0 var(--color-grey-950);
+    font-size: 26px;
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+  .welcome .after {
+    margin: 16px 0 0;
+    font-size: 12px;
+  }
+  .welcome .taken {
+    color: var(--warm);
   }
   .body {
     flex: 1;
