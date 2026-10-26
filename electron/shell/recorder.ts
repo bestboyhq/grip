@@ -17,6 +17,7 @@
 //   shell:still(displayId) -> Still | null   overlay: its display frozen as it was when the picker opened (raw
 //                                 RGBA); a loaded overlay asks ahead and gets it when a pick opens
 //   shell:ready                   overlay: painted (its still too), show it
+//   shell:painted                 toolbar: drawn with its settings and devices; it may show now, and takes commands
 //   shell:focus                   overlay: the pointer is on it, picking a display or window: it takes the keyboard
 //   shell:select(area | null)     overlay: the area picked so far ({ display, rect, aspect }), also kept as the last area
 //   shell:close-picker            hide toolbar, overlays, and the idle camera bubble
@@ -81,7 +82,10 @@ const BUBBLE = 216 // camera bubble window; the circle inside leaves room for it
 const NOTES = { width: 440, height: 260 }
 
 let toolbar: BrowserWindow | null = null
-let loaded: Promise<unknown> = Promise.resolve()
+/** Waiting for the toolbar to draw itself (shell:painted), null once it has: shown before that it is an
+ *  empty panel, and its page may not listen for commands yet. */
+let unpainted: Array<() => void> | null = []
+const whenPainted = (fn: () => void) => (unpainted ? void unpainted.push(fn) : fn())
 let status: Status = 'idle'
 let mode: Mode | null = null
 let picking = false // toolbar on screen
@@ -200,7 +204,7 @@ function controller(): BrowserWindow {
   })
   protect(win, 2)
   native.disableWindowAnimation(win.getNativeWindowHandle()) // shows at once, with the frozen screen
-  loaded = new Promise<void>((r) => win.webContents.once('did-finish-load', () => r()))
+  unpainted = []
   win.on('close', (e) => {
     if (quitting) return
     e.preventDefault()
@@ -228,9 +232,15 @@ export function showPicker(m: Mode | null = settings().mode) {
   picking = true
   // Overlays bring the toolbar with the frozen screen (showOverlay). Ones on screen already: it shows
   // now, before pick() gives the keyboard back to the area overlay.
-  if (m === null || m === 'device' || windowsOf('area').some((w) => w.isVisible())) reveal(win)
+  if (m === null || m === 'device' || windowsOf('area').some((w) => w.isVisible())) showToolbar()
   pick(m)
   updateHelpers()
+}
+
+/** The toolbar on screen once it has drawn itself, if the picker is still open then. */
+function showToolbar() {
+  const win = controller()
+  whenPainted(() => picking && reveal(win))
 }
 
 export function closePicker() {
@@ -245,21 +255,20 @@ export function closePicker() {
 let held: Held = null
 
 /** Send a command to the controller, which calls the capture engine. */
-export async function command(cmd: Command, opts?: unknown) {
+export function command(cmd: Command, opts?: unknown) {
   if ((cmd === 'stop' || cmd === 'cancel') && status === 'starting') return void (held = hold(held, cmd))
   if (cmd === 'restart' && status !== 'idle') {
     clock = { elapsed: 0, at: status === 'recording' ? Date.now() : 0 }
     broadcast()
   }
   const win = controller()
-  await loaded
-  win.webContents.send('shell:do', cmd, opts)
+  whenPainted(() => win.webContents.send('shell:do', cmd, opts))
 }
 
-/** Load the controller and the overlays ahead of first use (tray menu, shortcuts). */
+/** Load the controller ahead of first use (tray menu, shortcuts), and the overlays once it has drawn
+ *  itself (shell:painted): loading beside it, they would hold back its first paint. */
 export function warmUp() {
   controller()
-  loadOverlays()
 }
 
 /** Ask, then delete the recording in progress. The shortcut held down or pressed again while the
@@ -381,7 +390,7 @@ function loadOverlays() {
  *  ⌘C copies, A arrow...). A panel: it takes key focus without bringing Grip forward. */
 function showOverlay(w: BrowserWindow) {
   if (w.isDestroyed() || w.isVisible()) return
-  if (picking && !counting && toolbar && !toolbar.isVisible()) reveal(toolbar)
+  if (picking && !counting && toolbar && !toolbar.isVisible()) showToolbar()
   reveal(w, screen.getDisplayMatching(w.getBounds()).id === activeDisplay().id)
 }
 
@@ -400,7 +409,7 @@ function escape(on: boolean) {
     if (counting) {
       counting = false
       sendAll('shell:escape')
-      if (picking) reveal(controller())
+      if (picking) showToolbar()
       return broadcast()
     }
     closePicker() // the toolbar too: Esc leaves the picker in one press
@@ -785,6 +794,13 @@ export function registerRecorder() {
   ipcMain.handle('shell:ready', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender)
     if (w && windowsOf('area').includes(w)) showOverlay(w)
+  })
+  ipcMain.handle('shell:painted', (e) => {
+    if (e.sender !== toolbar?.webContents || !unpainted) return
+    const waiting = unpainted
+    unpainted = null
+    for (const fn of waiting) fn()
+    if (!windowsOf('area').length) loadOverlays()
   })
   ipcMain.handle('shell:focus', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender)

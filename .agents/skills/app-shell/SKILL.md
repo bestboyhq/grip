@@ -1,6 +1,6 @@
 ---
 name: app-shell
-description: The native macOS app shell. Use when changing the menu bar, dock icon, window positions, global shortcuts, URL scheme, quit prompts, updates, crash reporting, or onboarding.
+description: The native macOS app shell. Use when changing the launch, menu bar, dock icon, window positions, global shortcuts, URL scheme, quit prompts, updates, crash reporting, or onboarding.
 ---
 
 # App shell
@@ -16,6 +16,9 @@ The native macOS app around everything else.
   Its copy, GIF, and link use the project's style, which starts plain (see compositor).
   Recent Captures (menu bar menu and the toolbar's gear) reopens the last five cards, across restarts; their screenshots stay in Grip's own folder, since `$TMPDIR` gets purged.
   Recent Projects, with thumbnails, sit in both menus too: a closed editor is one click back, and the editor's title bar says its edits are saved.
+- A launch shows the toolbar whole in its first frame: it shows once it has drawn itself with its settings and devices (shell:painted).
+  A panel that fills in after it appears reads as a blink.
+  The main thread stays free until then: device discovery runs on a worker (AVFoundation's first takes ~60 ms), and modules only some features use (the updater, mediabunny) load on first use, since every static import in `electron/` costs every launch.
 - Windows remember positions per display and return on-screen after a display disconnects.
   The recording controls, camera bubble, and result card show on the display the recording was started on, never where the mouse went since.
 - Global shortcuts, a URL scheme for automation (Raycast), and drag-and-drop of project files onto the app or menu bar icon.

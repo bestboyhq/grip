@@ -95,6 +95,10 @@ function launch(argv: string[], cwd = process.cwd()): boolean {
 
 app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark' // dark UI everywhere, native menus and dialogs included
+  // First the camera, whose device discovery starts on a worker thread, and the toolbar, whose page loads
+  // while the rest registers (its IPC too: this same turn ends before the page can ask anything).
+  registerCamera()
+  warmUp()
   if (!app.isPackaged) app.dock?.setIcon(join(import.meta.dirname, '../build/icon.png'))
   registerMediaProtocol()
   registerRecording()
@@ -103,7 +107,6 @@ app.whenReady().then(() => {
   registerAccount()
   registerShare()
   registerTranscript()
-  registerCamera()
   registerAudio()
   registerEditor()
   registerWallpapers()
@@ -114,7 +117,6 @@ app.whenReady().then(() => {
   watchDisplays()
   setAppMenu()
   if (!hidden) createTray() // agent runs, one per worktree, stay out of the menu bar
-  warmUp()
   ready = true
 
   const updated = restartedToUpdate()

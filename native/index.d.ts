@@ -102,12 +102,16 @@ export interface KeyPress {
   metaKey: boolean
 }
 
-/** Webcams, Continuity Cameras, and iPhone/iPad screens connected over USB. */
-export declare function listCameras(): Array<CameraDevice>
+/**
+ * Webcams, Continuity Cameras, and iPhone/iPad screens connected over USB. Off the JS thread:
+ * AVFoundation's first discovery in a process takes ~60 ms.
+ */
+export declare function listCameras(): Promise<Array<CameraDevice>>
 
 export declare function listDisplays(): Array<Display>
 
-export declare function listMicrophones(): Array<Microphone>
+/** Off the JS thread, like listCameras: device discovery can take AVFoundation a while. */
+export declare function listMicrophones(): Promise<Array<Microphone>>
 
 export declare function listWindows(): Promise<Array<Window>>
 
