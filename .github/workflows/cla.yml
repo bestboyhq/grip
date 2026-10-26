@@ -7,7 +7,8 @@ on:
   issue_comment:
     types: [created]
   pull_request_target:
-    types: [opened, closed, synchronize]
+    # reopened checks a reopened pull request again, and unlocks a locked one so the bot can comment.
+    types: [opened, closed, reopened, synchronize]
 
 permissions:
   actions: write # reruns the check once everyone has signed
@@ -17,11 +18,18 @@ permissions:
 
 jobs:
   cla:
-    if: github.event_name == 'pull_request_target' || (github.event.issue.pull_request && (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'))
+    # The action fails a pull request whose opener wrote none of its commits, and malini-agent[bot]
+    # writes every commit in the ones szymeo opens: those skip the job, and a job skipped by if: still
+    # passes a required check.
+    if: >-
+      (github.event.pull_request.user.login || github.event.issue.user.login) != 'szymeo' &&
+      (github.event_name == 'pull_request_target' ||
+      (github.event.issue.pull_request &&
+      (github.event.comment.body == 'recheck' || contains(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA'))))
     runs-on: ubuntu-latest
     steps:
-      # The action neither creates a missing branch nor, despite its docs, a missing file (it compares the
-      # 404 status to a string), so the first run creates both: a branch with a history of its own.
+      # The action never creates a missing branch, and with a missing file it creates one but fails that
+      # run, so the first run creates both: a branch with a history of its own.
       - name: Create the signatures file
         env:
           GH_TOKEN: ${{ github.token }}
@@ -36,11 +44,16 @@ jobs:
             commit=$(gh api "repos/$GH_REPO/git/commits" -f message="Start the CLA signatures" -f tree="$tree" --jq .sha)
             gh api "repos/$GH_REPO/git/refs" -f ref="refs/heads/$branch" -f sha="$commit" --silent
           fi
-      - uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
+      # A Node 24 fork of CLA Assistant Lite, which is archived on Node 20, gone from GitHub's runners.
+      # Its owner keeps it for their own use with no support, and it runs with a write token: read its
+      # changelog and diff before moving the pin.
+      - uses: iainmcgin/cla-github-action@0d27e5a16278d4adb6b0c4b92f08ad27b0a21dc8 # v3.2.0
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
           path-to-document: https://github.com/bestboyhq/grip/blob/main/CLA.md
           path-to-signatures: signatures/cla.json
           branch: cla-signatures
-          allowlist: szymeo,*[bot]
+          # The action asks every Co-authored-by: identity to sign, and an AI agent can't, so Copilot's,
+          # Claude Code's and Cursor's are listed; the opener still signs.
+          allowlist: szymeo,*[bot],Copilot,noreply@anthropic.com,cursoragent@cursor.com,noreply@cursor.com
