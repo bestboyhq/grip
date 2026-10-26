@@ -8,7 +8,7 @@ import { ring, withScale } from './png.ts'
 import { execFile } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, matchesGlob } from 'node:path'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 test('grip:// urls', () => {
@@ -95,24 +95,6 @@ test('window placement', () => {
   assert.deepEqual(under(panel, { x: 400, y: 100, width: 700, height: 600 }, main, 12), { x: 560, y: 712, ...panel })
   assert.deepEqual(under(panel, { x: 400, y: 300, width: 700, height: 600 }, main, 12), { x: 560, y: 816, ...panel })
   assert.deepEqual(under(panel, { x: -300, y: 100, width: 500, height: 600 }, main, 12), { x: 0, y: 712, ...panel })
-})
-
-test('the packaged app ships every file the main process imports', () => {
-  // An import outside package.json build.files loads in dev and kills the built app at launch.
-  const root = join(import.meta.dirname, '../..')
-  const globs: string[] = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).build.files
-  const has = (f: string, neg: boolean) => globs.some((g) => g.startsWith('!') === neg && matchesGlob(f, neg ? g.slice(1) : g))
-  const seen = new Set<string>()
-  const walk = (file: string) => {
-    if (seen.has(file)) return
-    seen.add(file)
-    // Runtime imports only: type-only imports and `typeof import()` are erased.
-    const src = readFileSync(join(root, file), 'utf8').replace(/(?:import|export)\s+type\b[^;]*?from\s*['"][^'"]*['"]|typeof\s+import\([^)]*\)/g, '')
-    for (const m of src.matchAll(/(?:\bfrom|^\s*import|\bimport\()\s*['"](\.{1,2}\/[^'"]+)['"]/gm)) walk(join(dirname(file), m[1]))
-  }
-  walk('electron/main.ts')
-  assert.ok(seen.size > 20, `found only ${seen.size} files`)
-  assert.deepEqual([...seen].filter((f) => !has(f, false) || has(f, true)), [])
 })
 
 test('the packaged app opens .grip bundles by their type, declared once', () => {

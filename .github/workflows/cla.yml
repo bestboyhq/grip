@@ -20,7 +20,8 @@ jobs:
   cla:
     # The action fails a pull request whose opener wrote none of its commits, and malini-agent[bot]
     # writes every commit in the ones szymeo opens: those skip the job, and a job skipped by if: still
-    # passes a required check.
+    # passes a required check. The action takes the signing phrase with a short remark beside it, so
+    # only recheck must match exactly.
     if: >-
       (github.event.pull_request.user.login || github.event.issue.user.login) != 'szymeo' &&
       (github.event_name == 'pull_request_target' ||
@@ -45,8 +46,9 @@ jobs:
             gh api "repos/$GH_REPO/git/refs" -f ref="refs/heads/$branch" -f sha="$commit" --silent
           fi
       # A Node 24 fork of CLA Assistant Lite, which is archived on Node 20, gone from GitHub's runners.
-      # Its owner keeps it for their own use with no support, and it runs with a write token: read its
-      # changelog and diff before moving the pin.
+      # Its bundle at this pin is byte-identical to a build of its source. Its owner keeps it for their
+      # own use with no support, and it runs with a write token: read its changelog and diff before
+      # moving the pin.
       - uses: iainmcgin/cla-github-action@0d27e5a16278d4adb6b0c4b92f08ad27b0a21dc8 # v3.2.0
         env:
           GITHUB_TOKEN: ${{ github.token }}

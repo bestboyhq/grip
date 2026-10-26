@@ -842,10 +842,11 @@ pub struct Still {
     pub data: napi::bindgen_prelude::Buffer,
 }
 
-/// The display frozen for the picker: the screenshot without its PNG round trip.
+/// The display frozen for the picker: the screenshot without its PNG round trip. `ours`: ids of our
+/// windows shown just before (CGWindowID), left out like the rest of Grip.
 #[napi]
-pub async fn capture_still(display_id: u32) -> napi::Result<Still> {
-    let (width, height, data) = blocking(move || sck::still(display_id)).await?;
+pub async fn capture_still(display_id: u32, ours: Option<Vec<u32>>) -> napi::Result<Still> {
+    let (width, height, data) = blocking(move || sck::still(display_id, &ours.unwrap_or_default())).await?;
     Ok(Still { width, height, data: data.into() })
 }
 

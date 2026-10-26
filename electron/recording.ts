@@ -42,11 +42,12 @@ export const recordingEvents = new EventEmitter()
 
 /** screenshot: a still of `r` (points, relative to its display) without Grip's windows or the cursor,
  *  as PNG (recording:screenshot). windowScreenshot: one window alone, as PNG. still: a whole display
- *  in raw RGBA, the frozen screen while picking. The dev stand-in replaces all three. */
+ *  in raw RGBA, the frozen screen while picking, once `ours` (window ids, shown just before) are on
+ *  screen, so they stay out of it. The dev stand-in replaces all three. */
 export const capture = {
   screenshot: (displayId: number, r: Rect): Promise<Uint8Array> => native.captureScreenshot(displayId, r),
   windowScreenshot: (windowId: number, frame?: Rect): Promise<Uint8Array> => native.captureWindowScreenshot(windowId, frame),
-  still: (displayId: number): Promise<Still> => native.captureStill(displayId),
+  still: (displayId: number, ours?: number[]): Promise<Still> => native.captureStill(displayId, ours),
 }
 
 const PERMISSIONS: Permission[] = ['screen', 'accessibility', 'microphone', 'camera']

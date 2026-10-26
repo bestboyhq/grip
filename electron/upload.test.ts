@@ -2,7 +2,7 @@
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer, type IncomingMessage } from 'node:http'
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ShareError, upload, usedUp, type Upload } from './upload.ts'
@@ -58,6 +58,7 @@ after(() => server.close())
 const URL_ = `http://localhost:${(server.address() as { port: number }).port}`
 
 const dir = mkdtempSync(join(tmpdir(), 'grip-upload-'))
+after(() => rmSync(dir, { recursive: true, force: true }))
 function job(name: string, size: number): Upload {
   const file = join(dir, name)
   writeFileSync(file, Buffer.from(Array.from({ length: size }, (_, i) => (i * 7) % 251)))

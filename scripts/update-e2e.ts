@@ -82,7 +82,7 @@ for (const v of ['0.0.1', '0.0.2', '0.0.3', '0.0.4']) {
     ...base,
     appId: ID,
     productName: NAME,
-    extraMetadata: { name: NAME.toLowerCase(), productName: NAME, version: v }, // own name: own updater cache
+    extraMetadata: { ...base.extraMetadata, name: NAME.toLowerCase(), productName: NAME, version: v }, // own name: own updater cache
     directories: { ...base.directories, output: join(dir, v) },
     protocols: [],
     fileAssociations: [],

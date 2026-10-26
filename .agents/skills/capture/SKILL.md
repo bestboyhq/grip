@@ -13,7 +13,10 @@ Screen, window, area, and device recording.
 - Plan the downscale for sources above the encoder's maximum dimensions (ultrawide, 5K+) at capture setup.
 - Our own UI stays out of the capture: recording widget, speaker notes and prompter, camera preview, area picker.
   System notifications and, optionally, desktop icons stay out too.
-- The picker freezes every display the moment it opens (shortcut or menu bar click), before any of our UI shows, so menus and hover states stay; the freeze ends when a countdown starts.
+- The picker opens at once (shortcut or menu bar click) and freezes every display under it; the freeze ends when a countdown starts.
+  Its overlays and toolbar show first, click-through and never key, so menus and hover states stay for the capture, and they take the mouse once the frozen frame is in.
+  ScreenCaptureKit takes about 100 ms to shoot a display: waiting for that before showing anything made every open take 200 ms, and 450 ms the first time after launch.
+  The capture leaves out only what of ours is on screen when it lists the content, so the overlays show before it starts.
 - Area picking opens with nothing selected: windows move between recordings, and a restored area followed by a quick ↩ records the wrong place.
   The last area shows outlined and tagged: a click picks it again, a drag inside it draws a new one, and its aspect lock carries over.
 - Screenshots come from the same area picker and are cut from that frozen frame: ⌘C copies the area, a drawing tool annotates it first, and drawn shapes drag to another place.

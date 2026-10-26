@@ -60,8 +60,9 @@
   const pixels = (s: { width: number; height: number; data: Uint8Array<ArrayBuffer> } | null) =>
     s && new ImageData(new Uint8ClampedArray(s.data.buffer, s.data.byteOffset, s.data.byteLength), s.width, s.height, { colorSpace: 'display-p3' })
   const paint = (canvas: HTMLCanvasElement) => void (still && canvas.getContext('2d', P3)!.putImageData(still, 0, 0))
-  /** On screen: shell:ready returns once the main process has shown this overlay. Loaded ahead, it paints
-   *  while hidden, so an animation started on mount would play unseen. */
+  /** On screen: shell:ready returns once the main process has handed this overlay the mouse and keys (it
+   *  showed before, while its display froze, unless it was still loading). Loaded ahead, it paints while
+   *  hidden, so an animation started on mount would play unseen. */
   let shown = $state(false)
   // A countdown or a recording shows the screen live from then on.
   $effect(() => {
@@ -71,8 +72,9 @@
 
   onMount(() => {
     const id = Number(params.get('display'))
-    // Loaded ahead, it lays itself out while it waits for a pick's still, then shows (shell:ready) once it
-    // has painted it: frozen from the first frame. Its display again then: the work area may have moved.
+    // Loaded ahead, it lays itself out while it waits for a pick: it shows at once over the live screen,
+    // which looks the same, and takes the mouse and keys (shell:ready) once it has painted the still under
+    // its UI. Its display again then: the work area may have moved.
     invoke('shell:display', id).then((d) => (display = d))
     invoke('shell:still', id)
       .then(pixels)

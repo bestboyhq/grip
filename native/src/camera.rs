@@ -24,11 +24,11 @@ use std::sync::{Arc, Mutex, MutexGuard, Once};
 
 use block2::RcBlock;
 use dispatch2::{DispatchQueue, DispatchRetained};
-use napi::bindgen_prelude::{AbortSignal, PromiseRaw};
+use napi::bindgen_prelude::{AbortSignal, PromiseRaw, spawn_blocking};
 use napi::{Env, Error, Status};
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
-use objc2::rc::Retained;
+use objc2::rc::{Retained, autoreleasepool};
 use objc2::runtime::ProtocolObject;
 use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass};
 use objc2_av_foundation::*;
@@ -242,8 +242,13 @@ fn resolve_format(device: &AVCaptureDevice, height: u32) -> Option<Resolved> {
 }
 
 #[napi]
-/// Webcams, Continuity Cameras, and iPhone/iPad screens connected over USB.
-pub fn list_cameras() -> Vec<CameraDevice> {
+/// Webcams, Continuity Cameras, and iPhone/iPad screens connected over USB. Off the JS thread:
+/// AVFoundation's first discovery in a process takes ~60 ms.
+pub async fn list_cameras() -> napi::Result<Vec<CameraDevice>> {
+    spawn_blocking(|| autoreleasepool(|_| cameras())).await.map_err(|e| Error::from_reason(e.to_string()))
+}
+
+fn cameras() -> Vec<CameraDevice> {
     devices()
         .into_iter()
         .map(|(d, kind)| {
