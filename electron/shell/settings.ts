@@ -69,7 +69,7 @@ const defaults: Settings = {
   onboarded: false,
   prompted: [],
   windows: {},
-  recordShortcut: 'Alt+Command+Return',
+  recordShortcut: '', // none until the user picks one: people reach for different keys
   borrowedShortcuts: [],
 }
 

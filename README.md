@@ -72,7 +72,7 @@ Grip designs them out from the first commit instead of patching them later.
 
 ## Capture in one keystroke
 
-Press **⌥⌘↩︎** or click the menu bar icon.
+Press your own shortcut, even macOS's screenshot keys, or click the menu bar icon.
 The screen freezes under Grip's overlay, in the mode you used last, with your last area still selected.
 Draw right on top of the frozen screen, then copy it, save it, or record it.
 
@@ -248,7 +248,7 @@ Updates download in the background and install themselves while you're away, nev
 
 | Anywhere | |
 | --- | --- |
-| **⌥⌘↩︎** | Capture: open the picker, or finish the recording (change it in Settings) |
+| **Your shortcut** | Capture: open the picker, or finish the recording (set it in onboarding or Settings) |
 | **⌥⇧⌘P** | Pause or resume |
 | **⌥⇧⌘D** | Draw on screen while recording |
 | **⌥⇧⌘⌫** | Discard the recording |

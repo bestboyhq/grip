@@ -8,7 +8,7 @@ description: The native macOS app shell. Use when changing the menu bar, dock ic
 The native macOS app around everything else.
 
 - Menu bar app; the dock icon hides during recording and shows whenever a window is open.
-- One click on the menu bar icon (or ⌥⌘↵, which the user can change in Settings) opens the area picker, and while recording finishes; the menu is on right-click.
+- One click on the menu bar icon (or the user's record shortcut) opens the area picker, and while recording finishes; the menu is on right-click.
   Esc closes the whole picker, toolbar included.
   Opening Grip (a launch, the Dock icon, opening it again from Finder or Spotlight, the end of onboarding) shows the toolbar alone, with nothing frozen.
   A frozen screen nobody asked for reads as a hung Mac to a new user.
@@ -20,8 +20,9 @@ The native macOS app around everything else.
   The recording controls, camera bubble, and result card show on the display the recording was started on, never where the mouse went since.
 - Global shortcuts, a URL scheme for automation (Raycast), and drag-and-drop of project files onto the app or menu bar icon.
   Many users want Grip on macOS's own screenshot keys (⇧⌘5), and macOS takes those before any app sees them.
-  Onboarding ends by asking for the record shortcut in the user's own keys, assuming none: people reach for different ones.
-  A switch in Settings hands ⇧⌘5 to Grip (off restores ⌥⌘↩); while the user types a shortcut, macOS's shortcuts reach the field, and the macOS one on the keys picked stays off while Grip runs: back on when the user picks other keys or quits Grip.
+  The record shortcut has no default: people reach for different keys.
+  Onboarding ends waiting for the user's own, with Continue once they press them and Skip leaving none; Settings sets, changes, or removes it (⌫).
+  A switch in Settings hands ⇧⌘5 to Grip (off leaves none); while the user types a shortcut, macOS's shortcuts reach the field, and the macOS one on the keys picked stays off while Grip runs: back on when the user picks other keys or quits Grip.
   macOS lets its shortcuts through only to the active app with Accessibility on, and Chromium still drops every key macOS reserves before the page sees it, so the field takes its keys from AppKit.
   Only real key presses prove this works: a page-level key event skips both layers.
 - Ask before quitting during a recording or export, and Cancel on any prompt really cancels.
