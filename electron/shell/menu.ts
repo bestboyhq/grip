@@ -51,7 +51,7 @@ export function setAppMenu() {
     {
       label: 'File',
       submenu: [
-        { label: 'New Recording', accelerator: settings().recordShortcut, registerAccelerator: false, click: () => showPicker() },
+        { label: 'New Recording', accelerator: settings().recordShortcut || undefined, registerAccelerator: false, click: () => showPicker() },
         { label: 'Open Project…', accelerator: 'Command+O', click: openProjectDialog },
         { role: 'recentDocuments', submenu: [{ role: 'clearRecentDocuments' }] },
         { type: 'separator' },
