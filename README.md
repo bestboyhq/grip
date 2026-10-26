@@ -76,6 +76,9 @@ Press your own shortcut, even macOS's screenshot keys, or click the menu bar ico
 The screen freezes under Grip's overlay, in the mode you used last, with your last area still selected.
 Draw right on top of the frozen screen, then copy it, save it, or record it.
 
+Grip waits in the menu bar, so the overlay is up **8 ms** after your shortcut.
+That is 12 times faster than the quickest blink (about 100 ms), 2 times faster than one flap of a hummingbird's wings (about 20 ms), and a hundred times over in one resting heartbeat (about 0.8 s).
+
 <p align="center">
   <img src=".github/readme/capture.webp" width="100%" alt="Grip's capture overlay on a frozen screen: a selected area of a web app with a red box around the Project name field, a red arrow and the label 'Name it, then create' pointing at the Create project button, a yellow pen underline under the heading, and two pixelated project names. A tool strip with arrow, rectangle, pen, text, pixelate, and six colors sits beside the area, and a bar below it offers Save ⌘S and Copy ⌘C.">
 </p>
