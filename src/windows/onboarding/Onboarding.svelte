@@ -74,6 +74,11 @@
     if (await ensurePermission(p)) status = { ...status, [p]: 'granted' }
   }
 
+  // Open at login: onboarding proposes it and sets it as it ends; Settings shows and sets macOS's own.
+  let atLogin = $state(true)
+  if (query.page === 'settings') invoke('shell:login-item').then((on) => (atLogin = on))
+  const finish = () => invoke('shell:finish-onboarding', atLogin)
+
   // The record shortcut is the user's, none until they pick one: click it, type a new one (Esc keeps the
   // old one, ⌫ removes it).
   let typingKeys = $state(false)
@@ -232,10 +237,11 @@
           <button class="link" onclick={() => request('accessibility')}>Accessibility</button> on.
         {:else if typingKeys && recordKeys}Press the new keys, or Esc to keep {recordKeys}.{/if}
       </p>
+      <label class="login">Open at login <input type="checkbox" role="switch" bind:checked={atLogin} /></label>
     </section>
     <footer>
-      <span>{#if !recordKeys}<button class="link" onclick={() => invoke('shell:finish-onboarding')}>Skip for now</button>{/if}</span>
-      <button class="button primary" disabled={!recordKeys} onclick={() => invoke('shell:finish-onboarding')}>Continue</button>
+      <span>{#if !recordKeys}<button class="link" onclick={finish}>Skip for now</button>{/if}</span>
+      <button class="button primary" disabled={!recordKeys} onclick={finish}>Continue</button>
     </footer>
   {:else}
     <section class="body scroll">
@@ -293,6 +299,26 @@
             <kbd>{keys}</kbd>
           </li>
         {/each}
+      </ul>
+      <h3>General</h3>
+      <ul class="rows compact">
+        <li>
+          <label class="switch">
+            <span class="text">
+              <span class="title">Open at login</span>
+              <span class="reason">Grip waits in the menu bar, so it opens at once.</span>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={atLogin}
+              onchange={(e) => {
+                const input = e.currentTarget // macOS has the last word (held back in System Settings, or a dev run)
+                invoke('shell:login-item', input.checked).then((on) => (input.checked = atLogin = on))
+              }}
+            />
+          </label>
+        </li>
       </ul>
       <!-- Last: onboarding is where permissions come first, and an allowed one needs nothing here. -->
       <h3>Permissions</h3>
@@ -420,6 +446,14 @@
     min-height: 17px; /* a note coming and going never moves the page */
     margin: 0;
     font-size: 12px;
+  }
+  .login {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 28px;
+    color: var(--fg-secondary);
+    font-size: 13px;
   }
   .body {
     flex: 1;

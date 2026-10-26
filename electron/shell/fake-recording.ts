@@ -12,7 +12,7 @@
 //   recording:pause | resume | cancel | restart -> RecState; recording:stop -> sources | null
 //   capture.screenshot(displayId, rect) -> PNG (the stand-in's thumbnail, at the rect's pixel size)
 //   capture.windowScreenshot(windowId, frame?) -> PNG (the same, at the window's pixel size)
-//   capture.still(displayId) -> { width, height, data: RGBA } (the same, of the whole display)
+//   capture.still(displayId, ours) -> { width, height, data: RGBA } (the same, of the whole display)
 //   recording:draw(phase, x, y, color?, width?): pen strokes land in the take's events.jsonl
 //   broadcasts recording:state(state), recording:finished(bundle, { reason }); recordingEvents too
 //   camera:list -> [{ id, name, kind: 'built-in' | 'external' | 'continuity' | 'ios', formats }]

@@ -228,6 +228,8 @@
       on('recording:warning', (w: { message?: string }) => w?.message && invoke('shell:warn', w.message)),
       on('shell:do', run),
       on('shell:escape', () => (countdown = null)),
+      // Hidden, it shows once it has drawn what came before (this pick's state): never a frame of the last one.
+      on('shell:draw', (n: number) => requestAnimationFrame(() => setTimeout(() => invoke('shell:drawn', n)))),
     ]
     return () => offs.forEach((off) => off())
   })
