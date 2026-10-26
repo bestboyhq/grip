@@ -2,21 +2,17 @@
      take becomes one (capture, auto-zoom, captions, the editor, the look, export), the bugs it designs out, why it is
      safe to rely on, the questions, and the close. Every claim and number comes from the README. -->
 <script lang="ts">
-	import capture from '../../../.github/readme/capture.webp';
-	import editor from '../../../.github/readme/editor.webp';
-	import { asset } from '$app/paths';
-	import Arrow from '#lib/Arrow.svelte';
+	import capture from '../../../../.github/readme/capture.webp';
+	import editor from '../../../../.github/readme/editor.webp';
 	import BeatLabel, { type Beat } from '#lib/BeatLabel.svelte';
 	import FeatureRow from '#lib/FeatureRow.svelte';
 	import GitHubIcon from '#lib/GitHubIcon.svelte';
-	import Glow, { type Layer } from '#lib/Glow.svelte';
 	import Head from '#lib/Head.svelte';
-	import Media from '#lib/Media.svelte';
+	import Hero from '#lib/Hero.svelte';
+	import Media, { clip } from '#lib/Media.svelte';
 	import Quotes, { type Quote } from '#lib/Quotes.svelte';
 	import SectionHeading from '#lib/SectionHeading.svelte';
 	import { docHref, DOWNLOAD_URL, GITHUB_URL, SITE_DESCRIPTION } from '#lib/links.ts';
-
-	const HORIZON: readonly Layer[] = [{ box: [0, -0.46, 1, 0.9], peak: [0.42, 0.86], start: 0.18 }];
 
 	// Each quote is the person's own, published with their permission.
 	const quotes: readonly Quote[] = [
@@ -64,12 +60,6 @@
 	});
 
 	const pad = (value: number): string => String(value).padStart(2, '0');
-
-	// A clip from `static/media` (see `media.sh`) with its still.
-	const clip = (name: 'hero' | 'loupe' | 'captions' | 'macbook' | 'formats') => ({
-		src: asset(`media/${name}.mp4`),
-		still: asset(`media/${name}.webp`),
-	});
 
 	$effect(() => {
 		const io = new IntersectionObserver(
@@ -212,55 +202,28 @@
 	<link rel="preload" as="image" href={clip('hero').still} fetchpriority="high" />
 </svelte:head>
 
-<section class="hero" aria-labelledby="hero-title" data-place="hero">
-	<div class="wrap intro">
-		<a class="eyebrow" href={GITHUB_URL}>
-			<GitHubIcon size={14} />
-			<span>Free and open source macOS app</span>
-			<Arrow class="ahead" />
+<Hero>
+	<p class="lede">
+		Press your keys and talk. Grip zooms where you click, glides your cursor, and captions your voice.
+		The link works before the upload finishes.
+	</p>
+	<div class="actions">
+		<a class="button primary" href={DOWNLOAD_URL}>
+			{@render apple()}
+			Download for macOS
 		</a>
-		<h1 id="hero-title">
-			<span>Professional recordings</span>
-			<span class="quiet">and screenshots within seconds.</span>
-		</h1>
-		<p class="lede">
-			Press your keys and talk. Grip zooms where you click, glides your cursor, and captions your voice.
-			The link works before the upload finishes.
-		</p>
-		<div class="actions">
-			<a class="button primary" href={DOWNLOAD_URL}>
-				{@render apple()}
-				Download for macOS
-			</a>
-			<a class="button secondary" href={docHref()}>Read the docs</a>
-		</div>
-		<p class="fine">
-			<span>macOS 15 or later on Apple silicon</span>
-			<span>No account</span>
-			<span>No watermark</span>
-		</p>
+		<a class="button secondary" href={docHref()}>Read the docs</a>
 	</div>
-	<div class="plate beat">
-		<div class="horizon" aria-hidden="true"></div>
-		<div class="gl" aria-hidden="true">
-			<Glow layers={HORIZON} opacity={0.85} />
-		</div>
-		<figure class="wrap window">
-			<Media
-				{...clip('hero')}
-				width={1522}
-				height={950}
-				r={14}
-				eager
-				alt="A deployments dashboard polished by Grip: the view zooms in as the cursor glides to Deploy, the click swells through the screen, and a glass loupe magnifies the new build's timer as it turns from Building to Ready."
-			/>
-			<figcaption>
-				Exported by Grip from a raw 6-second take. The zoom, the gliding cursor, and the click swell
-				are automatic.
-			</figcaption>
-		</figure>
-	</div>
-</section>
+	<p class="fine">
+		<span>macOS 15 or later on Apple silicon</span>
+		<span>No account</span>
+		<span>No watermark</span>
+	</p>
+	{#snippet caption()}
+		Exported by Grip from a raw 6-second take. The zoom, the gliding cursor, and the click swell are
+		automatic.
+	{/snippet}
+</Hero>
 
 <SectionHeading
 	id="love"
@@ -526,68 +489,8 @@
 {/snippet}
 
 <style>
-	.intro {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		padding-top: 72px;
-		padding-bottom: 64px;
-	}
-
-	.intro > *,
-	.window {
-		animation: blur-in calc(var(--duration) * var(--pace)) var(--enter-ease)
-			calc(var(--delay) * var(--pace)) backwards;
-	}
-
-	.eyebrow {
-		--rise: 3px;
-		--blur: 8px;
-		--duration: 1200ms;
-		--delay: 250ms;
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		height: 30px;
-		padding: 0 11px 0 10px;
-		white-space: nowrap;
-		border-radius: 999px;
-		box-shadow: inset 0 0 0 1px var(--border-subtle);
-		color: var(--fg-secondary);
-		font-size: 13px;
-		font-weight: 500;
-		text-decoration: none;
-	}
-
 	.apple {
 		translate: 0 -1.5px;
-	}
-
-	.eyebrow :global(.ahead) {
-		width: 11px;
-		height: 11px;
-		color: var(--fg-faint);
-	}
-
-	h1 {
-		--rise: 4px;
-		--blur: 12px;
-		--duration: 1400ms;
-		--delay: 0ms;
-		margin-top: 24px;
-		font-size: clamp(38px, 5.2vw, 68px);
-		font-weight: 550;
-		line-height: 1.02;
-		letter-spacing: -0.04em;
-		text-wrap: balance;
-	}
-
-	h1 span {
-		display: block;
-	}
-
-	.quiet {
-		color: var(--fg-faint);
 	}
 
 	.lede {
@@ -637,91 +540,6 @@
 		content: '·';
 		display: inline-block;
 		width: 0.6em;
-	}
-
-	.plate {
-		--seam: linear-gradient(
-			90deg,
-			transparent 4%,
-			#1957fa 18%,
-			#6365cd 32%,
-			#9e6594 44%,
-			#d35351 58%,
-			#ed3e11 70%,
-			#fb8400 82%,
-			transparent 96%
-		);
-		--delay: 350ms;
-		isolation: isolate;
-		padding: 64px 0;
-		background: linear-gradient(var(--panel) 0 0) 50% 0 / var(--col) 100% no-repeat;
-	}
-
-	@property --grow {
-		syntax: '<number>';
-		inherits: true;
-		initial-value: 1;
-	}
-
-	.horizon,
-	.gl {
-		position: absolute;
-		z-index: -1;
-		pointer-events: none;
-	}
-
-	.horizon {
-		inset: -46% calc(50% - var(--col) / 2) auto;
-		height: 90%;
-		background: var(--painting);
-		mask-image: radial-gradient(
-			closest-side,
-			light-dark(rgb(0 0 0 / 0.42), rgb(0 0 0 / 0.86)) 18%,
-			transparent
-		);
-		filter: blur(48px);
-		opacity: 0.85;
-		clip-path: inset(calc(100% * 46 / 90) 0 0 0);
-		animation: swell calc(1600ms * var(--pace)) var(--enter-ease) calc(450ms * var(--pace))
-			backwards;
-	}
-
-	.gl {
-		inset: 0 calc(50% - var(--col) / 2);
-		color: var(--panel);
-		animation: grow calc(1600ms * var(--pace)) var(--enter-ease) calc(450ms * var(--pace)) backwards;
-	}
-
-	.window {
-		--rise: 6px;
-		--blur: 8px;
-		--duration: 1400ms;
-		--delay: 350ms;
-		position: relative;
-		container-type: inline-size;
-	}
-
-	figcaption {
-		max-width: 560px;
-		margin: 24px auto 0;
-		color: var(--fg-muted);
-		font-size: 13px;
-		line-height: 1.55;
-		text-align: center;
-		text-wrap: balance;
-	}
-
-	@keyframes grow {
-		from {
-			--grow: 0;
-		}
-	}
-
-	@keyframes swell {
-		from {
-			opacity: 0;
-			scale: 0.6;
-		}
 	}
 
 	.cells {
@@ -968,15 +786,6 @@
 	}
 
 	@media (hover: hover) and (pointer: fine) {
-		.eyebrow:hover {
-			box-shadow: inset 0 0 0 1px var(--border-default);
-			color: var(--fg-default);
-		}
-
-		.eyebrow:hover :global(.ahead) {
-			translate: 2px 0;
-		}
-
 		summary:hover .plus::before,
 		summary:hover .plus::after {
 			background: var(--fg-default);
@@ -988,10 +797,6 @@
 	}
 
 	@media (max-width: 1023px) {
-		.intro {
-			padding-top: 56px;
-		}
-
 		.cells {
 			grid-template-columns: minmax(0, 1fr);
 			margin-top: 48px;
@@ -1044,16 +849,6 @@
 		}
 	}
 
-	@media (max-width: 639px) {
-		.plate {
-			padding: 40px 0;
-		}
-
-		.window {
-			padding-inline: 12px;
-		}
-	}
-
 	@media (max-width: 559px) {
 		.bugs {
 			grid-template-columns: minmax(0, 1fr);
@@ -1082,19 +877,6 @@
 		.close {
 			margin-inline: -12px;
 			padding: 40px 12px 44px;
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.intro > *,
-		.window {
-			animation: fade-in 400ms ease backwards;
-		}
-
-		.horizon,
-		.gl,
-		.plate {
-			animation: none;
 		}
 	}
 </style>

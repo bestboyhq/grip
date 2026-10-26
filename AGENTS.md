@@ -73,6 +73,7 @@ Grip's side is `electron/upload.ts` and `electron/account.ts`; `STUDIO_SHARE_URL
 - `npm run build:native` builds the Rust addon.
 - `cd site && npm run dev` serves the landing page at `localhost:5173/grip`, and `npm test` there builds it and tests the worker.
   `sh site/media.sh` remakes its clips from the README's GIFs.
+  `npx electron scripts/og.ts` renders its Open Graph image from the hero, and the site's tests ask for a re-render whenever what the image shows changes.
   `.github/workflows/site.yml` deploys it on merge, so a site-only change is a `chore(site)` or `docs(site)` and never ships an app release.
 - `npx electron scripts/fixture/make.ts [out.grip]` generates a synthetic 24 s recording with events, camera, mic speech, and system audio, by default at `.context/fixtures/Demo #1 ✨ café.grip`.
 - `APPLE_KEYCHAIN_PROFILE=<notarytool profile> npm run package` builds, signs with the Developer ID, and notarizes `release/Grip-*.dmg`.
