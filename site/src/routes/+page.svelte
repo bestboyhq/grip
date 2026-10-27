@@ -1,6 +1,6 @@
 <!-- Grip's landing page: the hero shows a video Grip made and what people say about theirs, then beat by beat how a
-     take becomes one (capture, auto-zoom, captions, the editor, the look, export), the bugs it designs out, why it is
-     safe to rely on, the questions, and the close. Every claim and number comes from the README. -->
+     take becomes one (capture, how fast it opens, auto-zoom, captions, the editor, the look, export), the bugs it
+     designs out, why it is safe to rely on, the questions, and the close. Every claim and number comes from the README. -->
 <script lang="ts">
 	import capture from '../../../.github/readme/capture.webp';
 	import editor from '../../../.github/readme/editor.webp';
@@ -46,6 +46,7 @@
 		'love',
 		'how',
 		'capture',
+		'speed',
 		'zoom',
 		'captions',
 		'editor',
@@ -109,6 +110,25 @@
 		{
 			title: 'Stop and share',
 			body: 'A small card offers an MP4 under 20 MB, a GIF under 10 MB, or a link that works before the upload finishes.',
+		},
+	];
+
+	// Grip opens in 8 ms; each comparison is that against a familiar moment.
+	const speed = [
+		{
+			stat: '12×',
+			title: 'Faster than a blink',
+			body: 'Even the quickest blink takes about 100 milliseconds. Grip is ready twelve times over.',
+		},
+		{
+			stat: '100×',
+			title: 'In one heartbeat',
+			body: 'At rest, your heart beats about once every 0.8 seconds. Grip could open a hundred times in between.',
+		},
+		{
+			stat: '2×',
+			title: 'Faster than a hummingbird',
+			body: 'Its wings flap about 50 times a second. Grip is ready before one flap is done.',
 		},
 	];
 
@@ -313,6 +333,38 @@
 		alt="Grip's capture overlay on a frozen screen: a red box and arrow mark up a web app's Create project form, two project names are pixelated, and a bar offers Save and Copy."
 	/>
 </FeatureRow>
+
+<section id="speed" class="beat flush" aria-labelledby="speed-title">
+	<div class="wrap">
+		<BeatLabel {...beat('speed', 'Speed')} />
+		<div class="speed">
+			<p class="reading rise">
+				<span class="ms"><span class="eight">8</span><span class="unit">ms</span></span>
+				<span class="from">From shortcut to ready</span>
+			</p>
+			<div class="rise">
+				<h2 id="speed-title">
+					<span>Blink and you’ll miss it.</span>
+					<span class="quiet">No, really.</span>
+				</h2>
+				<p class="sub">
+					Press your shortcut and the screen freezes, ready to record. Grip naps in your menu bar, so
+					there is never anything to wait for.
+				</p>
+			</div>
+		</div>
+		<ul class="cells">
+			{#each speed as item, index (item.title)}
+				<li class="rise">
+					<span class="idx" aria-hidden="true">{pad(index + 1)}</span>
+					<span class="stat">{item.stat}</span>
+					<h3>{item.title}</h3>
+					<p>{item.body}</p>
+				</li>
+			{/each}
+		</ul>
+	</div>
+</section>
 
 <FeatureRow
 	id="zoom"
@@ -783,6 +835,76 @@
 		margin-top: 12px;
 	}
 
+	.flush {
+		padding-bottom: 0;
+	}
+
+	.speed {
+		display: grid;
+		grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+		gap: 32px 80px;
+		align-items: center;
+	}
+
+	.reading {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	/* The page's one poster numeral, painted like the quotes' marks, with no light behind it. No letter-spacing: it would
+	   narrow the 8's box past its ink, and the paint, clipped to that box, would cut its right side. */
+	.ms {
+		display: flex;
+		align-items: baseline;
+		gap: 0.02em;
+		margin: -0.06em 0 -0.1em -0.05em;
+		font-size: clamp(160px, 22vw, 300px);
+		font-weight: 550;
+		line-height: 1;
+	}
+
+	.eight {
+		background: var(--painting);
+		-webkit-background-clip: text;
+		background-clip: text;
+		color: transparent;
+	}
+
+	.unit {
+		color: var(--fg-faint);
+		font-size: 0.32em;
+		letter-spacing: -0.03em;
+	}
+
+	.from {
+		color: var(--fg-faint);
+		font-family: var(--mono);
+		font-size: 12px;
+		line-height: 16px;
+	}
+
+	.speed h2 {
+		font-size: clamp(34px, 4.6vw, 52px);
+		line-height: 1.06;
+		letter-spacing: -0.035em;
+	}
+
+	.speed h2 span {
+		display: block;
+	}
+
+	.speed .sub {
+		margin-top: 20px;
+	}
+
+	.stat {
+		font-size: 28px;
+		font-weight: 550;
+		line-height: 1.2;
+		letter-spacing: -0.03em;
+	}
+
 	.bugs {
 		grid-template-columns: repeat(4, minmax(0, 1fr));
 	}
@@ -1026,6 +1148,7 @@
 			font-size: 17px;
 		}
 
+		.speed,
 		.faq {
 			grid-template-columns: minmax(0, 1fr);
 			gap: 32px;
