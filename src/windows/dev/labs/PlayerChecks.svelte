@@ -300,9 +300,19 @@
       const detach = attach(canvas)
       let tasks: number[] = []
       const observer = new PerformanceObserver((l) => l.getEntries().forEach((e) => tasks.push(e.duration)))
+      // The player prepares from its animation frames: a timeout says whether they ran, and what failed.
       const prepared = async (n: number) => {
-        for (const t0 = performance.now(); player.prepared <= n; await new Promise((r) => setTimeout(r, 10))) {
-          if (performance.now() - t0 > 30_000) throw new Error('no preparation within 30 s')
+        let frames = 0
+        let raf = requestAnimationFrame(function tick() {
+          frames++
+          raf = requestAnimationFrame(tick)
+        })
+        try {
+          for (const t0 = performance.now(); player.prepared <= n; await new Promise((r) => setTimeout(r, 10))) {
+            if (performance.now() - t0 > 30_000) throw new Error(`no preparation within 30 s: ${frames} animation frames ran, last player error: ${player.error ?? 'none'}`)
+          }
+        } finally {
+          cancelAnimationFrame(raf)
         }
       }
       try {
@@ -314,7 +324,17 @@
         const rounds: number[] = []
         for (let r = 0; r < 3; r++) {
           tasks = []
-          const edits = [(p: Project) => (p.zooms[10].level = 3 + r), (p: Project) => (p.clips = splitAt(p.clips, timeMap(p.clips).duration / (3 + r))), (p: Project) => (p.style.padding = 40 + 4 * r)]
+          const edits = [
+            (p: Project) => {
+              p.zooms[10].level = 3 + r
+            },
+            (p: Project) => {
+              p.clips = splitAt(p.clips, timeMap(p.clips).duration / (3 + r))
+            },
+            (p: Project) => {
+              p.style.padding = 40 + 4 * r
+            },
+          ]
           for (const fn of edits) {
             const n = player.prepared
             edit(fn)

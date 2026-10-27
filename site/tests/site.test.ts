@@ -3,22 +3,60 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fingerprint, HASH, IMAGE, RENDER } from '../og.ts';
 import { LOGDASH_SITE } from '../src/lib/logdash.ts';
 import worker, { type Env } from '../worker/index.ts';
 
 const SITE = 'https://bestboy.dev/grip';
 const build = join(import.meta.dirname, '..', 'build', 'grip');
 const page = readFileSync(join(build, 'index.html'), 'utf8');
+const card = readFileSync(join(build, 'og.html'), 'utf8');
+// The Open Graph image, named by a hash of its content.
+const SHARED =
+	/<meta property="og:image" content="https:\/\/bestboy\.dev\/grip\/(_app\/immutable\/assets\/og\.[\w-]+\.jpg)"/u;
 
-test('the page has one canonical URL under bestboy.dev/grip, a description, and its image', () => {
+test('the page has one canonical URL under bestboy.dev/grip and a description', () => {
 	const canonicals = [...page.matchAll(/<link rel="canonical" href="([^"]+)"/gu)];
 	assert.deepEqual(
 		canonicals.map((match) => match[1]),
 		[SITE],
 	);
 	assert.match(page, /<meta name="description" content="[^"]+"/u);
-	assert.match(page, /<meta property="og:image" content="https:\/\/bestboy\.dev\/grip\/og\.jpg"/u);
-	assert.ok(existsSync(join(build, 'og.jpg')));
+});
+
+test('the Open Graph image shows the hero as it is built', () => {
+	assert.equal(
+		fingerprint(),
+		readFileSync(HASH, 'utf8').trim(),
+		`The hero changed since its Open Graph image was rendered: run \`${RENDER}\` from the repo root and commit site/src/lib/og.jpg and og.hash.`,
+	);
+});
+
+test('every page that shares the image names it by its content, with its size and what it shows', () => {
+	const headline = (/<h1[^>]*>([\s\S]*?)<\/h1>/u.exec(card)?.[1] ?? '')
+		.replace(/<[^>]+>/gu, '')
+		.replace(/\s+/gu, ' ')
+		.trim();
+	assert.ok(headline);
+	for (const file of ['index.html', '404.html']) {
+		const html = readFileSync(join(build, file), 'utf8');
+		const image = SHARED.exec(html)?.[1];
+		assert.ok(image, `${file} shares no content-named image`);
+		assert.deepEqual(readFileSync(join(build, image)), readFileSync(IMAGE), file);
+		assert.match(html, /<meta property="og:image:width" content="1200"/u, file);
+		assert.match(html, /<meta property="og:image:height" content="630"/u, file);
+		assert.match(html, /<meta name="twitter:card" content="summary_large_image"/u, file);
+		const alt = /<meta property="og:image:alt" content="([^"]+)"/u.exec(html)?.[1] ?? '';
+		assert.ok(
+			alt.includes(headline),
+			`${file}: the og:image:alt in src/lib/Head.svelte leaves out the headline the image shows, “${headline}”`,
+		);
+	}
+});
+
+test('the card the image is rendered from stays out of search', () => {
+	assert.match(card, /<meta name="robots" content="noindex"/u);
+	assert.doesNotMatch(card, /rel="canonical"/u);
 });
 
 test('every download goes through bestboy.dev, which finds the latest DMG', () => {
@@ -97,7 +135,7 @@ test('the worker answers one byte range of a clip, as Safari needs to play it', 
 	const whole = await get(`${SITE}${clip}`);
 	assert.equal(whole.status, 200);
 	assert.equal(whole.headers.get('Accept-Ranges'), 'bytes');
-	assert.equal((await range('/og.jpg', 'bytes=0-4')).status, 200);
+	assert.equal((await range('/favicon.png', 'bytes=0-4')).status, 200);
 });
 
 test('the worker refuses Logdash events that are not from a Grip page', async () => {

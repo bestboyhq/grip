@@ -13,7 +13,7 @@ export const BESTBOY_URL = 'https://bestboy.dev';
 export const docHref = (section = 'readme'): string => `${GITHUB_URL}#${section}`;
 const README_MD = 'https://raw.githubusercontent.com/bestboyhq/grip/main/README.md';
 
-export const HOME = resolve('/').replace(/\/$/u, '');
+export const HOME = resolve('/(site)').replace(/\/$/u, '');
 
 export type Link = Readonly<{
 	title: string;

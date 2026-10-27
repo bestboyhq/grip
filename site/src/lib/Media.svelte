@@ -1,6 +1,16 @@
 <!-- A real screenshot or clip from Grip in the screenshot frame: its own corner radius, a hairline ring, and a shadow.
      A clip plays muted in a loop only while it is on screen; a press on its button pauses or plays it, and under
      reduced motion it holds its still until someone presses play. -->
+<script module lang="ts">
+	import { asset } from '$app/paths';
+
+	// A clip from `static/media` (see `media.sh`) with its still.
+	export const clip = (name: 'hero' | 'loupe' | 'captions' | 'macbook' | 'formats') => ({
+		src: asset(`media/${name}.mp4`),
+		still: asset(`media/${name}.webp`),
+	});
+</script>
+
 <script lang="ts">
 	type Props = {
 		src: string;
@@ -83,7 +93,7 @@
 			{height}
 			{alt}
 			loading={eager ? 'eager' : 'lazy'}
-			decoding="async"
+			decoding={eager ? 'sync' : 'async'}
 			style:width="{(width / box[2]) * 100}%"
 			style:margin="{(-box[1] / box[2]) * 100}% 0 0 {(-box[0] / box[2]) * 100}%"
 		/>
