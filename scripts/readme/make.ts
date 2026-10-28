@@ -2,7 +2,7 @@
 // captured frame by frame into screen.mp4 (no cursor, Grip draws it), the scripted pointer, keys, and
 // ink into events.jsonl, an optional voice into mic.m4a, and the demo's starting edits. The scene's
 // colors follow prefers-color-scheme: screen.mp4 is its dark take, screen-light.mp4 its light one for
-// the landing page's light theme (export.ts swaps it in).
+// the light themes of the landing page and the README (export.ts swaps it in).
 // Run: npx electron scripts/readme/make.ts <demo> [out.grip]   (a demo is a folder next to this file:
 // scene.html with a global render(t), and demo.ts default-exporting a Demo)
 import { app, BrowserWindow, nativeTheme } from 'electron'

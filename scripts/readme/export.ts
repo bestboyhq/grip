@@ -1,9 +1,9 @@
-// Exports the README demos through the running app: each demo's GIF into .github/readme, and the
+// Exports the README demos through the running app: each demo's GIFs into .github/readme, and the
 // landing page's clips into .context/readme for site/media.sh. The page frames every clip in a card,
 // so hero, loupe, and captions leave out their wallpaper, padding, corners, and shadow; the MacBook
 // keeps its frame, and the formats clip is the 16:9, 1:1, and 9:16 exports side by side (formats/strip.html).
-// The page follows its theme, so each clip comes as <name>-dark.mp4 and <name>-light.mp4, from make.ts's
-// two takes of the scene; the README's GIFs are the dark take.
+// The page and the README follow their theme, so each clip comes as <name>-dark.mp4 and <name>-light.mp4,
+// and each GIF as <name>.gif and <name>-light.gif, from make.ts's two takes of the scene.
 // Run after make.ts, with the app up (STUDIO_CDP_PORT=9333 npm run dev):
 // npx electron scripts/readme/export.ts [demo...]   (all six by default)
 import { app, BrowserWindow, nativeTheme } from 'electron'
@@ -68,10 +68,11 @@ async function strip(duration: number, fps = 30, scale = 2) {
     await new Promise((r) => enc.on('exit', r))
   }
   win.destroy()
-  // The README's copy: GIF has no per-scene palettes here, so one palette over the whole clip.
-  execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', join(OUT, 'formats-dark.mp4'), '-vf',
-    'fps=24,scale=1280:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle',
-    join(ROOT, '.github/readme/formats.gif')], { stdio: 'inherit' })
+  // The README's copies: GIF has no per-scene palettes here, so one palette over the whole clip.
+  for (const [theme, gif] of [['dark', 'formats.gif'], ['light', 'formats-light.gif']])
+    execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', join(OUT, `formats-${theme}.mp4`), '-vf',
+      'fps=24,scale=1280:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle',
+      join(ROOT, '.github/readme', gif)], { stdio: 'inherit' })
 }
 
 app.whenReady().then(async () => {
@@ -87,7 +88,10 @@ app.whenReady().then(async () => {
     if (p.sources.mic && !p.sources.transcript) await invoke('transcript:run', bundle).then(() => (p = read()))
     const add = (style: object, options: object, path: string, file = SCREENS.dark) =>
       requests.push({ bundle, project: { ...p, sources: { ...p.sources, screen: { ...p.sources.screen, file } }, style: { ...p.style, ...style } }, options, dest: 'file', path, quiet: true })
-    if (name !== 'formats') add({}, GIF, join(ROOT, '.github/readme', `${name}.gif`))
+    if (name !== 'formats') {
+      add({}, GIF, join(ROOT, '.github/readme', `${name}.gif`))
+      add({}, GIF, join(ROOT, '.github/readme', `${name}-light.gif`), SCREENS.light)
+    }
     for (const [base, style, options] of SITE[name])
       for (const [theme, file] of Object.entries(SCREENS)) add(style, options, join(OUT, `${base}-${theme}.mp4`), file)
   }
