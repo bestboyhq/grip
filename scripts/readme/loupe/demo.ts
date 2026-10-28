@@ -60,7 +60,7 @@ export default {
     ...pointer(at, DURATION, ([x, y]) => (BUTTONS.some((b) => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1) ? 'pointer' : 'arrow')),
     ...click(SCRIPT.click.down, at(SCRIPT.click.down)),
   ],
-  // The GIF's edits: a liquid glass loupe that follows the cursor from the chart to the export.
+  // The GIF's edits: a glass loupe that follows the cursor from the chart to the export.
   edit(p) {
     Object.assign(p.style, { background: { kind: 'wallpaper', id: 'aurora' }, padding: 64, radius: 18, shadow: 0.4 })
     Object.assign(p.style.cursor, { size: 1.6, loop: true })

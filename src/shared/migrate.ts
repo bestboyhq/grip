@@ -10,6 +10,12 @@ export const MIGRATIONS: Record<number, (p: any) => any> = {
   1: (p) => (isObj(p.style) ? { ...p, style: upgradeStyle(p.style) } : p),
   // v2 clip volume drove mic and system audio; v3 splits it, so system audio keeps its level.
   2: (p) => (Array.isArray(p.clips) ? { ...p, clips: p.clips.map((c: any) => (isObj(c) && c.volume !== 1 ? { ...c, systemVolume: c.volume } : c)) } : p),
+  // v3 loupes were liquid unless marked rigid; v4 loupes are rigid unless marked liquid.
+  3: (p) => (Array.isArray(p.zooms) ? { ...p, zooms: p.zooms.map((z: any) => {
+    if (!isObj(z)) return z
+    const { rigid, ...rest } = z
+    return z.mode === 'loupe' && !rigid ? { ...rest, liquid: true } : rest
+  }) } : p),
 }
 
 /** Older style values -> current ones, for projects of every version and for presets. Idempotent. */

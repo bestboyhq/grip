@@ -22,7 +22,10 @@
 </p>
 
 <p align="center">
-  <img src=".github/readme/hero.gif" width="100%" alt="A deployments dashboard polished by Grip on a pastel iridescent wallpaper: the view zooms in as the cursor glides to the Deploy button, the click swells through the screen, a new build slides in as Building, a glass loupe magnifies its timer as it counts up, and the build turns Ready as the cursor glides back to its start.">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset=".github/readme/hero-light.gif">
+    <img src=".github/readme/hero.gif" width="100%" alt="A deployments dashboard polished by Grip on a pastel iridescent wallpaper: the view zooms in as the cursor glides to the Deploy button, the click swells through the screen, a new build slides in as Building, a glass loupe magnifies its timer as it counts up, and the build turns Ready as the cursor glides back to its start.">
+  </picture>
 </p>
 
 <p align="center">
@@ -101,7 +104,10 @@ That is 12 times faster than the quickest blink (about 100 ms), 2 times faster t
 ### While you record
 
 <p align="center">
-  <img src=".github/readme/ink.gif" width="100%" alt="A landing page draft on a green wallpaper: after ⌥⇧⌘D appears as keycaps, red ink circles the headline 'Get paid in days, not weeks.', an arrow sweeps down to the Start free trial button, and a line underlines the $24 price. The view zooms out to the whole page and the ink fades away.">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset=".github/readme/ink-light.gif">
+    <img src=".github/readme/ink.gif" width="100%" alt="A landing page draft on a green wallpaper: after ⌥⇧⌘D appears as keycaps, red ink circles the headline 'Get paid in days, not weeks.', an arrow sweeps down to the Start free trial button, and a line underlines the $24 price. The view zooms out to the whole page and the ink fades away.">
+  </picture>
 </p>
 
 <p align="center">
@@ -135,7 +141,10 @@ Drag the preview straight into another app to drop the file.
 ## Polished by default
 
 <p align="center">
-  <img src=".github/readme/loupe.gif" width="100%" alt="A revenue dashboard on a dark wallpaper with a teal glow: a glass loupe follows the cursor along the MRR growth chart, magnifying each day's tooltip, stretches like liquid as it glides up to the Net new MRR and MRR figures, then magnifies the Export CSV button as it turns to Exported.">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset=".github/readme/loupe-light.gif">
+    <img src=".github/readme/loupe.gif" width="100%" alt="A revenue dashboard on a dark wallpaper with a teal glow: a glass loupe follows the cursor along the MRR growth chart, magnifying each day's tooltip, glides up to the Net new MRR and MRR figures, then magnifies the Export CSV button as it turns to Exported.">
+  </picture>
 </p>
 
 <p align="center">
@@ -147,7 +156,7 @@ Drag the preview straight into another app to drop the file.
   Pick a smooth glide or a focused move that settles fast.
   Rather zoom by hand? Turn auto-zoom off for new recordings in Settings.
 - **A glass loupe.** Magnify one spot and keep the rest of the screen in view.
-  The lens refracts like real glass and stretches like liquid as it follows the cursor.
+  The lens refracts like real glass as it follows the cursor, and turns liquid when you want it to stretch.
   Pick its size, and every new zoom keeps the look you chose last.
 - **A cursor worth watching.** Redrawn from events: smoothed, passing exactly through every click, hidden when idle, with motion blur.
   Each click swells through the screen itself, and the loupe and zooms carry it.
@@ -156,7 +165,10 @@ Drag the preview straight into another app to drop the file.
   Password fields stay private.
 
 <p align="center">
-  <img src=".github/readme/captions.gif" width="100%" alt="A launch checklist titled Relay 2.0 launch: as a voice narrates, big word-by-word captions read 'Okay, launch day.', 'Changelog, done.', 'Demo video, done.', and 'Pricing page, done.' while each item is checked off and the progress bar fills, then 'And…' before the last item, Go live, is checked and the status turns Live.">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset=".github/readme/captions-light.gif">
+    <img src=".github/readme/captions.gif" width="100%" alt="A launch checklist titled Relay 2.0 launch: as a voice narrates, big word-by-word captions read 'Okay, launch day.', 'Changelog, done.', 'Demo video, done.', and 'Pricing page, done.' while each item is checked off and the progress bar fills, then 'And…' before the last item, Go live, is checked and the status turns Live.">
+  </picture>
 </p>
 
 <p align="center">
@@ -196,7 +208,10 @@ Drag the preview straight into another app to drop the file.
 ## Make it yours
 
 <p align="center">
-  <img src=".github/readme/macbook.gif" width="100%" alt="A calendar app inside a MacBook frame on a warm hazy wallpaper: the view pushes in as the user drags out a new event, types 'Design review', adds Maya Chen as a guest, picks a sage color, and saves, then pulls back to the whole laptop with the new event in the week.">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset=".github/readme/macbook-light.gif">
+    <img src=".github/readme/macbook.gif" width="100%" alt="A calendar app inside a MacBook frame on a warm hazy wallpaper: the view pushes in as the user drags out a new event, types 'Design review', adds Maya Chen as a guest, picks a sage color, and saves, then pulls back to the whole laptop with the new event in the week.">
+  </picture>
 </p>
 
 <p align="center">
@@ -220,7 +235,10 @@ Drag the preview straight into another app to drop the file.
 ## Export and share
 
 <p align="center">
-  <img src=".github/readme/formats.gif" width="100%" alt="One chat recording exported three ways and played side by side: 16:9 for YouTube, 1:1 for LinkedIn, and 9:16 for Reels. In each, the view follows the cursor as the user opens a thread, replies 'Safari + iOS look good. Ship it 🚀', sends it with ⌘↩︎, and reacts with 🎉.">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset=".github/readme/formats-light.gif">
+    <img src=".github/readme/formats.gif" width="100%" alt="One chat recording exported three ways and played side by side: 16:9 for YouTube, 1:1 for LinkedIn, and 9:16 for Reels. In each, the view follows the cursor as the user opens a thread, replies 'Safari + iOS look good. Ship it 🚀', sends it with ⌘↩︎, and reacts with 🎉.">
+  </picture>
 </p>
 
 <p align="center">

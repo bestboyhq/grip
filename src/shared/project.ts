@@ -4,7 +4,7 @@
 // Lengths in Style are in "units": 1 unit = min(outputWidth, outputHeight) / 1080 px,
 // so preview (small canvas) and export (full size) lay out identically.
 
-export const PROJECT_VERSION = 3
+export const PROJECT_VERSION = 4
 
 export type Rect = { x: number; y: number; w: number; h: number }
 /** Normalized rect, 0..1 relative to the screen source frame. */
@@ -69,13 +69,13 @@ export interface Zoom {
   target: ZoomTarget
   instant?: boolean // cut in/out instead of animating
   mode?: 'zoom' | 'loupe' // loupe = magnify a region in place (glass), default 'zoom'
-  rigid?: boolean // loupe: the glass keeps its round shape instead of stretching like liquid as it moves
+  liquid?: boolean // loupe: the glass stretches like liquid as it moves instead of keeping its round shape
   size?: number // loupe: lens radius in units (px at 1080p), default and range in zoom's LOUPE_SIZE
   auto?: boolean // generated from clicks/typing
   enabled: boolean
 }
 /** Full zoom or loupe, and the loupe's size and shape. New zooms take the last one picked (settings.zoomLook). */
-export type ZoomLook = Pick<Zoom, 'mode' | 'size' | 'rigid'>
+export type ZoomLook = Pick<Zoom, 'mode' | 'size' | 'liquid'>
 
 export type CameraLayoutKind = 'pip' | 'fullscreen' | 'hidden' | 'split'
 export interface CameraLayout {

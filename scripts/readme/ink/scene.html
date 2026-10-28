@@ -2,73 +2,74 @@
 <!-- The landing page draft from the README ink demo, open in a browser. Nothing on the page moves:
      the ink, keycaps, and cursor are Grip's, drawn later from events like on a real capture. -->
 <html><head><meta charset="utf-8"><style>
+  :root{color-scheme:light dark}
   *{box-sizing:border-box}
-  html,body{margin:0;width:1440px;height:900px;overflow:hidden;background:#fff;color:#171717;font:15px/1.3 -apple-system,'SF Pro Text',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  html,body{margin:0;width:1440px;height:900px;overflow:hidden;background:light-dark(#fff,#0b0b0c);color:light-dark(#171717,#ededef);font:15px/1.3 -apple-system,'SF Pro Text',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
   .abs{position:absolute;display:flex;align-items:center;white-space:nowrap}
   svg{display:block;flex:none}
-  #bar{position:absolute;left:0;top:0;width:1440px;height:58px;background:#f6f6f6;border-bottom:1px solid #e6e6e6}
+  #bar{position:absolute;left:0;top:0;width:1440px;height:58px;background:light-dark(#f6f6f6,#141416);border-bottom:1px solid light-dark(#e6e6e6,#202023)}
   .dot{width:13px;height:13px;border-radius:50%;top:22.5px}
-  #url{left:416px;top:11px;width:608px;height:36px;border-radius:9px;background:#e9e9e9;justify-content:center;gap:7px;font-size:14px;letter-spacing:-.1px}
-  #nav{position:absolute;left:0;top:58px;width:1440px;height:82px;border-bottom:1px solid #f0f0f0}
-  #links{left:228px;top:90px;gap:37px;color:#666;font-size:15px}
-  .btn{display:flex;align-items:center;justify-content:center;background:#171717;color:#fff;font-weight:600}
-  #pill{left:72px;top:183px;height:34px;padding:0 12px 0 4px;gap:10px;border:1px solid #ebebeb;border-radius:17px;font-size:14px;color:#444;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-  #pill b{height:24px;padding:0 9px;border-radius:12px;background:#171717;color:#fff;font-size:12.5px;font-weight:600;display:flex;align-items:center}
+  #url{left:416px;top:11px;width:608px;height:36px;border-radius:9px;background:light-dark(#e9e9e9,#1c1c1f);justify-content:center;gap:7px;font-size:14px;letter-spacing:-.1px}
+  #nav{position:absolute;left:0;top:58px;width:1440px;height:82px;border-bottom:1px solid light-dark(#f0f0f0,#202023)}
+  #links{left:228px;top:90px;gap:37px;color:light-dark(#666,#9a9aa2);font-size:15px}
+  .btn{display:flex;align-items:center;justify-content:center;background:light-dark(#171717,#ededef);color:light-dark(#fff,#0b0b0c);font-weight:600}
+  #pill{left:72px;top:183px;height:34px;padding:0 12px 0 4px;gap:10px;border:1px solid light-dark(#ebebeb,#2a2a2e);border-radius:17px;font-size:14px;color:light-dark(#444,#c4c4c9);background:light-dark(transparent,#141416);box-shadow:0 1px 2px light-dark(rgba(0,0,0,.03),rgba(0,0,0,.3))}
+  #pill b{height:24px;padding:0 9px;border-radius:12px;background:light-dark(#171717,#ededef);color:light-dark(#fff,#0b0b0c);font-size:12.5px;font-weight:600;display:flex;align-items:center}
   h1{position:absolute;left:69px;top:252px;margin:0;font:700 72px/76px -apple-system,'SF Pro Display',system-ui,sans-serif;letter-spacing:-1.8px}
-  #sub{position:absolute;left:72px;top:442px;margin:0;width:510px;font-size:19.5px;line-height:31px;color:#666;letter-spacing:-.1px}
-  #cta{position:absolute;left:72px;top:545px;width:206px;height:58px;border-radius:12px;font-size:18px;gap:10px;letter-spacing:-.1px;box-shadow:0 1px 2px rgba(0,0,0,.12),0 6px 16px -4px rgba(0,0,0,.18)}
-  .ok{top:621px;gap:7px;font-size:14px;color:#666}
-  #trust{left:73px;top:725px;font-size:12px;font-weight:500;letter-spacing:2.2px;color:#a3a3a3}
-  #marks{left:73px;top:758px;height:30px;gap:50px;color:#a8a8a8}
-  #card{position:absolute;left:896px;top:186px;width:472px;height:549px;border:1px solid #ebebeb;border-radius:20px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.04),0 16px 40px -12px rgba(0,0,0,.10)}
+  #sub{position:absolute;left:72px;top:442px;margin:0;width:510px;font-size:19.5px;line-height:31px;color:light-dark(#666,#9a9aa2);letter-spacing:-.1px}
+  #cta{position:absolute;left:72px;top:545px;width:206px;height:58px;border-radius:12px;font-size:18px;gap:10px;letter-spacing:-.1px;box-shadow:0 1px 2px light-dark(rgba(0,0,0,.12),rgba(0,0,0,.4)),0 6px 16px -4px light-dark(rgba(0,0,0,.18),rgba(0,0,0,.6))}
+  .ok{top:621px;gap:7px;font-size:14px;color:light-dark(#666,#9a9aa2)}
+  #trust{left:73px;top:725px;font-size:12px;font-weight:500;letter-spacing:2.2px;color:light-dark(#a3a3a3,#6b6b73)}
+  #marks{left:73px;top:758px;height:30px;gap:50px;color:light-dark(#a8a8a8,#6b6b73)}
+  #card{position:absolute;left:896px;top:186px;width:472px;height:549px;border:1px solid light-dark(#ebebeb,#2a2a2e);border-radius:20px;background:light-dark(#fff,#141416);box-shadow:0 1px 2px light-dark(rgba(0,0,0,.04),rgba(0,0,0,.3)),0 16px 40px -12px light-dark(rgba(0,0,0,.10),rgba(0,0,0,.6))}
   #card>*{position:absolute;white-space:nowrap}
-  .feat{left:34px;display:flex;align-items:center;gap:12px;font-size:15.5px;color:#444}
+  .feat{left:34px;display:flex;align-items:center;gap:12px;font-size:15.5px;color:light-dark(#444,#c4c4c9)}
 </style></head><body>
 <div id="bar">
   <div class="abs dot" style="left:24px;background:#ff5f57"></div><div class="abs dot" style="left:46px;background:#febc2e"></div><div class="abs dot" style="left:68px;background:#28c840"></div>
-  <div class="abs" style="left:110px;top:20px"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="#6b6b6b" stroke-width="1.5"><rect x="1.5" y="1.5" width="19" height="15" rx="3.5"/><path d="M8 1.5v15"/></svg></div>
-  <div class="abs" style="left:152px;top:20px"><svg width="12" height="18" viewBox="0 0 12 18" fill="none" stroke="#6b6b6b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 3 2.5 9l6 6"/></svg></div>
-  <div class="abs" style="left:182px;top:20px"><svg width="12" height="18" viewBox="0 0 12 18" fill="none" stroke="#c4c4c4" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3l6 6-6 6"/></svg></div>
-  <div class="abs" id="url"><svg width="10" height="13" viewBox="0 0 10 13" fill="#8a8a8a"><path d="M2 5.2V3.8a3 3 0 0 1 6 0v1.4h.4c.9 0 1.6.7 1.6 1.6v4.6c0 .9-.7 1.6-1.6 1.6H1.6C.7 13 0 12.3 0 11.4V6.8c0-.9.7-1.6 1.6-1.6zm1.4 0h3.2V3.8a1.6 1.6 0 0 0-3.2 0z"/></svg><span>plume.app<span style="color:#8a8a8a">/preview/launch-v3</span></span></div>
-  <div class="abs" style="left:1308px;top:17px"><svg width="20" height="22" viewBox="0 0 20 22" fill="none" stroke="#6b6b6b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13V2.5M6.5 6 10 2.5 13.5 6M6.5 9H5a1.5 1.5 0 0 0-1.5 1.5v8A1.5 1.5 0 0 0 5 20h10a1.5 1.5 0 0 0 1.5-1.5v-8A1.5 1.5 0 0 0 15 9h-1.5"/></svg></div>
-  <div class="abs" style="left:1351px;top:20px"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#6b6b6b" stroke-width="1.6" stroke-linecap="round"><path d="M9 2.5v13M2.5 9h13"/></svg></div>
-  <div class="abs" style="left:1395px;top:19px"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#6b6b6b" stroke-width="1.5" stroke-linejoin="round"><rect x="1.5" y="5.5" width="13" height="13" rx="2.5"/><path d="M5.5 3.5V3A1.5 1.5 0 0 1 7 1.5h10A1.5 1.5 0 0 1 18.5 3v10a1.5 1.5 0 0 1-1.5 1.5h-.5"/></svg></div>
+  <div class="abs" style="left:110px;top:20px"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="light-dark(#6b6b6b,#9a9aa2)" stroke-width="1.5"><rect x="1.5" y="1.5" width="19" height="15" rx="3.5"/><path d="M8 1.5v15"/></svg></div>
+  <div class="abs" style="left:152px;top:20px"><svg width="12" height="18" viewBox="0 0 12 18" fill="none" stroke="light-dark(#6b6b6b,#9a9aa2)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 3 2.5 9l6 6"/></svg></div>
+  <div class="abs" style="left:182px;top:20px"><svg width="12" height="18" viewBox="0 0 12 18" fill="none" stroke="light-dark(#c4c4c4,#46464c)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3l6 6-6 6"/></svg></div>
+  <div class="abs" id="url"><svg width="10" height="13" viewBox="0 0 10 13" fill="light-dark(#8a8a8a,#8a8a92)"><path d="M2 5.2V3.8a3 3 0 0 1 6 0v1.4h.4c.9 0 1.6.7 1.6 1.6v4.6c0 .9-.7 1.6-1.6 1.6H1.6C.7 13 0 12.3 0 11.4V6.8c0-.9.7-1.6 1.6-1.6zm1.4 0h3.2V3.8a1.6 1.6 0 0 0-3.2 0z"/></svg><span>plume.app<span style="color:light-dark(#8a8a8a,#8a8a92)">/preview/launch-v3</span></span></div>
+  <div class="abs" style="left:1308px;top:17px"><svg width="20" height="22" viewBox="0 0 20 22" fill="none" stroke="light-dark(#6b6b6b,#9a9aa2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13V2.5M6.5 6 10 2.5 13.5 6M6.5 9H5a1.5 1.5 0 0 0-1.5 1.5v8A1.5 1.5 0 0 0 5 20h10a1.5 1.5 0 0 0 1.5-1.5v-8A1.5 1.5 0 0 0 15 9h-1.5"/></svg></div>
+  <div class="abs" style="left:1351px;top:20px"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="light-dark(#6b6b6b,#9a9aa2)" stroke-width="1.6" stroke-linecap="round"><path d="M9 2.5v13M2.5 9h13"/></svg></div>
+  <div class="abs" style="left:1395px;top:19px"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="light-dark(#6b6b6b,#9a9aa2)" stroke-width="1.5" stroke-linejoin="round"><rect x="1.5" y="5.5" width="13" height="13" rx="2.5"/><path d="M5.5 3.5V3A1.5 1.5 0 0 1 7 1.5h10A1.5 1.5 0 0 1 18.5 3v10a1.5 1.5 0 0 1-1.5 1.5h-.5"/></svg></div>
 </div>
 <div id="nav">
   <div class="abs" style="left:72px;top:25px;gap:11px;font-size:20px;font-weight:650;letter-spacing:-.4px">
-    <span style="width:32px;height:32px;border-radius:8px;background:#171717;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12.7 19a2 2 0 0 0 1.4-.6l6.2-6.2a6 6 0 0 0-8.5-8.5L5.6 9.9a2 2 0 0 0-.6 1.4V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22M17.5 15H9"/></svg></span>Plume</div>
+    <span style="width:32px;height:32px;border-radius:8px;background:light-dark(#171717,#ededef);display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="light-dark(#fff,#0b0b0c)" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12.7 19a2 2 0 0 0 1.4-.6l6.2-6.2a6 6 0 0 0-8.5-8.5L5.6 9.9a2 2 0 0 0-.6 1.4V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22M17.5 15H9"/></svg></span>Plume</div>
 </div>
 <div class="abs" id="links"><span>Product</span><span>Pricing</span><span>Customers</span><span>Changelog</span></div>
 <div class="abs" style="left:1176px;top:90px;font-weight:500">Sign in</div>
 <div class="abs btn" style="left:1256px;top:80px;width:112px;height:38px;border-radius:9px;font-size:14.5px;font-weight:500">Start free</div>
 
-<div class="abs" id="pill"><b>New</b>Reminders that sound like you<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#a3a3a3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h8M6.8 2.8 10 6 6.8 9.2"/></svg></div>
+<div class="abs" id="pill"><b>New</b>Reminders that sound like you<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="light-dark(#a3a3a3,#6b6b73)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h8M6.8 2.8 10 6 6.8 9.2"/></svg></div>
 <h1>Get paid in days,<br>not weeks.</h1>
 <p id="sub">Plume sends invoices, chases late payers politely, and matches every payment. You stay on the work.</p>
-<div class="btn" id="cta">Start free trial<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8h11M9 3.5 13.5 8 9 12.5"/></svg></div>
-<div class="abs ok" style="left:72px"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#16a34a" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m2.5 7.3 3 3 6-6.6"/></svg>Free for 14 days</div>
-<div class="abs ok" style="left:224px"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#16a34a" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m2.5 7.3 3 3 6-6.6"/></svg>No card required</div>
+<div class="btn" id="cta">Start free trial<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="light-dark(#fff,#0b0b0c)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8h11M9 3.5 13.5 8 9 12.5"/></svg></div>
+<div class="abs ok" style="left:72px"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="light-dark(#16a34a,#22c55e)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m2.5 7.3 3 3 6-6.6"/></svg>Free for 14 days</div>
+<div class="abs ok" style="left:224px"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="light-dark(#16a34a,#22c55e)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m2.5 7.3 3 3 6-6.6"/></svg>No card required</div>
 <div class="abs" id="trust">TRUSTED BY 4,000+ STUDIOS</div>
 <div class="abs" id="marks">
   <span style="font:italic 500 23px/1 Georgia,'Times New Roman',serif;letter-spacing:-.3px">Halvard</span>
   <span style="font-size:21px;font-weight:700;letter-spacing:-1px">northfold</span>
   <span style="font:500 16px/1 'SF Mono',ui-monospace,Menlo,monospace;letter-spacing:3.5px;margin-right:-3.5px">MONO/LAB</span>
-  <span style="display:flex;align-items:center;gap:7px;font-size:21px;font-weight:600;letter-spacing:-.5px"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8.2" fill="none" stroke="#a8a8a8" stroke-width="2.2"/><path d="M10 1.8a8.2 8.2 0 0 1 0 16.4z" fill="#a8a8a8"/></svg>Ferngate</span>
+  <span style="display:flex;align-items:center;gap:7px;font-size:21px;font-weight:600;letter-spacing:-.5px"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8.2" fill="none" stroke="light-dark(#a8a8a8,#6b6b73)" stroke-width="2.2"/><path d="M10 1.8a8.2 8.2 0 0 1 0 16.4z" fill="light-dark(#a8a8a8,#6b6b73)"/></svg>Ferngate</span>
 </div>
 
 <div id="card">
   <div style="left:34px;top:32px;font-size:21px;font-weight:650;letter-spacing:-.3px">Pro</div>
-  <div style="right:34px;top:32px;height:28px;padding:0 12px;border-radius:14px;background:#f4f4f5;color:#3f3f46;font-size:12.5px;font-weight:600;display:flex;align-items:center">Most popular</div>
-  <div style="left:34px;top:64px;font-size:15.5px;color:#666">For studios sending 10+ invoices a month.</div>
-  <div style="left:31px;top:107px;display:flex;align-items:baseline;gap:9px"><span id="price" style="font:700 74px/1 -apple-system,'SF Pro Display',system-ui,sans-serif;letter-spacing:-2.6px">$24</span><span style="font-size:16px;color:#666">per seat / month</span></div>
-  <div style="left:34px;top:208px;font-size:14.5px;color:#8f8f8f">Billed yearly, or $29 month to month</div>
+  <div style="right:34px;top:32px;height:28px;padding:0 12px;border-radius:14px;background:light-dark(#f4f4f5,#26262a);color:light-dark(#3f3f46,#c4c4c9);font-size:12.5px;font-weight:600;display:flex;align-items:center">Most popular</div>
+  <div style="left:34px;top:64px;font-size:15.5px;color:light-dark(#666,#9a9aa2)">For studios sending 10+ invoices a month.</div>
+  <div style="left:31px;top:107px;display:flex;align-items:baseline;gap:9px"><span id="price" style="font:700 74px/1 -apple-system,'SF Pro Display',system-ui,sans-serif;letter-spacing:-2.6px">$24</span><span style="font-size:16px;color:light-dark(#666,#9a9aa2)">per seat / month</span></div>
+  <div style="left:34px;top:208px;font-size:14.5px;color:light-dark(#8f8f8f,#82828a)">Billed yearly, or $29 month to month</div>
   <div class="btn" style="left:34px;top:252px;width:402px;height:52px;border-radius:10px;font-size:16.5px;letter-spacing:-.1px">Choose Pro</div>
-  <div style="left:34px;top:332px;width:402px;height:1px;background:#ebebeb"></div>
+  <div style="left:34px;top:332px;width:402px;height:1px;background:light-dark(#ebebeb,#222225)"></div>
   <div style="left:34px;top:354px;font-size:14.5px;font-weight:600">Everything in Starter, plus:</div>
-  <div class="feat" style="top:388px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#171717" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8.4 3.2 3.1L13 4.6"/></svg>Unlimited invoices and clients</div>
-  <div class="feat" style="top:424px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#171717" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8.4 3.2 3.1L13 4.6"/></svg>Reminders by email and SMS</div>
-  <div class="feat" style="top:460px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#171717" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8.4 3.2 3.1L13 4.6"/></svg>Card, ACH, and bank sync</div>
-  <div class="feat" style="top:496px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#171717" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8.4 3.2 3.1L13 4.6"/></svg>135 currencies with live FX</div>
+  <div class="feat" style="top:388px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="light-dark(#171717,#ededef)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8.4 3.2 3.1L13 4.6"/></svg>Unlimited invoices and clients</div>
+  <div class="feat" style="top:424px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="light-dark(#171717,#ededef)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8.4 3.2 3.1L13 4.6"/></svg>Reminders by email and SMS</div>
+  <div class="feat" style="top:460px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="light-dark(#171717,#ededef)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8.4 3.2 3.1L13 4.6"/></svg>Card, ACH, and bank sync</div>
+  <div class="feat" style="top:496px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="light-dark(#171717,#ededef)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8.4 3.2 3.1L13 4.6"/></svg>135 currencies with live FX</div>
 </div>
 <script>
   window.render = () => {} // a still page: the story is the ink on top

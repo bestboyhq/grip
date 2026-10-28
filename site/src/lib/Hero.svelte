@@ -1,6 +1,7 @@
 <!-- The hero: the eyebrow, the headline with its quiet second sentence, and the clip on its lit plate. The landing page
      adds its lede, buttons, and fine print under the headline and a caption under the clip. As a card it is the Open
-     Graph image's source (`/og`): settled, the clip's still, tighter around the headline. -->
+     Graph image's source (`/og`): settled, the clip's dark still as `scripts/og.ts` renders it dark, tighter around the
+     headline. -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import Arrow from './Arrow.svelte';
@@ -37,10 +38,10 @@
 		</div>
 		<figure class="wrap window">
 			<Media
-				{...card ? { src: hero.still } : hero}
-				width={1522}
-				height={950}
-				r={14}
+				{...card ? { src: hero.dark.still } : { clip: hero }}
+				width={2304}
+				height={1440}
+				r={21}
 				eager
 				alt="A deployments dashboard polished by Grip: the view zooms in as the cursor glides to Deploy, the click swells through the screen, and a glass loupe magnifies the new build's timer as it turns from Building to Ready."
 			/>

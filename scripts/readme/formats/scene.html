@@ -3,140 +3,145 @@
      the moments of each click and key, and the pointer per frame, so hover follows it exactly.
      No cursor: like a real capture, Grip draws it later from events. -->
 <html><head><meta charset="utf-8"><style>
+  :root{color-scheme:light dark}
   *{box-sizing:border-box;margin:0}
-  html,body{width:1440px;height:900px;overflow:hidden;background:#141416;color:#171717;font:15px/22px -apple-system,'SF Pro Text',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  html,body{width:1440px;height:900px;overflow:hidden;background:light-dark(#141416,#0b0b0c);color:light-dark(#171717,#ededef);font:15px/22px -apple-system,'SF Pro Text',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
   svg{display:block;flex:none}
   .row{display:flex;align-items:center}
   .av{position:relative;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;letter-spacing:.2px}
-  .PR{background:linear-gradient(135deg,#e6b47a,#b07440)}.DA{background:linear-gradient(135deg,#aaa29d,#57524d)}.SO{background:linear-gradient(135deg,#74747c,#2a2a2e)}
+  .PR{background:linear-gradient(135deg,#e6b47a,#b07440)}.DA{background:linear-gradient(135deg,#aaa29d,#57524d)}.SO{background:linear-gradient(135deg,light-dark(#74747c,#83838b),light-dark(#2a2a2e,#3c3c42))}
   .MC{background:linear-gradient(135deg,#ee9f82,#c2553c)}.TM{background:linear-gradient(135deg,#cfcac6,#78716c)}.LP{background:linear-gradient(135deg,#bdb08f,#736850)}
   /* window chrome */
   .tl{position:absolute;top:16px;width:12px;height:12px;border-radius:50%}
-  #search{position:absolute;left:520px;top:8px;width:400px;height:28px;border-radius:7px;background:#222225;border:1px solid #2c2c30;color:#8e8e93;font-size:13px;display:flex;align-items:center;gap:8px;padding:0 10px}
-  #search kbd{margin-left:auto;font:12px -apple-system,system-ui;color:#6e6e73}
-  aside{position:absolute;left:0;top:44px;width:260px;bottom:0;padding:6px 10px;color:#a1a1aa;font-size:14.5px}
-  .ws{height:40px;padding:0 6px 0 8px;gap:10px;color:#fafafa;font-weight:600;font-size:15px;margin-bottom:6px}
-  .logo{width:24px;height:24px;border-radius:6px;background:#fafafa;display:flex;align-items:center;justify-content:center}
-  .compose{margin-left:auto;width:28px;height:28px;border-radius:7px;background:#222225;display:flex;align-items:center;justify-content:center}
+  #search{position:absolute;left:520px;top:8px;width:400px;height:28px;border-radius:7px;background:light-dark(#222225,#141416);border:1px solid light-dark(#2c2c30,#2a2a2e);color:light-dark(#8e8e93,#6b6b73);font-size:13px;display:flex;align-items:center;gap:8px;padding:0 10px}
+  #search kbd{margin-left:auto;font:12px -apple-system,system-ui;color:light-dark(#6e6e73,#6b6b73)}
+  aside{position:absolute;left:0;top:44px;width:260px;bottom:0;padding:6px 10px;color:light-dark(#a1a1aa,#9a9aa2);font-size:14.5px}
+  .ws{height:40px;padding:0 6px 0 8px;gap:10px;color:light-dark(#fafafa,#ededef);font-weight:600;font-size:15px;margin-bottom:6px}
+  .logo{width:24px;height:24px;border-radius:6px;background:light-dark(#fafafa,#ededef);display:flex;align-items:center;justify-content:center}
+  .compose{margin-left:auto;width:28px;height:28px;border-radius:7px;background:light-dark(#222225,#1c1c1f);display:flex;align-items:center;justify-content:center}
   .nav{height:30px;padding:0 8px;gap:10px;border-radius:6px}
-  .nav.on{background:#2a2a2e;color:#fafafa}
-  .nav.unread{color:#fafafa;font-weight:600}
-  .ic{width:16px;display:flex;justify-content:center;color:#71717a}
+  .nav.on{background:light-dark(#2a2a2e,#1c1c1f);color:light-dark(#fafafa,#ededef)}
+  .nav.unread{color:light-dark(#fafafa,#ededef);font-weight:600}
+  .ic{width:16px;display:flex;justify-content:center;color:light-dark(#71717a,#6b6b73)}
   .badge{margin-left:auto;min-width:18px;height:18px;border-radius:9px;background:#ef4444;color:#fff;font-size:11px;line-height:18px;font-weight:600;text-align:center;padding:0 5px}
-  .sec{height:30px;padding:0 8px;gap:6px;color:#71717a;font-size:13px;font-weight:500;margin-top:14px}
+  .sec{height:30px;padding:0 8px;gap:6px;color:light-dark(#71717a,#6b6b73);font-size:13px;font-weight:500;margin-top:14px}
   .dm .av{width:18px;height:18px;border-radius:5px;font-size:7.5px}
-  .pres{position:absolute;right:-3px;bottom:-3px;width:9px;height:9px;border-radius:50%;background:#22c55e;border:2px solid #141416}
-  .pres.away{background:#141416;box-shadow:inset 0 0 0 1.5px #71717a}
+  .pres{position:absolute;right:-3px;bottom:-3px;width:9px;height:9px;border-radius:50%;background:#22c55e;border:2px solid light-dark(#141416,#0b0b0c)}
+  .pres.away{background:light-dark(#141416,#0b0b0c);box-shadow:inset 0 0 0 1.5px light-dark(#71717a,#6b6b73)}
   /* panel */
-  #panel{position:absolute;left:260px;top:44px;width:1172px;height:848px;background:#fff;border-radius:10px;overflow:hidden;display:flex}
+  #panel{position:absolute;left:260px;top:44px;width:1172px;height:848px;background:light-dark(#fff,#141416);box-shadow:0 0 0 1px light-dark(transparent,rgba(255,255,255,.06));border-radius:10px;overflow:hidden;display:flex}
   #chan{flex:1;min-width:0;display:flex;flex-direction:column}
-  header{height:56px;flex:none;border-bottom:1px solid #ebebeb;display:flex;align-items:center;padding:0 16px 0 20px;gap:8px;white-space:nowrap}
+  header{height:56px;flex:none;border-bottom:1px solid light-dark(#ebebeb,#202023);display:flex;align-items:center;padding:0 16px 0 20px;gap:8px;white-space:nowrap}
   header h1{font-size:16px;font-weight:650;letter-spacing:-.1px;display:flex;align-items:center;gap:4px}
-  header h1 .hs{color:#a1a1aa;font-weight:500}
-  .topic{font-size:13px;color:#71717a;margin-left:6px;overflow:hidden;text-overflow:ellipsis}
-  .tb{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex:none;color:#71717a}
-  .tb.h{background:#f4f4f5;color:#171717}
+  header h1 .hs{color:light-dark(#a1a1aa,#6b6b73);font-weight:500}
+  .topic{font-size:13px;color:light-dark(#71717a,#9a9aa2);margin-left:6px;overflow:hidden;text-overflow:ellipsis}
+  .tb{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex:none;color:light-dark(#71717a,#9a9aa2)}
+  .tb.h{background:light-dark(#f4f4f5,#1c1c1f);color:light-dark(#171717,#ededef)}
   .tb.p{transform:scale(.94)}
-  .stack{display:flex;align-items:center;margin-left:auto;padding:3px 8px 3px 3px;border:1px solid #ebebeb;border-radius:8px;gap:6px;font-size:13px;font-weight:600;color:#3f3f46}
-  .stack .av{width:22px;height:22px;border-radius:6px;font-size:8.5px;box-shadow:0 0 0 2px #fff}
+  .stack{display:flex;align-items:center;margin-left:auto;padding:3px 8px 3px 3px;border:1px solid light-dark(#ebebeb,#2a2a2e);border-radius:8px;gap:6px;font-size:13px;font-weight:600;color:light-dark(#3f3f46,#c4c4c9)}
+  .stack .av{width:22px;height:22px;border-radius:6px;font-size:8.5px;box-shadow:0 0 0 2px light-dark(#fff,#141416)}
   .stack .av+.av{margin-left:-8px}
   #list{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;padding-bottom:8px}
   .day{position:relative;height:44px;flex:none;display:flex;align-items:center;justify-content:center}
-  .day::before{content:'';position:absolute;left:20px;right:20px;top:50%;border-top:1px solid #ebebeb}
-  .day span{position:relative;background:#fff;border:1px solid #ebebeb;border-radius:12px;padding:0 10px;height:24px;line-height:22px;font-size:12px;font-weight:500;color:#52525b}
+  .day::before{content:'';position:absolute;left:20px;right:20px;top:50%;border-top:1px solid light-dark(#ebebeb,#202023)}
+  .day span{position:relative;background:light-dark(#fff,#141416);border:1px solid light-dark(#ebebeb,#2a2a2e);border-radius:12px;padding:0 10px;height:24px;line-height:22px;font-size:12px;font-weight:500;color:light-dark(#52525b,#9a9aa2)}
   .msg{position:relative;flex:none;display:flex;gap:12px;padding:8px 20px}
-  .msg.h{background:#fafafa}
-  .msg.sel{background:#f4f4f5}
+  .msg.h{background:light-dark(#fafafa,#19191c)}
+  .msg.sel{background:light-dark(#f4f4f5,#1c1c1f)}
   .msg>.av{width:36px;height:36px;border-radius:8px;font-size:13px;margin-top:3px}
   .main{min-width:0;flex:1}
   .meta{display:flex;align-items:baseline;gap:8px;height:22px}
   .meta b{font-weight:600}
-  .meta time{font-size:12px;color:#a1a1aa}
-  .text{color:#27272a}
-  .card{display:flex;align-items:center;gap:12px;width:320px;margin-top:8px;padding:10px 12px;border:1px solid #ebebeb;border-radius:10px;background:#fff}
-  .card .fi{width:36px;height:36px;border-radius:8px;background:#f4f4f5;display:flex;align-items:center;justify-content:center}
+  .meta time{font-size:12px;color:light-dark(#a1a1aa,#9a9aa2)}
+  .text{color:light-dark(#27272a,#c4c4c9)}
+  .card{display:flex;align-items:center;gap:12px;width:320px;margin-top:8px;padding:10px 12px;border:1px solid light-dark(#ebebeb,#2a2a2e);border-radius:10px;background:light-dark(#fff,#141416)}
+  .card .fi{width:36px;height:36px;border-radius:8px;background:light-dark(#f4f4f5,#26262a);display:flex;align-items:center;justify-content:center}
   .card b{display:block;font-size:14px;line-height:19px;font-weight:600}
-  .card span{font-size:12.5px;line-height:17px;color:#71717a}
+  .card span{font-size:12.5px;line-height:17px;color:light-dark(#71717a,#9a9aa2)}
   .reacts{display:flex;gap:6px;margin-top:6px}
-  .re{height:26px;padding:0 9px 0 7px;border-radius:13px;border:1px solid #e4e4e7;background:#fff;display:flex;align-items:center;gap:5px;font-size:12.5px;color:#52525b;font-weight:500}
+  .re{height:26px;padding:0 9px 0 7px;border-radius:13px;border:1px solid light-dark(#e4e4e7,#2a2a2e);background:light-dark(#fff,#1c1c1f);display:flex;align-items:center;gap:5px;font-size:12.5px;color:light-dark(#52525b,#a8a8b0);font-weight:500}
   .re i{font-style:normal;font-size:14px;line-height:1}
-  .re.me{border-color:#71717a;background:#f4f4f5;color:#171717;font-weight:600}
+  .re.me{border-color:light-dark(#71717a,#5c5c64);background:light-dark(#f4f4f5,#26262a);color:light-dark(#171717,#ededef);font-weight:600}
   .sum{display:inline-flex;align-items:center;gap:8px;margin:6px 0 0 -6px;padding:0 10px 0 5px;height:32px;border-radius:8px;border:1px solid transparent;font-size:13px;white-space:nowrap}
   .sum .avs{display:flex;gap:3px}
   .sum .av{width:20px;height:20px;border-radius:5px;font-size:7.5px}
-  .sum b{font-weight:600;color:#171717}
-  .sum .ago{color:#71717a}
-  .sum .vt{display:none;align-items:center;gap:2px;color:#71717a;margin-left:20px}
-  .sum.h{background:#fff;border-color:#e4e4e7}
+  .sum b{font-weight:600;color:light-dark(#171717,#ededef)}
+  .sum .ago{color:light-dark(#71717a,#9a9aa2)}
+  .sum .vt{display:none;align-items:center;gap:2px;color:light-dark(#71717a,#9a9aa2);margin-left:20px}
+  .sum.h{background:light-dark(#fff,#222225);border-color:light-dark(#e4e4e7,#2a2a2e)}
   .sum.h b{text-decoration:underline;text-underline-offset:2px}
   .sum.h .vt{display:flex}
-  .comp{border:1px solid #e4e4e7;border-radius:10px;background:#fff;flex:none}
-  .comp.focus{border-color:#a1a1aa;box-shadow:0 0 0 3px rgba(0,0,0,.05)}
-  .in{height:44px;padding:0 14px;display:flex;align-items:center;white-space:pre;overflow:hidden;color:#171717}
-  .ph{color:#a1a1aa}
-  .caret{display:inline-block;width:1.5px;height:19px;background:#171717;margin-left:1px}
+  .comp{border:1px solid light-dark(#e4e4e7,#2a2a2e);border-radius:10px;background:light-dark(#fff,#141416);flex:none}
+  .comp.focus{border-color:light-dark(#a1a1aa,#4a4a50);box-shadow:0 0 0 3px light-dark(rgba(0,0,0,.05),rgba(255,255,255,.05))}
+  .in{height:44px;padding:0 14px;display:flex;align-items:center;white-space:pre;overflow:hidden;color:light-dark(#171717,#ededef)}
+  .ph{color:light-dark(#a1a1aa,#6b6b73)}
+  .caret{display:inline-block;width:1.5px;height:19px;background:light-dark(#171717,#ededef);margin-left:1px}
   .tools{height:40px;display:flex;align-items:center;gap:2px;padding:0 8px 6px}
-  .vsep{width:1px;height:16px;background:#e4e4e7;margin:0 5px}
-  .send{margin-left:auto;width:32px;height:28px;border-radius:7px;background:#f4f4f5;display:flex;align-items:center;justify-content:center;color:#a1a1aa}
-  .send.on{background:#171717;color:#fff}
+  .vsep{width:1px;height:16px;background:light-dark(#e4e4e7,#2a2a2e);margin:0 5px}
+  .send{margin-left:auto;width:32px;height:28px;border-radius:7px;background:light-dark(#f4f4f5,#1c1c1f);display:flex;align-items:center;justify-content:center;color:light-dark(#a1a1aa,#6b6b73)}
+  .send.on{background:light-dark(#171717,#ededef);color:light-dark(#fff,#0b0b0c)}
   #chan .cwrap{padding:0 20px 20px}
   /* thread */
-  #thread{width:448px;flex:none;border-left:1px solid #ebebeb;display:none;flex-direction:column;position:relative;background:#fff}
+  #thread{width:448px;flex:none;border-left:1px solid light-dark(#ebebeb,#202023);display:none;flex-direction:column;position:relative;background:light-dark(#fff,#141416)}
   #thread header{padding-right:12px}
   #tbody{flex:1;min-height:0;padding-top:12px;overflow:hidden}
   #tbody .msg{padding:14px 20px 10px}
   #tbody .rep{padding:8px 20px}
-  .tdiv{display:flex;align-items:center;gap:10px;padding:6px 20px 6px;font-size:12.5px;color:#71717a;font-weight:500;white-space:nowrap}
-  .tdiv::after{content:'';flex:1;border-top:1px solid #ebebeb}
+  .tdiv{display:flex;align-items:center;gap:10px;padding:6px 20px 6px;font-size:12.5px;color:light-dark(#71717a,#9a9aa2);font-weight:500;white-space:nowrap}
+  .tdiv::after{content:'';flex:1;border-top:1px solid light-dark(#ebebeb,#202023)}
   #tcwrap{padding:0 16px;position:relative}
-  .also{height:40px;flex:none;display:flex;align-items:center;gap:8px;padding:0 18px;font-size:12.5px;color:#71717a}
-  .cb{width:14px;height:14px;border:1px solid #d4d4d8;border-radius:4px;background:#fff}
+  .also{height:40px;flex:none;display:flex;align-items:center;gap:8px;padding:0 18px;font-size:12.5px;color:light-dark(#71717a,#9a9aa2)}
+  .cb{width:14px;height:14px;border:1px solid light-dark(#d4d4d8,#3a3a40);border-radius:4px;background:light-dark(#fff,#141416)}
   /* message toolbar, emoji picker, emoji autocomplete */
-  .bar{position:absolute;right:16px;top:-8px;height:34px;padding:0 3px;display:flex;align-items:center;gap:1px;background:#fff;border:1px solid #e4e4e7;border-radius:9px;box-shadow:0 2px 8px rgba(0,0,0,.06);opacity:0}
+  .bar{position:absolute;right:16px;top:-8px;height:34px;padding:0 3px;display:flex;align-items:center;gap:1px;background:light-dark(#fff,#1c1c1f);border:1px solid light-dark(#e4e4e7,#2a2a2e);border-radius:9px;box-shadow:0 4px 14px rgba(0,0,0,.45);opacity:0}
   .msg.h .bar,.bar.open{opacity:1}
   .bar .tb{width:30px}
   .bar .tb i{font-style:normal;font-size:15px;line-height:1}
-  .bar .tb.on{background:#f4f4f5;color:#171717}
+  .bar .tb.h,.bar .tb.on{background:light-dark(#f4f4f5,#26262a);color:light-dark(#171717,#ededef)}
   .bar .vsep{margin:0 3px}
-  #picker{position:absolute;right:16px;top:102px;width:304px;padding:10px;background:#fff;border:1px solid #e4e4e7;border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.10),0 1px 3px rgba(0,0,0,.05);display:none}
-  .ps{height:32px;border:1px solid #e4e4e7;border-radius:8px;display:flex;align-items:center;gap:8px;padding:0 10px;color:#a1a1aa;font-size:13px}
-  .pl{font-size:12px;line-height:16px;color:#71717a;font-weight:500;margin:10px 2px 6px}
+  #picker{position:absolute;right:16px;top:102px;width:304px;padding:10px;background:light-dark(#fff,#1c1c1f);border:1px solid light-dark(#e4e4e7,#2a2a2e);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.3);display:none}
+  .ps{height:32px;border:1px solid light-dark(#e4e4e7,#2a2a2e);border-radius:8px;background:light-dark(transparent,#141416);display:flex;align-items:center;gap:8px;padding:0 10px;color:light-dark(#a1a1aa,#6b6b73);font-size:13px}
+  .pl{font-size:12px;line-height:16px;color:light-dark(#71717a,#9a9aa2);font-weight:500;margin:10px 2px 6px}
   .grid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px}
   .cell{height:34px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:20px;line-height:1}
-  .cell.h{background:#f4f4f5}
-  .cell.p{background:#e4e4e7}
-  .pf{border-top:1px solid #ebebeb;margin:8px -10px -10px;padding:0 12px;height:44px;display:flex;align-items:center;gap:10px;font-size:13px;color:#a1a1aa}
+  .cell.h{background:light-dark(#f4f4f5,#26262a)}
+  .cell.p{background:light-dark(#e4e4e7,#303035)}
+  .pf{border-top:1px solid light-dark(#ebebeb,#2a2a2e);margin:8px -10px -10px;padding:0 12px;height:44px;display:flex;align-items:center;gap:10px;font-size:13px;color:light-dark(#a1a1aa,#6b6b73)}
   .pf i{font-style:normal;font-size:20px;line-height:1;width:22px;text-align:center}
-  .pf.on{color:#171717;font-weight:500}
-  #ac{position:absolute;left:16px;right:16px;bottom:calc(100% + 8px);padding:6px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.10),0 1px 3px rgba(0,0,0,.05);display:none}
-  .ach{font-size:12px;line-height:16px;color:#71717a;padding:6px 8px 6px}
-  .ach b{color:#171717;font-weight:600}
-  .acr{height:34px;border-radius:7px;display:flex;align-items:center;gap:10px;padding:0 8px;font-size:14px;color:#3f3f46}
+  .pf.on{color:light-dark(#171717,#ededef);font-weight:500}
+  #ac{position:absolute;left:16px;right:16px;bottom:calc(100% + 8px);padding:6px;background:light-dark(#fff,#1c1c1f);border:1px solid light-dark(#e4e4e7,#2a2a2e);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.3);display:none}
+  .ach{font-size:12px;line-height:16px;color:light-dark(#71717a,#9a9aa2);padding:6px 8px 6px}
+  .ach b{color:light-dark(#171717,#ededef);font-weight:600}
+  .acr{height:34px;border-radius:7px;display:flex;align-items:center;gap:10px;padding:0 8px;font-size:14px;color:light-dark(#3f3f46,#c4c4c9)}
   .acr i{font-style:normal;font-size:17px;line-height:1;width:20px;text-align:center}
-  .acr b{font-weight:600;color:#171717}
-  .acr.on{background:#f4f4f5}
-  .acr kbd{margin-left:auto;font:500 11px/16px -apple-system,system-ui;color:#71717a;border:1px solid #e4e4e7;border-radius:5px;padding:0 6px;background:#fff}
-</style></head><body>
+  .acr b{font-weight:600;color:light-dark(#171717,#ededef)}
+  .acr.on{background:light-dark(#f4f4f5,#26262a)}
+  .acr kbd{margin-left:auto;font:500 11px/16px -apple-system,system-ui;color:light-dark(#71717a,#9a9aa2);border:1px solid light-dark(#e4e4e7,#38383e);border-radius:5px;padding:0 6px;background:light-dark(#fff,#1c1c1f)}
+  @media (prefers-color-scheme:light){
+    .bar{box-shadow:0 2px 8px rgba(0,0,0,.06)}
+    #picker,#ac{box-shadow:0 10px 28px rgba(0,0,0,.10),0 1px 3px rgba(0,0,0,.05)}
+  }
+</style></head></head><body>
 <div class="tl" style="left:20px;background:#ff5f57"></div><div class="tl" style="left:40px;background:#febc2e"></div><div class="tl" style="left:60px;background:#28c840"></div>
-<svg style="position:absolute;left:98px;top:15px" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#8e8e93" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8.8 2.5 4.3 7l4.5 4.5"/></svg>
-<svg style="position:absolute;left:124px;top:15px" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#55555a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.2 2.5 9.7 7l-4.5 4.5"/></svg>
-<div id="search"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#8e8e93" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="m11 11 3.5 3.5"/></svg>Search Alder<kbd>⌘K</kbd></div>
-<svg style="position:absolute;left:1366px;top:13px" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="7.2"/><path d="M6.9 7a2.2 2.2 0 0 1 4.2.9c0 1.4-2.1 1.8-2.1 3"/><circle cx="9" cy="13.3" r=".4" fill="#a1a1aa"/></svg>
+<svg style="position:absolute;left:98px;top:15px" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="light-dark(#8e8e93,#9a9aa2)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8.8 2.5 4.3 7l4.5 4.5"/></svg>
+<svg style="position:absolute;left:124px;top:15px" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="light-dark(#55555a,#4a4a50)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.2 2.5 9.7 7l-4.5 4.5"/></svg>
+<div id="search"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="light-dark(#8e8e93,#6b6b73)" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="m11 11 3.5 3.5"/></svg>Search Alder<kbd>⌘K</kbd></div>
+<svg style="position:absolute;left:1366px;top:13px" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="light-dark(#a1a1aa,#9a9aa2)" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="7.2"/><path d="M6.9 7a2.2 2.2 0 0 1 4.2.9c0 1.4-2.1 1.8-2.1 3"/><circle cx="9" cy="13.3" r=".4" fill="light-dark(#a1a1aa,#9a9aa2)"/></svg>
 <div class="av TM" style="position:absolute;left:1398px;top:10px;width:24px;height:24px;border-radius:6px;font-size:9px">TM</div>
 <aside>
-  <div class="row ws"><div class="logo"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1.2 12.8 12H1.2Z" fill="none" stroke="#141416" stroke-width="2" stroke-linejoin="round"/></svg></div>Alder<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2 3.8 3 3 3-3"/></svg>
-    <div class="compose"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#e4e4e7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 9v3.5a1.5 1.5 0 0 1-1.5 1.5H3.5A1.5 1.5 0 0 1 2 12.5V4a1.5 1.5 0 0 1 1.5-1.5H7"/><path d="M11.8 1.9a1.3 1.3 0 0 1 1.9 1.9L8.4 9.1l-2.6.7.7-2.6Z"/></svg></div></div>
+  <div class="row ws"><div class="logo"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1.2 12.8 12H1.2Z" fill="none" stroke="light-dark(#141416,#0b0b0c)" stroke-width="2" stroke-linejoin="round"/></svg></div>Alder<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="light-dark(#a1a1aa,#9a9aa2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2 3.8 3 3 3-3"/></svg>
+    <div class="compose"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="light-dark(#e4e4e7,#c4c4c9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 9v3.5a1.5 1.5 0 0 1-1.5 1.5H3.5A1.5 1.5 0 0 1 2 12.5V4a1.5 1.5 0 0 1 1.5-1.5H7"/><path d="M11.8 1.9a1.3 1.3 0 0 1 1.9 1.9L8.4 9.1l-2.6.7.7-2.6Z"/></svg></div></div>
   <div class="row nav"><span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2Z"/></svg></span>Threads</div>
-  <div class="row nav unread"><span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#fafafa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5a4 4 0 0 0-8 0c0 4.5-2 5.5-2 5.5h12s-2-1-2-5.5M9.2 14a1.4 1.4 0 0 1-2.4 0"/></svg></span>Activity<span class="badge">2</span></div>
+  <div class="row nav unread"><span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="light-dark(#fafafa,#ededef)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5a4 4 0 0 0-8 0c0 4.5-2 5.5-2 5.5h12s-2-1-2-5.5M9.2 14a1.4 1.4 0 0 1-2.4 0"/></svg></span>Activity<span class="badge">2</span></div>
   <div class="row nav"><span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2 7 9M14 2l-4.5 12L7 9 2 6.5Z"/></svg></span>Drafts &amp; sent</div>
-  <div class="row sec"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#71717a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2 3.8 3 3 3-3"/></svg>Channels</div>
+  <div class="row sec"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="light-dark(#71717a,#6b6b73)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2 3.8 3 3 3-3"/></svg>Channels</div>
   <div class="row nav"><span class="ic">#</span>general</div>
-  <div class="row nav unread"><span class="ic" style="color:#fafafa">#</span>design</div>
+  <div class="row nav unread"><span class="ic" style="color:light-dark(#fafafa,#ededef)">#</span>design</div>
   <div class="row nav"><span class="ic">#</span>eng-web</div>
-  <div class="row nav on"><span class="ic" style="color:#d4d4d8">#</span>launch</div>
+  <div class="row nav on"><span class="ic" style="color:light-dark(#d4d4d8,#c4c4c9)">#</span>launch</div>
   <div class="row nav"><span class="ic">#</span>payments</div>
   <div class="row nav"><span class="ic">#</span>support</div>
-  <div class="row sec"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#71717a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2 3.8 3 3 3-3"/></svg>Direct messages</div>
+  <div class="row sec"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="light-dark(#71717a,#6b6b73)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2 3.8 3 3 3-3"/></svg>Direct messages</div>
   <div class="row nav dm"><span class="av MC">MC<span class="pres"></span></span>Maya Chen</div>
   <div class="row nav dm unread"><span class="av SO">SO<span class="pres away"></span></span>Sam Okafor<span class="badge">1</span></div>
   <div class="row nav dm"><span class="av DA">DA<span class="pres"></span></span>Diego Alvarez</div>
@@ -144,7 +149,7 @@
 </aside>
 <div id="panel">
   <section id="chan">
-    <header><h1><span class="hs">#</span>launch</h1><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#71717a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2 3.8 3 3 3-3"/></svg>
+    <header><h1><span class="hs">#</span>launch</h1><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="light-dark(#71717a,#9a9aa2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2 3.8 3 3 3-3"/></svg>
       <span class="topic">v2.4 ships Thursday 11:00 · go/launch-v24</span>
       <div class="stack"><span class="av MC">MC</span><span class="av SO">SO</span><span class="av DA">DA</span>24</div>
       <div class="tb"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12V9a6 6 0 0 1 12 0v3"/><rect x="2.5" y="10.5" width="3" height="5" rx="1.2"/><rect x="12.5" y="10.5" width="3" height="5" rx="1.2"/></svg></div>
@@ -176,7 +181,7 @@
     bookmark: svg(16, '<path d="M4 2.2h8v11.6l-4-2.8-4 2.8Z"/>'),
     dots: '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.2" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.8" cy="8" r="1.3"/></svg>',
     search: svg(14, '<circle cx="7" cy="7" r="5"/><path d="m11 11 3.5 3.5"/>'),
-    doc: svg(18, '<path d="M9.5 1.8H4.5a1.2 1.2 0 0 0-1.2 1.2v10a1.2 1.2 0 0 0 1.2 1.2h7a1.2 1.2 0 0 0 1.2-1.2V5Z"/><path d="M9.3 1.8V5.2h3.4M5.8 8.5h4.4M5.8 11h3"/>', ' style="color:#71717a"'),
+    doc: svg(18, '<path d="M9.5 1.8H4.5a1.2 1.2 0 0 0-1.2 1.2v10a1.2 1.2 0 0 0 1.2 1.2h7a1.2 1.2 0 0 0 1.2-1.2V5Z"/><path d="M9.3 1.8V5.2h3.4M5.8 8.5h4.4M5.8 11h3"/>', ' style="color:light-dark(#71717a,#9a9aa2)"'),
     chev: '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3.8 2 3 3-3 3"/></svg>',
   }
   const tools = (send) => `<div class="tb">${I.plus}</div><div class="vsep"></div><div class="tb">${I.aa}</div><div class="tb">${I.smile}</div><div class="tb">${I.at}</div><div class="vsep"></div><div class="tb">${I.mic}</div><div class="send" id="${send}">${I.send}</div>`

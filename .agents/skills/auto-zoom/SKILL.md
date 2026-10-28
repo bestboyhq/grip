@@ -21,6 +21,7 @@ Turning clicks and typing into camera direction.
 - A loupe following the cursor keeps it on the magnifying flat top through the fastest flick: the lens aims ahead by its spring's lag, and a cursor that reaches the edge of what the flat top shows carries the lens along.
   A lens that trails a flick hides the cursor under its glass, then curls it back in at the rim, which reads as a stutter.
 - A loupe pops in and out in about a fifth of a second, smeared by motion blur, and what it shows blurs while it glides or magnifies like the rest of the frame.
+- A loupe keeps its round shape by default; Liquid, which stretches the glass along its motion, is the user's pick.
 - New zooms, manual and automatic, take the type, loupe size, and Liquid the user last picked on any zoom, in every project.
 - A loupe appears by growing its magnification from 1 with its content opaque; fading its content in shows the screen twice, magnified over unmagnified.
 - Zooms may overlap, and none of them wins: overlapping zooms combine.

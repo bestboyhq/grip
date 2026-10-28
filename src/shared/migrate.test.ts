@@ -125,3 +125,11 @@ test('v2 clip volume drove both tracks: v3 copies it to systemVolume so system a
   assert.deepEqual(p.clips.map((c) => c.systemVolume), [0.5, undefined])
   assert.throws(() => migrate({ ...roundTrip(project()), clips: [{ id: 'a', start: 0, end: 1, speed: 1, volume: 1, systemVolume: '1' }] }), /clips\[0\]/)
 })
+
+test('v3 loupes were liquid unless rigid: v4 marks them liquid, so saved loupes keep their shape', () => {
+  const v3 = roundTrip(project())
+  v3.version = 3
+  const z = { start: 1, end: 2, level: 2, target: { kind: 'cursor' }, enabled: true }
+  v3.zooms = [{ id: 'a', ...z, mode: 'loupe' }, { id: 'b', ...z, mode: 'loupe', rigid: true }, { id: 'c', ...z }]
+  assert.deepEqual(migrate(v3).zooms, [{ id: 'a', ...z, mode: 'loupe', liquid: true }, { id: 'b', ...z, mode: 'loupe' }, { id: 'c', ...z }])
+})

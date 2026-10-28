@@ -289,7 +289,7 @@ test('an output as wide as the screen never zooms at rest, however round and pad
 
 test('loupe fades in and out, magnifies, and follows its target', () => {
   const events = moves([[0, 1000, 800], [10, 1800, 800]])
-  const { p, view } = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 2.5 })], events, { duration: 10 })
+  const { p, view } = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 2.5, liquid: true })], events, { duration: 10 })
   assert.equal(loupeAt(p.zoom, 1.9), null)
   const fadeIn = loupeAt(p.zoom, 2.05)!
   assert.ok(fadeIn.opacity > 0 && fadeIn.opacity < 0.6)
@@ -299,8 +299,8 @@ test('loupe fades in and out, magnifies, and follows its target', () => {
   const lag = cursorAt(p.cursor, 3.5)!.x - on.x
   assert.ok(Math.abs(lag) < 0.01 * on.radius, `a spring aimed ahead keeps a gliding cursor centered: ${lag}`)
   assert.ok(on.stretch.x > 0 && Math.abs(on.stretch.y) < 1e-6, 'liquid: stretches along its motion')
-  const rigid = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 2.5, rigid: true })], events, { duration: 10 })
-  assert.deepEqual(loupeAt(rigid.p.zoom, 3.5)!.stretch, { x: 0, y: 0 })
+  const rigid = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 2.5 })], events, { duration: 10 })
+  assert.deepEqual(loupeAt(rigid.p.zoom, 3.5)!.stretch, { x: 0, y: 0 }, 'rigid by default')
   // Size is the radius in units (px at 1080p; this output is 1200 high), clamped to its range.
   const sized = (size?: number) => loupeAt(setup([zoom({ start: 2, end: 5, mode: 'loupe', size })], events, { duration: 10 }).p.zoom, 3.5)!.radius
   near(sized(), (260 * 1200) / 1080, 1e-3)
@@ -316,7 +316,7 @@ test('loupe fades in and out, magnifies, and follows its target', () => {
 test('a fast flick never leaves the lens: the cursor stays on its magnifying flat top, and the lens never jumps', () => {
   const events = moves([[0, 400, 400], [3, 400, 400], [3.3, 2500, 1500], [3.6, 2500, 1500], [3.8, 600, 1600], [10, 600, 1600]])
   for (const look of [{ level: 2, size: 360 }, { level: 4, size: 60 }]) {
-    const { p } = setup([zoom({ start: 1, end: 8, mode: 'loupe', rigid: true, ...look })], events, { duration: 10 })
+    const { p } = setup([zoom({ start: 1, end: 8, mode: 'loupe', ...look })], events, { duration: 10 })
     let was = loupeAt(p.zoom, 2)!
     for (const t of frames(2, 7, 120).slice(1)) {
       const l = loupeAt(p.zoom, t)!
@@ -346,10 +346,10 @@ test('a loupe pops: most of the way in a tenth of a second, gone in a third', ()
 
 test('a loupe into the next keeps the glass up: it glides there and eases into its level, size, and shape', () => {
   const events = moves([[0, 1000, 800], [12, 1800, 800]])
-  const next = zoom({ start: 5, end: 8, mode: 'loupe', level: 3, size: 160, rigid: true, target: point(0.7, 0.3) })
+  const next = zoom({ start: 5, end: 8, mode: 'loupe', level: 3, size: 160, target: point(0.7, 0.3) })
   // Back to back, and a gap shorter than BRIDGE.
   for (const end of [5, 4.5]) {
-    const { p, screen } = setup([zoom({ start: 2, end, mode: 'loupe' }), next], events, { duration: 12 })
+    const { p, screen } = setup([zoom({ start: 2, end, mode: 'loupe', liquid: true }), next], events, { duration: 12 })
     let was = loupeAt(p.zoom, 4)!
     for (const t of frames(4, 7, 60).slice(1)) {
       const l = loupeAt(p.zoom, t)!
@@ -485,13 +485,13 @@ test('setAutoZoom: auto zooms follow the toggle and level, a manual zoom and a h
 })
 
 test('zoom look: new zooms take the loupe last picked; a full zoom adds nothing', () => {
-  assert.deepEqual(lookOf({ mode: 'loupe', size: 180, rigid: false }), { mode: 'loupe', size: 180 })
-  assert.deepEqual(lookOf({ mode: 'zoom', size: 180, rigid: true }), {}, 'loupe size and shape mean nothing to a full zoom')
+  assert.deepEqual(lookOf({ mode: 'loupe', size: 180, liquid: false }), { mode: 'loupe', size: 180 })
+  assert.deepEqual(lookOf({ mode: 'zoom', size: 180, liquid: true }), {}, 'loupe size and shape mean nothing to a full zoom')
   assert.deepEqual(lookOf('garbage' as never), {}, 'a hand-edited settings file')
   const events: InputEvent[] = [{ t: 3, type: 'down', x: 1400, y: 900, button: 'left' }]
   const sources = createProject('t', { duration: 20, screen: SCREEN }).sources
-  const [z] = generateAutoZooms(events, sources, { enabled: true, level: 2 }, { mode: 'loupe', size: 180, rigid: true })
-  assert.ok(z.auto && z.mode === 'loupe' && z.size === 180 && z.rigid && z.level === 2)
+  const [z] = generateAutoZooms(events, sources, { enabled: true, level: 2 }, { mode: 'loupe', size: 180, liquid: true })
+  assert.ok(z.auto && z.mode === 'loupe' && z.size === 180 && z.liquid && z.level === 2)
 })
 
 const FIXTURE = join(import.meta.dirname, '../../../.context/fixtures/Demo #1 ✨ café.grip')

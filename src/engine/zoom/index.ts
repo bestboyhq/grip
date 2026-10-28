@@ -79,7 +79,7 @@ const LOUPE_WALL = 0.7 // the cursor never gets further from the lens center tha
 export const LOUPE_SIZE = { min: 60, max: 400, initial: 260 }
 /** The look of `z` for new zooms: a loupe's mode, size, and shape, or nothing for a full zoom (the default). */
 export const lookOf = (z: ZoomLook): ZoomLook =>
-  z.mode === 'loupe' ? { mode: 'loupe', ...(z.size ? { size: z.size } : {}), ...(z.rigid ? { rigid: true } : {}) } : {}
+  z.mode === 'loupe' ? { mode: 'loupe', ...(z.size ? { size: z.size } : {}), ...(z.liquid ? { liquid: true } : {}) } : {}
 const LOUPE_STRETCH = 0.08 // a liquid lens grows this much longer along its motion per radius/s of speed
 const LOUPE_MAX_STRETCH = 0.35
 const AT_START = 1e-3 // s: a zoom starting this close to output 0 starts zoomed in
@@ -347,7 +347,7 @@ function lens(run: Span[], layout: ReturnType<typeof prepareLayout>, cursor: Ret
     if (!aim) continue
     const zs = held.map((p) => p.zoom)
     const level = Math.max(1, ...zs.map((z) => z.level))
-    const target = [aim.x, aim.y, Math.log(level), Math.max(...zs.map((z) => radiusOf(z, unit))), zs.some((z) => z.rigid) ? 0 : 1]
+    const target = [aim.x, aim.y, Math.log(level), Math.max(...zs.map((z) => radiusOf(z, unit))), zs.every((z) => z.liquid) ? 1 : 0]
     if (!started || (was !== held && cutsTo(was.map((p) => p.zoom), zs))) {
       // The first sample, or an instant loupe cutting in or out: jump, no animation.
       const into = held.find((p) => !was.includes(p))
