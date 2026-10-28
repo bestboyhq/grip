@@ -1,19 +1,24 @@
 <!-- A real screenshot or clip from Grip in the screenshot frame: its own corner radius, a hairline ring, and a shadow.
      A clip plays muted in a loop only while it is on screen; a press on its button pauses or plays it, and under
-     reduced motion it holds its still until someone presses play. -->
+     reduced motion it holds its still until someone presses play. It comes in the page's theme and follows a switch. -->
 <script module lang="ts">
 	import { asset } from '$app/paths';
 
-	// A clip from `static/media` (see `media.sh`) with its still.
-	export const clip = (name: 'hero' | 'loupe' | 'captions' | 'macbook' | 'formats') => ({
-		src: asset(`media/${name}.mp4`),
-		still: asset(`media/${name}.webp`),
+	type Theme = 'light' | 'dark';
+	export type Clip = Readonly<Record<Theme, { src: string; still: string }>>;
+
+	// A clip from `static/media` (see `media.sh`) with its still, in each theme.
+	export const clip = (name: 'hero' | 'loupe' | 'captions' | 'macbook' | 'formats'): Clip => ({
+		light: { src: asset(`media/${name}-light.mp4`), still: asset(`media/${name}-light.webp`) },
+		dark: { src: asset(`media/${name}-dark.mp4`), still: asset(`media/${name}-dark.webp`) },
 	});
 </script>
 
 <script lang="ts">
 	type Props = {
-		src: string;
+		// An image, or else a clip.
+		src?: string;
+		clip?: Clip;
 		width: number;
 		height: number;
 		alt: string;
@@ -21,26 +26,46 @@
 		r: number;
 		// The window's box (x, y, width, height) inside a screenshot that bakes the window's shadow around it.
 		crop?: readonly [number, number, number, number];
-		// A clip's still frame; without one the media is an image.
-		still?: string;
 		eager?: boolean;
 	};
 
-	let { src, width, height, alt, r, crop, still, eager = false }: Props = $props();
+	let { src, clip, width, height, alt, r, crop, eager = false }: Props = $props();
 
 	const box = $derived(crop ?? [0, 0, width, height]);
 	let paused = $state(true);
 	let held = $state(false);
 	let video = $state<HTMLVideoElement>();
 
-	function watch(clip: HTMLVideoElement): () => void {
+	function watch(media: HTMLVideoElement): () => void {
 		held = matchMedia('(prefers-reduced-motion: reduce)').matches;
 		const io = new IntersectionObserver(([entry]) => {
-			if (entry?.isIntersecting && !held) clip.play().catch(() => {});
-			else clip.pause();
+			if (entry?.isIntersecting && !held) media.play().catch(() => {});
+			else media.pause();
 		});
-		io.observe(clip);
-		return () => io.disconnect();
+		// The clip in the page's theme. A switch swaps the other in at the same moment, playing if this one was.
+		const root = document.documentElement;
+		const scheme = matchMedia('(prefers-color-scheme: dark)');
+		const pick = (): void => {
+			const chosen = root.dataset.theme;
+			const theme = chosen === 'light' || chosen === 'dark' ? chosen : scheme.matches ? 'dark' : 'light';
+			const next = clip?.[theme];
+			if (!next || media.getAttribute('src') === next.src) return;
+			const { currentTime, paused } = media;
+			media.poster = next.still;
+			media.src = next.src;
+			media.addEventListener('loadedmetadata', () => (media.currentTime = currentTime), { once: true });
+			if (!paused) media.play().catch(() => {});
+		};
+		pick();
+		const themed = new MutationObserver(pick);
+		themed.observe(root, { attributeFilter: ['data-theme'] });
+		scheme.addEventListener('change', pick);
+		io.observe(media);
+		return () => {
+			io.disconnect();
+			themed.disconnect();
+			scheme.removeEventListener('change', pick);
+		};
 	}
 
 	function toggle(): void {
@@ -51,17 +76,17 @@
 </script>
 
 <div
-	class={['frame', { clip: still, held }]}
+	class={['frame', { clip, held }]}
 	style:aspect-ratio="{box[2]} / {box[3]}"
 	style:border-radius="{(r / box[2]) * 100}% / {(r / box[3]) * 100}%"
+	style:--still-light={clip && `url(${clip.light.still})`}
+	style:--still-dark={clip && `url(${clip.dark.still})`}
 >
-	{#if still}
+	{#if clip}
 		<video
 			bind:this={video}
 			bind:paused
 			{@attach watch}
-			{src}
-			poster={still}
 			{width}
 			{height}
 			muted
@@ -113,8 +138,19 @@
 			0 32px 64px -24px rgb(0 0 0 / 0.45);
 	}
 
+	/* A clip's still in the page's theme, there before the script picks the clip and under its poster after. */
 	.clip {
-		background: #000;
+		background: var(--still-dark) 0 0 / 100% 100% var(--surface-elevated);
+	}
+
+	:global(:root[data-theme='light']) .clip {
+		background-image: var(--still-light);
+	}
+
+	@media (prefers-color-scheme: light) {
+		:global(:root:not([data-theme])) .clip {
+			background-image: var(--still-light);
+		}
 	}
 
 	img,

@@ -2,12 +2,13 @@
 <!-- The formats clip: the demo's 16:9, 1:1, and 9:16 exports side by side, each over its label.
      export.ts passes their file URLs as ?wide=&square=&tall= and steps seek(t) frame by frame. -->
 <html><head><meta charset="utf-8"><style>
-  html,body{margin:0;width:1280px;height:440px;overflow:hidden;background:#0f0f0f;color:#ededef;font:600 15px/1 -apple-system,'SF Pro Text',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  :root{color-scheme:light dark}
+  html,body{margin:0;width:1280px;height:440px;overflow:hidden;background:light-dark(#f4f4f5,#0f0f0f);color:light-dark(#171717,#ededef);font:600 15px/1 -apple-system,'SF Pro Text',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
   .col{position:absolute;top:36px}
-  video{display:block;height:344px;border-radius:8px;box-shadow:0 0 0 1px rgba(255,255,255,.12)}
+  video{display:block;height:344px;border-radius:8px;box-shadow:0 0 0 1px light-dark(rgba(0,0,0,.1),rgba(255,255,255,.12))}
   .label{position:absolute;top:363px;left:0;right:0;display:flex;align-items:center;justify-content:center;gap:9px}
-  .label i{display:block;box-sizing:border-box;border:1.5px solid #9a9aa2;border-radius:3px}
-  .label span{color:#9a9aa2;font-weight:400}
+  .label i{display:block;box-sizing:border-box;border:1.5px solid light-dark(#71717a,#9a9aa2);border-radius:3px}
+  .label span{color:light-dark(#71717a,#9a9aa2);font-weight:400}
 </style></head><body>
   <div class="col" style="left:38px"><video id="wide" muted style="width:612px"></video><div class="label"><i style="width:16px;height:11px"></i>16:9<span>YouTube</span></div></div>
   <div class="col" style="left:677px"><video id="square" muted style="width:344px"></video><div class="label"><i style="width:12px;height:12px"></i>1:1<span>LinkedIn</span></div></div>

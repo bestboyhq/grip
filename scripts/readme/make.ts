@@ -1,9 +1,11 @@
 // Renders a README demo into a Grip project that looks like a fresh recording: the scene's render(t)
 // captured frame by frame into screen.mp4 (no cursor, Grip draws it), the scripted pointer, keys, and
-// ink into events.jsonl, an optional voice into mic.m4a, and the demo's starting edits.
+// ink into events.jsonl, an optional voice into mic.m4a, and the demo's starting edits. The scene's
+// colors follow prefers-color-scheme: screen.mp4 is its dark take, screen-light.mp4 its light one for
+// the landing page's light theme (export.ts swaps it in).
 // Run: npx electron scripts/readme/make.ts <demo> [out.grip]   (a demo is a folder next to this file:
 // scene.html with a global render(t), and demo.ts default-exporting a Demo)
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, nativeTheme } from 'electron'
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -36,17 +38,22 @@ const ff = (args: string[]) => execFileSync('ffmpeg', ['-hide_banner', '-logleve
 async function screen() {
   const { width: w, height: h } = demo
   const win = new BrowserWindow({ width: w, height: h, show: false, webPreferences: { offscreen: { deviceScaleFactor: SCALE } as any } })
-  await win.loadFile(join(import.meta.dirname, dir!, 'scene.html'), { query: { s: JSON.stringify(demo.script ?? null) } })
-  await win.webContents.executeJavaScript('document.fonts.ready.then(() => 0)')
-  const enc = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'bgra', '-s', `${w * SCALE}x${h * SCALE}`, '-r', String(fps), '-i', '-',
-    '-c:v', 'h264_videotoolbox', '-b:v', '24M', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', join(src, 'screen.mp4')], { stdio: ['pipe', 'inherit', 'inherit'] })
-  for (let i = 0; i < Math.round(demo.duration * fps); i++) {
-    await win.webContents.executeJavaScript(`render(${i / fps}); new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))`)
-    const bmp = (await win.webContents.capturePage()).toBitmap()
-    if (!enc.stdin.write(bmp)) await new Promise((r) => enc.stdin.once('drain', r))
+  for (const [theme, file] of [['dark', 'screen.mp4'], ['light', 'screen-light.mp4']] as const) {
+    nativeTheme.themeSource = theme
+    await win.loadFile(join(import.meta.dirname, dir!, 'scene.html'), { query: { s: JSON.stringify(demo.script ?? null) } })
+    await win.webContents.executeJavaScript('document.fonts.ready.then(() => 0)')
+    const enc = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'bgra', '-s', `${w * SCALE}x${h * SCALE}`, '-r', String(fps), '-i', '-',
+      '-c:v', 'h264_videotoolbox', '-b:v', '24M', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', join(src, file)], { stdio: ['pipe', 'inherit', 'inherit'] })
+    for (let i = 0; i < Math.round(demo.duration * fps); i++) {
+      await win.webContents.executeJavaScript(`render(${i / fps}); new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))`)
+      // A heavy layout (a popover opening) can land a paint late, so a frame counts once two captures agree.
+      let bmp = (await win.webContents.capturePage()).toBitmap()
+      for (let next; !(next = (await win.webContents.capturePage()).toBitmap()).equals(bmp); ) bmp = next
+      if (!enc.stdin.write(bmp)) await new Promise((r) => enc.stdin.once('drain', r))
+    }
+    enc.stdin.end()
+    await new Promise((r) => enc.on('exit', r))
   }
-  enc.stdin.end()
-  await new Promise((r) => enc.on('exit', r))
   win.destroy()
 }
 

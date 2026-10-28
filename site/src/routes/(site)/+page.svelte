@@ -218,8 +218,17 @@
 
 <Head title="Grip: professional recordings and screenshots within seconds" description={SITE_DESCRIPTION} path="" />
 
+<!-- The hero's still in the system's theme; a theme picked on the page against it loads its own when the page shows. -->
 <svelte:head>
-	<link rel="preload" as="image" href={clip('hero').still} fetchpriority="high" />
+	{#each ['light', 'dark'] as const as theme (theme)}
+		<link
+			rel="preload"
+			as="image"
+			href={clip('hero')[theme].still}
+			media="(prefers-color-scheme: {theme})"
+			fetchpriority="high"
+		/>
+	{/each}
 </svelte:head>
 
 <Hero>
@@ -340,7 +349,7 @@
 	checks={['Each zoom is an edit you can move', 'Keystrokes as keycaps in your layout']}
 >
 	<Media
-		{...clip('loupe')}
+		clip={clip('loupe')}
 		width={1152}
 		height={720}
 		r={13}
@@ -358,7 +367,7 @@
 	checks={['25 European languages', 'As loud as online video']}
 >
 	<Media
-		{...clip('captions')}
+		clip={clip('captions')}
 		width={1152}
 		height={720}
 		r={13}
@@ -396,7 +405,7 @@
 	checks={['185 wallpapers, drawn live on the GPU', 'MacBook, iPhone, and iPad frames']}
 >
 	<Media
-		{...clip('macbook')}
+		clip={clip('macbook')}
 		width={1280}
 		height={720}
 		r={14}
@@ -415,7 +424,7 @@
 	{#snippet after()}
 		<div class="formats rise">
 			<Media
-				{...clip('formats')}
+				clip={clip('formats')}
 				width={2560}
 				height={880}
 				r={24}

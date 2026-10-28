@@ -65,12 +65,14 @@ test('every download goes through bestboy.dev, which finds the latest DMG', () =
 	assert.doesNotMatch(page, /\.dmg"/u);
 });
 
-test('every clip and its still ship with the page', () => {
-	const media = [...page.matchAll(/(?:src|poster)="\/grip\/(media\/[\w.-]+)"/gu)].map(
-		(match) => match[1] ?? '',
-	);
-	assert.ok(media.length >= 10, `${media.length} clips and stills`);
-	for (const file of media) assert.ok(existsSync(join(build, file)), file);
+test('every clip ships with the page in both themes, its still beside it', () => {
+	const stills = [...page.matchAll(/url\(\/grip\/(media\/[\w.-]+)-(light|dark)\.webp\)/gu)];
+	assert.ok(stills.length >= 10, `${stills.length} stills`);
+	for (const [, name, theme] of stills) {
+		assert.ok(stills.some((other) => other[1] === name && other[2] !== theme), `${name} in one theme`);
+		for (const file of [`${name}-${theme}.webp`, `${name}-${theme}.mp4`])
+			assert.ok(existsSync(join(build, file)), file);
+	}
 });
 
 test('the page loads Logdash from the Grip site and reports to it', () => {
