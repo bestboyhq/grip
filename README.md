@@ -135,7 +135,7 @@ Drag the preview straight into another app to drop the file.
 ## Polished by default
 
 <p align="center">
-  <img src=".github/readme/loupe.gif" width="100%" alt="A revenue dashboard on a dark wallpaper with a teal glow: a glass loupe follows the cursor along the MRR growth chart, magnifying each day's tooltip, stretches like liquid as it glides up to the Net new MRR and MRR figures, then magnifies the Export CSV button as it turns to Exported.">
+  <img src=".github/readme/loupe.gif" width="100%" alt="A revenue dashboard on a dark wallpaper with a teal glow: a glass loupe follows the cursor along the MRR growth chart, magnifying each day's tooltip, glides up to the Net new MRR and MRR figures, then magnifies the Export CSV button as it turns to Exported.">
 </p>
 
 <p align="center">
@@ -147,7 +147,7 @@ Drag the preview straight into another app to drop the file.
   Pick a smooth glide or a focused move that settles fast.
   Rather zoom by hand? Turn auto-zoom off for new recordings in Settings.
 - **A glass loupe.** Magnify one spot and keep the rest of the screen in view.
-  The lens refracts like real glass and stretches like liquid as it follows the cursor.
+  The lens refracts like real glass as it follows the cursor, and turns liquid when you want it to stretch.
   Pick its size, and every new zoom keeps the look you chose last.
 - **A cursor worth watching.** Redrawn from events: smoothed, passing exactly through every click, hidden when idle, with motion blur.
   Each click swells through the screen itself, and the loupe and zooms carry it.

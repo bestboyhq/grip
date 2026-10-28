@@ -341,9 +341,9 @@
 >
 	<Media
 		{...clip('loupe')}
-		width={898}
-		height={562}
-		r={10}
+		width={1152}
+		height={720}
+		r={13}
 		alt="A revenue dashboard: a glass loupe follows the cursor along the growth chart, magnifies each day's figure, then the Export CSV button as it turns to Exported."
 	/>
 </FeatureRow>
@@ -361,7 +361,7 @@
 		{...clip('captions')}
 		width={1152}
 		height={720}
-		r={12}
+		r={13}
 		alt="A launch checklist with big word-by-word captions, Okay, launch day. Changelog, done. Demo video, done., while each item is checked off."
 	/>
 </FeatureRow>
@@ -397,9 +397,9 @@
 >
 	<Media
 		{...clip('macbook')}
-		width={1112}
-		height={626}
-		r={12}
+		width={1280}
+		height={720}
+		r={14}
 		alt="A calendar app in a MacBook frame on a warm wallpaper: the view pushes in as a Design review event is created, then pulls back to the whole laptop."
 	/>
 </FeatureRow>
@@ -416,9 +416,9 @@
 		<div class="formats rise">
 			<Media
 				{...clip('formats')}
-				width={1280}
-				height={440}
-				r={12}
+				width={2560}
+				height={880}
+				r={24}
 				alt="One chat recording exported as 16:9 for YouTube, 1:1 for LinkedIn, and 9:16 for Reels, each following the cursor as a reply is sent."
 			/>
 		</div>

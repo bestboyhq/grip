@@ -1,0 +1,20 @@
+<!doctype html>
+<!-- The formats clip: the demo's 16:9, 1:1, and 9:16 exports side by side, each over its label.
+     export.ts passes their file URLs as ?wide=&square=&tall= and steps seek(t) frame by frame. -->
+<html><head><meta charset="utf-8"><style>
+  html,body{margin:0;width:1280px;height:440px;overflow:hidden;background:#0f0f0f;color:#ededef;font:600 15px/1 -apple-system,'SF Pro Text',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .col{position:absolute;top:36px}
+  video{display:block;height:344px;border-radius:8px;box-shadow:0 0 0 1px rgba(255,255,255,.12)}
+  .label{position:absolute;top:363px;left:0;right:0;display:flex;align-items:center;justify-content:center;gap:9px}
+  .label i{display:block;box-sizing:border-box;border:1.5px solid #9a9aa2;border-radius:3px}
+  .label span{color:#9a9aa2;font-weight:400}
+</style></head><body>
+  <div class="col" style="left:38px"><video id="wide" muted style="width:612px"></video><div class="label"><i style="width:16px;height:11px"></i>16:9<span>YouTube</span></div></div>
+  <div class="col" style="left:677px"><video id="square" muted style="width:344px"></video><div class="label"><i style="width:12px;height:12px"></i>1:1<span>LinkedIn</span></div></div>
+  <div class="col" style="left:1047px"><video id="tall" muted style="width:194px"></video><div class="label"><i style="width:9px;height:14px"></i>9:16<span>Reels</span></div></div>
+<script>
+  const q = new URLSearchParams(location.search)
+  const videos = [...document.querySelectorAll('video')]
+  const loaded = Promise.all(videos.map((v) => new Promise((r) => { v.addEventListener('loadeddata', r, { once: true }); v.src = q.get(v.id) })))
+  window.seek = (t) => loaded.then(() => Promise.all(videos.map((v) => new Promise((r) => { v.addEventListener('seeked', r, { once: true }); v.currentTime = t }))))
+</script></body></html>

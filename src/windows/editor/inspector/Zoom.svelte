@@ -71,7 +71,7 @@
     />
     {#if z.mode === 'loupe'}
       <Slider label="Size" value={z.size ?? LOUPE_SIZE.initial} min={LOUPE_SIZE.min} max={LOUPE_SIZE.max} step={10} initial={LOUPE_SIZE.initial} onchange={(v, m) => eachLook((s) => { if (s.mode === 'loupe') s.size = v }, m)} />
-      <Toggle label="Liquid" hint="The glass stretches as it moves." checked={!z.rigid} onchange={(v) => eachLook((s) => { if (s.mode === 'loupe') s.rigid = !v })} />
+      <Toggle label="Liquid" hint="The glass stretches as it moves." checked={!!z.liquid} onchange={(v) => eachLook((s) => { if (s.mode === 'loupe') s.liquid = v })} />
     {/if}
     <Toggle label="Instant" hint="Cuts in and out instead of animating." checked={!!z.instant} onchange={(v) => each((s) => (s.instant = v))} />
   </Section>

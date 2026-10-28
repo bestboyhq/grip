@@ -38,9 +38,9 @@
 		<figure class="wrap window">
 			<Media
 				{...card ? { src: hero.still } : hero}
-				width={1522}
-				height={950}
-				r={14}
+				width={2304}
+				height={1440}
+				r={21}
 				eager
 				alt="A deployments dashboard polished by Grip: the view zooms in as the cursor glides to Deploy, the click swells through the screen, and a glass loupe magnifies the new build's timer as it turns from Building to Ready."
 			/>

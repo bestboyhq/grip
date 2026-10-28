@@ -156,8 +156,8 @@ export function toggleLoupe() {
   pickLook(selected('zooms')[0])
 }
 export function toggleLiquid() {
-  const rigid = !selected('zooms').filter((z) => z.mode === 'loupe').every((z) => z.rigid)
-  each('zooms', ids('zooms'), (z) => (z.mode === 'loupe' ? { ...z, rigid } : z))
+  const liquid = !selected('zooms').filter((z) => z.mode === 'loupe').every((z) => z.liquid)
+  each('zooms', ids('zooms'), (z) => (z.mode === 'loupe' ? { ...z, liquid } : z))
   pickLook(selected('zooms').find((z) => z.mode === 'loupe'))
 }
 export const followCursor = () => each('zooms', ids('zooms'), (z) => ({ ...z, target: { kind: 'cursor' } }))

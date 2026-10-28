@@ -3,88 +3,88 @@
      scripted pointer path. No cursor: like a real capture, Grip draws it later from events. -->
 <html><head><meta charset="utf-8"><style>
   *{box-sizing:border-box}
-  html,body{margin:0;width:1440px;height:900px;overflow:hidden;background:#fafafa;color:#171717;font:14px/1.3 -apple-system,'SF Pro Text',system-ui,sans-serif;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+  html,body{margin:0;width:1440px;height:900px;overflow:hidden;background:#0b0b0c;color:#ededef;font:14px/1.3 -apple-system,'SF Pro Text',system-ui,sans-serif;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
   .a{position:absolute;display:flex;align-items:center;white-space:nowrap}
   svg{display:block;flex:none}
-  aside{position:absolute;left:0;top:0;width:241px;height:900px;background:#fff;border-right:1px solid #ebebeb}
+  aside{position:absolute;left:0;top:0;width:241px;height:900px;background:#141416;border-right:1px solid #202023}
   .dot{width:12px;height:12px;border-radius:50%}
-  .nav{position:absolute;left:12px;width:216px;height:32px;display:flex;align-items:center;gap:10px;padding:0 10px;border-radius:7px;color:#3f3f46}
-  .nav.on{background:#f4f4f5;color:#171717;font-weight:500}
-  .nav .n{margin-left:auto;color:#a1a1aa;font-size:12.5px}
-  .sec{position:absolute;left:22px;font-size:11px;font-weight:500;letter-spacing:.06em;color:#a1a1aa}
-  .top{position:absolute;left:241px;top:0;width:1199px;height:52px;background:#fff;border-bottom:1px solid #ebebeb}
-  .ctl{position:absolute;height:32px;border:1px solid #e5e5e5;border-radius:8px;background:#fff;display:flex;align-items:center;font-size:13px;box-shadow:0 1px 1px rgba(0,0,0,.03)}
-  .pill{height:30px;border:1px solid #e5e5e5;border-radius:15px;background:#fff;display:flex;align-items:center;gap:6px;padding:0 10px 0 12px;font-size:13px;color:#171717;font-weight:500}
-  .pill i{font-style:normal;color:#888;font-weight:400}
-  .card{position:absolute;background:#fff;border:1px solid #ebebeb;border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .nav{position:absolute;left:12px;width:216px;height:32px;display:flex;align-items:center;gap:10px;padding:0 10px;border-radius:7px;color:#c4c4c9}
+  .nav.on{background:#1c1c1f;color:#ededef;font-weight:500}
+  .nav .n{margin-left:auto;color:#6b6b73;font-size:12.5px}
+  .sec{position:absolute;left:22px;font-size:11px;font-weight:500;letter-spacing:.06em;color:#6b6b73}
+  .top{position:absolute;left:241px;top:0;width:1199px;height:52px;background:#141416;border-bottom:1px solid #202023}
+  .ctl{position:absolute;height:32px;border:1px solid #2a2a2e;border-radius:8px;background:#141416;display:flex;align-items:center;font-size:13px;box-shadow:0 1px 1px rgba(0,0,0,.3)}
+  .pill{height:30px;border:1px solid #2a2a2e;border-radius:15px;background:#141416;display:flex;align-items:center;gap:6px;padding:0 10px 0 12px;font-size:13px;color:#ededef;font-weight:500}
+  .pill i{font-style:normal;color:#9a9aa2;font-weight:400}
+  .card{position:absolute;background:#141416;border:1px solid #2a2a2e;border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.3)}
   .kpi{top:168px;width:274px;height:124px}
-  .kpi .l{position:absolute;left:18px;top:17px;display:flex;align-items:center;gap:6px;color:#666;font-size:13px}
+  .kpi .l{position:absolute;left:18px;top:17px;display:flex;align-items:center;gap:6px;color:#9a9aa2;font-size:13px}
   .kpi .v{position:absolute;left:18px;top:40px;font-size:28px;font-weight:600;letter-spacing:-.7px}
   .kpi svg.sp{position:absolute;right:18px;top:46px}
-  .kpi .f{position:absolute;left:18px;top:88px;display:flex;align-items:center;gap:8px;color:#888;font-size:12.5px}
-  .up{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 7px;border-radius:6px;background:#f0fdf4;color:#15803d;font-weight:600;font-size:12.5px}
-  .btn{position:absolute;height:28px;border:1px solid #e5e5e5;border-radius:7px;background:#fff;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:500;color:#171717;box-shadow:0 1px 1px rgba(0,0,0,.03)}
-  .btn.hover{background:#f5f5f5;border-color:#d4d4d4}
-  .btn.busy{background:#fafafa;color:#666}
-  .btn.ok{background:#f0fdf4;border-color:#bbf7d0;color:#15803d}
+  .kpi .f{position:absolute;left:18px;top:88px;display:flex;align-items:center;gap:8px;color:#9a9aa2;font-size:12.5px}
+  .up{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 7px;border-radius:6px;background:rgba(34,197,94,.13);color:#4ade80;font-weight:600;font-size:12.5px}
+  .btn{position:absolute;height:28px;border:1px solid #2a2a2e;border-radius:7px;background:#141416;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:500;color:#ededef;box-shadow:0 1px 1px rgba(0,0,0,.3)}
+  .btn.hover{background:#1c1c1f;border-color:#3a3a3f}
+  .btn.busy{background:#141416;color:#9a9aa2}
+  .btn.ok{background:rgba(34,197,94,.12);border-color:rgba(74,222,128,.3);color:#4ade80}
   .mv{position:absolute;left:18px;width:322px}
-  .mv .r{display:flex;justify-content:space-between;font-size:13.5px;color:#3f3f46}
-  .mv .r b{font-weight:600;color:#171717}
-  .mv .t{margin-top:9px;height:6px;border-radius:3px;background:#f4f4f5;overflow:hidden}
+  .mv .r{display:flex;justify-content:space-between;font-size:13.5px;color:#c4c4c9}
+  .mv .r b{font-weight:600;color:#ededef}
+  .mv .t{margin-top:9px;height:6px;border-radius:3px;background:#26262a;overflow:hidden}
   .mv .t div{height:6px;border-radius:3px}
-  .row>.th{height:34px;font-size:11px;font-weight:500;letter-spacing:.05em;color:#888}
-  .row{position:absolute;left:269px;width:1142px;height:53px;border-top:1px solid #f0f0f0}
+  .row>.th{height:34px;font-size:11px;font-weight:500;letter-spacing:.05em;color:#9a9aa2}
+  .row{position:absolute;left:269px;width:1142px;height:53px;border-top:1px solid #202023}
   .row>*{position:absolute;white-space:nowrap;display:flex;align-items:center;height:53px;top:0}
   .lg{width:30px;height:30px;border-radius:8px;color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center}
-  .plan{height:22px!important;top:15px!important;padding:0 8px;border-radius:6px;background:#f4f4f5;border:1px solid #e4e4e7;color:#3f3f46;font-size:12px;font-weight:500}
-  #tip{position:absolute;padding:7px 10px 8px;background:#fff;border:1px solid #e5e5e5;border-radius:9px;box-shadow:0 6px 16px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);white-space:nowrap;display:none;pointer-events:none}
-  #tip .d{font-size:12px;color:#666}
+  .plan{height:22px!important;top:15px!important;padding:0 8px;border-radius:6px;background:#1c1c1f;border:1px solid #2a2a2e;color:#c4c4c9;font-size:12px;font-weight:500}
+  #tip{position:absolute;padding:7px 10px 8px;background:#1c1c1f;border:1px solid #2a2a2e;border-radius:9px;box-shadow:0 12px 32px rgba(0,0,0,.5),0 1px 2px rgba(0,0,0,.3);white-space:nowrap;display:none;pointer-events:none}
+  #tip .d{font-size:12px;color:#9a9aa2}
   #tip .m{display:flex;align-items:center;gap:7px;margin-top:3px}
-  #tip .sw{width:8px;height:8px;border-radius:2px;background:#171717}
+  #tip .sw{width:8px;height:8px;border-radius:2px;background:#ededef}
   #tip .val{font-size:15px;font-weight:650;letter-spacing:-.2px}
   #tip .ch{font-size:12.5px;font-weight:600}
-  #tip .note{display:flex;align-items:center;gap:6px;margin-top:6px;padding:3px 7px;border-radius:6px;background:#f4f4f5;color:#3f3f46;font-size:12px;font-weight:500}
+  #tip .note{display:flex;align-items:center;gap:6px;margin-top:6px;padding:3px 7px;border-radius:6px;background:#26262a;color:#c4c4c9;font-size:12px;font-weight:500}
 </style></head><body>
 <aside>
   <div class="a dot" style="left:20px;top:20px;background:#ff5f57"></div><div class="a dot" style="left:40px;top:20px;background:#febc2e"></div><div class="a dot" style="left:60px;top:20px;background:#28c840"></div>
-  <div class="a" style="left:20px;top:62px;width:24px;height:24px;border-radius:7px;background:#171717;justify-content:center"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 10.6 6 1.6l4.4 9M3.6 7.4h4.8"/></svg></div>
+  <div class="a" style="left:20px;top:62px;width:24px;height:24px;border-radius:7px;background:#ededef;justify-content:center"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#0b0b0c" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 10.6 6 1.6l4.4 9M3.6 7.4h4.8"/></svg></div>
   <div class="a" style="left:54px;top:64px;height:20px;font-size:14.5px;font-weight:600">Acme</div>
-  <div class="a" style="left:208px;top:67px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l3-3 3 3M5 10l3 3 3-3"/></svg></div>
-  <div class="a" style="left:16px;top:104px;width:208px;height:32px;border:1px solid #ebebeb;border-radius:8px;background:#fafafa;padding:0 8px 0 10px;gap:8px;color:#999;font-size:13.5px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#a1a1aa" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.6"/><path d="m10.5 10.5 3.2 3.2"/></svg>Search<span style="margin-left:auto;height:20px;padding:0 5px;border:1px solid #e5e5e5;border-radius:5px;background:#fff;font-size:11px;color:#888;display:flex;align-items:center">⌘K</span></div>
+  <div class="a" style="left:208px;top:67px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#6b6b73" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l3-3 3 3M5 10l3 3 3-3"/></svg></div>
+  <div class="a" style="left:16px;top:104px;width:208px;height:32px;border:1px solid #2a2a2e;border-radius:8px;background:#101012;padding:0 8px 0 10px;gap:8px;color:#6b6b73;font-size:13.5px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#6b6b73" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.6"/><path d="m10.5 10.5 3.2 3.2"/></svg>Search<span style="margin-left:auto;height:20px;padding:0 5px;border:1px solid #2a2a2e;border-radius:5px;background:#1c1c1f;font-size:11px;color:#9a9aa2;display:flex;align-items:center">⌘K</span></div>
   <div id="nav"></div>
   <div class="a" style="left:20px;top:850px;width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#ffb36b,#f0743e);justify-content:center;color:#fff;font-size:11px;font-weight:600">MC</div>
   <div class="a" style="left:60px;top:848px;font-size:13.5px;font-weight:600">Maya Chen</div>
-  <div class="a" style="left:60px;top:866px;font-size:12px;color:#888">Finance · Owner</div>
+  <div class="a" style="left:60px;top:866px;font-size:12px;color:#9a9aa2">Finance · Owner</div>
 </aside>
 <div class="top"></div>
-<div class="a" style="left:268px;top:17px;height:18px;gap:8px;font-size:13.5px;color:#666">Reports<span style="color:#d4d4d4">/</span><span style="color:#171717;font-weight:500">Revenue</span></div>
-<div class="a" style="right:28px;top:17px;height:18px;gap:7px;font-size:13px;color:#666"><span style="width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px #dcfce7"></span>Live · updated 2 min ago</div>
+<div class="a" style="left:268px;top:17px;height:18px;gap:8px;font-size:13.5px;color:#9a9aa2">Reports<span style="color:#46464d">/</span><span style="color:#ededef;font-weight:500">Revenue</span></div>
+<div class="a" style="right:28px;top:17px;height:18px;gap:7px;font-size:13px;color:#9a9aa2"><span style="width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2)"></span>Live · updated 2 min ago</div>
 <div class="a" style="left:267px;top:74px;height:32px;font-size:24px;font-weight:650;letter-spacing:-.5px">Revenue</div>
 <div class="ctl" style="left:1012px;top:74px;width:200px;padding:3px;gap:2px"><span class="seg">7D</span><span class="seg on">30D</span><span class="seg">90D</span><span class="seg">12M</span></div>
-<style>.seg{flex:1;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#666;font-size:12.5px}.seg.on{background:#f4f4f5;color:#171717;font-weight:500}</style>
-<div class="ctl" style="left:1224px;top:74px;width:188px;justify-content:center;gap:8px;font-weight:500"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#3f3f46" stroke-width="1.4" stroke-linecap="round"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.6h12M5.3 1.6v2.6M10.7 1.6v2.6"/></svg>Sep 1 - Sep 30, 2026</div>
-<div class="a" style="left:268px;top:122px;gap:8px"><div class="pill"><i>Plan</i>All plans<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 4.6 3 3 3-3"/></svg></div>
-<div class="pill"><i>Region</i>Worldwide<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 4.6 3 3 3-3"/></svg></div>
-<div class="pill"><i>Currency</i>USD<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 4.6 3 3 3-3"/></svg></div>
-<div class="pill" style="border-style:dashed;border-color:#d4d4d4;background:transparent;color:#666;font-weight:400;padding:0 12px 0 10px"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round"><path d="M6 2.2v7.6M2.2 6h7.6"/></svg>Add filter</div></div>
-<div class="a" style="right:28px;top:126px;height:22px;gap:10px;font-size:13px;color:#666">Compare to previous period<span style="width:34px;height:20px;border-radius:10px;background:#171717;position:relative"><span style="position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span></div>
+<style>.seg{flex:1;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#9a9aa2;font-size:12.5px}.seg.on{background:#26262a;color:#ededef;font-weight:500}</style>
+<div class="ctl" style="left:1224px;top:74px;width:188px;justify-content:center;gap:8px;font-weight:500"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#c4c4c9" stroke-width="1.4" stroke-linecap="round"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.6h12M5.3 1.6v2.6M10.7 1.6v2.6"/></svg>Sep 1 - Sep 30, 2026</div>
+<div class="a" style="left:268px;top:122px;gap:8px"><div class="pill"><i>Plan</i>All plans<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#9a9aa2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 4.6 3 3 3-3"/></svg></div>
+<div class="pill"><i>Region</i>Worldwide<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#9a9aa2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 4.6 3 3 3-3"/></svg></div>
+<div class="pill"><i>Currency</i>USD<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#9a9aa2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 4.6 3 3 3-3"/></svg></div>
+<div class="pill" style="border-style:dashed;border-color:#3a3a3f;background:transparent;color:#9a9aa2;font-weight:400;padding:0 12px 0 10px"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#9a9aa2" stroke-width="1.5" stroke-linecap="round"><path d="M6 2.2v7.6M2.2 6h7.6"/></svg>Add filter</div></div>
+<div class="a" style="right:28px;top:126px;height:22px;gap:10px;font-size:13px;color:#9a9aa2">Compare to previous period<span style="width:34px;height:20px;border-radius:10px;background:#ededef;position:relative"><span style="position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#0b0b0c;box-shadow:0 1px 2px rgba(0,0,0,.4)"></span></span></div>
 <div id="kpis"></div>
 <div class="card" style="left:268px;top:308px;width:768px;height:316px"></div>
 <div class="a" style="left:286px;top:327px;height:20px;font-size:15px;font-weight:600">MRR growth</div>
-<div class="a" style="left:390px;top:328px;height:18px;gap:7px;font-size:12.5px;color:#666"><span style="width:14px;height:2px;border-radius:1px;background:#171717"></span>Sep 2026<svg width="14" height="2" style="margin-left:9px"><path d="M0 1h14" stroke="#a1a1aa" stroke-width="1.5" stroke-dasharray="3 2.5"/></svg>Aug 2026</div>
-<div class="btn" id="daily" data-h style="left:824px;top:323px;width:70px">Daily<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#666" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 4.6 3 3 3-3"/></svg></div>
+<div class="a" style="left:390px;top:328px;height:18px;gap:7px;font-size:12.5px;color:#9a9aa2"><span style="width:14px;height:2px;border-radius:1px;background:#ededef"></span>Sep 2026<svg width="14" height="2" style="margin-left:9px"><path d="M0 1h14" stroke="#6b6b73" stroke-width="1.5" stroke-dasharray="3 2.5"/></svg>Aug 2026</div>
+<div class="btn" id="daily" data-h style="left:824px;top:323px;width:70px">Daily<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#9a9aa2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 4.6 3 3 3-3"/></svg></div>
 <div class="btn" id="export" data-h style="left:904px;top:323px;width:116px"></div>
 <svg id="chart" style="position:absolute;left:0;top:0;pointer-events:none" width="1440" height="900"></svg>
 <div class="card" style="left:1052px;top:308px;width:360px;height:316px"></div>
 <div class="a" style="left:1070px;top:327px;height:20px;font-size:15px;font-weight:600">MRR movements</div>
-<div class="a" style="right:46px;top:328px;height:18px;font-size:12.5px;color:#999">Sep 2026</div>
+<div class="a" style="right:46px;top:328px;height:18px;font-size:12.5px;color:#6b6b73">Sep 2026</div>
 <div id="moves"></div>
-<div class="card" style="left:268px;top:640px;width:1144px;height:242px;overflow:hidden"><div style="position:absolute;left:0;top:47px;width:100%;height:35px;background:#fafafa;border-top:1px solid #f0f0f0;border-bottom:1px solid #f0f0f0"></div></div>
-<div class="a" style="left:286px;top:654px;height:20px;gap:8px;font-size:15px;font-weight:600">Top customers<span style="font-size:13px;font-weight:400;color:#999">by MRR</span></div>
-<div class="a" style="right:46px;top:655px;height:18px;gap:5px;font-size:13px;font-weight:500">View all 1,284<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#171717" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg></div>
+<div class="card" style="left:268px;top:640px;width:1144px;height:242px;overflow:hidden"><div style="position:absolute;left:0;top:47px;width:100%;height:35px;background:#101012;border-top:1px solid #202023;border-bottom:1px solid #202023"></div></div>
+<div class="a" style="left:286px;top:654px;height:20px;gap:8px;font-size:15px;font-weight:600">Top customers<span style="font-size:13px;font-weight:400;color:#6b6b73">by MRR</span></div>
+<div class="a" style="right:46px;top:655px;height:18px;gap:5px;font-size:13px;font-weight:500">View all 1,284<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#ededef" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg></div>
 <div class="row" style="top:688px;height:34px;border:0"><div class="th" style="left:17px">CUSTOMER</div><div class="th" style="left:343px">PLAN</div><div class="th" style="right:592px">SEATS</div><div class="th" style="right:461px">MRR</div><div class="th" style="right:278px">30D CHANGE</div><div class="th" style="right:18px">CUSTOMER SINCE</div></div>
 <div id="rows"></div>
-<div id="tip"><div class="d"></div><div class="m"><span class="sw"></span><span class="val"></span><span class="ch"></span></div><div class="note"><svg width="11" height="11" viewBox="0 0 16 16" fill="#171717"><path d="M8 .8 9.7 6.3 15.2 8 9.7 9.7 8 15.2 6.3 9.7.8 8 6.3 6.3Z"/></svg>v3.0 launched</div></div>
+<div id="tip"><div class="d"></div><div class="m"><span class="sw"></span><span class="val"></span><span class="ch"></span></div><div class="note"><svg width="11" height="11" viewBox="0 0 16 16" fill="#ededef"><path d="M8 .8 9.7 6.3 15.2 8 9.7 9.7 8 15.2 6.3 9.7.8 8 6.3 6.3Z"/></svg>v3.0 launched</div></div>
 <script>
   const S = JSON.parse(new URLSearchParams(location.search).get('s')) // { hz, path, mrr, plot, click: {down, up}, done, reset }
   const ic = (d, s = 16, c = 'currentColor') => `<svg width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" stroke="${c}" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round">${d.split('|').map((p) => `<path d="${p}"/>`).join('')}</svg>`
@@ -103,7 +103,7 @@
     [468, 'Forecast', 'M2 12.2 6.4 7.8l2.8 2.8L14 5.8|M10.6 5.8H14v3.4'],
     [536, 'Settings', 'M10.6 8a2.6 2.6 0 1 1-5.2 0 2.6 2.6 0 0 1 5.2 0|M8 1.6v1.7|M8 12.7v1.7|M1.6 8h1.7|M12.7 8h1.7|M3.5 3.5l1.2 1.2|M11.3 11.3l1.2 1.2|M3.5 12.5l1.2-1.2|M11.3 4.7l1.2-1.2'],
   ]
-  set('nav', NAV.map(([y, name, d, x]) => `<div class="nav${x === 'on' ? ' on' : ''}" style="top:${y}px">${ic(d, 16, x === 'on' ? '#171717' : '#71717a')}${name}${x && x !== 'on' ? `<span class="n">${x}</span>` : ''}</div>`).join('') +
+  set('nav', NAV.map(([y, name, d, x]) => `<div class="nav${x === 'on' ? ' on' : ''}" style="top:${y}px">${ic(d, 16, x === 'on' ? '#ededef' : '#9a9aa2')}${name}${x && x !== 'on' ? `<span class="n">${x}</span>` : ''}</div>`).join('') +
     '<div class="sec" style="top:378px">REPORTS</div><div class="sec" style="top:514px">WORKSPACE</div>')
 
   // KPI cards, with sparklines
@@ -112,9 +112,9 @@
     const pts = v.map((y, i) => [(i * w) / (v.length - 1), 2 + (h - 4) * (1 - (y - lo) / (hi - lo))])
     const d = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join('')
     const id = 'g' + Math.random().toString(36).slice(2)
-    return `<svg class="sp" width="${w}" height="${h}"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#171717" stop-opacity=".09"/><stop offset="1" stop-color="#171717" stop-opacity="0"/></linearGradient></defs><path d="${d}L${w} ${h}L0 ${h}Z" fill="url(#${id})"/><path d="${d}" fill="none" stroke="#3f3f46" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`
+    return `<svg class="sp" width="${w}" height="${h}"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ededef" stop-opacity=".08"/><stop offset="1" stop-color="#ededef" stop-opacity="0"/></linearGradient></defs><path d="${d}L${w} ${h}L0 ${h}Z" fill="url(#${id})"/><path d="${d}" fill="none" stroke="#c4c4c9" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`
   }
-  const INFO = ic('M14 8A6 6 0 1 1 2 8a6 6 0 0 1 12 0|M8 7.4v3.6|M8 5.1v.1', 13, '#a1a1aa')
+  const INFO = ic('M14 8A6 6 0 1 1 2 8a6 6 0 0 1 12 0|M8 7.4v3.6|M8 5.1v.1', 13, '#6b6b73')
   const arrow = (down) => `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(${down ? 180 : 0}deg)"><path d="M5 8.6V1.6M2.2 4.3 5 1.5l2.8 2.8"/></svg>`
   const KPI = [
     ['MRR', '$84,210', S.mrr, '12.4%', 'vs $74,920 last month'],
@@ -125,24 +125,24 @@
   set('kpis', KPI.map(([l, v, sp, ch, vs, down], i) => `<div class="card kpi" style="left:${268 + i * 290}px"><div class="l">${l}${INFO}</div><div class="v">${v}</div>${spark(sp)}<div class="f"><span class="up">${arrow(down)}${ch}</span>${vs}</div></div>`).join(''))
 
   // MRR movements
-  const MOVES = [['New business', '+$11,480', 11480, '#171717'], ['Expansion', '+$2,960', 2960, '#52525b'], ['Reactivation', '+$410', 410, '#a1a1aa'], ['Contraction', '−$1,560', 1560, '#fca5a5'], ['Churned', '−$4,000', 4000, '#ef4444']]
+  const MOVES = [['New business', '+$11,480', 11480, '#ededef'], ['Expansion', '+$2,960', 2960, '#9a9aa2'], ['Reactivation', '+$410', 410, '#5c5c64'], ['Contraction', '−$1,560', 1560, 'rgba(248,113,113,.55)'], ['Churned', '−$4,000', 4000, '#ef4444']]
   set('moves', MOVES.map(([l, v, n, c], i) => `<div class="mv" style="left:1070px;top:${360 + i * 45}px"><div class="r">${l}<b>${v}</b></div><div class="t"><div style="width:${(n / 11480) * 100}%;background:${c}"></div></div></div>`).join('') +
-    '<div style="position:absolute;left:1070px;top:585px;width:322px;height:1px;background:#f0f0f0"></div>' +
-    '<div class="mv" style="left:1070px;top:596px"><div class="r" style="font-weight:600;color:#171717">Net new MRR<span style="color:#15803d">+$9,290</span></div></div>')
+    '<div style="position:absolute;left:1070px;top:585px;width:322px;height:1px;background:#202023"></div>' +
+    '<div class="mv" style="left:1070px;top:596px"><div class="r" style="font-weight:600;color:#ededef">Net new MRR<span style="color:#4ade80">+$9,290</span></div></div>')
 
   // Top customers
   const ROWS = [
-    ['AH', 'linear-gradient(135deg,#57534e,#292524)', 'Alder Health', 'alderhealth.io', 'Scale', 64, '$5,760', '+12.0%', 'Mar 2024'],
+    ['AH', 'linear-gradient(135deg,#78716c,#3a3532)', 'Alder Health', 'alderhealth.io', 'Scale', 64, '$5,760', '+12.0%', 'Mar 2024'],
     ['KF', 'linear-gradient(135deg,#fdba74,#ea580c)', 'Kestrel Freight', 'kestrelfreight.co', 'Scale', 48, '$4,320', '+4.8%', 'Nov 2023'],
-    ['FS', 'linear-gradient(135deg,#d6d3d1,#a8a29e)', 'Fernwood Studio', 'fernwood.studio', 'Growth', 22, '$1,980', '−2.1%', 'Jan 2025'],
+    ['FS', 'linear-gradient(135deg,#a8a29e,#6b6560)', 'Fernwood Studio', 'fernwood.studio', 'Growth', 22, '$1,980', '−2.1%', 'Jan 2025'],
   ]
   set('rows', ROWS.map(([ini, bg, name, dom, plan, seats, mrr, ch, since], i) => `<div class="row" style="top:${722 + i * 53}px;${i ? '' : 'border-top:0'}">
-    <div style="left:17px;gap:12px"><div class="lg" style="background:${bg}">${ini}</div><div style="display:block"><div style="font-size:13.5px;font-weight:600">${name}</div><div style="font-size:12px;color:#999;margin-top:2px">${dom}</div></div></div>
+    <div style="left:17px;gap:12px"><div class="lg" style="background:${bg}">${ini}</div><div style="display:block"><div style="font-size:13.5px;font-weight:600">${name}</div><div style="font-size:12px;color:#6b6b73;margin-top:2px">${dom}</div></div></div>
     <div class="plan" style="left:343px">${plan}</div>
-    <div style="right:592px;color:#3f3f46;font-size:13.5px">${seats}</div>
+    <div style="right:592px;color:#c4c4c9;font-size:13.5px">${seats}</div>
     <div style="right:461px;font-weight:600;font-size:13.5px">${mrr}</div>
-    <div style="right:278px;font-weight:600;font-size:13.5px;color:${ch[0] === '+' ? '#15803d' : '#dc2626'}">${ch}</div>
-    <div style="right:18px;color:#666;font-size:13.5px">${since}</div></div>`).join(''))
+    <div style="right:278px;font-weight:600;font-size:13.5px;color:${ch[0] === '+' ? '#4ade80' : '#f87171'}">${ch}</div>
+    <div style="right:18px;color:#9a9aa2;font-size:13.5px">${since}</div></div>`).join(''))
 
   // The MRR growth chart, in page px
   const P = S.plot, N = S.mrr.length
@@ -152,13 +152,13 @@
   const line = (v) => v.map((y, i) => `${i ? 'L' : 'M'}${X(i).toFixed(2)} ${Y(y).toFixed(2)}`).join('')
   const DAY = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
   const ticks = [100000, 90000, 80000, 70000, 60000]
-  document.getElementById('chart').innerHTML = `<defs><linearGradient id="fill" x1="0" y1="${P.y0}" x2="0" y2="${P.y1}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#171717" stop-opacity=".1"/><stop offset="1" stop-color="#171717" stop-opacity="0"/></linearGradient></defs>
-    ${ticks.map((v) => `<path d="M${P.x0 - 12} ${Y(v) + 0.5}H${P.x1 + 12}" stroke="${v === P.min ? '#e5e5e5' : '#f0f0f0'}" ${v === P.min ? '' : 'stroke-dasharray="3 3"'}/><text x="${P.x0 - 22}" y="${Y(v) + 4}" text-anchor="end" font-size="11.5" fill="#a1a1aa">$${v / 1000}k</text>`).join('')}
-    ${[0, 7, 14, 21, 29].map((d) => `<text x="${X(d)}" y="${P.y1 + 30}" text-anchor="middle" font-size="11.5" fill="#a1a1aa">Sep ${d + 1}</text>`).join('')}
+  document.getElementById('chart').innerHTML = `<defs><linearGradient id="fill" x1="0" y1="${P.y0}" x2="0" y2="${P.y1}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ededef" stop-opacity=".08"/><stop offset="1" stop-color="#ededef" stop-opacity="0"/></linearGradient></defs>
+    ${ticks.map((v) => `<path d="M${P.x0 - 12} ${Y(v) + 0.5}H${P.x1 + 12}" stroke="${v === P.min ? '#2a2a2e' : '#202023'}" ${v === P.min ? '' : 'stroke-dasharray="3 3"'}/><text x="${P.x0 - 22}" y="${Y(v) + 4}" text-anchor="end" font-size="11.5" fill="#6b6b73">$${v / 1000}k</text>`).join('')}
+    ${[0, 7, 14, 21, 29].map((d) => `<text x="${X(d)}" y="${P.y1 + 30}" text-anchor="middle" font-size="11.5" fill="#6b6b73">Sep ${d + 1}</text>`).join('')}
     <path d="${line(S.mrr)}L${X(N - 1)} ${P.y1}L${X(0)} ${P.y1}Z" fill="url(#fill)"/>
-    <path d="${line(PREV)}" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-dasharray="4 4"/>
-    <path d="${line(S.mrr)}" fill="none" stroke="#171717" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-    <g id="hover" style="display:none"><path id="cross" stroke="#d4d4d8"/><circle id="pdot" r="3.5" fill="#fff" stroke="#a1a1aa" stroke-width="1.5"/><circle id="dot" r="5" fill="#fff" stroke="#171717" stroke-width="2.2"/></g>`
+    <path d="${line(PREV)}" fill="none" stroke="#6b6b73" stroke-width="1.5" stroke-dasharray="4 4"/>
+    <path d="${line(S.mrr)}" fill="none" stroke="#ededef" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <g id="hover" style="display:none"><path id="cross" stroke="#3a3a3f"/><circle id="pdot" r="3.5" fill="#141416" stroke="#6b6b73" stroke-width="1.5"/><circle id="dot" r="5" fill="#141416" stroke="#ededef" stroke-width="2.2"/></g>`
   const fmt = (v) => '$' + v.toLocaleString('en-US')
   const tip = document.getElementById('tip')
   let shown = -2
@@ -174,7 +174,7 @@
     tip.querySelector('.d').textContent = DAY.format(Date.UTC(2026, 8, d + 1))
     tip.querySelector('.val').textContent = fmt(S.mrr[d])
     tip.querySelector('.ch').textContent = (ch < 0 ? '−' : '+') + Math.abs(ch).toFixed(1) + '%'
-    tip.querySelector('.ch').style.color = ch < 0 ? '#dc2626' : '#15803d'
+    tip.querySelector('.ch').style.color = ch < 0 ? '#f87171' : '#4ade80'
     tip.querySelector('.note').style.display = d === 15 ? '' : 'none'
     tip.style.display = 'block'
     const w = tip.offsetWidth, h = tip.offsetHeight
@@ -183,8 +183,8 @@
   }
 
   const DL = ic('M8 2.4v7.8|M4.8 7 8 10.2 11.2 7|M2.8 12.2v1.4h10.4v-1.4', 14)
-  const SPIN = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="8" r="6" stroke="#d4d4d8"/><path id="arc" d="M8 2a6 6 0 0 1 6 6" stroke="#171717"/></svg>'
-  const OK = ic('M3 8.6 6.4 12 13 4.6', 14, '#16a34a')
+  const SPIN = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="8" r="6" stroke="#3a3a3f"/><path id="arc" d="M8 2a6 6 0 0 1 6 6" stroke="#ededef"/></svg>'
+  const OK = ic('M3 8.6 6.4 12 13 4.6', 14, '#4ade80')
   const exp = document.getElementById('export'), daily = document.getElementById('daily')
   let last = ''
   window.render = (t) => {
