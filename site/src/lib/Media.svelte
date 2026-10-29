@@ -126,9 +126,12 @@
 </div>
 
 <style>
-	/* Opaque before the media loads, so a stage light's shadow cast under the frame never shows through it. */
+	/* Opaque before the media loads, so a stage light's shadow cast under the frame never shows through it. Its own
+	   stacking context, so the rounded clip sits on the frame's own layer: clipped from outside one, a playing video
+	   can lose its corners in Safari. */
 	.frame {
 		position: relative;
+		isolation: isolate;
 		width: 100%;
 		overflow: hidden;
 		background: var(--surface-elevated);

@@ -70,6 +70,8 @@
 		'JetBrains Mono', 'JetBrains Mono Fallback', ui-monospace, SFMono-Regular, Menlo, monospace;
 	--ease: cubic-bezier(0.22, 1, 0.36, 1);
 	--enter-ease: cubic-bezier(0.33, 1, 0.68, 1);
+	/* --enter-ease cut at 70.5% of its time, where it is 97.3% of its way (`unblur`). */
+	--unblur-ease: cubic-bezier(0.328, 0.719, 0.669, 0.935);
 	--pace: 1.4;
 
 	--gutter: 40px;
@@ -187,16 +189,21 @@
 	overflow-x: clip;
 }
 
-.site::before {
+/* The rails, one element each, so each can grow on its own. */
+.site::before,
+.site::after {
 	content: '';
 	position: absolute;
 	z-index: 1;
 	inset: 0 auto;
-	left: 50%;
-	width: var(--col);
-	margin-left: calc(var(--col) / -2);
-	border-inline: 1px solid var(--frame);
+	left: calc(50% - var(--col) / 2);
+	width: 1px;
+	background: var(--frame);
 	pointer-events: none;
+}
+
+.site::after {
+	left: calc(50% + var(--col) / 2 - 1px);
 }
 
 .site > main {
@@ -255,19 +262,8 @@
 	}
 }
 
-@property --rail-l {
-	syntax: '<number>';
-	inherits: false;
-	initial-value: 1;
-}
-
-@property --rail-r {
-	syntax: '<number>';
-	inherits: false;
-	initial-value: 1;
-}
-
-.site:has(.hero)::before {
+.site:has(.hero)::before,
+.site:has(.hero)::after {
 	position: fixed;
 }
 
@@ -276,8 +272,11 @@
 	--blur: 10px;
 	--duration: 1300ms;
 	--delay: 450ms;
-	animation: blur-in calc(var(--duration) * var(--pace)) var(--enter-ease)
-		calc(var(--delay) * var(--pace)) backwards;
+	animation:
+		blur-in calc(var(--duration) * var(--pace)) var(--enter-ease) calc(var(--delay) * var(--pace))
+			backwards,
+		unblur calc(var(--duration) * var(--pace) * 0.705) var(--unblur-ease)
+			calc(var(--delay) * var(--pace)) backwards;
 }
 
 .rise[data-reveal='wait'] {
@@ -292,14 +291,24 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
+	/* Each rail grows down from the top of the window, the right one later. The bar's own stretch of a rail, its
+	   first 64px, fills as fast as the rail passes through it. */
 	.site:has(.hero)::before,
-	.site:has(.hero) .topbar .row::before {
-		mask:
-			linear-gradient(#000 0 0) 0 0 / 50% calc(var(--rail-l) * 100vh) no-repeat,
-			linear-gradient(#000 0 0) 100% 0 / 50% calc(var(--rail-r) * 100vh) no-repeat;
-		animation:
-			rail-l calc(1200ms * var(--pace)) var(--enter-ease) backwards,
-			rail-r calc(1200ms * var(--pace)) var(--enter-ease) calc(600ms * var(--pace)) backwards;
+	.site:has(.hero)::after,
+	.site:has(.hero) .topbar .row::before,
+	.site:has(.hero) .topbar .row::after {
+		transform-origin: top;
+		animation: rail calc(1200ms * var(--pace)) var(--enter-ease) backwards;
+	}
+
+	.site:has(.hero) .topbar .row::before,
+	.site:has(.hero) .topbar .row::after {
+		animation-duration: calc(1200ms * var(--pace) / 16);
+	}
+
+	.site:has(.hero)::after,
+	.site:has(.hero) .topbar .row::after {
+		animation-delay: calc(600ms * var(--pace));
 	}
 
 	.site:has(.hero) .topbar::after {
@@ -330,11 +339,23 @@
 	from {
 		opacity: 0;
 		translate: 0 var(--rise);
-		filter: blur(var(--blur));
 	}
 
 	50% {
 		translate: 0 0;
+	}
+}
+
+/* The blur of `blur-in`, apart from it: Chromium animates a blur on the main thread, and in one animation it would
+   hold the fade and the rise there too, so they stutter whenever the page is busy. Apart, those two run on the
+   compositor. It runs the same curve, and stops at 70.5% of the time, a third of a pixel from sharp at most. */
+@keyframes unblur {
+	from {
+		filter: blur(var(--blur));
+	}
+
+	to {
+		filter: blur(calc(var(--blur) * 0.027));
 	}
 }
 
@@ -354,15 +375,9 @@
 	}
 }
 
-@keyframes rail-l {
+@keyframes rail {
 	from {
-		--rail-l: 0;
-	}
-}
-
-@keyframes rail-r {
-	from {
-		--rail-r: 0;
+		scale: 1 0;
 	}
 }
 
@@ -574,7 +589,8 @@
 }
 
 @media (max-width: 1023px) {
-	.site::before {
+	.site::before,
+	.site::after {
 		display: none;
 	}
 

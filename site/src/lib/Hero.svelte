@@ -16,6 +16,7 @@
 
 	const HORIZON: readonly Layer[] = [{ box: [0, -0.46, 1, 0.9], peak: [0.42, 0.86], start: 0.18 }];
 	const hero = clip('hero');
+	let lit = $state(false);
 </script>
 
 <section class={['hero', { card }]} aria-labelledby="hero-title" data-place="hero">
@@ -32,9 +33,13 @@
 		{@render children?.()}
 	</div>
 	<div class="plate beat">
-		<div class="horizon" aria-hidden="true"></div>
+		<!-- The light's CSS version, gone once the WebGL one draws over it: blurred, masked, and growing, it would cost
+		     every frame of the intro and of the clip in front of it for nothing. -->
+		{#if !lit}
+			<div class="horizon" aria-hidden="true"></div>
+		{/if}
 		<div class="gl" aria-hidden="true">
-			<Glow layers={HORIZON} opacity={0.85} />
+			<Glow layers={HORIZON} opacity={0.85} bind:lit />
 		</div>
 		<figure class="wrap window">
 			<Media
@@ -63,8 +68,11 @@
 
 	.intro > :global(*),
 	.window {
-		animation: blur-in calc(var(--duration) * var(--pace)) var(--enter-ease)
-			calc(var(--delay) * var(--pace)) backwards;
+		animation:
+			blur-in calc(var(--duration) * var(--pace)) var(--enter-ease) calc(var(--delay) * var(--pace))
+				backwards,
+			unblur calc(var(--duration) * var(--pace) * 0.705) var(--unblur-ease)
+				calc(var(--delay) * var(--pace)) backwards;
 	}
 
 	.eyebrow {

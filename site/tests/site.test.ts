@@ -161,3 +161,37 @@ test('the worker refuses Logdash events that are not from a Grip page', async ()
 	assert.equal(big.status, 413);
 	assert.equal(big.headers.get('Cache-Control'), 'no-store');
 });
+
+// A CSS timing function at progress x: the curve's y where its x is x.
+const bezier =
+	([x1 = 0, y1 = 0, x2 = 1, y2 = 1]: number[]) =>
+	(x: number): number => {
+		const at = (t: number, a: number, b: number): number => 3 * (1 - t) ** 2 * t * a + 3 * (1 - t) * t * t * b + t ** 3;
+		let [low, high] = [0, 1];
+		for (let step = 0; step < 50; step++) {
+			const t = (low + high) / 2;
+			if (at(t, x1, x2) < x) low = t;
+			else high = t;
+		}
+		return at((low + high) / 2, y1, y2);
+	};
+
+test('the blur of every entrance follows --enter-ease until it is a fraction of a pixel, then stops', () => {
+	const source = ['src/app.css', 'src/lib/Hero.svelte']
+		.map((file) => readFileSync(join(import.meta.dirname, '..', file), 'utf8'))
+		.join('\n');
+	const curve = (name: string): number[] =>
+		(new RegExp(`--${name}: cubic-bezier\\(([^)]+)\\)`, 'u').exec(source)?.[1] ?? '').split(',').map(Number);
+	const enter = bezier(curve('enter-ease'));
+	const unblur = bezier(curve('unblur-ease'));
+	const left = Number(/@keyframes unblur[\s\S]*?blur\(calc\(var\(--blur\) \* ([\d.]+)\)\)/u.exec(source)?.[1]);
+	const cut = [...source.matchAll(/unblur calc\(var\(--duration\) \* var\(--pace\) \* ([\d.]+)\)/gu)].map((match) => Number(match[1]));
+	assert.equal(cut.length, 2, 'the hero and .rise both run unblur');
+	assert.ok(cut.every((value) => value === cut[0]), `unblur stops at ${cut.join(' and ')} of the time`);
+	assert.ok(left <= 0.03, `unblur stops at ${left} of its blur, a third of a pixel at 12px at most`);
+	for (let step = 0; step <= 100; step++) {
+		const x = (step / 100) * (cut[0] ?? 0);
+		const drift = Math.abs(1 - enter(x) - (1 - (1 - left) * unblur(x / (cut[0] ?? 1))));
+		assert.ok(drift < 1e-3, `at ${x.toFixed(3)} of the time the blur is off --enter-ease by ${drift.toFixed(4)} of itself`);
+	}
+});

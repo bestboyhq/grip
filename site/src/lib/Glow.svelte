@@ -1,5 +1,21 @@
+<!-- A soft light in the brand's colors, drawn by WebGL with a fine grain. CSS gradients step through 8-bit tones in
+     visible rings; the shader works in floats and adds grain, which hides them. It paints its own background, the
+     canvas's CSS `color`, so it is opaque: until it draws, or without WebGL, the CSS light under it shows, and once it
+     draws, `lit` lets that CSS light go. It fills its parent and redraws on resize and theme changes. Each layer is an
+     ellipse in a box of the canvas, one color or the painting across the box, from `peak` (light, dark) out at `start`
+     to nothing at its edge; `soft` stands in for the CSS blur at both ends. A CSS animation of `--grow` (0 to 1,
+     registered with `@property`) makes the light grow while the canvas redraws every frame. -->
 <script module lang="ts">
+	// Shares of the canvas.
 	export type Box = readonly [x: number, y: number, width: number, height: number];
+
+	// A box given as shares of `outer`, itself shares of the canvas.
+	export const within = ([x, y, w, h]: Box, [ox, oy, ow, oh]: Box): Box => [
+		ox + x * ow,
+		oy + y * oh,
+		w * ow,
+		h * oh,
+	];
 
 	export type Layer = Readonly<{
 		box: Box;
@@ -72,9 +88,18 @@ void main() {
 		soft?: number;
 		grain?: number;
 		weighted?: boolean;
+		// Whether the light is drawn, so a CSS version under it can go.
+		lit?: boolean;
 	};
 
-	let { layers, opacity, soft = 0.1, grain = 7.6, weighted = false }: Props = $props();
+	let {
+		layers,
+		opacity,
+		soft = 0.1,
+		grain = 7.6,
+		weighted = false,
+		lit = $bindable(false),
+	}: Props = $props();
 
 	function program(gl: WebGLRenderingContext): WebGLProgram | null {
 		const linked = gl.createProgram();
@@ -149,8 +174,13 @@ void main() {
 			gl.uniform1f(uniform('weighted'), weighted ? 1 : 0);
 			gl.uniform1f(uniform('grow'), grow);
 			gl.drawArrays(gl.TRIANGLES, 0, 3);
+			lit = true;
 			return grow;
 		};
+		const lost = (): void => {
+			lit = false;
+		};
+		canvas.addEventListener('webglcontextlost', lost);
 
 		let frame = 0;
 		const play = (): void => {
@@ -168,6 +198,7 @@ void main() {
 			resized.disconnect();
 			themed.disconnect();
 			scheme.removeEventListener('change', render);
+			canvas.removeEventListener('webglcontextlost', lost);
 			gl.getExtension('WEBGL_lose_context')?.loseContext();
 		};
 	}
