@@ -7,6 +7,7 @@
 	import BeatLabel, { type Beat } from '#lib/BeatLabel.svelte';
 	import FeatureRow from '#lib/FeatureRow.svelte';
 	import GitHubIcon from '#lib/GitHubIcon.svelte';
+	import Glow, { within, type Box, type Layer } from '#lib/Glow.svelte';
 	import Head from '#lib/Head.svelte';
 	import Hero from '#lib/Hero.svelte';
 	import Media, { clip } from '#lib/Media.svelte';
@@ -61,6 +62,18 @@
 	});
 
 	const pad = (value: number): string => String(value).padStart(2, '0');
+
+	// The closing's light, drawn by WebGL with grain over its CSS version (`.glow`) in the same geometry: three colors
+	// in the glow's box. The canvas reaches a fifth of that box past it on every side (`.close .gl`), so the light
+	// fades out before the canvas ends. Once it draws, the CSS version goes: Safari repaints its 48px blur in software
+	// as the page scrolls past, and drops frames doing it.
+	const GLOW: Box = [1 / 7, 1 / 7, 5 / 7, 5 / 7];
+	const CLOSING: readonly Layer[] = [
+		{ box: within([0, 0.06, 0.55, 0.8], GLOW), color: '#1957fa', peak: [1, 1] },
+		{ box: within([0.25, 0.18, 0.5, 0.7], GLOW), color: '#d94f46', peak: [1, 1] },
+		{ box: within([0.55, 0.12, 0.45, 0.7], GLOW), color: '#fb8600', peak: [1, 1] },
+	];
+	let lit = $state(false);
 
 	$effect(() => {
 		const io = new IntersectionObserver(
@@ -317,7 +330,6 @@
 			<div class="rise">
 				<h2 id="speed-title">
 					<span>Blink and you’ll miss it.</span>
-					<span class="quiet">No, really.</span>
 				</h2>
 				<p class="sub">
 					Press your shortcut and the screen freezes, ready to record. Grip naps in your menu bar, so
@@ -510,7 +522,12 @@
 <section id="start" class="beat closing" aria-labelledby="start-title" data-place="closing">
 	<div class="wrap">
 		<div class="close">
-			<div class="glow" aria-hidden="true"></div>
+			{#if !lit}
+				<div class="glow" aria-hidden="true"></div>
+			{/if}
+			<div class="gl" aria-hidden="true">
+				<Glow layers={CLOSING} opacity={0.14} soft={0.25} weighted bind:lit />
+			</div>
 			<BeatLabel {...beat('start')} />
 			<div class="end">
 				<div class="rise">
@@ -892,6 +909,15 @@
 			radial-gradient(closest-side, #fb8600, transparent) 100% 40% / 45% 70% no-repeat;
 		filter: blur(48px);
 		opacity: 0.14;
+		pointer-events: none;
+	}
+
+	/* The WebGL light over its CSS version. It paints its own background, the `color` here. */
+	.gl {
+		position: absolute;
+		z-index: -1;
+		inset: -8% 6% -18% -4%;
+		color: var(--surface-root);
 		pointer-events: none;
 	}
 
