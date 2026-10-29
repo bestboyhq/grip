@@ -81,6 +81,13 @@ test('the page loads Logdash from the Grip site and reports to it', () => {
 	assert.match(page, /data-endpoint="\/grip\/_ld\/events"/u);
 });
 
+test('every section and button has a name to report its views and presses by (src/lib/track.ts)', () => {
+	for (const [section] of page.matchAll(/<section\b[^>]*>/gu))
+		assert.match(section, /\s(?:id|data-place)="[^"]+"/u, section);
+	for (const [button, attributes = '', inner = ''] of page.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gu))
+		assert.ok(/aria-label="[^"]+"/u.test(attributes) || inner.replace(/<[^>]+>/gu, '').trim(), button);
+});
+
 const assets: Env = {
 	ASSETS: {
 		fetch: (request) =>
