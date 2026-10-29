@@ -3,8 +3,9 @@
 	import { page } from '$app/state';
 	import Bar from '#lib/Bar.svelte';
 	import Footer from '#lib/Footer.svelte';
-	import { DOWNLOAD_URL, HOME } from '#lib/links.ts';
+	import { HOME } from '#lib/links.ts';
 	import { LOGDASH_SITE } from '#lib/logdash.ts';
+	import { press, watch } from '#lib/track.ts';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -12,16 +13,16 @@
 	// Only the landing page ends on the sitemap; a missing page hydrates with no route at all, so it is matched by name.
 	const product = $derived(page.route.id === '/(site)');
 
-	function trackDownload(event: MouseEvent) {
-		if (!(event.target instanceof Element)) return;
-		const link = event.target.closest(`a[href="${DOWNLOAD_URL}"]`);
-		if (!link) return;
-		const place = link.closest<HTMLElement>('[data-place]')?.dataset.place ?? 'page';
-		window.logdash?.track('grip_web_download_started', { app: 'grip', menu: `grip-${place}` });
-	}
+	// Each page counts its parts and depth afresh, so the count starts over when the path changes, not the hash. The
+	// landing page hydrates as `/grip/` and turns `/grip` on its first hash link, so the trailing slash is dropped.
+	const path = $derived(page.url.pathname.replace(/\/$/u, ''));
+	$effect(() => {
+		void path;
+		return watch();
+	});
 </script>
 
-<svelte:document onclick={trackDownload} />
+<svelte:document onclickcapture={press} onauxclickcapture={press} />
 
 <svelte:head>
 	{#if !dev}

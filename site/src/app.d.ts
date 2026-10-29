@@ -3,7 +3,8 @@ declare global {
 
 	interface Window {
 		logdash?: Readonly<{
-			track(name: string, props?: Record<string, string | number | boolean>): void;
+			// It leaves out a prop that is undefined.
+			track(name: string, props?: Record<string, string | number | boolean | undefined>): void;
 		}>;
 	}
 }
