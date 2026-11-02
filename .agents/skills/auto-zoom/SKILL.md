@@ -18,7 +18,8 @@ Turning clicks and typing into camera direction.
   The rim rounds toward the viewer: it shades darker on the side turned from the light, and a hairline of light catches the edge.
   Broad specular crescents make the lens read as plastic.
   While a lens shows, the whole frame around it dims evenly by 8%, alike for every lens size, so the lens stands out.
-  The lens also casts a soft shadow away from the light, gone within half a radius of its rim, so it lifts off the screen.
+  The lens also casts a faint, soft shadow away from the light, gone within half a radius of its rim, so it lifts off the screen.
+  A darker shadow, packed into that short reach, reads as a heavy gray crescent.
   A dim that fades out with distance darkens the frame more under a big lens than a small one, and its faint ramp bands into rings in every export.
 - A loupe following the cursor keeps it on the magnifying flat top through the fastest flick: the lens aims ahead by its spring's lag, and a cursor that reaches the edge of what the flat top shows carries the lens along.
   A lens that trails a flick hides the cursor under its glass, then curls it back in at the rim, which reads as a stutter.
