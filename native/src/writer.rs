@@ -27,7 +27,10 @@ use objc2_core_media::{
     CMAudioSampleBufferCreateReadyWithPacketDescriptions, CMBlockBuffer, CMFormatDescription, CMSampleBuffer, CMTime,
     kCMBlockBufferAssureMemoryNowFlag, kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
 };
-use objc2_core_video::{CVPixelBuffer, CVPixelBufferPool, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange};
+use objc2_core_video::{
+    CVAttachmentMode, CVPixelBuffer, CVPixelBufferPool, kCVImageBufferTransferFunction_sRGB,
+    kCVImageBufferTransferFunctionKey, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+};
 use objc2_foundation::{NSDictionary, NSError, NSNumber, NSString, NSURL};
 
 /// Seconds between movie fragments: the most a crash can lose.
@@ -198,6 +201,8 @@ pub struct VideoSpec {
     pub bits_per_pixel: f64,
     /// Live capture drops a frame the encoder cannot take within 100 ms; offline writing waits.
     pub realtime: bool,
+    /// Screen content: its pixels are sRGB, and the track says so. Camera video and mattes are BT.709.
+    pub srgb: bool,
 }
 
 /// HEVC video track fed NV12 pixel buffers. Frames keep the time they were captured at
@@ -230,9 +235,11 @@ impl VideoWriter {
             ("ProfileLevel", string("HEVC_Main_AutoLevel")),
         ]);
         // Tagged BT.709, converted if the source is tagged otherwise, so every decoder reads the
-        // same colors (and a matte's luma as exactly 0..1).
+        // same colors (and a matte's luma as exactly 0..1). A screen's curve is sRGB's: tagged
+        // BT.709, macOS plays it through its BT.709 display curve and lifts every midtone.
         let bt709 = || string("ITU_R_709_2");
-        let color = dict(&[("ColorPrimaries", bt709()), ("TransferFunction", bt709()), ("YCbCrMatrix", bt709())]);
+        let transfer = string(if spec.srgb { "IEC_sRGB" } else { "ITU_R_709_2" });
+        let color = dict(&[("ColorPrimaries", bt709()), ("TransferFunction", transfer), ("YCbCrMatrix", bt709())]);
         let settings = dict(&[
             ("AVVideoCodecKey", string("hvc1")),
             ("AVVideoWidthKey", num(spec.width as f64)),
@@ -267,6 +274,10 @@ impl VideoWriter {
     /// New content, appended at `t`; kept for later when `t` is None (paused, or not started yet).
     /// Returns whether it was appended.
     pub fn frame(&mut self, pb: CFRetained<CVPixelBuffer>, t: Option<f64>) -> bool {
+        if self.spec.srgb {
+            // Capture labels its sRGB pixels with BT.709's curve, which the writer would convert from.
+            unsafe { pb.set_attachment(kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_sRGB, CVAttachmentMode::ShouldPropagate) };
+        }
         self.latest = Some(pb);
         t.is_some_and(|t| self.append(t))
     }

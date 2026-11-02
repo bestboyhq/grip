@@ -297,7 +297,7 @@ impl Recording {
             Target::Device { .. } => None,
             _ => {
                 let (width, height, fps) = (plan.width, plan.height, plan.fps);
-                let spec = VideoSpec { width, height, fps, bits_per_pixel: 0.12, realtime: true };
+                let spec = VideoSpec { width, height, fps, bits_per_pixel: 0.12, realtime: true, srgb: true };
                 Some(VideoWriter::new(&dir.join("screen.mp4"), spec)?)
             }
         };
@@ -1003,7 +1003,7 @@ mod tests {
         let dir = bundle("still");
         let file = dir.join("screen.mp4");
         let pattern = synthetic::Pattern::new(640, 360);
-        let spec = VideoSpec { width: 640, height: 360, fps: 30.0, bits_per_pixel: 0.12, realtime: true };
+        let spec = VideoSpec { width: 640, height: 360, fps: 30.0, bits_per_pixel: 0.12, realtime: true, srgb: true };
         let mut v = VideoWriter::new(&file, spec).unwrap();
         // The only frame arrives before the clock starts, like ScreenCaptureKit's first frame.
         v.frame(pattern.frame(0).unwrap(), None);
@@ -1017,24 +1017,54 @@ mod tests {
         let frames = probe(&file, "packet=pts_time").lines().count();
         assert!(frames >= 6, "repeated at least every 0.5 s: {frames}");
         // The first frame is the pattern (white page, dark text), not black.
+        let yavg = first_luma(&file);
+        assert!(yavg > 150.0, "first frame luma {yavg}");
+    }
+
+    /// Mean luma of a file's first frame.
+    fn first_luma(file: &Path) -> f64 {
         let out = Command::new("ffmpeg")
             .args(["-v", "error", "-i"])
-            .arg(&file)
-            .args([
-                "-frames:v",
-                "1",
-                "-vf",
-                "signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-",
-                "-f",
-                "null",
-                "-",
-            ])
+            .arg(file)
+            .args(["-frames:v", "1", "-vf", "signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-", "-f", "null", "-"])
             .output()
             .unwrap();
         let text = String::from_utf8_lossy(&out.stdout);
-        let yavg: f64 =
-            text.split("YAVG=").nth(1).and_then(|s| s.split_whitespace().next()?.parse().ok()).unwrap_or(0.0);
-        assert!(yavg > 150.0, "first frame luma {yavg}: {text}");
+        text.split("YAVG=").nth(1).and_then(|s| s.split_whitespace().next()?.parse().ok()).unwrap_or(0.0)
+    }
+
+    #[test]
+    fn screen_track_keeps_captured_colors_and_says_srgb() {
+        use objc2_core_video::*;
+        let _g = serial();
+        let file = bundle("srgb").join("screen.mp4");
+        // Gray 128 (limited-range Y 126), labeled the way ScreenCaptureKit labels its frames: BT.709's curve.
+        let pb = synthetic::Pattern::new(320, 180).frame(0).unwrap();
+        unsafe {
+            CVPixelBufferLockBaseAddress(&pb, CVPixelBufferLockFlags(0));
+            for (plane, v) in [(0, 126), (1, 128)] {
+                let len = CVPixelBufferGetHeightOfPlane(&pb, plane) * CVPixelBufferGetBytesPerRowOfPlane(&pb, plane);
+                std::slice::from_raw_parts_mut(CVPixelBufferGetBaseAddressOfPlane(&pb, plane) as *mut u8, len).fill(v);
+            }
+            CVPixelBufferUnlockBaseAddress(&pb, CVPixelBufferLockFlags(0));
+            for (key, value) in [
+                (kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2),
+                (kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2),
+                (kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2),
+            ] {
+                pb.set_attachment(key, value, CVAttachmentMode::ShouldPropagate);
+            }
+        }
+        let spec = VideoSpec { width: 320, height: 180, fps: 30.0, bits_per_pixel: 0.3, realtime: false, srgb: true };
+        let mut v = VideoWriter::new(&file, spec).unwrap();
+        for i in 0..10 {
+            assert!(v.frame(pb.clone(), Some(i as f64 / 30.0)));
+        }
+        v.finish(10.0 / 30.0).unwrap();
+        // Converted through BT.709's curve, gray 128 would come out 139 (Y 135).
+        let y = first_luma(&file);
+        assert!((y - 126.0).abs() < 1.0, "luma {y}");
+        assert_eq!(probe(&file, "stream=color_transfer"), "iec61966-2-1");
     }
 
     /// Child half of `kill_9_leaves_playable_files`: records until killed.

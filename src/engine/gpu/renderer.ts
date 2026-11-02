@@ -290,6 +290,9 @@ export class Renderer {
     const has = this.pack(scene, frames, motion, cursor)
     has.overlay = this.paintOverlay(scene)
     this.u[FIN * 4] = has.overlay ? 1 : 0
+    // Hardware decodes (NV12; software ones are I420) of a BT.709-tagged recording come through
+    // macOS's curve for BT.709, which screenTap undoes.
+    this.u[FIN * 4 + 2] = screen?.format === 'NV12' && screen.colorSpace.transfer === 'bt709' ? 1 : 0
     d.queue.writeBuffer(this.frameU, 0, this.u)
 
     const ext = (f: VideoFrame | null | undefined) => d.importExternalTexture({ source: f ?? this.placeholder })

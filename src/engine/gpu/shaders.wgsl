@@ -27,7 +27,7 @@ struct Frame {
   cam4: vec4f,     // camera source w, h
   lutMin: vec4f,
   lutMax: vec4f,
-  fin: vec4f,      // has overlay, click effect (0 none, 1 swell, 2 wave, 3 circle, 4 focus ring)
+  fin: vec4f,      // has overlay, click effect (0 none, 1 swell, 2 wave, 3 circle, 4 focus ring), screen through the BT.709 curve (screenTap)
   vp: vec4f,       // viewport (output px): the zoom view shows through it, everything outside is unzoomed
   vis: vec4f,      // shown part of the recording (unzoomed px): all of scr, or its crop; the frame is this grown by dev.w
   clicks: array<vec4f, 4>, // click effects: x, y, radius (unzoomed px), strength
@@ -173,16 +173,27 @@ fn part(c: vec3f, u: vec2f, i: i32, aa: f32) -> vec3f {
   return mix(c, col.rgb, k * col.a);
 }
 
+// One bilinear tap of the recording, as recorded. A screen recording's pixels are sRGB, but older
+// ones are tagged BT.709, and a hardware-decoded BT.709 frame arrives through macOS's display curve
+// for it (gamma 1.961, then sRGB), every midtone lifted (128 -> 139): fin.z undoes that curve.
+fn screenTap(uv: vec2f) -> vec3f {
+  let c = textureSampleBaseClampToEdge(screenTex, samp, uv).rgb;
+  if (F.fin.z < 0.5) { return c; }
+  let s = clamp(c, vec3f(0.0), vec3f(1.0));
+  let linear = select(pow((s + 0.055) / 1.055, vec3f(2.4)), s / 12.92, s <= vec3f(0.04045));
+  return pow(linear, vec3f(1.0 / 1.961));
+}
+
 // Box-filtered screen sample: m = source px per output px. Minified video gets k x k bilinear
 // taps so text does not shimmer or alias in small previews.
 fn screenSample(uv: vec2f, m: f32) -> vec3f {
-  if (m <= 1.3) { return textureSampleBaseClampToEdge(screenTex, samp, uv).rgb; }
+  if (m <= 1.3) { return screenTap(uv); }
   let k = min(ceil(m / 1.5), 4.0);
   let step = m / k / F.scr3.xy;
   var c = vec3f(0.0);
   for (var j = 0.0; j < k; j += 1.0) {
     for (var i = 0.0; i < k; i += 1.0) {
-      c += textureSampleBaseClampToEdge(screenTex, samp, uv + (vec2f(i, j) - 0.5 * (k - 1.0)) * step).rgb;
+      c += screenTap(uv + (vec2f(i, j) - 0.5 * (k - 1.0)) * step);
     }
   }
   return c / (k * k);
@@ -865,9 +876,9 @@ fn oklabToSrgb(lab: vec3f) -> vec3f {
 // Screen frame -> quarter resolution (a 4x4 box from 4 bilinear taps), base of the mask pyramid.
 @fragment fn fs_small(v: VO) -> @location(0) vec4f {
   let t = 1.0 / F.scr3.xy;
-  var c = textureSampleBaseClampToEdge(screenTex, samp, v.uv + vec2f(-t.x, -t.y)).rgb;
-  c += textureSampleBaseClampToEdge(screenTex, samp, v.uv + vec2f(t.x, -t.y)).rgb;
-  c += textureSampleBaseClampToEdge(screenTex, samp, v.uv + vec2f(-t.x, t.y)).rgb;
-  c += textureSampleBaseClampToEdge(screenTex, samp, v.uv + vec2f(t.x, t.y)).rgb;
+  var c = screenTap(v.uv + vec2f(-t.x, -t.y));
+  c += screenTap(v.uv + vec2f(t.x, -t.y));
+  c += screenTap(v.uv + vec2f(-t.x, t.y));
+  c += screenTap(v.uv + vec2f(t.x, t.y));
   return vec4f(c * 0.25, 1.0);
 }

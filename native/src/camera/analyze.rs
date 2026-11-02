@@ -138,7 +138,7 @@ fn run(path: &Path, matte_path: &Path, cancel: &AtomicBool, progress: &mut impl 
         };
         if writer.is_none() {
             let (width, height) = (CVPixelBufferGetWidth(&mask), CVPixelBufferGetHeight(&mask));
-            let spec = VideoSpec { width, height, fps, bits_per_pixel: 0.05, realtime: false };
+            let spec = VideoSpec { width, height, fps, bits_per_pixel: 0.05, realtime: false, srgb: false };
             match VideoWriter::new(matte_path, spec) {
                 Ok(w) => writer = Some(w),
                 Err(e) => return fail(None, e),

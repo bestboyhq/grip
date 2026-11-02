@@ -9,6 +9,8 @@ Encoding, muxing, and delivery of the final video.
 
 - Hardware encoding through VideoToolbox (H.264, HEVC, ProRes), muxed with AVFoundation.
 - The file is complete: every frame through the last keyframe, audio as long as video, playable in QuickTime, browsers, and social uploads.
+- Colors match the screen in QuickTime, Safari, and Chrome alike: the file is tagged sRGB.
+  Tagged BT.709, Apple's players lift every midtone, and so does WebGPU's import of a hardware-decoded BT.709 frame, which the compositor undoes for older recordings.
 - Progress is truthful from 0 to 100, finalization included.
   An export stuck at 95% is the classic failure, and long static stretches must still advance the encoder.
 - Files over 2 GB, 4K ultrawide sources, speeds above 2x, and hundreds of cuts all export.
