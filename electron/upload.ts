@@ -89,9 +89,13 @@ export class RemoteError extends Error {
   }
 }
 
+/** Sent with every call (electron/account.ts sets it): Node's own `node` reads as a script, whose calls the platform
+ *  leaves out of its counts. */
+export const client = { userAgent: '' }
+
 /** One API call. JSON in and out; a Readable is sent as bytes, a Buffer as a JPEG. */
 export async function api(server: string, token: string, method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<any> {
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = client.userAgent ? { 'user-agent': client.userAgent } : {}
   if (token) headers.authorization = `Bearer ${token}`
   const init: RequestInit & { duplex?: 'half' } = { method, headers, signal }
   if (body instanceof Readable) {

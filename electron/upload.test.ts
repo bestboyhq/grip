@@ -5,10 +5,11 @@ import { createServer, type IncomingMessage } from 'node:http'
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ShareError, upload, usedUp, type Upload } from './upload.ts'
+import { client, ShareError, upload, usedUp, type Upload } from './upload.ts'
 
 const PART = 64 * 1024
 const TOKEN = 't'.repeat(43)
+client.userAgent = 'Grip/1.2.3 (Macintosh; Mac OS X 15.6.1)'
 
 /** What the server holds, and the misfortunes to stage on the next part uploads. */
 const fake = { parts: [] as Buffer[], size: 0, ready: false, limitReached: false, lostAnswer: false, cutPart: false }
@@ -25,6 +26,8 @@ const server = createServer(async (req, res) => {
   const item = () => ({ id: 'x7Kq2mP9aB3c', state: fake.ready ? 'ready' : 'uploading', private: false, size: fake.size, offset: offset(), part: PART, link: 'http://fake/v/x7Kq2mP9aB3c' })
   if (req.headers.authorization !== `Bearer ${TOKEN}`) return send(401, { error: 'Sign in first.' })
   if (req.method !== 'GET' && !req.headers['content-type']) return send(403, { error: 'No content type.' })
+  // Every call names Grip: the platform leaves a script's `node` out of its counts.
+  if (req.headers['user-agent'] !== client.userAgent) return send(403, { error: 'Not Grip.' })
   const url = new URL(req.url!, 'http://fake')
   if (req.method === 'POST' && url.pathname === '/api/items') {
     const b = JSON.parse((await body(req)).toString())

@@ -4,7 +4,7 @@
 // No ID, no names, no paths, no content. Off until the user says yes: onboarding asks, once (main.ts asks whoever
 // onboarded before it did), and Settings changes it. Dev runs send only to a local platform (STUDIO_SHARE_URL).
 import { app } from 'electron'
-import { SERVER } from './account.ts'
+import { SERVER, USER_AGENT } from './account.ts'
 import { settings } from './shell/settings.ts'
 
 type Props = Record<string, string | number | boolean>
@@ -15,8 +15,7 @@ export function count(name: string, props?: Props) {
   // ponytail: a count made offline is dropped; queue them on disk if gaps ever skew the numbers.
   fetch(`${SERVER}/api/events`, {
     method: 'POST',
-    // Browser-like, so the counts break down by macOS version; the same for every Mac on that version.
-    headers: { 'content-type': 'application/json', 'user-agent': `Grip/${app.getVersion()} (Macintosh; Mac OS X ${process.getSystemVersion()})` },
+    headers: { 'content-type': 'application/json', 'user-agent': USER_AGENT },
     body: JSON.stringify({ app: 'grip', version: app.getVersion(), events: [{ name: `grip_${name}`, props }] }),
     signal: AbortSignal.timeout(10e3),
   }).catch(() => {})

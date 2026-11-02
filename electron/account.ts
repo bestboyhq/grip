@@ -10,10 +10,14 @@ import { createHash, randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { api } from './upload.ts'
+import { api, client } from './upload.ts'
 
 /** The Bestboy platform: links, accounts, teams. STUDIO_SHARE_URL points a dev build at a local one. */
 export const SERVER = (process.env.STUDIO_SHARE_URL ?? 'https://bestboy.dev').replace(/\/+$/, '')
+/** Grip in every call to it (docs/api.md): browser-like, so its counts break down by macOS version, the same for every
+ *  Mac on that version. */
+export const USER_AGENT = `Grip/${app.getVersion()} (Macintosh; Mac OS X ${process.getSystemVersion()})`
+client.userAgent = USER_AGENT
 
 export interface Account {
   user: { id: string; email: string; name: string; avatar: string | null }
