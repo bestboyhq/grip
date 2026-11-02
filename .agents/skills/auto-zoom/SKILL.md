@@ -13,8 +13,10 @@ Turning clicks and typing into camera direction.
 - A zoom that starts on the first frame starts zoomed in.
 - Vertical output follows the cursor continuously, since the frame is narrower than the source.
 - Glass loupe magnifies a region in place when a full zoom would move too much of the screen.
-  It has no outline; its rim is the edge: the magnification holds almost to it, then the content slows to a stop and curls along the rim with color fringes.
+  It has no outline; its rim is the edge: the magnification holds almost to it, then the content slows to a stop short of the rim and turns back, so the outer bevel mirrors what lies just inside.
+  Content that stands still at the rim smears every stroke that reaches it into a streak to the edge.
   A bevel that squeezes the frame around the lens back to 1x crams too much into a sliver, which aliases into streaks.
+  The bevel splits the colors by a share of how far it bends the content; splitting the shown radius instead tears them into rainbows where the content turns back.
   The rim rounds toward the viewer: it shades darker on the side turned from the light, and a hairline of light catches the edge.
   Darkening the rim's last few px all around draws a gray outline over light UI.
   The light comes from straight above, where the window's and the camera's shadows say it is; a lens lit from a corner casts its shadow at odds with theirs.

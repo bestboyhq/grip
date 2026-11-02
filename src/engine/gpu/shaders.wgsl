@@ -485,9 +485,10 @@ fn dimAt(u: vec2f, aa: f32) -> f32 {
 
 // ---- Glass loupe: a lens over the zoomed layer, masks, cursor and highlight included ----
 // A flat-topped glass disc with a rounded bevel. The flat top magnifies almost to the edge;
-// across the bevel the content runs on ever slower and stands still at the rim, so whatever reaches
-// the edge stretches and curls along it, the way a thick lens bends lines at its rim. Squeezing the
-// frame around the lens into the bevel instead aliases into streaks. No outline: the bending is the
+// across the bevel the content slows to a stop short of the rim and turns back, so the outer bevel
+// mirrors what lies just inside it, the way a thick lens folds lines at its rim. Content that stands
+// still at the rim smears every stroke reaching it into a streak to the edge, and squeezing the frame
+// around the lens into the bevel instead aliases into streaks. No outline: the bending is the
 // edge. Lit by one key light from above: the bevel shades darker turned away from it, a hairline of
 // light catches the rim, Fresnel reflection at grazing angles, and dispersion splits the colors where
 // the bevel bends hardest. Moving, the drop stretches along its motion, keeping its
@@ -497,9 +498,9 @@ fn dimAt(u: vec2f, aa: f32) -> f32 {
 // earlier one.
 
 const BEVEL = 0.15; // bevel width, fraction of the radius
-const CURL = 1.0 / 3.0; // the bevel shows this share of what the flat top would show across it, the least that
-// stays monotone: the content slows as (1 - s)^2 and stretches into a curl along the rim
-const DISPERSION = 0.045; // how far red and blue bend apart at the rim, fraction of the radius
+const FOLD = 0.6; // how far across the bevel the content stops and turns back: the outer bevel mirrors
+// the band just inside the fold, and the rim shows what the flat top would show a sixth of the way across it
+const DISPERSION = 0.06; // how much less red bends than green, and blue more: a share of the bevel's bend
 const KEY = vec3f(0.0, -0.9, 0.43); // key light direction (output px axes, z toward the viewer): straight above,
 // so a lens's shadow falls the way the window's and the camera's do
 const DIM = 0.08; // how much the frame dims while a lens shows
@@ -519,18 +520,19 @@ fn hermite(s: f32, p0: f32, m0: f32, p1: f32, m1: f32) -> vec2f {
 }
 
 // Radius shown at radius rho (both fractions of the lens radius, from its center), and its
-// derivative: magnified on the flat top, then a monotone cubic across the bevel that slows to a stop
-// at the rim. Under 1.5x it blends into one that ends on the content just outside the rim, so at
-// magnification 1 the lens is flat glass and shows exactly what lies under it.
+// derivative: magnified on the flat top, then across the bevel the content slows evenly, stops at
+// FOLD and runs back to the rim at two thirds of the flat top's rate: it stands still at one radius,
+// not across the outer bevel. Under 1.5x it blends into a monotone cubic that ends on the content just
+// outside the rim, so at magnification 1 the lens is flat glass and shows exactly what lies under it.
 fn lensMap(rho: f32, mag: f32) -> vec2f {
   let e = 1.0 - BEVEL;
   if (rho <= e) { return vec2f(rho / mag, 1.0 / mag); }
   let s = min((rho - e) / BEVEL, 1.0);
   let p0 = e / mag;
   let m0 = BEVEL / mag;
-  let curl = hermite(s, p0, m0, p0 + CURL * m0, 0.0);
+  let fold = vec2f(p0 + m0 * (s - 0.5 * s * s / FOLD), m0 * (1.0 - s / FOLD));
   let meet = hermite(s, p0, m0, 1.0, (1.0 - p0) * (1.0 + 1.8 * clamp(mag - 1.0, 0.0, 1.0))); // under 3x the secant: stays monotone
-  let h = mix(meet, curl, clamp(2.0 * (mag - 1.0), 0.0, 1.0));
+  let h = mix(meet, fold, clamp(2.0 * (mag - 1.0), 0.0, 1.0));
   return vec2f(h.x, h.y / BEVEL);
 }
 
@@ -586,16 +588,17 @@ fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, fringe: bool) -> vec
   let dir = gq / max(length(gq), 1e-6);
   let m = lensMap(rho, mag);
   let shown = m.x / max(rho, 1e-4); // 1 / mag on the flat top: the magnification stays round when stretched
-  let foot = aa * max(m.y, shown); // unzoomed px per output px
+  let foot = aa * max(abs(m.y), shown); // unzoomed px per output px
   let vs = vt.z / foot * aa;
   var col = underLens(c + q * shown, foot, vs, cs);
   let s = clamp((rho - (1.0 - BEVEL)) / BEVEL, 0.0, 1.0); // 0 on the flat top, 1 at the rim
   if (s > 0.0 && fringe) {
-    // Dispersion: red bends least, so it shows what lies a little further out, and blue the reverse.
-    // Splitting the radius rather than the content keeps the fringes as wide where the rim stretches.
-    let sp = DISPERSION * s * clamp(mag - 1.0, 0.0, 1.0);
-    let r = lensMap(min(rho * (1.0 + sp), 1.0), mag).x / max(rho, 1e-4);
-    let b = lensMap(rho * (1.0 - sp), mag).x / max(rho, 1e-4);
+    // Dispersion: red bends least, so it shows what lies a little further out, and blue the reverse,
+    // each by a share of how far the bevel bends the content in. Splitting the shown radius instead
+    // tears the colors into rainbows where the content turns back.
+    let sp = DISPERSION * (rho / mag - m.x) * clamp(mag - 1.0, 0.0, 1.0);
+    let r = (m.x + sp) / max(rho, 1e-4);
+    let b = (m.x - sp) / max(rho, 1e-4);
     col = vec3f(underLens(c + q * r, foot, vs, cs).r, col.g, underLens(c + q * b, foot, vs, cs).b);
   }
 
