@@ -177,7 +177,7 @@
 		},
 		{
 			title: 'Runs on your Mac',
-			body: 'Recording, editing, transcription, and background removal stay on it. No telemetry, and crash reports stay on your disk.',
+			body: 'Recording, editing, transcription, and background removal stay on it. Only anonymous usage counts leave it, and never what you record.',
 		},
 		{
 			title: 'No account to record',

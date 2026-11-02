@@ -25,6 +25,7 @@ import { SERVER, accountToken, forget } from './account.ts'
 import { api, ShareError, upload, type Upload } from './upload.ts'
 import { projectsDir } from './projects.ts'
 import { openWindow } from './windows.ts'
+import { count } from './usage.ts'
 
 const exec = promisify(execFile)
 
@@ -141,7 +142,10 @@ async function drive(job: Job) {
         job.link = job.remote!.link
         persist()
         emit(job)
-        if (startedNow.delete(job.id)) clipboard.writeText(job.link)
+        if (startedNow.delete(job.id)) {
+          clipboard.writeText(job.link)
+          count('shared', { kind: job.kind })
+        }
         waiters.get(job.id)?.resolve(job.link)
         waiters.delete(job.id)
       },

@@ -46,6 +46,8 @@ export interface Settings {
   /** macOS shortcuts (ids) Grip turned off because they use the record shortcut's keys: back on when
    *  it changes, at quit, and at the next launch after a crash. */
   borrowedShortcuts: number[]
+  /** Anonymous usage counts to bestboy.dev (electron/usage.ts). */
+  usageCounts: boolean
 }
 
 const defaults: Settings = {
@@ -71,6 +73,7 @@ const defaults: Settings = {
   windows: {},
   recordShortcut: '', // none until the user picks one: people reach for different keys
   borrowedShortcuts: [],
+  usageCounts: true,
 }
 
 const file = () => join(app.getPath('userData'), 'settings.json')

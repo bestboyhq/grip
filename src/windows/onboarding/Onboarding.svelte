@@ -319,6 +319,15 @@
             />
           </label>
         </li>
+        <li>
+          <label class="switch">
+            <span class="text">
+              <span class="title">Share usage counts</span>
+              <span class="reason">Anonymous counts, like a finished recording. Never what you record.</span>
+            </span>
+            <input type="checkbox" role="switch" checked={!!shell.settings?.usageCounts} onchange={(e) => setSettings({ usageCounts: e.currentTarget.checked })} />
+          </label>
+        </li>
       </ul>
       <!-- Last: onboarding is where permissions come first, and an allowed one needs nothing here. -->
       <h3>Permissions</h3>
