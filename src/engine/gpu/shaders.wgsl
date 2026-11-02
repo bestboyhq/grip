@@ -480,18 +480,18 @@ fn dimAt(u: vec2f, aa: f32) -> f32 {
 // edge. Lit by one key light from above: the bevel shades darker turned away from it, a hairline of
 // light catches the rim, Fresnel reflection at grazing angles, and dispersion splits the colors where
 // the bevel bends hardest. Moving, the drop stretches along its motion, keeping its
-// area, and what it shows smears across the shutter like the rest of the frame. The frame dims most
-// right around a lens and less further out, so the lens lifts off the screen without the whole frame
-// going dark. Several lenses draw in order, a later one over an earlier one.
+// area, and what it shows smears across the shutter like the rest of the frame. Each lens casts a
+// soft shadow away from the light, so it lifts off the screen while the rest of the frame stays as
+// recorded. Several lenses draw in order, a later one over an earlier one.
 
 const BEVEL = 0.15; // bevel width, fraction of the radius
 const CURL = 1.0 / 3.0; // the bevel shows this share of what the flat top would show across it, the least that
 // stays monotone: the content slows as (1 - s)^2 and stretches into a curl along the rim
 const DISPERSION = 0.045; // how far red and blue bend apart at the rim, fraction of the radius
 const KEY = vec3f(-0.38, -0.82, 0.43); // key light direction (output px axes, z toward the viewer)
-const AROUND = 0.14; // how much the frame right around a lens dims
-const AROUND_REACH = 0.8; // ...and half that this many radii out from its edge
-const AROUND_SHIFT = 0.3; // the dim sits this many radii off the lens, away from the light, like its shadow
+const SHADOW = 0.22; // how dark a lens's shadow is under it
+const SHADOW_SHIFT = 0.1; // the shadow falls this many radii off the lens, away from the light
+const SHADOW_BLUR = 0.15; // ...blurred over this many radii (the Gaussian's sigma)
 const LENSES = 4u;
 const LENS_SAMPLES = 9u; // per lens in F.loupeS (renderer.ts LOUPE_SAMPLES)
 
@@ -532,6 +532,16 @@ fn underLens(um: vec2f, aa: f32, vs: f32, cs: vec4f) -> vec3f {
 
 struct Lens { a: vec4f, b: vec4f } // two slots of F.loupes
 
+// q in the stretched drop's frame, where it is a circle: the drop is an ellipse 1 + k long along its
+// motion st (length k) and 1 / sqrt(1 + k) across it. The map is symmetric, so drop(drop(q)) points
+// along the gradient of length(drop(q)).
+fn drop(q: vec2f, st: vec2f) -> vec2f {
+  let k = length(st);
+  let ax = select(vec2f(1.0, 0.0), st / max(k, 1e-6), k > 1e-6);
+  let along = dot(q, ax);
+  return ax * (along / (1.0 + k)) + (q - ax * along) * sqrt(1.0 + k);
+}
+
 // Lens i at shutter time f in 0..1, piecewise linear between its samples; at t when f < 0 or it is still.
 fn lensOf(i: u32, f: f32) -> Lens {
   let n = u32(F.loupes[2u * i + 1u].y);
@@ -552,17 +562,13 @@ fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, fringe: bool) -> vec
   let op = L.b.x;
   let st = L.b.zw;
   let q = u - c;
-  // The stretched drop: an ellipse 1 + k long along the motion and 1 / sqrt(1 + k) across it.
-  let k = length(st);
-  let ax = select(vec2f(1.0, 0.0), st / max(k, 1e-6), k > 1e-6);
-  let along = dot(q, ax);
-  let sq = ax * (along / (1.0 + k)) + (q - ax * along) * sqrt(1.0 + k);
+  let sq = drop(q, st);
   let d = length(sq);
   let cv = cover(d - R, 2.0 * aa); // a rounded edge is a little soft, not a cut
   if (cv <= 0.0) { return vec4f(0.0); }
 
   let rho = min(d / R, 1.0);
-  let gq = ax * (dot(sq, ax) / (1.0 + k)) + (sq - ax * dot(sq, ax)) * sqrt(1.0 + k); // gradient of d: the rim's normal
+  let gq = drop(sq, st); // gradient of d: the rim's normal
   let dir = gq / max(length(gq), 1e-6);
   let m = lensMap(rho, mag);
   let shown = m.x / max(rho, 1e-4); // 1 / mag on the flat top: the magnification stays round when stretched
@@ -616,17 +622,20 @@ fn lensesAt(p: vec2f, f: f32, fringe: bool) -> vec4f {
   return out;
 }
 
-// The dim around the lenses at t, drawn just under them: rgb multiplies the frame, alpha raises the
-// dither mark. Over video the mark is 0, and a dim this broad quantizes to 8 bits as rings 10-30 px
-// wide, so it marks every pixel it darkens by half a level or more.
+// The lenses' shadows at t, drawn just under them: rgb multiplies the frame, alpha raises the dither
+// mark. A shadow is its lens's drop moved away from the light and blurred, gone within half a radius
+// of the rim. A broader, fainter dim bands in every export: the encoder strips the dither, and over
+// flat UI each 8-bit step shows as a ring tens of px wide. Over video the mark is 0, so it marks every
+// pixel the shadow darkens by half a level or more, for the preview.
 @fragment fn fs_lensdim(v: VO) -> @location(0) vec4f {
   let u = unview(v.pos.xy, F.viewT.xyz);
   var dim = 0.0;
   for (var i = 0u; i < LENSES; i++) {
     let L = F.loupes[2u * i];
     if (L.z <= 0.0) { continue; }
-    let d = max(length(u - L.xy + normalize(KEY.xy) * AROUND_SHIFT * L.z) - L.z, 0.0) / (AROUND_REACH * L.z);
-    dim = max(dim, AROUND * F.loupes[2u * i + 1u].x / (1.0 + d * d));
+    let b = F.loupes[2u * i + 1u];
+    let x = length(drop(u - L.xy + normalize(KEY.xy) * SHADOW_SHIFT * L.z, b.zw)) - L.z; // out from the shadow's edge
+    dim = max(dim, SHADOW * b.x * (0.5 - 0.5 * erf2(vec2f(x * 0.70710678 / (SHADOW_BLUR * L.z))).x));
   }
   return vec4f(vec3f(1.0 - dim), min(dim * 510.0, 1.0));
 }

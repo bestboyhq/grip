@@ -8,7 +8,7 @@
 //              the shutter's view samples
 //   cursor     swept quad, motion blur over the shutter's cursor samples
 //   highlight
-//   lensdim    the dim around the lenses, marked for dithering
+//   lensdim    the lenses' shadows, marked for dithering
 //   loupe      glass lenses, motion blur over the shutter's lens (and view, cursor) samples
 //   camera
 //   final      overlay canvas (drawings, keystrokes, captions) on top, dithered to the 8-bit canvas
