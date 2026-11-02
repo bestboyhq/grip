@@ -491,15 +491,17 @@ fn dimAt(u: vec2f, aa: f32) -> f32 {
 // edge. Lit by one key light from above: the bevel shades darker turned away from it, a hairline of
 // light catches the rim, Fresnel reflection at grazing angles, and dispersion splits the colors where
 // the bevel bends hardest. Moving, the drop stretches along its motion, keeping its
-// area, and what it shows smears across the shutter like the rest of the frame. Each lens casts a
-// soft shadow away from the light, so it lifts off the screen while the rest of the frame stays as
-// recorded. Several lenses draw in order, a later one over an earlier one.
+// area, and what it shows smears across the shutter like the rest of the frame. While a lens shows,
+// the frame around it dims evenly, so the lens stands out, and each lens casts a soft shadow away
+// from the light, so it lifts off the screen. Several lenses draw in order, a later one over an
+// earlier one.
 
 const BEVEL = 0.15; // bevel width, fraction of the radius
 const CURL = 1.0 / 3.0; // the bevel shows this share of what the flat top would show across it, the least that
 // stays monotone: the content slows as (1 - s)^2 and stretches into a curl along the rim
 const DISPERSION = 0.045; // how far red and blue bend apart at the rim, fraction of the radius
 const KEY = vec3f(-0.38, -0.82, 0.43); // key light direction (output px axes, z toward the viewer)
+const DIM = 0.15; // how much the frame dims while a lens shows
 const SHADOW = 0.22; // how dark a lens's shadow is under it
 const SHADOW_SHIFT = 0.1; // the shadow falls this many radii off the lens, away from the light
 const SHADOW_BLUR = 0.15; // ...blurred over this many radii (the Gaussian's sigma)
@@ -633,22 +635,26 @@ fn lensesAt(p: vec2f, f: f32, fringe: bool) -> vec4f {
   return out;
 }
 
-// The lenses' shadows at t, drawn just under them: rgb multiplies the frame, alpha raises the dither
-// mark. A shadow is its lens's drop moved away from the light and blurred, gone within half a radius
-// of the rim. A broader, fainter dim bands in every export: the encoder strips the dither, and over
-// flat UI each 8-bit step shows as a ring tens of px wide. Over video the mark is 0, so it marks every
-// pixel the shadow darkens by half a level or more, for the preview.
+// The frame's dim and the lenses' shadows at t, drawn just under the lenses: rgb multiplies the frame,
+// alpha raises the dither mark. The dim is even and follows the most opaque lens, so one lens or four,
+// small or large, dim the frame alike as they pop in and out. A shadow is its lens's drop moved away
+// from the light and blurred, gone within half a radius of the rim. A dim that fades out with distance
+// bands in every export: the encoder strips the dither, and over flat UI each 8-bit step of a faint
+// ramp shows as a ring tens of px wide. Over video the mark is 0, so it marks every pixel the shadow
+// darkens by half a level or more, for the preview; the even dim has no ramp to dither.
 @fragment fn fs_lensdim(v: VO) -> @location(0) vec4f {
   let u = unview(v.pos.xy, F.viewT.xyz);
-  var dim = 0.0;
+  var on = 0.0;
+  var sh = 0.0;
   for (var i = 0u; i < LENSES; i++) {
     let L = F.loupes[2u * i];
     if (L.z <= 0.0) { continue; }
     let b = F.loupes[2u * i + 1u];
     let x = length(drop(u - L.xy + normalize(KEY.xy) * SHADOW_SHIFT * L.z, b.zw)) - L.z; // out from the shadow's edge
-    dim = max(dim, SHADOW * b.x * (0.5 - 0.5 * erf2(vec2f(x * 0.70710678 / (SHADOW_BLUR * L.z))).x));
+    on = max(on, b.x);
+    sh = max(sh, SHADOW * b.x * (0.5 - 0.5 * erf2(vec2f(x * 0.70710678 / (SHADOW_BLUR * L.z))).x));
   }
-  return vec4f(vec3f(1.0 - dim), min(dim * 510.0, 1.0));
+  return vec4f(vec3f((1.0 - DIM * on) * (1.0 - sh)), min(sh * 510.0, 1.0));
 }
 
 // Output px the content under p travels across the shutter through a lens: the lens gliding, its
