@@ -204,6 +204,17 @@ export interface Project {
   preset?: string
 }
 
+/** Caption fonts every Mac has, so a project renders the same on any machine and in export. */
+export const CAPTION_FONTS = [
+  { value: 'system-ui', label: 'System' },
+  { value: 'Avenir Next', label: 'Avenir Next' },
+  { value: 'Helvetica Neue', label: 'Helvetica Neue' },
+  { value: 'Futura', label: 'Futura' },
+  { value: 'Arial Rounded MT Bold', label: 'Rounded' },
+  { value: 'Georgia', label: 'Georgia' },
+  { value: 'Menlo', label: 'Menlo' },
+]
+
 export const defaultStyle = (): Style => ({
   aspect: 'auto',
   // Plain: the recording edge to edge. A background, padding, corners, and shadow are the user's call.

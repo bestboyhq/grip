@@ -3,7 +3,7 @@
 The rules in this file apply to all code in the repository.
 Domain rules live in `.agents/skills/`, as plain Markdown in the Agent Skills format that belongs to no particular tool, one folder per skill.
 `.claude/skills` links to it.
-Each product domain has one: `capture`, `input-events`, `camera`, `audio`, `motion`, `auto-zoom`, `compositor`, `export`, `timeline`, `transcript`, `projects`, `sharing`, `app-shell`.
+Each product domain has one: `capture`, `input-events`, `camera`, `audio`, `motion`, `auto-zoom`, `compositor`, `export`, `timeline`, `transcript`, `projects`, `sharing`, `app-shell`, `agents`.
 
 Read the skill for the domain you are touching before changing code there.
 
@@ -58,6 +58,7 @@ Every domain obeys these invariants:
 - `src/lib/`: renderer state. `doc.svelte.ts` owns edits, undo, and autosave; `player.svelte.ts` owns preview playback.
 - `src/windows/<name>/`: one Svelte component per window route.
 - `electron/`: main process; each `<domain>.ts` registers its `<domain>:*` IPC channels.
+  `agents.ts` is the MCP server agent apps reach through `build/grip-mcp` (`Contents/Resources/grip-mcp` in Grip.app), which pipes stdio to its Unix socket and starts Grip in the menu bar when nothing listens.
 - `native/`: Rust addon, one module per domain; `clock.rs` is the master clock.
 - `site/`: the landing page at bestboy.dev/grip, its own npm package: SvelteKit prerendered behind a Cloudflare worker (`site/worker/index.ts`) on the `bestboy.dev/grip*` route.
   Its look is the Bestboy family's, from the platform's `docs/design.md`, and its claims and numbers come from the README.

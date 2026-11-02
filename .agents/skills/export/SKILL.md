@@ -11,6 +11,8 @@ Encoding, muxing, and delivery of the final video.
 - The file is complete: every frame through the last keyframe, audio as long as video, playable in QuickTime, browsers, and social uploads.
 - Progress is truthful from 0 to 100, finalization included.
   An export stuck at 95% is the classic failure, and long static stretches must still advance the encoder.
+- No step of an export may hang: each one runs under a watchdog (`STALL_MS`), and a hardware encoder that stops answering restarts the export in software.
+  An export that needs an app restart to come unstuck is what users name when they call a release buggy.
 - Files over 2 GB, 4K ultrawide sources, speeds above 2x, and hundreds of cuts all export.
 - Cancel stops at once and deletes the partial file.
 - Memory stays flat regardless of duration.

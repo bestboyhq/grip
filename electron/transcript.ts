@@ -137,6 +137,19 @@ function reason(err: unknown): string {
   return e?.message ?? String(err)
 }
 
+/** The bundle's transcript, or null before it was transcribed (electron/agents.ts reads it too). */
+export async function loadTranscript(bundle: string): Promise<Transcript | null> {
+  inBundle(bundle, 'project.json')
+  const file = (await readProject(bundle)).sources.transcript ?? TRANSCRIPT // the file is the truth
+  try {
+    const t = JSON.parse(await readFile(inBundle(bundle, file), 'utf8'))
+    return Array.isArray(t?.words) ? t : null
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw new Error(`Could not read the transcript: ${reason(err)}`)
+  }
+}
+
 const jobs = new Map<string, AbortController>()
 let queue: Promise<unknown> = Promise.resolve() // one at a time: each run holds the model in memory
 
@@ -173,17 +186,7 @@ export function registerTranscript() {
 
   ipcMain.handle('transcript:cancel', (_e, bundle: string) => jobs.get(bundle)?.abort())
 
-  ipcMain.handle('transcript:load', async (_e, bundle: string): Promise<Transcript | null> => {
-    inBundle(bundle, 'project.json')
-    const file = (await readProject(bundle)).sources.transcript ?? TRANSCRIPT // the file is the truth
-    try {
-      const t = JSON.parse(await readFile(inBundle(bundle, file), 'utf8'))
-      return Array.isArray(t?.words) ? t : null
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
-      throw new Error(`Could not read the transcript: ${reason(err)}`)
-    }
-  })
+  ipcMain.handle('transcript:load', (_e, bundle: string) => loadTranscript(bundle))
 
   ipcMain.handle('transcript:export', async (e, bundle: string, format: 'srt' | 'vtt', text: string) => {
     inBundle(bundle, 'project.json')

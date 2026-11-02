@@ -709,10 +709,14 @@ function notify(body: string, then?: () => void) {
 
 /** Editor routes as opened, for windows whose page has not loaded yet (their URL is still empty). */
 const routes = new WeakMap<BrowserWindow, string>()
-/** The editor window showing `path`, if one is open (its URL follows in-app renames). */
-function editorFor(path: string): BrowserWindow | undefined {
-  const param = `project=${encodeURIComponent(path)}`
-  return windowsOf('editor').find((w) => !w.webContents.isDestroyed() && (w.webContents.getURL() || routes.get(w) || '').split('#')[1]?.split(/[?&]/).includes(param))
+/** The editor window showing `path`, if one is open (its URL follows in-app renames). Either Unicode
+ *  form of an accented name finds it: both name the same bundle on disk. */
+export function editorFor(path: string): BrowserWindow | undefined {
+  const want = path.normalize('NFC')
+  return windowsOf('editor').find((w) => {
+    const query = !w.webContents.isDestroyed() && (w.webContents.getURL() || routes.get(w) || '').split('#')[1]?.split('?')[1]
+    return !!query && new URLSearchParams(query).get('project')?.normalize('NFC') === want
+  })
 }
 
 /** Open a bundle in the editor, or bring its editor forward. `recovered`: the editor says so.

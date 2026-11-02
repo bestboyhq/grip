@@ -96,11 +96,18 @@ function swap(from: Snapshot[], to: Snapshot[]) {
   const p: Project = JSON.parse(s.json)
   p.sources = $state.snapshot(doc.project.sources) // main-side domains own sources (camera matte, transcript): undo never takes them back
   doc.project = p
-  // Items the step removed leave the selection, so Delete or Copy never act on nothing.
-  const live = new Set([...p.clips, ...p.zooms, ...p.layouts, ...p.masks].map((x) => x.id))
-  if (selection.ids.some((id) => !live.has(id))) selection.ids = selection.ids.filter((id) => live.has(id))
+  pruneSelection()
   changed()
 }
+
+/** Items a step removed (an undo, an agent's cut) leave the selection, so Delete or Copy never act on nothing. */
+export function pruneSelection() {
+  const p = doc.project
+  if (!p) return
+  const live = new Set([...p.clips, ...p.zooms, ...p.layouts, ...p.masks].map((x) => x.id))
+  if (selection.ids.some((id) => !live.has(id))) selection.ids = selection.ids.filter((id) => live.has(id))
+}
+
 export const undo = () => swap(undoStack, redoStack)
 export const redo = () => swap(redoStack, undoStack)
 export const canUndo = () => undoStack.length > 0

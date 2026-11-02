@@ -52,6 +52,7 @@ test('launch arguments', () => {
   assert.equal(parseLaunch(['electron', '.', '--lab', 'RecorderShell'], '/').lab, 'RecorderShell')
   assert.equal(parseLaunch(['electron', '--lab', '--enable-logging', '.', 'RecorderShell&ref=/x.png'], '/').lab, 'RecorderShell&ref=/x.png')
   assert.deepEqual(parseLaunch(['electron', '.'], '/'), { urls: [], files: [] })
+  assert.deepEqual(parseLaunch([exe, '--background'], '/'), { urls: [], files: [], background: true })
 })
 
 test('plain-language errors', () => {

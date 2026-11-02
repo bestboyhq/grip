@@ -4,12 +4,14 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { fade } from 'svelte/transition'
-  import { doc, canUndo, canRedo, save, selection } from '../../lib/doc.svelte.ts'
-  import { player, stats } from '../../lib/player.svelte.ts'
+  import { doc, canUndo, canRedo, edit, pruneSelection, save, selection, zoomLook } from '../../lib/doc.svelte.ts'
+  import { player, seek, stats } from '../../lib/player.svelte.ts'
   import { dropFiles, invoke, on } from '../../lib/ipc.ts'
   import { fileUrl } from '../../engine/media/index.ts'
   import { parseEvents } from '../../shared/events.ts'
   import type { Project, Sources, Transcript } from '../../shared/project.ts'
+  import { applyEdits, type Edit } from '../../shared/edits.ts'
+  import { timeMap, toSource } from '../../shared/timemap.ts'
   import { autoZoomOnce } from '../../engine/zoom/index.ts'
   import Icon from '../../ui/Icon.svelte'
   import Popover from '../../ui/Popover.svelte'
@@ -19,6 +21,7 @@
   import AspectPicker from './AspectPicker.svelte'
   import CropDialog from './CropDialog.svelte'
   import Timeline from './timeline/Timeline.svelte'
+  import { keepingPlayhead } from './timeline/actions.svelte.ts'
   import ExportButton, { exportVideo } from './export/ExportButton.svelte'
   import ShareButton from './share/ShareButton.svelte'
   import { commandForMenu, registerCommands, run } from './commands/registry.ts'
@@ -31,6 +34,7 @@
   let cropOpen = $state(false)
   let notice = $state('')
   let gone = false // moved to the Trash: nothing may write to the bundle any more
+  let opened: Promise<void> = Promise.resolve()
 
   async function load(requested: string) {
     if (!requested) throw new Error('No project was given to open.')
@@ -61,7 +65,7 @@
   }
 
   onMount(() => {
-    load(params.get('project') ?? '').catch((e) => (error = reason(e)))
+    opened = load(params.get('project') ?? '').catch((e) => void (error = reason(e)))
     // Closing: '' once the edits are on disk, or why not (the main process asks what to do then).
     return on('editor:close', async () => {
       const failed = gone ? '' : await save().then(() => '', (e) => reason(e) || 'The project couldn’t be saved.')
@@ -79,6 +83,34 @@
       else invoke('editor:nativeEdit', item)
     }),
   )
+
+  // Agents (electron/agents.ts) reach the open project here: their edits land as one undo step, saved
+  // before the reply; a time moves the playhead; a bare request reads the project as it is.
+  $effect(() => {
+    const off = on('agents:request', async (id: string, r: { edits?: Edit[]; time?: number }) => {
+      let reply: { project?: Project; error?: string }
+      try {
+        await opened
+        if (!doc.project || gone) throw new Error(error || 'The project is not open any more.')
+        if (r.edits) {
+          applyEdits($state.snapshot(doc.project) as Project, r.edits, zoomLook(), doc.transcript) // throws before anything changes
+          await keepingPlayhead(() => edit((p) => applyEdits(p, r.edits!, zoomLook(), doc.transcript))) // as after the editor's own cuts
+          pruneSelection()
+          await save()
+        }
+        if (r.time !== undefined) {
+          seek(r.time)
+          doc.project.playhead = toSource(timeMap(doc.project.clips), r.time) // before the first frame, the preview opens here
+        }
+        reply = { project: $state.snapshot(doc.project) as Project }
+      } catch (e) {
+        reply = { error: reason(e) }
+      }
+      invoke('agents:reply', id, reply)
+    })
+    invoke('agents:ready')
+    return off
+  })
 
   const aiming = $derived(!!doc.project?.zooms.some((z) => selection.ids.includes(z.id)))
   const masking = $derived(!aiming && !!doc.project?.masks.some((m) => selection.ids.includes(m.id)))
@@ -219,17 +251,6 @@
     {/if}
   </header>
 
-  {#if doc.saveError}
-    <!-- Stays until a save lands: the edits are only in this window until then. -->
-    <p class="notice" role="alert">
-      {doc.saveError}<button class="btn ghost" onclick={() => save().catch(() => {})}>Try Again</button>
-    </p>
-  {:else if notice}
-    <p class="notice" role="alert">
-      {notice}<button class="icon-btn" aria-label="Dismiss" onclick={() => (notice = '')}><Icon name="close" size={14} /></button>
-    </p>
-  {/if}
-
   {#if error}
     <div class="error" role="alert">
       <Icon name="none" size={28} />
@@ -249,6 +270,16 @@
           {#if aiming}<span class="aim-hint" transition:fade={{ duration: 180 }}><Icon name="target" size={15} /><span>Click the preview to aim the selected zoom</span></span>
           {:else if masking}<span class="aim-hint"><Icon name="target" size={15} /><span>Drag on the preview to place the mask</span></span>{/if}
         </div>
+        {#if doc.saveError}
+          <!-- Stays until a save lands: the edits are only in this window until then. -->
+          <p class="notice" role="alert">
+            {doc.saveError}<button class="btn ghost" onclick={() => save().catch(() => {})}>Try Again</button>
+          </p>
+        {:else if notice}
+          <p class="notice" role="alert">
+            {notice}<button class="icon-btn" aria-label="Dismiss" onclick={() => (notice = '')}><Icon name="close" size={14} /></button>
+          </p>
+        {/if}
         <Preview />
       </section>
     </main>
@@ -287,7 +318,7 @@
   .btn.danger:hover { background: var(--error-bg-hover); }
 
   .body { flex: 1; min-height: 0; display: flex; }
-  .stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .stage { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .toolbar { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; }
   .crop { height: 28px; padding: 0 10px 0 8px; }
   .crop :global(.icon) { color: var(--fg-secondary); }
@@ -301,10 +332,11 @@
     background: var(--surface-root); box-shadow: var(--hairline);
   }
 
+  /* Over the top of the preview, under its toolbar: a notice that stays until dismissed never hides Crop or Blur. */
   .notice {
-    position: fixed; z-index: 10; top: 46px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; margin: 0;
+    position: absolute; z-index: 10; top: 50px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; margin: 0;
     padding: 4px 4px 4px 12px; border-radius: var(--radius-lg); background: var(--surface-root); box-shadow: var(--shadow-pop);
-    width: max-content; max-width: calc(100vw - 48px); font-size: 12.5px; line-height: 1.4;
+    width: max-content; max-width: calc(100% - 32px); font-size: 12.5px; line-height: 1.4;
   }
   .notice .icon-btn { width: 22px; height: 22px; }
   .error { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 40px; color: var(--fg-secondary); text-align: center; }

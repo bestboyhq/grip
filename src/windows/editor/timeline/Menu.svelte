@@ -8,7 +8,7 @@
   import { tick } from 'svelte'
   import { doc, selection } from '../../../lib/doc.svelte.ts'
   import * as A from './actions.svelte.ts'
-  import { submenuAim } from '../../../ui/aim.ts'
+  import { step, submenuAim } from '../../../ui/aim.ts'
   import { drop } from '../../../ui/motion.ts'
 
   // trigger: the button that opened the menu; pressing it again is not an outside press (it toggles)
@@ -79,7 +79,7 @@
       openSub = ''
       fly.parentElement!.querySelector<HTMLElement>('[aria-haspopup]')!.focus()
     } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') return
-    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') items[step(i, items.length, e.key === 'ArrowUp')]?.focus()
     else if (e.key === 'Home') items[0]?.focus()
     else if (e.key === 'End') items.at(-1)?.focus()
     else if (e.key === 'Escape' || e.key === 'Tab') onclose()

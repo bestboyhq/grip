@@ -19,6 +19,7 @@ The editor where users cut, speed up, and direct the video.
 - Selection is a hairline ring and a soft glow in the item's colour, never a thick white border.
 - Keyboard-first: ⌘B (or C) cuts at the playhead, Q and W delete the clip under the playhead before or after it, X ripple-deletes, holding ⌥ arms the split tool, arrows step 0.5 s (1 s with Shift), 0-9 set zoom level, and ⌘K reaches every action.
   People bring these keys from other editors: the bar shows Cut with ⌘B, and ⌘K finds it by "split".
+  ⌫ and ⌦ do what X does, as in any Mac app: either one doing nothing reads as an editor that ignores its own platform.
   Shortcuts stay inactive while a text field has focus.
 - Undo and redo cover every edit and return the playhead to the same source moment.
 - Dragging and resizing leave the playhead in place, and a dragged edge tracks the pointer exactly, on sped-up clips too.
