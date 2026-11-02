@@ -500,7 +500,8 @@ const BEVEL = 0.15; // bevel width, fraction of the radius
 const CURL = 1.0 / 3.0; // the bevel shows this share of what the flat top would show across it, the least that
 // stays monotone: the content slows as (1 - s)^2 and stretches into a curl along the rim
 const DISPERSION = 0.045; // how far red and blue bend apart at the rim, fraction of the radius
-const KEY = vec3f(-0.38, -0.82, 0.43); // key light direction (output px axes, z toward the viewer)
+const KEY = vec3f(0.0, -0.9, 0.43); // key light direction (output px axes, z toward the viewer): straight above,
+// so a lens's shadow falls the way the window's and the camera's do
 const DIM = 0.08; // how much the frame dims while a lens shows
 const SHADOW = 0.11; // how dark a lens's shadow is under it
 const SHADOW_SHIFT = 0.1; // the shadow falls this many radii off the lens, away from the light
@@ -604,12 +605,12 @@ fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, fringe: bool) -> vec
   let fres = 0.04 + 0.96 * pow(1.0 - n.z, 5.0);
   let env = mix(vec3f(1.0), vec3f(0.55, 0.58, 0.64), smoothstep(-0.7, 0.9, dir.y)); // bright sky above, the room below
   // The rim rounds away: the outer bevel shades darker on the side turned from the light and barely
-  // on the side facing it, the last few px darken all around, and a hairline of light catches the
-  // very edge. Broad specular crescents read as plastic, not glass.
+  // on the side facing it, and a hairline of light catches the very edge. Darkening the last few px
+  // all around draws a gray outline over light UI; broad specular crescents read as plastic, not glass.
   let toward = dot(dir, normalize(KEY.xy)); // 1 facing the light, -1 turned away
   let round = smoothstep(1.0 - 0.7 * BEVEL, 1.0, rho);
   let px = (R - d) / aa; // output px in from the rim
-  var g = col * (1.0 - round * mix(0.15, 0.02, 0.5 + 0.5 * toward)) * (1.0 - 0.1 * (1.0 - smoothstep(1.0, 6.0, px)));
+  var g = col * (1.0 - round * mix(0.15, 0.02, 0.5 + 0.5 * toward));
   g = mix(g, env, fres * 0.15);
   g += vec3f(0.1 + 0.12 * max(toward, 0.0)) * (1.0 - smoothstep(0.0, 1.5, px));
 

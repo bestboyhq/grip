@@ -16,6 +16,8 @@ Turning clicks and typing into camera direction.
   It has no outline; its rim is the edge: the magnification holds almost to it, then the content slows to a stop and curls along the rim with color fringes.
   A bevel that squeezes the frame around the lens back to 1x crams too much into a sliver, which aliases into streaks.
   The rim rounds toward the viewer: it shades darker on the side turned from the light, and a hairline of light catches the edge.
+  Darkening the rim's last few px all around draws a gray outline over light UI.
+  The light comes from straight above, where the window's and the camera's shadows say it is; a lens lit from a corner casts its shadow at odds with theirs.
   Broad specular crescents make the lens read as plastic.
   While a lens shows, the whole frame around it dims evenly by 8%, alike for every lens size, so the lens stands out.
   The lens also casts a faint, soft shadow away from the light, gone within half a radius of its rim, so it lifts off the screen.
