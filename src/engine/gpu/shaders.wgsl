@@ -27,7 +27,7 @@ struct Frame {
   cam4: vec4f,     // camera source w, h
   lutMin: vec4f,
   lutMax: vec4f,
-  fin: vec4f,      // has overlay, click effect (0 none, 1 swell, 2 wave, 3 circle, 4 focus ring)
+  fin: vec4f,      // has overlay, click effect (0 none, 1 swell, 2 wave, 3 circle, 4 focus ring), screen through the BT.709 curve (screenTap)
   vp: vec4f,       // viewport (output px): the zoom view shows through it, everything outside is unzoomed
   vis: vec4f,      // shown part of the recording (unzoomed px): all of scr, or its crop; the frame is this grown by dev.w
   clicks: array<vec4f, 4>, // click effects: x, y, radius (unzoomed px), strength
@@ -173,16 +173,27 @@ fn part(c: vec3f, u: vec2f, i: i32, aa: f32) -> vec3f {
   return mix(c, col.rgb, k * col.a);
 }
 
+// One bilinear tap of the recording, as recorded. A screen recording's pixels are sRGB, but older
+// ones are tagged BT.709, and a hardware-decoded BT.709 frame arrives through macOS's display curve
+// for it (gamma 1.961, then sRGB), every midtone lifted (128 -> 139): fin.z undoes that curve.
+fn screenTap(uv: vec2f) -> vec3f {
+  let c = textureSampleBaseClampToEdge(screenTex, samp, uv).rgb;
+  if (F.fin.z < 0.5) { return c; }
+  let s = clamp(c, vec3f(0.0), vec3f(1.0));
+  let linear = select(pow((s + 0.055) / 1.055, vec3f(2.4)), s / 12.92, s <= vec3f(0.04045));
+  return pow(linear, vec3f(1.0 / 1.961));
+}
+
 // Box-filtered screen sample: m = source px per output px. Minified video gets k x k bilinear
 // taps so text does not shimmer or alias in small previews.
 fn screenSample(uv: vec2f, m: f32) -> vec3f {
-  if (m <= 1.3) { return textureSampleBaseClampToEdge(screenTex, samp, uv).rgb; }
+  if (m <= 1.3) { return screenTap(uv); }
   let k = min(ceil(m / 1.5), 4.0);
   let step = m / k / F.scr3.xy;
   var c = vec3f(0.0);
   for (var j = 0.0; j < k; j += 1.0) {
     for (var i = 0.0; i < k; i += 1.0) {
-      c += textureSampleBaseClampToEdge(screenTex, samp, uv + (vec2f(i, j) - 0.5 * (k - 1.0)) * step).rgb;
+      c += screenTap(uv + (vec2f(i, j) - 0.5 * (k - 1.0)) * step);
     }
   }
   return c / (k * k);
@@ -480,18 +491,20 @@ fn dimAt(u: vec2f, aa: f32) -> f32 {
 // edge. Lit by one key light from above: the bevel shades darker turned away from it, a hairline of
 // light catches the rim, Fresnel reflection at grazing angles, and dispersion splits the colors where
 // the bevel bends hardest. Moving, the drop stretches along its motion, keeping its
-// area, and what it shows smears across the shutter like the rest of the frame. The frame dims most
-// right around a lens and less further out, so the lens lifts off the screen without the whole frame
-// going dark. Several lenses draw in order, a later one over an earlier one.
+// area, and what it shows smears across the shutter like the rest of the frame. While a lens shows,
+// the frame around it dims evenly, so the lens stands out, and each lens casts a soft shadow away
+// from the light, so it lifts off the screen. Several lenses draw in order, a later one over an
+// earlier one.
 
 const BEVEL = 0.15; // bevel width, fraction of the radius
 const CURL = 1.0 / 3.0; // the bevel shows this share of what the flat top would show across it, the least that
 // stays monotone: the content slows as (1 - s)^2 and stretches into a curl along the rim
 const DISPERSION = 0.045; // how far red and blue bend apart at the rim, fraction of the radius
 const KEY = vec3f(-0.38, -0.82, 0.43); // key light direction (output px axes, z toward the viewer)
-const AROUND = 0.14; // how much the frame right around a lens dims
-const AROUND_REACH = 0.8; // ...and half that this many radii out from its edge
-const AROUND_SHIFT = 0.3; // the dim sits this many radii off the lens, away from the light, like its shadow
+const DIM = 0.08; // how much the frame dims while a lens shows
+const SHADOW = 0.11; // how dark a lens's shadow is under it
+const SHADOW_SHIFT = 0.1; // the shadow falls this many radii off the lens, away from the light
+const SHADOW_BLUR = 0.15; // ...blurred over this many radii (the Gaussian's sigma)
 const LENSES = 4u;
 const LENS_SAMPLES = 9u; // per lens in F.loupeS (renderer.ts LOUPE_SAMPLES)
 
@@ -532,6 +545,16 @@ fn underLens(um: vec2f, aa: f32, vs: f32, cs: vec4f) -> vec3f {
 
 struct Lens { a: vec4f, b: vec4f } // two slots of F.loupes
 
+// q in the stretched drop's frame, where it is a circle: the drop is an ellipse 1 + k long along its
+// motion st (length k) and 1 / sqrt(1 + k) across it. The map is symmetric, so drop(drop(q)) points
+// along the gradient of length(drop(q)).
+fn drop(q: vec2f, st: vec2f) -> vec2f {
+  let k = length(st);
+  let ax = select(vec2f(1.0, 0.0), st / max(k, 1e-6), k > 1e-6);
+  let along = dot(q, ax);
+  return ax * (along / (1.0 + k)) + (q - ax * along) * sqrt(1.0 + k);
+}
+
 // Lens i at shutter time f in 0..1, piecewise linear between its samples; at t when f < 0 or it is still.
 fn lensOf(i: u32, f: f32) -> Lens {
   let n = u32(F.loupes[2u * i + 1u].y);
@@ -552,17 +575,13 @@ fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, fringe: bool) -> vec
   let op = L.b.x;
   let st = L.b.zw;
   let q = u - c;
-  // The stretched drop: an ellipse 1 + k long along the motion and 1 / sqrt(1 + k) across it.
-  let k = length(st);
-  let ax = select(vec2f(1.0, 0.0), st / max(k, 1e-6), k > 1e-6);
-  let along = dot(q, ax);
-  let sq = ax * (along / (1.0 + k)) + (q - ax * along) * sqrt(1.0 + k);
+  let sq = drop(q, st);
   let d = length(sq);
   let cv = cover(d - R, 2.0 * aa); // a rounded edge is a little soft, not a cut
   if (cv <= 0.0) { return vec4f(0.0); }
 
   let rho = min(d / R, 1.0);
-  let gq = ax * (dot(sq, ax) / (1.0 + k)) + (sq - ax * dot(sq, ax)) * sqrt(1.0 + k); // gradient of d: the rim's normal
+  let gq = drop(sq, st); // gradient of d: the rim's normal
   let dir = gq / max(length(gq), 1e-6);
   let m = lensMap(rho, mag);
   let shown = m.x / max(rho, 1e-4); // 1 / mag on the flat top: the magnification stays round when stretched
@@ -616,19 +635,26 @@ fn lensesAt(p: vec2f, f: f32, fringe: bool) -> vec4f {
   return out;
 }
 
-// The dim around the lenses at t, drawn just under them: rgb multiplies the frame, alpha raises the
-// dither mark. Over video the mark is 0, and a dim this broad quantizes to 8 bits as rings 10-30 px
-// wide, so it marks every pixel it darkens by half a level or more.
+// The frame's dim and the lenses' shadows at t, drawn just under the lenses: rgb multiplies the frame,
+// alpha raises the dither mark. The dim is even and follows the most opaque lens, so one lens or four,
+// small or large, dim the frame alike as they pop in and out. A shadow is its lens's drop moved away
+// from the light and blurred, gone within half a radius of the rim. A dim that fades out with distance
+// bands in every export: the encoder strips the dither, and over flat UI each 8-bit step of a faint
+// ramp shows as a ring tens of px wide. Over video the mark is 0, so it marks every pixel the shadow
+// darkens by half a level or more, for the preview; the even dim has no ramp to dither.
 @fragment fn fs_lensdim(v: VO) -> @location(0) vec4f {
   let u = unview(v.pos.xy, F.viewT.xyz);
-  var dim = 0.0;
+  var on = 0.0;
+  var sh = 0.0;
   for (var i = 0u; i < LENSES; i++) {
     let L = F.loupes[2u * i];
     if (L.z <= 0.0) { continue; }
-    let d = max(length(u - L.xy + normalize(KEY.xy) * AROUND_SHIFT * L.z) - L.z, 0.0) / (AROUND_REACH * L.z);
-    dim = max(dim, AROUND * F.loupes[2u * i + 1u].x / (1.0 + d * d));
+    let b = F.loupes[2u * i + 1u];
+    let x = length(drop(u - L.xy + normalize(KEY.xy) * SHADOW_SHIFT * L.z, b.zw)) - L.z; // out from the shadow's edge
+    on = max(on, b.x);
+    sh = max(sh, SHADOW * b.x * (0.5 - 0.5 * erf2(vec2f(x * 0.70710678 / (SHADOW_BLUR * L.z))).x));
   }
-  return vec4f(vec3f(1.0 - dim), min(dim * 510.0, 1.0));
+  return vec4f(vec3f((1.0 - DIM * on) * (1.0 - sh)), min(sh * 510.0, 1.0));
 }
 
 // Output px the content under p travels across the shutter through a lens: the lens gliding, its
@@ -856,9 +882,9 @@ fn oklabToSrgb(lab: vec3f) -> vec3f {
 // Screen frame -> quarter resolution (a 4x4 box from 4 bilinear taps), base of the mask pyramid.
 @fragment fn fs_small(v: VO) -> @location(0) vec4f {
   let t = 1.0 / F.scr3.xy;
-  var c = textureSampleBaseClampToEdge(screenTex, samp, v.uv + vec2f(-t.x, -t.y)).rgb;
-  c += textureSampleBaseClampToEdge(screenTex, samp, v.uv + vec2f(t.x, -t.y)).rgb;
-  c += textureSampleBaseClampToEdge(screenTex, samp, v.uv + vec2f(-t.x, t.y)).rgb;
-  c += textureSampleBaseClampToEdge(screenTex, samp, v.uv + vec2f(t.x, t.y)).rgb;
+  var c = screenTap(v.uv + vec2f(-t.x, -t.y));
+  c += screenTap(v.uv + vec2f(t.x, -t.y));
+  c += screenTap(v.uv + vec2f(-t.x, t.y));
+  c += screenTap(v.uv + vec2f(t.x, t.y));
   return vec4f(c * 0.25, 1.0);
 }

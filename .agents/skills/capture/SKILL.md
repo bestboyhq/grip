@@ -11,6 +11,8 @@ Screen, window, area, and device recording.
   Show only the options the running OS supports.
 - Capture at native pixel size and refresh rate across retina and non-retina, mixed-DPI multi-display setups, ultrawide, DisplayLink, fullscreen apps, and Spaces.
 - Plan the downscale for sources above the encoder's maximum dimensions (ultrawide, 5K+) at capture setup.
+- Screen pixels are sRGB, and the screen track says so.
+  ScreenCaptureKit labels its frames with BT.709's curve: written as labeled, or converted from that label, the file plays washed out in QuickTime (gray 128 shows as 139).
 - Our own UI stays out of the capture: recording widget, speaker notes and prompter, camera preview, area picker.
   System notifications and, optionally, desktop icons stay out too.
 - The picker opens at once (shortcut or menu bar click) and freezes every display under it; the freeze ends when a countdown starts.

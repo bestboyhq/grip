@@ -8,7 +8,7 @@
 //              the shutter's view samples
 //   cursor     swept quad, motion blur over the shutter's cursor samples
 //   highlight
-//   lensdim    the dim around the lenses, marked for dithering
+//   lensdim    the frame's dim and the lenses' shadows, marked for dithering
 //   loupe      glass lenses, motion blur over the shutter's lens (and view, cursor) samples
 //   camera
 //   final      overlay canvas (drawings, keystrokes, captions) on top, dithered to the 8-bit canvas
@@ -290,6 +290,9 @@ export class Renderer {
     const has = this.pack(scene, frames, motion, cursor)
     has.overlay = this.paintOverlay(scene)
     this.u[FIN * 4] = has.overlay ? 1 : 0
+    // Hardware decodes (NV12; software ones are I420) of a BT.709-tagged recording come through
+    // macOS's curve for BT.709, which screenTap undoes.
+    this.u[FIN * 4 + 2] = screen?.format === 'NV12' && screen.colorSpace.transfer === 'bt709' ? 1 : 0
     d.queue.writeBuffer(this.frameU, 0, this.u)
 
     const ext = (f: VideoFrame | null | undefined) => d.importExternalTexture({ source: f ?? this.placeholder })
