@@ -305,7 +305,7 @@ fn a_crash_leaves_a_playable_file() {
     let _g = crate::clock::serial(); // one encoder at a time
     let dir = Dir::new("crash");
     let path = dir.file("crash.mp4");
-    let spec = VideoSpec { width: 320, height: 180, fps: 30.0, bits_per_pixel: 0.15, realtime: false };
+    let spec = VideoSpec { width: 320, height: 180, fps: 30.0, bits_per_pixel: 0.15, realtime: false, srgb: false };
     let mut w = VideoWriter::new(&path, spec).unwrap();
     for k in 0..120 {
         assert!(w.frame(frame(320, 180, (k * 2) as u8, 0), Some(k as f64 / 30.0)));
@@ -321,7 +321,7 @@ fn analysis_matches_camera_timing_and_cleans_up_on_cancel() {
     let _g = crate::clock::serial(); // one encoder at a time
     let dir = Dir::new("analysis");
     let input = dir.file("camera.mp4");
-    let spec = VideoSpec { width: 640, height: 360, fps: 30.0, bits_per_pixel: 0.15, realtime: false };
+    let spec = VideoSpec { width: 640, height: 360, fps: 30.0, bits_per_pixel: 0.15, realtime: false, srgb: false };
     let mut w = VideoWriter::new(&input, spec).unwrap();
     for k in 0..45 {
         w.frame(frame(640, 360, 60 + k as u8, 180), Some(0.004 + k as f64 / 30.0));

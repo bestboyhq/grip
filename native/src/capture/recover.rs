@@ -391,7 +391,7 @@ mod tests {
     fn crashed(dir: &Path) -> Vec<(&'static str, PathBuf, bool)> {
         fs::create_dir_all(dir).unwrap();
         let screen = dir.join("writer.mp4");
-        let spec = VideoSpec { width: 320, height: 180, fps: 30.0, bits_per_pixel: 0.3, realtime: false };
+        let spec = VideoSpec { width: 320, height: 180, fps: 30.0, bits_per_pixel: 0.3, realtime: false, srgb: true };
         let mut video = VideoWriter::new(&screen, spec).unwrap();
         let pattern = Pattern::new(320, 180);
         let system = dir.join("writer.m4a");

@@ -428,7 +428,7 @@ impl Sink {
                 return;
             }
             let (width, height) = self.size.unwrap_or((w, h));
-            let spec = VideoSpec { width, height, fps: self.fps, bits_per_pixel: self.bits_per_pixel, realtime: true };
+            let spec = VideoSpec { width, height, fps: self.fps, bits_per_pixel: self.bits_per_pixel, realtime: true, srgb: false };
             match VideoWriter::new(&self.video_path, spec) {
                 Ok(v) => st.video = Some(v),
                 Err(e) => {

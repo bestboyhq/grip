@@ -4,7 +4,7 @@
 // Covers: frameAt on VFR H.264 with B-frames, HEVC, and the fixture; stepping backward; decoding
 // ahead across a cut; a bounded read cache; AAC priming alignment; seamless music loops; an imported
 // .mp4 as its own audio; renderAudio length, 2x, chunk joins; peaks cache; editing a 2-hour project
-// without stalling the editor.
+// without stalling the editor; exported colors as recorded.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile, execFileSync } from 'node:child_process'
@@ -61,6 +61,10 @@ if (process.versions.electron) {
     ff(dir, ['-f', 'lavfi', '-i', clicks, '-c:a', 'aac', '-b:a', '192k', 'click.m4a'])
     // 2 s of a 44.1 kHz sine, for music loops.
     ff(dir, ['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100:duration=2', '-af', 'volume=4', '-c:a', 'aac', '-b:a', '192k', 'tone44.m4a'])
+    // A screen of sRGB gray 128 (limited-range Y 126), tagged BT.709 like older recordings and sRGB like newer ones.
+    for (const trc of ['bt709', 'iec61966-2-1'])
+      ff(dir, ['-f', 'lavfi', '-i', `nullsrc=s=128x128:r=30:d=1,format=yuv420p,geq=lum=126:cb=128:cr=128,setparams=range=tv:color_primaries=bt709:color_trc=${trc}:colorspace=bt709`,
+        '-c:v', 'libx265', '-tag:v', 'hvc1', '-crf', '4', '-x265-params', 'log-level=error', '-pix_fmt', 'yuv420p', `gray-${trc}.mp4`])
     // An "imported" video with its own audio track.
     ff(dir, ['-f', 'lavfi', '-i', 'testsrc2=s=128x128:r=30:d=3', '-f', 'lavfi', '-i', clicks.replace('d=4', 'd=3'),
       '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-shortest', 'av.mp4'])

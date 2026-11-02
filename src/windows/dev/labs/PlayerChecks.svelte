@@ -12,6 +12,9 @@
   import { doc, edit } from '../../../lib/doc.svelte.ts'
   import { attach, pathsOffThread, player } from '../../../lib/player.svelte.ts'
   import { stressProject } from '../../editor/timeline/stress.ts'
+  import { exportProject } from '../../../engine/export/index.ts'
+  import { defaultOptions } from '../../../engine/export/options.ts'
+  import { ALL_FORMATS, BufferSource, Input, VideoSampleSink } from 'mediabunny'
 
   let { params }: { params: URLSearchParams } = $props()
   type Check = { name: string; ok: boolean; detail: string }
@@ -97,6 +100,30 @@
     await check('frameAt is exact on variable frame rate H.264 with B-frames', () => frames('vfr.mp4', vfr, (i) => Math.round(1.164 * 8 * i)))
     const cfr = Array.from({ length: 60 }, (_, i) => i / 30)
     await check('frameAt is exact on HEVC', () => frames('hevc.mp4', cfr, (i) => Math.round(1.164 * 3 * i)))
+    // macOS shows a BT.709-tagged frame through its BT.709 curve (128 -> 139), and so does Chrome's WebGPU
+    // for hardware decodes: an export must keep the recorded pixels and say they are sRGB.
+    await check('an export keeps the recorded colors, tagged sRGB', async () => {
+      const got: string[] = []
+      for (const trc of ['bt709', 'iec61966-2-1']) {
+        const file = `gray-${trc}.mp4`
+        const project = createProject('t', { duration: 1, screen: { file, width: 128, height: 128, fps: 30, scale: 1 } })
+        const bytes = new Uint8Array(4 << 20)
+        let end = 0
+        const io = { write: async (at: number, d: Uint8Array) => (bytes.set(d, at), void (end = Math.max(end, at + d.length))), progress: () => {} }
+        const options = { ...defaultOptions(), size: 720 }
+        await exportProject({ id: trc, name: 't', bundle: dir, options, dest: 'file', path: '', state: 'running', progress: 0, phase: '', project }, io)
+        const track = (await new Input({ source: new BufferSource(bytes.subarray(0, end)), formats: ALL_FORMATS }).getPrimaryVideoTrack())!
+        const sample = (await new VideoSampleSink(track).getSample(0.5))!
+        const f = sample.toVideoFrame()
+        const g = gray(f)
+        f.close()
+        sample.close()
+        const tag = (await track.getColorSpace()).transfer
+        assert(Math.abs(g - 128) <= 2 && tag === 'iec61966-2-1', `${file}: gray ${g} tagged ${tag}, want 128 tagged iec61966-2-1`)
+        got.push(`${trc} -> ${g}`)
+      }
+      return got.join(', ')
+    })
     await check('a portrait phone video (landscape frames plus a rotation) comes out upright', async () => {
       // 128x64 frames, left half white, displayed turned 90 degrees: 64x128, white at the bottom.
       const src = await openVideo(fileUrl(`${dir}/rotated.mov`))
