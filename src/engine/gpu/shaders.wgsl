@@ -501,7 +501,7 @@ const CURL = 1.0 / 3.0; // the bevel shows this share of what the flat top would
 // stays monotone: the content slows as (1 - s)^2 and stretches into a curl along the rim
 const DISPERSION = 0.045; // how far red and blue bend apart at the rim, fraction of the radius
 const KEY = vec3f(-0.38, -0.82, 0.43); // key light direction (output px axes, z toward the viewer)
-const DIM = 0.1; // how much the frame dims while a lens shows
+const DIM = 0.08; // how much the frame dims while a lens shows
 const SHADOW = 0.22; // how dark a lens's shadow is under it
 const SHADOW_SHIFT = 0.1; // the shadow falls this many radii off the lens, away from the light
 const SHADOW_BLUR = 0.15; // ...blurred over this many radii (the Gaussian's sigma)
