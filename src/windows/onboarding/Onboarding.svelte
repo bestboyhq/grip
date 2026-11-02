@@ -1,7 +1,8 @@
-<!-- Onboarding and settings (#/onboarding?page=welcome|permissions|shortcut|settings[&need=<permission>]).
+<!-- Onboarding and settings (#/onboarding?page=welcome|permissions|shortcut|usage|settings[&need=<permission>]).
      Welcome, then permissions: each with a one-line reason, live status, a request button that
      shows the system prompt the first time and System Settings after that, and a way back from a
-     revoked permission (`need`). Then the record shortcut: none until the user types one, or skips. Settings puts recording options and shortcuts first, then the same
+     revoked permission (`need`). Then the record shortcut: none until the user types one, or skips. Then usage counts,
+     off until the user says yes (`page=usage` alone asks whoever onboarded before). Settings puts recording options and shortcuts first, then the same
      permission list with every allowed one folded into a single row. Each recording option plays on a
      small desktop beside the list while it is pointed at or focused. -->
 <script lang="ts">
@@ -78,6 +79,11 @@
   let atLogin = $state(true)
   if (query.page === 'settings') invoke('shell:login-item').then((on) => (atLogin = on))
   const finish = () => invoke('shell:finish-onboarding', atLogin)
+  // Asked, never assumed: both answers weigh the same, and asked alone it only closes.
+  function shareCounts(yes: boolean) {
+    setSettings({ usageCounts: yes })
+    query.page === 'usage' ? window.close() : finish()
+  }
 
   // The record shortcut is the user's, none until they pick one: click it, type a new one (Esc keeps the
   // old one, ⌫ removes it).
@@ -103,6 +109,10 @@
   function toShortcut() {
     page = 'shortcut'
     if (!recordKeys) listen()
+  }
+  function toUsage() {
+    stopListening()
+    page = 'usage'
   }
   function stepKeys(e: KeyboardEvent) {
     if (page !== 'shortcut' || !typingKeys) return
@@ -239,10 +249,24 @@
       </p>
     </section>
     <footer>
-      <span>{#if !recordKeys}<button class="link" onclick={finish}>Skip for now</button>{/if}</span>
+      <span>{#if !recordKeys}<button class="link" onclick={toUsage}>Skip for now</button>{/if}</span>
       <label class="login">Open at login <input type="checkbox" role="switch" bind:checked={atLogin} /></label>
-      <button class="button primary" disabled={!recordKeys} onclick={finish}>Continue</button>
+      <button class="button primary" disabled={!recordKeys} onclick={toUsage}>Continue</button>
     </footer>
+  {:else if page === 'usage'}
+    <!-- What a count holds, shown as two of them: the question is about these, not about a vague "data". -->
+    <section class="welcome">
+      <ul class="rows compact sample" aria-label="Two usage counts">
+        <li><span class="title">Recording finished</span><span class="reason">1 min 12 s · camera · mic</span></li>
+        <li><span class="title">Video exported</span><span class="reason">MP4 · 1080p · 4 zooms</span></li>
+      </ul>
+      <h1>Share usage counts?</h1>
+      <p>Counts like these show what to make better. No ID or name, and never what you record. Settings changes it any time.</p>
+      <div class="choices">
+        <button class="button" onclick={() => shareCounts(false)}>Don’t Share</button>
+        <button class="button" onclick={() => shareCounts(true)}>Share Counts</button>
+      </div>
+    </section>
   {:else}
     <section class="body scroll">
       {@render needBanner()}
@@ -325,7 +349,7 @@
               <span class="title">Share usage counts</span>
               <span class="reason">Anonymous counts, like a finished recording. Never what you record.</span>
             </span>
-            <input type="checkbox" role="switch" checked={!!shell.settings?.usageCounts} onchange={(e) => setSettings({ usageCounts: e.currentTarget.checked })} />
+            <input type="checkbox" role="switch" checked={shell.settings?.usageCounts === true} onchange={(e) => setSettings({ usageCounts: e.currentTarget.checked })} />
           </label>
         </li>
       </ul>
@@ -450,6 +474,25 @@
     .caret {
       animation: none;
     }
+  }
+  .welcome .sample {
+    align-self: stretch;
+    margin: 0 0 32px;
+  }
+  .sample li {
+    justify-content: space-between;
+  }
+  .sample .reason {
+    margin: 0;
+  }
+  /* Two answers of one weight: neither is the default. */
+  .choices {
+    display: flex;
+    gap: 12px;
+  }
+  .choices .button {
+    min-width: 140px;
+    height: 32px;
   }
   .welcome .after {
     min-height: 17px; /* a note coming and going never moves the page */
