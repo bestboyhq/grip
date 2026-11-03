@@ -290,6 +290,12 @@ test('presets bundle their assets, apply anywhere, and fall back to defaults for
 
   const saved = await savePreset('Warm ✨ #1', from, style, dir)
   assert.deepEqual((await listPresets(dir)).map((p) => p.name), ['Warm ✨ #1'])
+  // The saved style works in the bundle it came from, so the project takes it and shows the preset
+  // as in use, also after saving it again; files keep their names, which the editor shows.
+  assert.ok(saved.style.background.kind === 'image' && /^assets\/[0-9a-f]{16}\/bg\.JPG$/.test(saved.style.background.file))
+  assert.equal(await readFile(join(from, saved.style.background.file), 'utf8'), 'image bytes')
+  assert.equal(await readFile(join(from, saved.style.camera.lut!), 'utf8'), 'LUT_3D_SIZE 2')
+  assert.deepEqual((await savePreset('Warm ✨ #1', from, saved.style, dir, saved.id)).style, saved.style)
   // Previews load the preset's assets from the presets folder, before any bundle has them.
   const { look } = (await listPresets(dir))[0]
   assert.ok(look.background.kind === 'image' && look.background.file.startsWith(join(dir, 'assets') + '/'))
@@ -301,7 +307,7 @@ test('presets bundle their assets, apply anywhere, and fall back to defaults for
   await savePreset('Warm ✨ #1', from, style, dir, saved.id)
   const applied = await applyPreset(saved.id, to, dir)
   assert.equal(applied.padding, 12)
-  assert.ok(applied.background.kind === 'image' && /^assets\/[0-9a-f]{16}\.jpg$/.test(applied.background.file))
+  assert.deepEqual(applied.background, saved.style.background)
   assert.equal(await readFile(join(to, (applied.background as { file: string }).file), 'utf8'), 'image bytes')
   assert.equal(await readFile(join(to, applied.camera.lut!), 'utf8'), 'LUT_3D_SIZE 2')
 

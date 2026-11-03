@@ -21,6 +21,7 @@ Project files, presets, and their lifecycle.
 - A preset is shown on the project's own frame before it is applied: thumbnails and a hover preview, through the one compositor.
 - A preset carries the look, not the recording: applying one keeps the camera in the corner it was recorded in.
 - A project remembers the preset its look came from, so changes since show as edited, with Update and Revert.
+  A preset keeps its assets under content-addressed names that end in the file's own name, and saving one points the project at those copies, so the look it just saved reads as in use, not edited.
 - One preset can be the look new recordings start with; a deleted one leaves the default look.
 - Finder and Quick Look previews, recent projects, and reopening at the saved playhead.
 
