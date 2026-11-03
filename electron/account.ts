@@ -20,8 +20,9 @@ export const USER_AGENT = `Grip/${app.getVersion()} (Macintosh; Mac OS X ${proce
 client.userAgent = USER_AGENT
 
 export interface Account {
-  user: { id: string; email: string; name: string; avatar: string | null }
+  user: { id: string; email: string; name: string; avatar: string | null; terms: string | null } // terms: the date they accepted
   team: { id: string; name: string; plan: string }
+  terms: string // the date of the current Terms and Privacy Policy
   // Its `usage` stays unread: Grip says nothing about uploads until the server refuses one (electron/upload.ts).
 }
 
@@ -52,7 +53,7 @@ export function forget() {
   emit()
 }
 
-async function refresh(): Promise<Account | null> {
+export async function refresh(): Promise<Account | null> {
   if (!token) return null
   try {
     known = await api(SERVER, token, 'GET', '/api/me', undefined, AbortSignal.timeout(8000))

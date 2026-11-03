@@ -3,9 +3,10 @@
 // userData/share.json). The link exists, and is copied, as soon as the server knows the item: long before the bytes
 // are up, the link page shows the upload's progress.
 //
-//   share:upload(path, {title?, private?, project?}) -> link, or null when canceled before the link existed.
+//   share:upload(path, {title?, private?, project?, terms?}) -> link, or null when canceled before the link existed.
 //                                         path: an exported video, or a .grip bundle (sent as an archive).
 //                                         project: the bundle a video share belongs to (the Share button finds it).
+//                                         terms: the Terms date the Share button showed, which the share accepts.
 //   share:jobs() -> Job[]                 share:progress (event to every window) -> Job, on every change
 //   share:status(jobId) -> Job            refresh views, comments, and privacy from the server
 //   share:update(jobId, {private}) -> Job
@@ -21,7 +22,7 @@ import { basename, dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
-import { SERVER, accountToken, forget } from './account.ts'
+import { SERVER, accountToken, forget, refresh } from './account.ts'
 import { api, ShareError, upload, type Upload } from './upload.ts'
 import { projectsDir } from './projects.ts'
 import { openWindow } from './windows.ts'
@@ -78,7 +79,7 @@ function find(id: string): Job {
 }
 
 /** Upload a video or .grip bundle in the background; resolves to the link (also used by export). */
-export async function shareFile(path: string, o: { title?: string; private?: boolean; project?: string } = {}): Promise<string | null> {
+export async function shareFile(path: string, o: { title?: string; private?: boolean; project?: string; terms?: string } = {}): Promise<string | null> {
   if (!accountToken()) throw new Error('Sign in to share links.')
   const s = await stat(path).catch(() => null)
   if (!s) throw new Error('The file to share is gone.')
@@ -91,6 +92,7 @@ export async function shareFile(path: string, o: { title?: string; private?: boo
     kind,
     title: o.title?.trim() || basename(path).replace(/\.[^.]+$/, ''),
     private: o.private === true,
+    terms: o.terms,
     file: path,
     size: s.size,
     mtimeMs: s.mtimeMs,
@@ -146,6 +148,7 @@ async function drive(job: Job) {
           clipboard.writeText(job.link)
           count('shared', { kind: job.kind })
         }
+        if (job.terms) void refresh() // accepted: the Share button's Terms line goes away
         waiters.get(job.id)?.resolve(job.link)
         waiters.delete(job.id)
       },
@@ -288,7 +291,7 @@ export function registerShare() {
   // Uploads to another server (an earlier one, or a local one in development) are not resumed here.
   for (const job of state.jobs) if (job.server === SERVER && !['done', 'failed', 'canceled'].includes(job.state)) drive(job)
 
-  ipcMain.handle('share:upload', (_e, path: string, o?: { title?: string; private?: boolean; project?: string }) => shareFile(path, o))
+  ipcMain.handle('share:upload', (_e, path: string, o?: { title?: string; private?: boolean; project?: string; terms?: string }) => shareFile(path, o))
   ipcMain.handle('share:jobs', () => state.jobs)
   ipcMain.handle('share:status', async (_e, id: string) => {
     const job = find(id)

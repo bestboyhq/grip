@@ -1,6 +1,7 @@
 <!-- Owner: sharing. The editor top bar's Share button: a popover that shares the video or the whole editable project
      as a link, with upload progress, copy link, and who can watch (anyone with the link, or a private link); signed out,
-     it offers sign-in first. It says nothing about upload limits until a share is refused at one. Uploads run in the main process
+     it offers sign-in first. Until the account accepted the current Terms and Privacy Policy, it says sharing does.
+     It says nothing about upload limits until a share is refused at one. Uploads run in the main process
      (electron/share.ts) and carry on when the popover closes, the window closes, or the app restarts.
      Mount: <ShareButton exportVideo={...} />, where exportVideo(progress?, signal?) exports the open project and resolves
      to the MP4 path (the file must stay until the upload is done), reporting 0..1 progress and stopping when signal aborts. -->
@@ -50,6 +51,9 @@
     }
   }
 
+  // The date the next share accepts, while the account accepted older ones (docs/api.md, /api/me).
+  const terms = $derived(account && account.user.terms !== account.terms ? account.terms : undefined)
+
   const latest = (k: 'video' | 'project') =>
     jobs.filter((j) => j.kind === k && j.project === doc.path).sort((a, b) => b.createdAt - a.createdAt)[0]
   const job = $derived(latest(kind))
@@ -81,7 +85,7 @@
         path = await exportVideo!((p) => exporting && (exporting.p = p), stop.signal)
         exporting = null
       } else await save()
-      const opts = { title: doc.project?.name, private: wantPrivate, project: doc.path }
+      const opts = { title: doc.project?.name, private: wantPrivate, project: doc.path, terms }
       // The link exists (and is on the clipboard) as soon as the server knows the upload; null = canceled first.
       if (await invoke('share:upload', path, opts)) flash('Link copied')
     } catch (e) {
@@ -225,6 +229,9 @@
         </div>
       {/if}
     {/if}
+    {#if terms && !exporting && !(job && (busy(job) || refused(job)))}
+      <p class="hint">Sharing accepts the <a href="https://bestboy.dev/terms" target="_blank">Terms</a> and <a href="https://bestboy.dev/privacy" target="_blank">Privacy Policy</a>.</p>
+    {/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   </div>
 
@@ -348,6 +355,14 @@
     margin: 0;
     font-size: 12px;
     color: var(--fg-secondary);
+  }
+  .hint a {
+    color: var(--fg-default);
+    text-decoration: underline var(--fg-muted);
+    text-underline-offset: 2px;
+  }
+  .hint a:hover {
+    text-decoration-color: currentColor;
   }
   .error {
     margin: 0;
