@@ -485,22 +485,31 @@ fn dimAt(u: vec2f, aa: f32) -> f32 {
 
 // ---- Glass loupe: a lens over the zoomed layer, masks, cursor and highlight included ----
 // A flat-topped glass disc with a rounded bevel. The flat top magnifies almost to the edge;
-// across the bevel the content runs on ever slower and stands still at the rim, so whatever reaches
-// the edge stretches and curls along it, the way a thick lens bends lines at its rim. Squeezing the
-// frame around the lens into the bevel instead aliases into streaks. No outline: the bending is the
-// edge. Lit by one key light from above: the bevel shades darker turned away from it, a hairline of
-// light catches the rim, Fresnel reflection at grazing angles, and dispersion splits the colors where
-// the bevel bends hardest. Moving, the drop stretches along its motion, keeping its
+// across the bevel the content slows to a stop short of the rim and turns back, so the outer bevel
+// mirrors what lies just inside it, the way a thick lens folds lines at its rim. Content that stands
+// still at the rim smears every stroke reaching it into a streak to the edge, and squeezing the frame
+// around the lens into the bevel instead aliases into streaks. No outline: the bending is the
+// edge. The steep bevel spreads each ray, so what it shows defocuses toward the rim, and light
+// scattered inside the glass frosts it with a wide blur of what it bends. The rim so takes its tone
+// from the content, milky over light UI and smoky over dark; white added at the rim rings every dark
+// window. Lit by one key light from above: the bevel shades a little darker turned away from it, a
+// hairline of light catches the rim facing it, Fresnel reflection at grazing angles, and dispersion
+// splits the colors where the bevel bends hardest. Moving, the drop stretches along its motion, keeping its
 // area, and what it shows smears across the shutter like the rest of the frame. While a lens shows,
 // the frame around it dims evenly, so the lens stands out, and each lens casts a soft shadow away
 // from the light, so it lifts off the screen. Several lenses draw in order, a later one over an
 // earlier one.
 
 const BEVEL = 0.15; // bevel width, fraction of the radius
-const CURL = 1.0 / 3.0; // the bevel shows this share of what the flat top would show across it, the least that
-// stays monotone: the content slows as (1 - s)^2 and stretches into a curl along the rim
-const DISPERSION = 0.045; // how far red and blue bend apart at the rim, fraction of the radius
-const KEY = vec3f(-0.38, -0.82, 0.43); // key light direction (output px axes, z toward the viewer)
+const FOLD = 0.6; // how far across the bevel the content stops and turns back: the outer bevel mirrors
+// the band just inside the fold, and the rim shows what the flat top would show a sixth of the way across it
+const DISPERSION = 0.06; // how much less red bends than green, and blue more: a share of the bevel's bend
+const DEFOCUS = 0.008; // how far the bevel spreads each ray at the rim, a share of the radius
+const FROST = 0.7; // how much of what the outer bevel shows is light scattered inside the glass...
+const FROST_R = 0.1; // ...a blur over this share of the radius the lens shows (R / mag)
+const FROST_TAPS = 8; // taps of that blur per pixel; moving, the shutter's samples share them
+const KEY = vec3f(0.0, -0.9, 0.43); // key light direction (output px axes, z toward the viewer): straight above,
+// so a lens's shadow falls the way the window's and the camera's do
 const DIM = 0.08; // how much the frame dims while a lens shows
 const SHADOW = 0.11; // how dark a lens's shadow is under it
 const SHADOW_SHIFT = 0.1; // the shadow falls this many radii off the lens, away from the light
@@ -518,18 +527,19 @@ fn hermite(s: f32, p0: f32, m0: f32, p1: f32, m1: f32) -> vec2f {
 }
 
 // Radius shown at radius rho (both fractions of the lens radius, from its center), and its
-// derivative: magnified on the flat top, then a monotone cubic across the bevel that slows to a stop
-// at the rim. Under 1.5x it blends into one that ends on the content just outside the rim, so at
-// magnification 1 the lens is flat glass and shows exactly what lies under it.
+// derivative: magnified on the flat top, then across the bevel the content slows evenly, stops at
+// FOLD and runs back to the rim at two thirds of the flat top's rate: it stands still at one radius,
+// not across the outer bevel. Under 1.5x it blends into a monotone cubic that ends on the content just
+// outside the rim, so at magnification 1 the lens is flat glass and shows exactly what lies under it.
 fn lensMap(rho: f32, mag: f32) -> vec2f {
   let e = 1.0 - BEVEL;
   if (rho <= e) { return vec2f(rho / mag, 1.0 / mag); }
   let s = min((rho - e) / BEVEL, 1.0);
   let p0 = e / mag;
   let m0 = BEVEL / mag;
-  let curl = hermite(s, p0, m0, p0 + CURL * m0, 0.0);
+  let fold = vec2f(p0 + m0 * (s - 0.5 * s * s / FOLD), m0 * (1.0 - s / FOLD));
   let meet = hermite(s, p0, m0, 1.0, (1.0 - p0) * (1.0 + 1.8 * clamp(mag - 1.0, 0.0, 1.0))); // under 3x the secant: stays monotone
-  let h = mix(meet, curl, clamp(2.0 * (mag - 1.0), 0.0, 1.0));
+  let h = mix(meet, fold, clamp(2.0 * (mag - 1.0), 0.0, 1.0));
   return vec2f(h.x, h.y / BEVEL);
 }
 
@@ -566,9 +576,9 @@ fn lensOf(i: u32, f: f32) -> Lens {
   return Lens(mix(F.loupeS[j], F.loupeS[j + 2u], w), mix(F.loupeS[j + 1u], F.loupeS[j + 3u], w));
 }
 
-// Lens L at unzoomed point u (vt the view, aa unzoomed px per output px, cs the cursor sample, fringe
-// whether to split the colors): premultiplied color, coverage.
-fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, fringe: bool) -> vec4f {
+// Lens L at unzoomed point u (vt the view, aa unzoomed px per output px, cs the cursor sample) as
+// shutter sample i of count: premultiplied color, coverage.
+fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, i: i32, count: i32) -> vec4f {
   let c = L.a.xy;
   let R = L.a.z;
   let mag = L.a.w;
@@ -577,7 +587,7 @@ fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, fringe: bool) -> vec
   let q = u - c;
   let sq = drop(q, st);
   let d = length(sq);
-  let cv = cover(d - R, 2.0 * aa); // a rounded edge is a little soft, not a cut
+  let cv = cover(d - R, 4.0 * aa); // a rounded edge is soft, not a cut
   if (cv <= 0.0) { return vec4f(0.0); }
 
   let rho = min(d / R, 1.0);
@@ -585,17 +595,34 @@ fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, fringe: bool) -> vec
   let dir = gq / max(length(gq), 1e-6);
   let m = lensMap(rho, mag);
   let shown = m.x / max(rho, 1e-4); // 1 / mag on the flat top: the magnification stays round when stretched
-  let foot = aa * max(m.y, shown); // unzoomed px per output px
-  let vs = vt.z / foot * aa;
-  var col = underLens(c + q * shown, foot, vs, cs);
   let s = clamp((rho - (1.0 - BEVEL)) / BEVEL, 0.0, 1.0); // 0 on the flat top, 1 at the rim
-  if (s > 0.0 && fringe) {
-    // Dispersion: red bends least, so it shows what lies a little further out, and blue the reverse.
-    // Splitting the radius rather than the content keeps the fringes as wide where the rim stretches.
-    let sp = DISPERSION * s * clamp(mag - 1.0, 0.0, 1.0);
-    let r = lensMap(min(rho * (1.0 + sp), 1.0), mag).x / max(rho, 1e-4);
-    let b = lensMap(rho * (1.0 - sp), mag).x / max(rho, 1e-4);
+  let glass = clamp(mag - 1.0, 0.0, 1.0); // at magnification 1 the lens is flat glass: it bends and blurs nothing
+  let foot = max(aa * max(abs(m.y), shown), DEFOCUS * R * s * s * glass); // unzoomed px per output px
+  let vs = vt.z / foot * aa;
+  let at = c + q * shown;
+  var col = underLens(at, foot, vs, cs);
+  if (s > 0.0 && count <= 4) {
+    // Dispersion: red bends least, so it shows what lies a little further out, and blue the reverse,
+    // each by a share of how far the bevel bends the content in. Splitting the shown radius instead
+    // tears the colors into rainbows where the content turns back.
+    let sp = DISPERSION * (rho / mag - m.x) * glass;
+    let r = (m.x + sp) / max(rho, 1e-4);
+    let b = (m.x - sp) / max(rho, 1e-4);
     col = vec3f(underLens(c + q * r, foot, vs, cs).r, col.g, underLens(c + q * b, foot, vs, cs).b);
+  }
+  let frosted = FROST * pow(smoothstep(0.3, 1.0, s), 1.3) * glass;
+  if (frosted > 0.0) {
+    // Frost: taps on a golden-angle spiral, which fills the disc evenly. Moving, the shutter's samples
+    // take turns along one spiral, each a share of its taps instead of all of them.
+    let per = (FROST_TAPS + count - 1) / count;
+    let taps = f32(per * count);
+    let r = FROST_R * R / mag;
+    var e = vec3f(0.0);
+    for (var k = i * per; k < (i + 1) * per; k++) {
+      let a = f32(k) * 2.39996323;
+      e += underLens(at + vec2f(cos(a), sin(a)) * sqrt((f32(k) + 0.5) / taps) * r, 0.6 * r, 1.0 / (0.6 * r), cs);
+    }
+    col = mix(col, e / f32(per), frosted);
   }
 
   // Surface normal of the bevel: flat on top, turning to near vertical at the rim.
@@ -603,33 +630,36 @@ fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, fringe: bool) -> vec
   let n = vec3f(dir * sin(tilt), cos(tilt));
   let fres = 0.04 + 0.96 * pow(1.0 - n.z, 5.0);
   let env = mix(vec3f(1.0), vec3f(0.55, 0.58, 0.64), smoothstep(-0.7, 0.9, dir.y)); // bright sky above, the room below
-  // The rim rounds away: the outer bevel shades darker on the side turned from the light and barely
-  // on the side facing it, the last few px darken all around, and a hairline of light catches the
-  // very edge. Broad specular crescents read as plastic, not glass.
+  // The rim rounds away: from where the bevel starts it shades a little darker on the side turned from
+  // the light, and a hairline of light catches the edge facing it. An outline all around, dark or
+  // light, rings flat UI; broad specular crescents read as plastic, not glass.
   let toward = dot(dir, normalize(KEY.xy)); // 1 facing the light, -1 turned away
-  let round = smoothstep(1.0 - 0.7 * BEVEL, 1.0, rho);
+  let round = smoothstep(1.0 - 1.2 * BEVEL, 1.0, rho);
   let px = (R - d) / aa; // output px in from the rim
-  var g = col * (1.0 - round * mix(0.15, 0.02, 0.5 + 0.5 * toward)) * (1.0 - 0.1 * (1.0 - smoothstep(1.0, 6.0, px)));
+  var g = col * (1.0 - round * mix(0.06, 0.02, 0.5 + 0.5 * toward));
   g = mix(g, env, fres * 0.15);
-  g += vec3f(0.1 + 0.12 * max(toward, 0.0)) * (1.0 - smoothstep(0.0, 1.5, px));
+  g += vec3f(0.22 * max(toward, 0.0)) * (1.0 - smoothstep(0.0, 1.5, px));
 
   // Appearing, the magnification grows from 1, where the lens shows exactly what lies under it, so
   // the content stays opaque and swells in place while only the glass and the dim fade in. Fading
   // the content too would show it twice, magnified over unmagnified.
   col = mix(col, g, op);
-  return vec4f(col * cv, cv);
+  // The rim's last sliver is thin glass that lets a quarter of the screen under it through, so the
+  // edge melts into the screen.
+  let k = cv * (1.0 - 0.25 * smoothstep(0.985 * R, R, d) * glass * op);
+  return vec4f(col * k, k);
 }
 
-// Every lens over output pixel p at shutter time f (< 0: at t).
-fn lensesAt(p: vec2f, f: f32, fringe: bool) -> vec4f {
+// Every lens over output pixel p as shutter sample i of count, at shutter time f (< 0: at t).
+fn lensesAt(p: vec2f, f: f32, i: i32, count: i32) -> vec4f {
   let vt = select(viewAt(f), F.viewT.xyz, f < 0.0);
   let u = unview(p, vt);
   let aa = 1.0 / vt.z;
   let cs = curAt(select(f, 0.5, f < 0.0));
   var out = vec4f(0.0);
-  for (var i = 0u; i < LENSES; i++) {
-    if (F.loupes[2u * i].z <= 0.0) { continue; }
-    let l = lensAt(lensOf(i, f), u, vt, aa, cs, fringe);
+  for (var j = 0u; j < LENSES; j++) {
+    if (F.loupes[2u * j].z <= 0.0) { continue; }
+    let l = lensAt(lensOf(j, f), u, vt, aa, cs, i, count);
     out = l + out * (1.0 - l.a);
   }
   return out;
@@ -693,14 +723,14 @@ fn lensTravel(p: vec2f) -> f32 {
 
 // Like the zoomed layer's motion blur, but the lens bends what it shows, so no reprojection of one
 // frame reaches it: average whole lens renders across the shutter, as many as the content travels.
-// Smeared further than a few px, the color fringes are gone in the blur: those taps skip them.
+// Smeared further than a few px, the color fringes are gone in the blur: those samples skip them.
 @fragment fn fs_loupe(v: VO) -> @location(0) vec4f {
   let p = v.pos.xy;
   let count = clamp(i32(ceil(lensTravel(p) / 1.5)), 1, 32);
-  if (count == 1) { return lensesAt(p, -1.0, true); }
+  if (count == 1) { return lensesAt(p, -1.0, 0, 1); }
   let j = ign(p);
   var acc = vec4f(0.0);
-  for (var i = 0; i < count; i++) { acc += lensesAt(p, (f32(i) + j) / f32(count), count <= 4); }
+  for (var i = 0; i < count; i++) { acc += lensesAt(p, (f32(i) + j) / f32(count), i, count); }
   return acc / f32(count);
 }
 

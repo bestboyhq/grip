@@ -171,7 +171,10 @@
 		gap: 16px;
 	}
 
+	/* The tip ends at the link's right edge, so at the page's edge it is never cut. */
 	.social {
+		--tip-left: 100%;
+		--tip-x: -100%;
 		display: inline-flex;
 		align-items: center;
 		color: var(--fg-faint);

@@ -256,6 +256,21 @@ void main() {
 		return renderer;
 	}
 
+	// The renderer is built once the page has loaded and gone idle. Built when the first stage nears the viewport, its
+	// context and shader would stall the scroll for hundreds of milliseconds on a first visit.
+	let warming = false;
+
+	function warm(): void {
+		if (warming) return;
+		warming = true;
+		const idle = (): void => {
+			if (typeof requestIdleCallback === 'function') requestIdleCallback(shared, { timeout: 2000 });
+			else setTimeout(shared, 200);
+		};
+		if (document.readyState === 'complete') idle();
+		else addEventListener('load', idle, { once: true });
+	}
+
 	// The caster's box and corner in the canvas's device pixels.
 	function castOf(canvas: HTMLCanvasElement, caster: Element): Cast {
 		const stage = canvas.getBoundingClientRect();
@@ -335,6 +350,7 @@ void main() {
 			}
 			if (caster) resized.observe(caster);
 			seen.observe(canvas);
+			warm();
 			themed.observe(document.documentElement, { attributeFilter: ['data-theme'] });
 			scheme.addEventListener('change', paint);
 			repaints.add(paint);
