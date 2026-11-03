@@ -177,7 +177,7 @@
 		},
 		{
 			title: 'Runs on your Mac',
-			body: 'Recording, editing, transcription, and background removal stay on it. Only anonymous usage counts leave it, if you allow them, and never what you record.',
+			body: 'Recording, editing, transcription, and background removal stay on it. Only usage counts leave it, never what you record, and Settings turns them off.',
 		},
 		{
 			title: 'No account to record',

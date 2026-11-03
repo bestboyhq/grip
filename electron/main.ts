@@ -130,7 +130,7 @@ app.whenReady().then(() => {
   const queued = early.splice(0)
   const acted = launch(process.argv)
   for (const item of queued) /^grip:/i.test(item) ? openUrl(item) : openFilesOrAlert([item])
-  // Onboarded before onboarding asked about usage counts: asked once, at the next launch, quiet ones too.
+  // Onboarded before onboarding told about usage counts: told once, at the next launch, quiet ones too.
   if (settings().onboarded && settings().usageCounts === null) openOnboarding('page=usage')
   // Restarted into an update, opened at login, or started in the background (grip-mcp, for an agent):
   // back in the menu bar only, its dock icon gone too (no window hides it). The picker waits for the user to ask.

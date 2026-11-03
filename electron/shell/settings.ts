@@ -46,7 +46,7 @@ export interface Settings {
   /** macOS shortcuts (ids) Grip turned off because they use the record shortcut's keys: back on when
    *  it changes, at quit, and at the next launch after a crash. */
   borrowedShortcuts: number[]
-  /** Anonymous usage counts to bestboy.dev (electron/usage.ts): sent only after a yes. null: not asked yet. */
+  /** Usage counts to bestboy.dev (electron/usage.ts): sent unless false. null: not told yet. */
   usageCounts: boolean | null
   /** The folder the last file export went to ('' before the first): the save panel opens there, and
    *  an agent's export lands there (electron/export.ts). */

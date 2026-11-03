@@ -2,7 +2,7 @@
      Welcome, then permissions: each with a one-line reason, live status, a request button that
      shows the system prompt the first time and System Settings after that, and a way back from a
      revoked permission (`need`). Then the record shortcut: none until the user types one, or skips. Then usage counts,
-     off until the user says yes (`page=usage` alone asks whoever onboarded before). Settings puts recording options and shortcuts first, then the same
+     on unless turned off (`page=usage` alone tells whoever onboarded before). Settings puts recording options and shortcuts first, then the same
      permission list with every allowed one folded into a single row. Each recording option plays on a
      small desktop beside the list while it is pointed at or focused. -->
 <script lang="ts">
@@ -91,9 +91,9 @@
     uncopy = setTimeout(() => (copied = ''), 1500)
   }
   const finish = () => invoke('shell:finish-onboarding', atLogin)
-  // Asked, never assumed: both answers weigh the same, and asked alone it only closes.
-  function shareCounts(yes: boolean) {
-    setSettings({ usageCounts: yes })
+  // Said, not asked: counts stay on unless turned off, here or in Settings. Told alone, it only closes.
+  function shareCounts(on: boolean) {
+    setSettings({ usageCounts: on })
     query.page === 'usage' ? window.close() : finish()
   }
 
@@ -266,19 +266,19 @@
       <button class="button primary" disabled={!recordKeys} onclick={toUsage}>Continue</button>
     </footer>
   {:else if page === 'usage'}
-    <!-- What a count holds, shown as two of them: the question is about these, not about a vague "data". -->
+    <!-- What a count holds, shown as two of them: the notice is about these, not about a vague "data". -->
     <section class="welcome">
       <ul class="rows compact sample" aria-label="Two usage counts">
         <li><span class="title">Recording finished</span><span class="reason">1 min 12 s · camera · mic</span></li>
         <li><span class="title">Video exported</span><span class="reason">MP4 · 1080p · 4 zooms</span></li>
       </ul>
-      <h1>Share usage counts?</h1>
-      <p>Counts like these show what to make better. No ID or name, and never what you record. Settings changes it any time.</p>
-      <div class="choices">
-        <button class="button" onclick={() => shareCounts(false)}>Don’t Share</button>
-        <button class="button" onclick={() => shareCounts(true)}>Share Counts</button>
-      </div>
+      <h1>Grip sends usage counts</h1>
+      <p>Counts like these show what to make better. When you’re signed in, they carry your account. Never what you record.</p>
     </section>
+    <footer>
+      <span><button class="link" onclick={() => shareCounts(false)}>Turn Off</button></span>
+      <button class="button primary" onclick={() => shareCounts(true)}>Continue</button>
+    </footer>
   {:else}
     <section class="body scroll">
       {@render needBanner()}
@@ -359,9 +359,9 @@
           <label class="switch">
             <span class="text">
               <span class="title">Share usage counts</span>
-              <span class="reason">Anonymous counts, like a finished recording. Never what you record.</span>
+              <span class="reason">Like a finished recording, with your account when signed in. Never what you record.</span>
             </span>
-            <input type="checkbox" role="switch" checked={shell.settings?.usageCounts === true} onchange={(e) => setSettings({ usageCounts: e.currentTarget.checked })} />
+            <input type="checkbox" role="switch" checked={shell.settings?.usageCounts !== false} onchange={(e) => setSettings({ usageCounts: e.currentTarget.checked })} />
           </label>
         </li>
       </ul>
@@ -511,15 +511,6 @@
   }
   .sample .reason {
     margin: 0;
-  }
-  /* Two answers of one weight: neither is the default. */
-  .choices {
-    display: flex;
-    gap: 12px;
-  }
-  .choices .button {
-    min-width: 140px;
-    height: 32px;
   }
   .welcome .after {
     min-height: 17px; /* a note coming and going never moves the page */
