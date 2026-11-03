@@ -4,6 +4,7 @@
 import type { Project, Transcript, Zoom, ZoomLook } from '../shared/project.ts'
 import type { InputEvent } from '../shared/events.ts'
 import { lookOf } from '../engine/zoom/index.ts'
+import { spoken } from '../engine/transcript/index.ts'
 import { invoke, listen } from './ipc.ts'
 
 class Doc {
@@ -12,12 +13,36 @@ class Doc {
   // Raw: a 2-hour recording has ~1M events and ~20k words. They are never edited in place, only
   // replaced, so they stay plain arrays the engine reads at full speed (no deep proxies, no snapshots).
   events = $state.raw<InputEvent[]>([])
-  transcript = $state.raw<Transcript | null>(null)
+  transcript = $state.raw<Transcript | null>(null) // what the video says: heard merged by the voiceovers (spoken())
+  heard = $state.raw<Heard>({ mic: null, takes: {} })
   rev = $state(0) // bumps on every change; derived data keys off it
   dirty = $state(false)
   saveError = $state('') // why the last save failed; cleared by the next one that lands
 }
 export const doc = new Doc()
+
+/** The words as recognized: the recording's, and each voiceover take's by take id (in take seconds). */
+export interface Heard {
+  mic: Transcript | null
+  takes: Record<string, Transcript>
+}
+
+/** New words came in: doc.transcript follows. */
+export function hear(patch: Partial<Heard>) {
+  doc.heard = { ...doc.heard, ...patch }
+  respeak()
+}
+
+let spokenOf = { heard: null as Heard | null, items: '' }
+/** doc.transcript from doc.heard and the voiceovers, remade only when either changed, so its identity
+ *  holds through other edits (the player and the timeline key their caches off it). */
+function respeak() {
+  const items = doc.project?.voiceovers ?? []
+  const key = JSON.stringify(items)
+  if (doc.heard === spokenOf.heard && key === spokenOf.items) return
+  spokenOf = { heard: doc.heard, items: key }
+  doc.transcript = spoken(doc.heard.mic, doc.heard.takes, $state.snapshot(items))
+}
 
 export const selection = $state({ ids: [] as string[] })
 
@@ -46,6 +71,7 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined
 let writing: Promise<unknown> = Promise.resolve() // the latest write
 
 function changed() {
+  respeak()
   doc.rev++
   doc.dirty = true
   clearTimeout(saveTimer)
@@ -104,7 +130,7 @@ function swap(from: Snapshot[], to: Snapshot[]) {
 export function pruneSelection() {
   const p = doc.project
   if (!p) return
-  const live = new Set([...p.clips, ...p.zooms, ...p.layouts, ...p.masks].map((x) => x.id))
+  const live = new Set([...p.clips, ...p.zooms, ...p.layouts, ...p.masks, ...p.voiceovers].map((x) => x.id))
   if (selection.ids.some((id) => !live.has(id))) selection.ids = selection.ids.filter((id) => live.has(id))
 }
 

@@ -4,7 +4,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { fade } from 'svelte/transition'
-  import { doc, canUndo, canRedo, edit, pruneSelection, save, selection, zoomLook } from '../../lib/doc.svelte.ts'
+  import { doc, canUndo, canRedo, edit, hear, pruneSelection, save, selection, zoomLook } from '../../lib/doc.svelte.ts'
   import { player, seek, stats } from '../../lib/player.svelte.ts'
   import { dropFiles, invoke, on } from '../../lib/ipc.ts'
   import { fileUrl } from '../../engine/media/index.ts'
@@ -24,7 +24,8 @@
   import { keepingPlayhead } from './timeline/actions.svelte.ts'
   import ExportButton, { exportVideo } from './export/ExportButton.svelte'
   import ShareButton from './share/ShareButton.svelte'
-  import { commandForMenu, registerCommands, run } from './commands/registry.ts'
+  import { take, stopTake } from '../../lib/take.svelte.ts'
+  import { commandForMenu, keyOf, registerCommands, run } from './commands/registry.ts'
   import { reason } from './helpers.ts'
   import { sendThumbnail } from './thumbnail.ts'
 
@@ -40,7 +41,7 @@
     if (!requested) throw new Error('No project was given to open.')
     const opened = (await invoke('projects:open', requested)) as { project: Project; path: string; notice?: string } // path follows renames
     const { project, path } = opened
-    const [events, transcript] = await Promise.all([
+    const [events, transcript, takes] = await Promise.all([
       project.sources.events
         ? fetch(fileUrl(`${path}/${project.sources.events}`)).then((r) => (r.ok ? r.text() : '')).then(parseEvents, () => [])
         : [],
@@ -48,13 +49,14 @@
         flash(`Couldn’t read the transcript: ${reason(e)}`)
         return null
       }) as Promise<Transcript | null>,
+      takeWords(path, project.sources, {}),
     ])
     doc.path = path
     doc.events = events
-    doc.transcript = transcript
     // First open after recording or import: auto zooms are part of the starting document, not an edit.
     const fresh = autoZoomOnce(project, events)
     doc.project = project // the player seeks to the saved playhead when the preview attaches
+    hear({ mic: transcript, takes })
     if (fresh) {
       doc.dirty = true
       save().catch(() => {}) // a failure shows as doc.saveError
@@ -78,6 +80,7 @@
   // or native editing in a text field.
   $effect(() =>
     on('editor:edit', (item: string) => {
+      if (take.phase) return // a take records what plays: editing waits for it
       const c = commandForMenu(item, document.activeElement)
       if (c) c.run()
       else invoke('editor:nativeEdit', item)
@@ -92,6 +95,7 @@
       try {
         await opened
         if (!doc.project || gone) throw new Error(error || 'The project is not open any more.')
+        if (take.phase && (r.edits || r.time !== undefined)) throw new Error('A voiceover is recording in this project. Try again once it stops.')
         if (r.edits) {
           applyEdits($state.snapshot(doc.project) as Project, r.edits, zoomLook(), doc.transcript) // throws before anything changes
           await keepingPlayhead(() => edit((p) => applyEdits(p, r.edits!, zoomLook(), doc.transcript))) // as after the editor's own cuts
@@ -132,14 +136,46 @@
     setTimeout(() => notice === text && (notice = ''), 5000)
   }
 
+  $effect(() => {
+    if (take.error) flash(take.error)
+  })
+
+  // While a take runs, the editor is its stage: Space, V, and Esc stop it (cancel the 3-2-1), Stop is the
+  // one control that clicks, and other keys and clicks do nothing, so nothing moves the video under the
+  // voice. ⌘ shortcuts go on to the app menu (its Edit items wait, see editor:edit), not to the page.
+  function takeKey(e: KeyboardEvent) {
+    if (!take.phase) return
+    e.stopImmediatePropagation()
+    if (e.metaKey) return
+    e.preventDefault()
+    if (!e.repeat && ['Space', 'V', '⎋'].includes(keyOf(e))) void stopTake()
+  }
+  function takeClick(e: Event) {
+    if (!take.phase || (e.target as Element).closest?.('[data-take-stop]')) return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+  }
+
   // Main-process domains (camera analysis, transcription) add sources; keep the open document current.
   $effect(() =>
-    on('projects:sources', (path: string, sources: Sources) => {
+    on('projects:sources', async (path: string, sources: Sources) => {
       if (path !== doc.path || !doc.project) return
       doc.project.sources = sources
       doc.rev++
+      const takes = await takeWords(path, sources, doc.heard.takes)
+      if (path === doc.path && takes !== doc.heard.takes) hear({ takes })
     }),
   )
+
+  /** `have` with the words of each voiceover take in `sources` it lacks (sources.takes[].transcript). */
+  async function takeWords(path: string, sources: Sources, have: Record<string, Transcript>): Promise<Record<string, Transcript>> {
+    const missing = (sources.takes ?? []).filter((t) => t.transcript && !have[t.id])
+    if (!missing.length) return have
+    const got = await Promise.all(missing.map((t) => fetch(fileUrl(`${path}/${t.transcript}`)).then((r) => (r.ok ? r.json() : null)).catch(() => null)))
+    const out = { ...have }
+    missing.forEach((t, i) => Array.isArray(got[i]?.words) && (out[t.id] = got[i]))
+    return out
+  }
 
   // The Finder, Quick Look, and recent-projects thumbnail: once the preview shows the project, and
   // again on close when edits or the playhead changed it.
@@ -200,7 +236,17 @@
   }
 </script>
 
-<svelte:window onbeforeunload={() => gone || save()} ondragover={(e) => e.preventDefault()} {ondrop} />
+<svelte:window
+  onbeforeunload={() => gone || save()}
+  ondragover={(e) => e.preventDefault()}
+  {ondrop}
+  onkeydowncapture={takeKey}
+  onpointerdowncapture={takeClick}
+  onmousedowncapture={takeClick}
+  onclickcapture={takeClick}
+  ondblclickcapture={takeClick}
+  oncontextmenucapture={takeClick}
+/>
 
 <div class="editor">
   <header class="titlebar">
@@ -325,8 +371,8 @@
   .aim-hint { display: flex; align-items: center; gap: 6px; min-width: 0; margin-left: auto; color: var(--fg-faint); font-size: 12px; white-space: nowrap; }
   .aim-hint span { overflow: hidden; text-overflow: ellipsis; }
 
-  /* A panel as tall as its lanes, so every lane shows; the preview takes the rest. 60vh fits all six lanes
-     (312 px) at the 600 px minimum window height, so lanes never scroll out of reach (the canvas takes the wheel). */
+  /* A panel as tall as its lanes, so every lane shows; the preview takes the rest. 60vh fits all seven lanes
+     (342 px) at the 600 px minimum window height, so lanes never scroll out of reach (the canvas takes the wheel). */
   .timeline {
     flex: none; max-height: 60vh; overflow: auto; margin: var(--gutter); border-radius: var(--radius-lg);
     background: var(--surface-root); box-shadow: var(--hairline);

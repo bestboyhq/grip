@@ -34,7 +34,7 @@
         {job.phase === 'download' ? 'Downloading the speech model' : 'Transcribing'}{job.progress ? ` · ${Math.round(job.progress * 100)}%.` : '…'}
         Captions appear when it is done.
       </p>
-    {:else if s.mic || s.system || s.imported}
+    {:else if s.mic || s.system || s.imported || s.takes?.length}
       <p class="note">Captions come from the transcript, made on this Mac. Fix their words in the Transcript tab.</p>
       {#if job.bundle === doc.path && job.phase === 'error'}<p class="note error" role="alert">{job.error}</p>{/if}
       <button class="btn" onclick={generate}>Transcribe</button>

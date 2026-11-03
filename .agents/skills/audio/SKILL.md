@@ -23,6 +23,16 @@ Microphone, system, device, and music audio, from capture to mix.
   De-ess with a dynamic shelf, which only cuts: subtracting a filtered band adds energy back near the split and sharpens S sounds instead.
   Give each DeepFilterNet3 chunk a fresh model: one reused after init() keeps stale delay lines and comes out a frame off for good.
 - Mixer: volume and mute per track and per clip, background music synced to the timeline, click sounds.
+- Voiceover takes are the mic recorded in the editor while the video plays, placed as timeline items in source time (src/lib/take.svelte.ts, electron/voiceover.ts, src/shared/voiceover.ts).
+  The mic opens during the 3-2-1 and writes nothing until the video rolls, so a take has no lead-in to trim.
+  Take second 0 is the host time the video rolled at, placed at the output time heard then on the audio clock, after output latency, not where play() was called.
+  Knots map take seconds to source seconds, a pair at each cut the video played through, so later cuts and speed changes cut and stretch a take like the mic.
+  While a take records, the mix plays no voiceover and mutes the recording's mic from the take's start, so no old voice doubles the new one or leaks into the mic.
+  A voiceover mutes the recording's mic under it, fading at both ends.
+  A muted voiceover plays nothing and leaves the mic alone, in the mix, the captions, and the timeline's waveforms alike: each one that disagreed was a bug.
+  Each take gets its own voice track from the voice chain once it lands, and plays it while its Enhance voice is on.
+  A voice pass asked for while one runs runs again after it, since a take that just landed is newer than what the running pass read.
+  The take recorder reports its peak about every 33 ms in take seconds, so the timeline draws the take as it records.
 - Waveforms load lazily and render hours-long tracks without stalling.
   A waveform draws the track as it plays: an enhanced mic as its voice track, raw when enhance is off.
 

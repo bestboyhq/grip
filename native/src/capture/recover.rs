@@ -302,23 +302,27 @@ fn probe_audio(path: &Path, file: &str) -> Option<AudioSourceInfo> {
     Some(AudioSourceInfo { file: file.into(), channels: asbd.mChannelsPerFrame, sample_rate: asbd.mSampleRate })
 }
 
+/// One repair at a time: launch recovery and opening the same bundle may ask at once, and the
+/// second finds the files already whole.
+static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Make the files of an interrupted recording in `<bundle>/sources/` whole again. Every file is
-/// tried; the first failure is returned. One repair at a time: launch recovery and opening the
-/// same bundle may ask at once, and the second finds the files already whole.
+/// tried; the first failure is returned.
 pub fn repair(bundle: &Path) -> Result<(), String> {
-    static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
     let dir = bundle.join("sources");
     let mut first = Ok(());
     for f in ["screen.mp4", "system.m4a", "mic.m4a", "camera.mp4"] {
-        let path = dir.join(f);
-        if is_fragmented(&path)
-            && let Err(e) = trim(&path).and_then(|_| remux(&path))
-        {
+        if let Err(e) = whole(&dir.join(f)) {
             first = first.and(Err(format!("{f}: {e}")));
         }
     }
     first
+}
+
+/// `path` as a regular MP4 again, if a crash left it in movie fragments.
+fn whole(path: &Path) -> Result<(), String> {
+    if is_fragmented(path) { trim(path).and_then(|_| remux(path)) } else { Ok(()) }
 }
 
 /// Make an interrupted recording whole again and describe it.
@@ -351,6 +355,19 @@ pub async fn repair_recording(bundle_dir: String) -> napi::Result<()> {
         .await
         .map_err(|e| napi::Error::from_reason(e.to_string()))?
         .map_err(napi::Error::from_reason)
+}
+
+/// A voiceover take a crash or power loss cut short (electron/voiceover.ts), made whole the same way.
+/// A whole file is left alone.
+#[napi]
+pub async fn repair_take(path: String) -> napi::Result<()> {
+    spawn_blocking(move || {
+        let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+        whole(Path::new(&path))
+    })
+    .await
+    .map_err(|e| napi::Error::from_reason(e.to_string()))?
+    .map_err(napi::Error::from_reason)
 }
 
 #[cfg(test)]

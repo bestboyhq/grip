@@ -4,7 +4,7 @@
 <script module lang="ts">
   import type { Clip, Transcript } from '../../../shared/project.ts'
   import { invoke, listen } from '../../../lib/ipc.ts'
-  import { doc } from '../../../lib/doc.svelte.ts'
+  import { doc, hear } from '../../../lib/doc.svelte.ts'
 
   type Phase = '' | 'queued' | 'download' | 'transcribe' | 'error'
 
@@ -25,7 +25,7 @@
     Object.assign(job, { bundle, phase: 'queued', progress: 0, received: 0, total: 0, error: '' })
     try {
       const t: Transcript | null = await invoke('transcript:run', bundle)
-      if (t && doc.path === bundle) doc.transcript = t
+      if (t && doc.path === bundle) hear({ mic: t }) // the voiceovers' words come with projects:sources
       job.phase = ''
     } catch (e) {
       Object.assign(job, { phase: 'error', error: reason(e) })
@@ -91,7 +91,9 @@
 
   const busyHere = $derived(job.bundle === doc.path && job.phase !== '' && job.phase !== 'error')
   const failedHere = $derived(job.bundle === doc.path && job.phase === 'error')
-  const hasAudio = $derived(!!(doc.project?.sources.mic || doc.project?.sources.system || doc.project?.sources.imported))
+  const hasAudio = $derived(!!(doc.project?.sources.mic || doc.project?.sources.system || doc.project?.sources.imported || doc.project?.sources.takes?.length))
+  /** Word i's caption fix: under its index, or its key in words merged with a voiceover's (Word.key). */
+  const at = (i: number) => t!.words[i].key ?? String(i)
   const mb = (n: number) => Math.round(n / 1e6)
 
   // The editor loads the transcript with the project; here we only learn whether the model is downloaded.
@@ -168,10 +170,10 @@
     if (editing !== i) return
     editing = -1
     const text = value.replace(/\s+/g, ' ').trim()
-    if (text === (edits[i] ?? t!.words[i].text)) return
+    if (text === (edits[at(i)] ?? t!.words[i].text)) return
     edit((p) => {
-      if (!text || text === t!.words[i].text) delete p.captionEdits[i]
-      else p.captionEdits[i] = text
+      if (!text || text === t!.words[i].text) delete p.captionEdits[at(i)]
+      else p.captionEdits[at(i)] = text
     })
   }
 
@@ -244,7 +246,7 @@
             {#if editing === i}
               <input
                 class="fix"
-                value={edits[i] ?? t.words[i].text}
+                value={edits[at(i)] ?? t.words[i].text}
                 aria-label="Caption text for this word"
                 {@attach focus}
                 onkeydown={(e) => {
@@ -258,8 +260,8 @@
             {:else}
               <span
                 data-i={i}
-                class={['w', !kept.has(i) && 'cut', t.words[i].filler && 'filler', i in edits && 'fixed', confirming === 'fillers' && fillerSet.has(i) && 'doomed']}
-                title={i in edits ? `Spoken: ${t.words[i].text}` : undefined}>{edits[i] ?? t.words[i].text}</span
+                class={['w', !kept.has(i) && 'cut', t.words[i].filler && 'filler', at(i) in edits && 'fixed', confirming === 'fillers' && fillerSet.has(i) && 'doomed']}
+                title={at(i) in edits ? `Spoken: ${t.words[i].text}` : undefined}>{edits[at(i)] ?? t.words[i].text}</span
               >
             {/if}
             {#if pauseAfter.has(i)}

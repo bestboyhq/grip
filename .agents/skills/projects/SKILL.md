@@ -11,6 +11,10 @@ Project files, presets, and their lifecycle.
 - Save atomically (write a temp file, then rename), autosave, and keep the previous version as a backup.
 - Migrate older schemas forward without loss; an older app refuses newer projects with a clear message.
 - An interrupted recording becomes a recoverable project on the next launch.
+- Voiceover takes live in the bundle's voiceovers/ folder, each `<id>.m4a` with its voice track and words beside it, listed in sources.takes.
+  Deleting a voiceover keeps its take, so undo brings it back.
+- A take is pending in project.json from its first second until the editor saved its items.
+  A crash, a power loss, or a window closed mid-take loses at most its last second: the next open makes the file whole and places it where it was recorded.
 - A new project with a taken name gets a unique name, and Remove moves the project to the Trash.
 - Import any .mp4 or .mov as a project; features that need event data degrade gracefully.
 - Presets are portable files that bundle their assets, with a default fallback for a missing asset.

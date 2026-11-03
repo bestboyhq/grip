@@ -52,6 +52,9 @@ export interface CameraFormat {
 
 export declare function cancelRecording(): Promise<RecState>
 
+/** Stop the take and remove its file. */
+export declare function cancelTake(): void
+
 /**
  * PNG of `rect` (points relative to the display's top-left corner) at the display's pixel density,
  * without the cursor or Grip's own windows.
@@ -103,6 +106,12 @@ export interface Display {
   isMain: boolean
 }
 
+/** Stop the take and finalize its file. Resolves with its duration in seconds. */
+export declare function finishTake(): Promise<number>
+
+/** Host time in milliseconds: the clock a renderer's performance.now() is offset from. */
+export declare function hostNowMs(): number
+
 /** A key press, as src/shared/shortcut.ts reads one off a KeyboardEvent. */
 export interface KeyPress {
   code: string
@@ -147,6 +156,13 @@ export interface Microphone {
 
 /** Open the System Settings pane where the user turns `kind` on. */
 export declare function openPermissionSettings(kind: Permission): void
+
+/**
+ * Open `micId` (the default mic when absent) to record a take to `path`, replacing one still open.
+ * Once it rolls, `onLevel` hears what it records about 30 times a second. Rejects with one plain
+ * line when the mic can't open, or "Voiceover cancelled" after a cancel.
+ */
+export declare function openTake(micId: string | undefined | null, path: string, onLevel: ((arg: TakeLevel) => void)): Promise<TakeMic>
 
 export declare function pauseRecording(): RecState
 
@@ -199,6 +215,12 @@ export interface Rect {
 export declare function repairRecording(bundleDir: string): Promise<void>
 
 /**
+ * A voiceover take a crash or power loss cut short (electron/voiceover.ts), made whole the same way.
+ * A whole file is left alone.
+ */
+export declare function repairTake(path: string): Promise<void>
+
+/**
  * Ask for `kind` (the system prompt appears only the first time) and return the new status.
  * If it stays denied, send the user to `openPermissionSettings`.
  */
@@ -207,6 +229,12 @@ export declare function requestPermission(kind: Permission): Promise<PermissionS
 export declare function restartRecording(): Promise<RecState>
 
 export declare function resumeRecording(): RecState
+
+/**
+ * Start writing the open take: its second 0 is host time `atMs` (milliseconds, the clock of
+ * `hostNowMs`). Samples captured before it are dropped.
+ */
+export declare function rollTake(atMs: number): void
 
 /**
  * From source time `t` on, stored frames must be turned `deg` degrees clockwise to be upright.
@@ -267,6 +295,18 @@ export declare function stopRecording(): Promise<RecordingSources | null>
 
 /** The ids of macOS's shortcuts that are on and use `keys`, in macOS notation ('⇧⌘5'). */
 export declare function systemShortcuts(keys: string): Array<number>
+
+export interface TakeLevel {
+  /** Take seconds the stretch starts at. */
+  t: number
+  /** Linear 0..1 over its ~33 ms. */
+  peak: number
+}
+
+export interface TakeMic {
+  name: string
+  channels: number
+}
 
 /**
  * What to record. An area rect is in points relative to its display's top-left corner. A window

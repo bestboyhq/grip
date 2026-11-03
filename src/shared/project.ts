@@ -44,6 +44,20 @@ export interface Sources {
   events?: string // "sources/events.jsonl"; absent for imported videos
   transcript?: string // "sources/transcript.json"; see Transcript
   imported?: boolean
+  takes?: Take[] // voiceovers recorded in the editor, oldest first; deleting one from the timeline keeps it here
+}
+
+/** A voiceover take: the mic recorded in the editor while the video played (electron/voiceover.ts). */
+export interface Take extends AudioSource {
+  id: string
+  file: string // "voiceovers/<id>.m4a"
+  n: number // "Voiceover <n>" on the timeline; a take recorded again keeps the number
+  duration: number // seconds of audio
+  transcript?: string // "voiceovers/<id>.json": its words in take seconds (Transcript)
+  /** Set from its start until the editor saved its items: where all of it would land. A project that
+   *  opens with it set (a crash, a window closed mid-take) gets the take placed up to where its audio
+   *  ends (recoverTakes in electron/voiceover.ts). */
+  pending?: Array<Pick<Voiceover, 'start' | 'end' | 'knots'>>
 }
 
 /** A slice of source time placed on the output timeline. clips[] in output order IS the time map. */
@@ -93,6 +107,21 @@ export interface Mask {
   rect: NRect
 }
 
+/** Part of a take on the Voiceover lane (src/shared/voiceover.ts). `knots` map take seconds to source
+ *  seconds, linear between them, both rising: recording puts one at every cut and speed change the
+ *  video played through, so later cuts and speed changes cut and stretch the take like the mic. */
+export interface Voiceover {
+  id: string
+  take: string // Take.id
+  start: number // source seconds: the part that plays
+  end: number
+  knots: Array<[number, number]> // [take second, source second]; at a cut, two knots share a take second
+  volume: number // 0..2
+  muted?: boolean // plays nothing, and leaves the mic under it alone
+  duck: boolean // mutes the recording's mic under it
+  enhance: boolean // plays the take's voice track (Take.voice), like Enhance voice on the mic
+}
+
 /** Speed-up segments derived from typing or chosen by the user are just Clips with speed != 1. */
 
 export interface Word {
@@ -100,6 +129,9 @@ export interface Word {
   end: number
   text: string
   filler?: boolean
+  /** Its captionEdits key, in a transcript merged from several (spoken() in src/engine/transcript);
+   *  absent: its index. */
+  key?: string
 }
 export interface Transcript {
   language: string
@@ -188,10 +220,12 @@ export interface Project {
   zooms: Zoom[]
   layouts: CameraLayout[]
   masks: Mask[]
+  voiceovers: Voiceover[]
   /** The part of the screen recording the video shows; absent = all of it. */
   crop?: NRect
-  /** Caption text fixes keyed by word index; the transcript itself stays immutable. */
-  captionEdits: Record<number, string>
+  /** Caption text fixes keyed by word: a mic word's index, or "<take id>:<index>" for a voiceover's
+   *  (Word.key). The transcripts themselves stay immutable. */
+  captionEdits: Record<string, string>
   style: Style
   audio: AudioMix
   /** Saved playhead, in source seconds (survives cuts). */
@@ -283,6 +317,7 @@ export function createProject(name: string, sources: Sources): Project {
     zooms: [],
     layouts: [],
     masks: [],
+    voiceovers: [],
     captionEdits: {},
     style: defaultStyle(),
     audio: { mic: { volume: 1, muted: false, enhance: true }, system: { volume: 1, muted: false } },

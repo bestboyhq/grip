@@ -19,6 +19,7 @@ Agent apps list, read, edit, export, and share projects through Grip's MCP serve
 - Tools: list_projects, get_project, get_transcript, edit_project, export_project, share_project, export_status, open_project.
   None deletes anything: edits are data on top of the recording, and the user undoes them.
 - Every time an agent sees or gives is in output seconds, mapped through the one time map.
+  Words are what the video says: the recording's merged with its voiceovers' (loadSpoken in electron/transcript.ts), indexed as the editor's Transcript tab shows them.
   A list of edits applies together or not at all, every time in it as the timeline stood before the list (`src/shared/edits.ts`).
 - A project open in an editor is read and edited through that editor (`agents:request`, `agents:reply`): the user watches the edits land as one undo step, saved before the reply.
   A closed project is edited on disk under the bundle lock; one opened meanwhile takes the edit through its editor instead.

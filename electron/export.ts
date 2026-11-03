@@ -148,14 +148,16 @@ async function pump() {
     return finish(j, 'failed', fsMessage(err, j.path))
   }
   Object.assign(j, { state: 'running', phase: 'Starting', startedAt: Date.now() })
-  // An enhanced mic exports as it plays: its voice track first (made now if it never was). A pass that
-  // fails leaves the raw mic, as the preview plays it.
+  // An enhanced mic or voiceover exports as it plays: its voice track first (made now if it never was).
+  // A pass that fails leaves the raw audio, as the preview plays it.
   if (j.project && owesVoice(j.project)) {
     j.phase = 'Enhancing voice'
     broadcast(j)
     await analyzeVoice(j.bundle)
     if (j.state !== 'running' || !j.project) return // canceled meanwhile
-    j.project.sources.mic = (await readProject(j.bundle)).sources.mic ?? j.project.sources.mic
+    const s = (await readProject(j.bundle)).sources
+    j.project.sources.mic = s.mic ?? j.project.sources.mic
+    j.project.sources.takes = s.takes ?? j.project.sources.takes
     j.phase = 'Starting'
   }
   const win = (j.win = openWindow(`export?job=${encodeURIComponent(j.id)}`, { show: false, width: 480, height: 320, webPreferences: { backgroundThrottling: false } }))

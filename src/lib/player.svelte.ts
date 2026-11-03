@@ -87,6 +87,7 @@ let runHold = false // before runCtx: hold at runOut (play, seek) or keep runnin
 let runFrames = 0 // frames scheduled so far in this run
 let requesting = false
 let pump: ReturnType<typeof setInterval> | undefined
+let take: number | undefined // output second a voiceover records from (src/lib/take.svelte.ts)
 const session = `preview-${crypto.randomUUID()}`
 
 function fail(e: unknown) {
@@ -487,7 +488,7 @@ function closeMedia(k: keyof Media) {
 // ---- Audio ----
 
 function syncAudio(p: Project, splice: boolean) {
-  const next = planOf(p, events.value, doc.path)
+  const next = planOf(p, events.value, doc.path, take)
   const key = JSON.stringify(next)
   if (key === planKey) return
   if (!plan) void mix(session, next, Math.round(player.time * SR), 480).catch(() => {}) // warm the worker before play
@@ -496,8 +497,9 @@ function syncAudio(p: Project, splice: boolean) {
   if (player.playing && splice) startRun(true) // an edit while playing: splice in the new mix, clock continues
 }
 
-/** The output context, created once per attach and resumed if the system suspended it. */
-async function ensureAudio(): Promise<boolean> {
+/** The output context, created once per attach and resumed if the system suspended it. True once it
+ *  plays: a run started after that keeps the audio clock (a voiceover's take is timed by it). */
+export async function ensureAudio(): Promise<boolean> {
   const ok = await (audioReady ??= (async () => {
     try {
       const c = new AudioContext({ sampleRate: SR, latencyHint: 'interactive' })
@@ -533,6 +535,17 @@ function now(): number {
 function clock(): number {
   const d = now() - runCtx
   return runOut + (runHold ? Math.max(0, d) : d)
+}
+
+/** Output time being heard at performance.now() time `ms` in this run, or that would be before it
+ *  starts: where a voiceover sample the mic caught then belongs. */
+export const heardAt = (ms: number) => runOut + now() - (performance.now() - ms) / 1000 - runCtx
+
+/** A voiceover records from output second `from` on (null: it stopped): the mic is muted from there and
+ *  voiceovers stay quiet, as under the take it records (planOf). */
+export function recordingTake(from: number | null) {
+  take = from ?? undefined
+  if (doc.project) syncAudio($state.snapshot(doc.project) as Project, true)
 }
 
 /** Begin a new run of audio LEAD seconds from now. `splice`: continue the clock (edits while

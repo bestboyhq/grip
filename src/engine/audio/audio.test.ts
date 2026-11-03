@@ -58,6 +58,8 @@ const plan = (clips: Clip[], tracks: Plan['tracks'], extra: Partial<Plan> = {}):
   duration: clips.reduce((d, c) => d + (c.end - c.start) / c.speed, 0),
   clips,
   tracks,
+  voices: [],
+  duck: [],
   music: null,
   clicks: [],
   ...extra,
@@ -284,6 +286,34 @@ test('an enhanced mic plays its voice track at -14 LUFS, and the raw mic until t
   assert.equal(voiceGain(null), 1)
   near(20 * Math.log10(voiceGain(-80)), 30, 1e-9, 'boost cap')
   near(20 * Math.log10(voiceGain(10)), -20, 1e-9, 'cut cap')
+})
+
+test('a voiceover plays where it was recorded through a cut made after it, with the mic muted under it', async () => {
+  const bundle = '/x/Take #1 ✨.grip'
+  const url = (file: string) => 'media://local/' + encodeURIComponent(`${bundle}/${file}`)
+  files.set(url('sources/mic.m4a'), files.get('marks')!) // mic bursts at source 0.5, 1.5, 2.5, 3.5, 4.5
+  files.set(url('voiceovers/t1.m4a'), wav([bursts(6, [3.2, 4.7])]))
+  const p = createProject('t', { duration: 6, mic: { file: 'sources/mic.m4a', channels: 1, sampleRate: SR } })
+  p.sources.takes = [{ id: 't1', n: 1, file: 'voiceovers/t1.m4a', channels: 1, sampleRate: SR, duration: 6 }]
+  // Recorded over source 2-4 with take second 0 at output -1: its bursts land on source 2.2 and 3.7.
+  p.voiceovers = [{ id: 'v', take: 't1', start: 2, end: 4, knots: [[3, 2], [5, 4]], volume: 1, duck: true, enhance: true }]
+  p.clips = [clip(0, 2.8), clip(3.2, 6)] // then source 2.8-3.2 was cut: 3.7 plays at 3.3
+  const plan = planOf(p, [], bundle)
+  assert.equal(plan.duck.length, 1)
+  plan.duck[0].forEach((t, i) => near(t, [2, 3.6][i], 1e-9, 'duck'))
+  const got = onsets((await render(plan))[0])
+  const want = [0.525, 1.525, 2.225, 3.325, 4.125] // mic, mic, voiceover, voiceover, mic (2.5 and 3.1 muted)
+  assert.equal(got.length, want.length, `onsets ${got}`)
+  got.forEach((t, i) => near(t, want[i], 0.002, 'burst center'))
+  // Turned off, or with the mic left on under it: the mic's bursts are back.
+  for (const set of [{ muted: true }, { duck: false }]) {
+    const q = structuredClone(p)
+    Object.assign(q.voiceovers[0], set)
+    const heard = onsets((await render(planOf(q, [], bundle)))[0]).filter((t) => Math.abs(t - 2.525) < 0.01 || Math.abs(t - 3.125) < 0.01)
+    assert.equal(heard.length, 2, JSON.stringify(set))
+  }
+  // While a take records from output 1.5: the mic is muted from there, and no voiceover plays.
+  assert.deepEqual([planOf(p, [], bundle, 1.5).voices, planOf(p, [], bundle, 1.5).duck], [[], [[1.5, 5.6]]])
 })
 
 test('a scrub grain plays the crossed audio in one grain, backward when dragging back', () => {

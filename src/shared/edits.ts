@@ -147,9 +147,10 @@ export function applyEdits(p: Project, edits: Edit[], look: ZoomLook, transcript
       const word = transcript.words[e.index]
       if (!word) throw new Error(`edits[${i}]: the transcript has ${transcript.words.length} words, so there is no word ${e.index}.`)
       const clean = (s: string) => s.replace(/\s+/g, ' ').trim()
+      const at = word.key ?? e.index
       captionEdits = { ...captionEdits }
-      if (clean(e.text) === clean(word.text)) delete captionEdits[e.index]
-      else captionEdits[e.index] = clean(e.text)
+      if (clean(e.text) === clean(word.text)) delete captionEdits[at]
+      else captionEdits[at] = clean(e.text)
     } else if (e.type === 'set_captions') {
       const { type: _, ...patch } = e
       captions = { ...captions, ...patch }

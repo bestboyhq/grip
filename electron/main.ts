@@ -14,6 +14,7 @@ import { openSharedLink, registerShare } from './share.ts'
 import { registerTranscript } from './transcript.ts'
 import { registerCamera } from './camera.ts'
 import { registerAudio } from './audio.ts'
+import { registerVoiceover } from './voiceover.ts'
 import { registerEditor } from './editor.ts'
 import { registerWallpapers } from './wallpapers.ts'
 import { registerSettings, settings } from './shell/settings.ts'
@@ -112,6 +113,7 @@ app.whenReady().then(() => {
   registerShare()
   registerTranscript()
   registerAudio()
+  registerVoiceover()
   registerEditor()
   registerWallpapers()
   if (!app.isPackaged && process.env.STUDIO_FAKE_RECORDING) registerFakeRecording(process.env.STUDIO_FAKE_RECORDING)

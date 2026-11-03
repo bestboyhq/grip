@@ -23,7 +23,7 @@ import { createServer, type Server, type Socket } from 'node:net'
 import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import { bundleArg, projectsDir, readProject, recentProjects, updateProject } from './projects.ts'
 import { exportListeners, exportWithoutAsking } from './export.ts'
-import { loadTranscript } from './transcript.ts'
+import { loadSpoken } from './transcript.ts'
 import { editorFor, openProject } from './shell/recorder.ts'
 import { settings } from './shell/settings.ts'
 import { plainError } from './shell/errors.ts'
@@ -239,14 +239,14 @@ async function getTranscript(a: Args): Promise<Result> {
   const path = await locate(a.project)
   const [from, to] = range(a)
   const { project } = await current(path)
-  const t = await loadTranscript(path)
+  const t = await loadSpoken(path, project)
   if (!t) throw new Error(`${quoted(path)} has no transcript yet. Transcribe it in Grip (Captions, in the editor’s inspector), then ask again.`)
   // Every play of a word, in output order: pages by output time hold up even when clips repeat or move.
   const plays = outputWords(t, timeMap(project.clips), project.captionEdits)
   const matching = plays.filter((o) => o.end > from && o.start < to)
   const words = matching.slice(0, MAX_WORDS).map((o) => {
     const w = t.words[o.i]
-    return { index: o.i, text: o.text, start: r3(o.start), end: r3(o.end), ...(project.captionEdits[o.i] !== undefined && { original: w.text }), ...(w.filler && { filler: true }) }
+    return { index: o.i, text: o.text, start: r3(o.start), end: r3(o.end), ...(project.captionEdits[w.key ?? o.i] !== undefined && { original: w.text }), ...(w.filler && { filler: true }) }
   })
   const next = matching.length > MAX_WORDS ? r3(matching[MAX_WORDS].start) : undefined
   const cut = t.words.length - new Set(plays.map((o) => o.i)).size
@@ -289,7 +289,7 @@ async function editProject(a: Args): Promise<Result> {
 }
 
 async function editOnDisk(path: string, edits: Edit[]): Promise<Project> {
-  const transcript = edits.some((e) => e.type === 'set_caption_text') ? await loadTranscript(path) : null
+  const transcript = edits.some((e) => e.type === 'set_caption_text') ? await loadSpoken(path, await readProject(path)) : null
   return updateProject(path, (p) => {
     if (editorFor(path)) throw new Reroute() // its copy would save over this one
     applyEdits(p, edits, lookOf(settings().zoomLook), transcript)
@@ -408,7 +408,7 @@ function range(a: Args): [number, number] {
  *  lists the clips and zooms playing from `from` to `to`, MAX_ITEMS of each at most. */
 async function describe({ path, project: p, open }: Opened, note: string, [from, to] = [0, Infinity]): Promise<Result> {
   const m = timeMap(p.clips)
-  const t: Transcript | null = await loadTranscript(path).catch(() => null)
+  const t: Transcript | null = await loadSpoken(path, p).catch(() => null)
   const playing = (x: { start: number; end: number }) => x.end > from && x.start < to
   const allClips = p.clips
     .map((c, i) => ({

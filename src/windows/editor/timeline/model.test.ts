@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Clip, Zoom } from '../../../shared/project.ts'
+import type { Clip, Voiceover, Zoom } from '../../../shared/project.ts'
 import { removeOutputRange, timeMap, toOutput, toSource } from '../../../shared/timemap.ts'
 import * as M from './model.ts'
 import { stressProject } from './stress.ts'
@@ -9,7 +9,9 @@ import { Waveforms } from './waveform.ts'
 const clip = (start: number, end: number, speed = 1, id = `c${start}`): Clip => ({ id, start, end, speed, volume: 1 })
 const zoom = (id: string, start: number, end: number): Zoom => ({ id, start, end, level: 2, target: { kind: 'cursor' }, enabled: true })
 const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`)
-const parts = (clips: Clip[], zooms: Zoom[] = []): M.Parts => ({ clips, zooms, layouts: [], masks: [], duration: 30 })
+const parts = (clips: Clip[], zooms: Zoom[] = []): M.Parts => ({ clips, zooms, layouts: [], masks: [], voiceovers: [], duration: 30 })
+/** A voiceover playing [start, end] of a take recorded over source [s0, s1]. */
+const vo = (id: string, start: number, end: number, s0: number, s1: number): Voiceover => ({ id, take: 't', start, end, knots: [[0, s0], [s1 - s0, s1]], volume: 1, duck: true, enhance: true })
 
 test('an item spanning a cut shows each surviving piece; only the outer pieces own handles', () => {
   const m = M.buildModel(parts([clip(0, 10), clip(20, 30, 2)], [zoom('z', 8, 24)]), [], [])
@@ -136,6 +138,18 @@ test('layouts and masks never overlap: fit, move, resize, paste', () => {
   const { items, added } = M.placeCopies(zs, zs, 1, 30)
   assert.equal(added.length, 2)
   assert.deepEqual(items.slice(2).map((z) => [z.start, z.end]), [[4, 6], [8, 10]])
+})
+
+test('voiceovers sit under the video; one moves with its audio, and its edges reach only as far as its take', () => {
+  const m = M.buildModel({ ...parts([clip(0, 10)]), voiceovers: [vo('v', 2, 4, 1.5, 5)] }, [], [])
+  assert.deepEqual(M.tracks(m, true, new Set()), ['clips', 'voiceovers'])
+  const [moved] = M.moveItems([vo('v', 2, 4, 1.5, 5), vo('w', 6, 7, 6, 7)], new Set(['v']), 3, 10)
+  assert.deepEqual([moved.start, moved.end, moved.knots], [4, 6, [[0, 3.5], [3.5, 7]]]) // stops at w, the take two seconds later
+  assert.equal(M.resizeItem([vo('v', 2, 4, 1.5, 5)], 'v', 'start', 0, 10)[0].start, 1.5)
+  assert.equal(M.resizeItem([vo('v', 2, 4, 1.5, 5)], 'v', 'end', 9, 10)[0].end, 5)
+  // A pasted copy fitted left of where it was asked for: its audio goes where the copy went.
+  const copy = M.placeCopies([vo('w', 6, 7, 6, 7)], [vo('v', 2, 4, 1.5, 5)], 3.5, 10).items[1]
+  assert.deepEqual([copy.start, copy.end, copy.knots], [4, 6, [[0, 3.5], [3.5, 7]]])
 })
 
 test('zooms pass over each other: a shorter one lies on a longer one, the same while dragged across', () => {

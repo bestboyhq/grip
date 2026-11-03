@@ -7,6 +7,8 @@
 <script lang="ts">
   import { tick } from 'svelte'
   import { doc, selection } from '../../../lib/doc.svelte.ts'
+  import { seek } from '../../../lib/player.svelte.ts'
+  import { startTake } from '../../../lib/take.svelte.ts'
   import * as A from './actions.svelte.ts'
   import { step, submenuAim } from '../../../ui/aim.ts'
   import { drop } from '../../../ui/motion.ts'
@@ -22,6 +24,7 @@
   const zooms = $derived(A.selected('zooms'))
   const layouts = $derived(A.selected('layouts'))
   const masks = $derived(A.selected('masks'))
+  const voiceovers = $derived(A.selected('voiceovers'))
   const uniform = <T,>(xs: T[]) => (xs.length && xs.every((x) => x === xs[0]) ? xs[0] : undefined)
   const speed = $derived(uniform(clips.map((c) => c.speed)))
   const volume = $derived(uniform(clips.map((c) => (c.muted ? 0 : c.volume))))
@@ -179,14 +182,27 @@
     {@render item('Copy', A.copy, '⌘C')}
     <hr />
     {@render item('Delete', A.remove, '⌫')}
+  {:else if target.kind === 'voiceovers'}
+    {@render item('Record again', A.recordAgain, '', !A.canRecordAgain())}
+    {@render item(voiceovers.every((v) => v.muted) ? 'Unmute' : 'Mute', A.toggleVoiceovers, 'M')}
+    {@render item('Duplicate', A.duplicate, '⌘D')}
+    {@render item('Copy', A.copy, '⌘C')}
+    <hr />
+    {@render item('Delete', A.remove, '⌫')}
   {:else if target.kind === 'add'}
     {@render item('Zoom', () => A.add('zooms', t), 'Z')}
     {#if sources?.camera}
       {@render item('Camera layout', () => A.add('layouts', t), 'L')}
     {/if}
     {@render item('Blur', () => A.add('masks', t), 'B')}
+    {@render item('Voiceover', () => void startTake(), 'V')}
   {:else if target.kind === 'lane'}
-    {@render item({ zooms: 'Add zoom here', layouts: 'Add camera layout here', masks: 'Add blur here' }[target.track], () => A.add(target.track, t))}
+    {#if target.track === 'voiceovers'}
+      {@render item('Record voiceover here', () => (seek(t), void startTake()))}
+    {:else}
+      {@const track = target.track}
+      {@render item({ zooms: 'Add zoom here', layouts: 'Add camera layout here', masks: 'Add blur here' }[track], () => A.add(track, t))}
+    {/if}
     {@render item('Paste at playhead', A.paste, '⌘V', !A.canPaste())}
   {:else}
     {@render item('Paste at playhead', A.paste, '⌘V', !A.canPaste())}

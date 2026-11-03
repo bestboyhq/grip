@@ -197,6 +197,8 @@ Drag the preview straight into another app to drop the file.
   Zooms, camera layouts, and masks sit in lanes above the video, and a lane shows up once it has something in it.
 - **Crop** the recording down to the part that matters, and zooms aim inside the crop.
 - **Speed without chipmunks.** Any clip from 0.25× to 8×, with pitch-preserving time-stretch.
+- **Redo a line with a voiceover.** Press `V` and talk over the video from the playhead, and the recording's own voice steps aside under it.
+  The new voice gets the same cleanup, and the captions show what you said.
 - **Per-clip sound and cursor.** Set the mic and system audio from muted to 200% each, hide the cursor, or turn off its smoothing for one clip.
   A background music track sits under the mix.
 - **Camera layouts.** Picture-in-picture, fullscreen, split screen, or hidden, animated as they change.
