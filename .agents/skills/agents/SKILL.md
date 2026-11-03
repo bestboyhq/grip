@@ -21,6 +21,8 @@ Agent apps list, read, edit, export, and share projects through Grip's MCP serve
 - Grip does the craft, so a small model makes the same video as a large one: the model says what it wants, Grip's tuned code decides how.
   cut_fillers and shorten_pauses cut what the Transcript tab's buttons cut (`resolveWordEdits` in `src/engine/transcript`), and a cut whose end lands inside a word moves to that word's edge.
   match_captions takes the script and lines it up with the spoken words at the fewest caption changes, so a model never counts word indexes; a script that matches under half the words is refused.
+  auto_zoom places the editor's auto zooms (`generateAutoZooms`) on the recording's clicks and typing, turns Auto zoom on at its level, and replaces the auto zooms placed before, so calling it twice never stacks them.
+  Its answer says how many zooms it placed, or that the recording has no clicks or typing, so the model knows to place its own.
   Every get_project and edit_project answer lists the problems (`zoomProblems` in `src/engine/zoom`) with the exact call that fixes each: a zoom too short to read, a zoom the camera glides to and leaves before it holds still, the camera moving while a cut jumps the picture, the video ending mid zoom-out, captions on with no transcript.
   The checks go by the camera's real springs and glide times (the export's layout, `layoutOf`), so a project without problems never moves the camera across a cut.
 - get_frame renders a frame through the editor's still renderer, the export's compositor, as JPEG image content; a closed project opens in the editor for it.

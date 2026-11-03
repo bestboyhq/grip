@@ -66,6 +66,7 @@ const CAMERA_CLEAR = 28 // screen points x cursor size (about a cursor's height,
 const LEAD = 6 / Math.sqrt(SPRINGS.focused.stiffness) // s: auto zooms start this long before a click or typing, so the focused spring is ~98% there
 const KEEP = 1 // s: a clicked element stays framed this long after the click
 const HOLD = 2 // s: an auto zoom holds this long after its last click or keystroke
+const ZOOM_OUT = 6 / Math.sqrt(SPRINGS.smooth.stiffness) // s: the slower spring's zoom out; an auto zoom ending closer than this to the recording's end holds to it, so the video never ends mid-move
 const MERGE_GAP = 2 // s: auto zooms closer than this merge; zooming out and back in that fast looks erratic
 const MIN_AUTO = 1.2 // s: shorter auto zooms (clipped by the recording's ends) are dropped
 const FAR_JUMPS_PER_S = 0.5 // an auto zoom panning a half view more often than this is erratic: skipped
@@ -636,8 +637,9 @@ function lensAt(lens: ReturnType<typeof prepareZoom>['loupes'][number], t: numbe
 }
 
 /** Auto zooms (source time) from clicks and typing: merge activity close in time, start LEAD before
- *  it, hold HOLD after it, and skip stretches that would pan erratically. Each zoom follows the
- *  cursor with `look`; viewAt frames its clicks and typing. `typing` defaults to the input domain's detector. */
+ *  it, hold HOLD after it (to the end when that leaves too little to zoom out), and skip stretches
+ *  that would pan erratically. Each zoom follows the cursor with `look`; viewAt frames its clicks
+ *  and typing. `typing` defaults to the input domain's detector. */
 export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZoom: Style['autoZoom'], look: ZoomLook = {}, typing: Segment[] = typingSegments(events)): Zoom[] {
   const screen = sources.screen
   if (!autoZoom.enabled || !screen) return []
@@ -661,7 +663,7 @@ export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZo
     return far >= 2 && far / (g.end - g.start) > FAR_JUMPS_PER_S
   }
   return groups
-    .map((g) => ({ ...g, start: Math.max(0, g.start), end: Math.min(sources.duration, g.end) }))
+    .map((g) => ({ ...g, start: Math.max(0, g.start), end: g.end > sources.duration - ZOOM_OUT ? sources.duration : g.end }))
     .filter((g) => g.end - g.start >= MIN_AUTO && !erratic(g))
     .map((g): Zoom => ({ id: uid(), start: g.start, end: g.end, level, target: { kind: 'cursor' }, auto: true, enabled: true, ...lookOf(look) }))
 }

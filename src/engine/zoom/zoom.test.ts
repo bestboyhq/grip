@@ -453,6 +453,8 @@ test('generateAutoZooms: merges, leads, holds, covers typing, skips the erratic'
   assert.deepEqual(spans, [[0, 6], [9.57, 12], [19.07, 25], [36.57, 40]])
   for (const z of zs) assert.ok(z.auto && z.enabled && z.level === 2 && z.target.kind === 'cursor' && z.id)
   assert.deepEqual(generateAutoZooms([], sources, on, {}, [{ start: 5, end: 8 }]), [], 'typing with no known place is left out')
+  const [last] = generateAutoZooms([click(42.4)], sources, on, {}, [])
+  assert.deepEqual([+last.start.toFixed(2), last.end], [41.97, 45], 'too close to the end to zoom out: it holds to the end')
 })
 
 test('autoZoomOnce: auto zooms on the first open only, never again after the user deletes them', () => {
