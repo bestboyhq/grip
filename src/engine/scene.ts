@@ -224,3 +224,9 @@ export function outputSize(project: Project, height: number): { width: number; h
   const even = (n: number) => Math.max(2, Math.round(n / 2) * 2)
   return ratio >= 1 ? { width: even(height * ratio), height: even(height) } : { width: even(height), height: even(height / ratio) }
 }
+
+/** The layout alone at the export's shape: where the screen sits, without stepping the camera. */
+export function layoutOf(project: Project, map: TimeMap, transcript: Transcript | null = null) {
+  const input: SceneInput = { project, events: [], transcript, ...outputSize(project, 1080) }
+  return prepareLayout(input, map, unitOf(input))
+}

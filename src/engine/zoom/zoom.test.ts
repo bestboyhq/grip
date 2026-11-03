@@ -4,10 +4,12 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createProject, type CameraPosition, type Clip, type Project, type Zoom } from '../../shared/project.ts'
 import { parseEvents, type InputEvent } from '../../shared/events.ts'
-import { prepare, sceneAt, type View } from '../scene.ts'
+import { layoutOf, prepare, sceneAt, type View } from '../scene.ts'
 import { layoutAt } from '../layout.ts'
 import { cursorPoint as cursorAt } from '../motion/index.ts'
-import { autoZoomOnce, generateAutoZooms, lookOf, loupesAcross, loupesAt, setAutoZoom, viewAt } from './index.ts'
+import { applyEdits } from '../../shared/edits.ts'
+import { timeMap } from '../../shared/timemap.ts'
+import { autoZoomOnce, generateAutoZooms, lookOf, loupesAcross, loupesAt, setAutoZoom, viewAt, zoomProblems } from './index.ts'
 
 const SCREEN = { file: 'sources/screen.mp4', width: 2880, height: 1800, fps: 30, scale: 2 }
 const CAMERA = { file: 'sources/camera.mp4', width: 1280, height: 720, fps: 30, scale: 1 }
@@ -599,4 +601,44 @@ test('only a picture-in-picture camera moves the view: hidden, fullscreen, or tu
   }
   const pip = typingBesideCamera('bottom-right')
   assert.ok(frames(1, 12).some((t) => Math.abs(pip.view(t).center.x - alone.view(t).center.x) > 20), 'a corner camera does')
+})
+
+const problems = (p: Project) => zoomProblems(p, timeMap(p.clips), layoutOf(p, timeMap(p.clips)))
+
+test('zoom problems: each fix leaves nothing to fix, and the camera then holds still across the cut', () => {
+  // 20 s recorded, 5-8 s cut out: output 0-17 s with a jump at 5 s.
+  const clips: Clip[] = [{ id: 'a', start: 0, end: 5, speed: 1, volume: 1 }, { id: 'b', start: 8, end: 20, speed: 1, volume: 1 }]
+  const pt = (x: number, y: number) => ({ kind: 'point' as const, x, y })
+  // The last: a time at which the camera holds still once fixed.
+  const cases: Array<[string, Zoom[], RegExp, object | object[], number?]> = [
+    ['out over the cut', [zoom({ id: 'z', start: 1, end: 4.9 })], /moves out over 4.9-5.33 s, and the cut at 5 s/, { type: 'set_zoom', id: 'z', end: 4.57 }],
+    ['in over the cut', [zoom({ id: 'z', start: 4.8, end: 12 })], /moves in over 4.8-5.23 s, and the cut at 5 s/, { type: 'set_zoom', id: 'z', start: 5 }],
+    ['a flinch', [zoom({ id: 'z', start: 10, end: 10.5 })], /holds only 0.07 s/, { type: 'set_zoom', id: 'z', end: 8.43 }],
+    ['a flinch at the end', [zoom({ id: 'z', start: 19.8, end: 20 })], /holds only 0 s/, { type: 'set_zoom', id: 'z', end: 17, start: 15.57 }],
+    ['the end mid zoom-out', [zoom({ id: 'z', start: 15, end: 19.8 })], /the video ends at 17 s while the camera is still moving out/, { type: 'set_zoom', id: 'z', end: 17 }],
+    ['cut out', [zoom({ id: 'z', start: 5.5, end: 7.5 })], /never plays/, { type: 'remove_zoom', id: 'z' }],
+    ['a stretch out over the cut', [zoom({ id: 'y', start: 1, end: 3 }), zoom({ id: 'z', start: 3.5, end: 4.9 })], /Zooms y to z/, { type: 'set_zoom', id: 'z', end: 4.57 }],
+    ['a loupe out over the cut', [zoom({ id: 'z', start: 1, end: 4.95, mode: 'loupe' })], /the loupe moves out over 4.95-5.3 s/, { type: 'set_zoom', id: 'z', end: 4.65 }],
+    ['a glide that never lands', [zoom({ id: 'y', start: 9, end: 12, target: pt(0.2, 0.25) }), zoom({ id: 'z', start: 12.2, end: 13, target: pt(0.8, 0.75) })], /glides to it from zoom y over 9.2-10.17 s and moves on at 10 s/, { type: 'set_zoom', id: 'z', end: 10.67 }, 10.55],
+    ['a glide into the end', [zoom({ id: 'y', start: 15, end: 19, target: pt(0.2, 0.25) }), zoom({ id: 'z', start: 19.2, end: 20, target: pt(0.8, 0.75) })], /holds only 0 s. Hold it at least 0.5 s/, [{ type: 'set_zoom', id: 'y', end: 15.53 }, { type: 'set_zoom', id: 'z', start: 15.53 }], 16.9],
+  ]
+  for (const [name, zooms, message, fix, holds] of cases) {
+    const project = createProject('t', { duration: 20, screen: SCREEN, events: 'sources/events.jsonl' })
+    project.clips = clips
+    project.zooms = zooms
+    const found = problems(project)
+    assert.equal(found.length, 1, name)
+    assert.match(found[0].message, message, name)
+    assert.deepEqual(found[0].fix, [fix].flat(), name)
+    applyEdits(project, found[0].fix, {}, null)
+    assert.deepEqual(problems(project), [], `${name}: fixed`)
+    const { view } = setup(project.zooms, [], { clips })
+    const still = (t: number) => Math.abs(view(t + 0.01).scale - view(t - 0.01).scale) < 0.01
+    // A zoom moved onto the cut starts moving there, over the new picture.
+    assert.ok(still(4.98) && (name === 'in over the cut' || still(5.02)), `${name}: the camera holds still across the cut`)
+    if (holds) assert.ok(Math.hypot(view(holds + 0.05).center.x - view(holds - 0.05).center.x, view(holds + 0.05).center.y - view(holds - 0.05).center.y) < 1 && still(holds), `${name}: the camera holds still at ${holds} s`)
+  }
+  // Without the fix, the camera is mid-move on the cut.
+  const { view } = setup([zoom({ start: 1, end: 4.9 })], [], { clips })
+  assert.ok(Math.abs(view(5.01).scale - view(4.99).scale) > 0.01)
 })

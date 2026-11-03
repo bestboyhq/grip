@@ -9,7 +9,7 @@
   import { dropFiles, invoke, on } from '../../lib/ipc.ts'
   import { fileUrl } from '../../engine/media/index.ts'
   import { parseEvents } from '../../shared/events.ts'
-  import type { Project, Sources, Transcript } from '../../shared/project.ts'
+  import type { Project, Sources, Style, Transcript } from '../../shared/project.ts'
   import { applyEdits, type Edit } from '../../shared/edits.ts'
   import { timeMap, toSource } from '../../shared/timemap.ts'
   import { autoZoomOnce } from '../../engine/zoom/index.ts'
@@ -27,7 +27,7 @@
   import { take, stopTake } from '../../lib/take.svelte.ts'
   import { commandForMenu, keyOf, registerCommands, run } from './commands/registry.ts'
   import { reason } from './helpers.ts'
-  import { sendThumbnail } from './thumbnail.ts'
+  import { renderStills, sendThumbnail } from './thumbnail.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
@@ -88,10 +88,11 @@
   )
 
   // Agents (electron/agents.ts) reach the open project here: their edits land as one undo step, saved
-  // before the reply; a time moves the playhead; a bare request reads the project as it is.
+  // before the reply; a time moves the playhead; a frame renders as the export does, as JPEG bytes; a
+  // bare request reads the project as it is.
   $effect(() => {
-    const off = on('agents:request', async (id: string, r: { edits?: Edit[]; time?: number }) => {
-      let reply: { project?: Project; error?: string }
+    const off = on('agents:request', async (id: string, r: { edits?: Edit[]; time?: number; frame?: { t: number; height: number } }) => {
+      let reply: { project?: Project; frame?: Uint8Array; error?: string }
       try {
         await opened
         if (!doc.project || gone) throw new Error(error || 'The project is not open any more.')
@@ -106,7 +107,14 @@
           seek(r.time)
           doc.project.playhead = toSource(timeMap(doc.project.clips), r.time) // before the first frame, the preview opens here
         }
-        reply = { project: $state.snapshot(doc.project) as Project }
+        let frame: Uint8Array | undefined
+        if (r.frame) {
+          const length = timeMap(doc.project.clips).duration
+          if (r.frame.t > length) throw new Error(`time is past the end of the ${Math.round(length * 100) / 100} s video.`)
+          const t = Math.min(r.frame.t, length - 1 / 120) // the end itself is past the last frame
+          await renderStills([$state.snapshot(doc.project.style) as Style], r.frame.height, t, async (_, jpeg) => (frame = new Uint8Array(await jpeg.arrayBuffer())), 'image/jpeg')
+        }
+        reply = { project: $state.snapshot(doc.project) as Project, ...(frame && { frame }) }
       } catch (e) {
         reply = { error: reason(e) }
       }
