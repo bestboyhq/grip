@@ -8,10 +8,11 @@
 
   type Phase = '' | 'queued' | 'download' | 'transcribe' | 'error'
 
-  // A run outlives the panel (switching tabs, closing the sidebar): its state lives here.
+  // A run outlives the panel (switching tabs, closing the sidebar): its state lives here. Main tells
+  // every window how each run goes, so a run an agent started shows here too.
   export const job = $state({ bundle: '', phase: '' as Phase, progress: 0, received: 0, total: 0, error: '' })
-  listen('transcript:progress', (p: { bundle: string; phase: Phase; progress: number; received?: number; total?: number }) => {
-    if (p.bundle === job.bundle && job.phase !== '' && job.phase !== 'error') Object.assign(job, p)
+  listen('transcript:progress', (p: { bundle: string; phase: Phase; progress?: number; received?: number; total?: number; error?: string }) => {
+    if (p.bundle === doc.path) Object.assign(job, { progress: 0, error: '' }, p)
   })
 
   /** Electron wraps handler errors in "Error invoking remote method ...": keep the reason. */

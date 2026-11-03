@@ -5,8 +5,9 @@
 //
 //   Socket: Grip.sock in the user's temporary folder; a dev checkout's is Grip-<md5 of its path, 12 hex>.sock,
 //   well under the 104 bytes a socket path may take. grip-mcp works out the same path.
-//   Tools (TOOLS below): list_projects, get_project, get_transcript, edit_project, export_project,
-//   share_project, export_status, open_project. Every time is in output seconds: the edited video.
+//   Tools (TOOLS below): list_projects, get_project, get_transcript, transcribe_project, edit_project,
+//   export_project, share_project, export_status, open_project. Every time is in output seconds: the
+//   edited video.
 //
 // A project open in an editor is read and edited through that editor, so the user sees an agent's edits
 // as they land, as one undo step saved before the reply; a closed one is edited on disk under the bundle lock.
@@ -18,19 +19,20 @@ import { app, ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { chmod, existsSync, realpathSync, rmSync } from 'node:fs'
-import { readdir, stat } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { createServer, type Server, type Socket } from 'node:net'
 import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import { bundleArg, projectsDir, readProject, recentProjects, updateProject } from './projects.ts'
 import { exportListeners, exportWithoutAsking } from './export.ts'
-import { loadSpoken } from './transcript.ts'
+import { loadSpoken, runTranscript, type Progress as Heard } from './transcript.ts'
 import { editorFor, openProject } from './shell/recorder.ts'
 import { settings } from './shell/settings.ts'
 import { plainError } from './shell/errors.ts'
 import { hidden } from './windows.ts'
 import { applyEdits, LIMITS, parseEdits, type Edit } from '../src/shared/edits.ts'
 import { CAPTION_FONTS, type Project, type Transcript } from '../src/shared/project.ts'
-import { mapRange, timeMap, toSource } from '../src/shared/timemap.ts'
+import { parseEvents, type InputEvent } from '../src/shared/events.ts'
+import { mapRange, timeMap, toOutput, toSource } from '../src/shared/timemap.ts'
 import { outputWords } from '../src/engine/transcript/index.ts'
 import { lookOf } from '../src/engine/zoom/index.ts'
 import { cleanOptions, defaultOptions, formatBytes, QUALITIES, RATES, SIZES, type ExportOptions, type ExportRequest, type JobInfo } from '../src/engine/export/options.ts'
@@ -41,12 +43,13 @@ const WAIT_MS = 45_000 // an export call returns by then: clients give up on a c
 const ASK_MS = 30_000 // an editor answers by then, even one still opening a 2-hour project
 // Pages: some agent apps hand the model structuredContent, as JSON, so a page stays near 8k tokens there.
 const MAX_WORDS = 500 // words a get_transcript answer lists
-const MAX_ITEMS = 100 // clips, and zooms, a get_project answer lists
+const MAX_ITEMS = 100 // clips, zooms, and clicks a get_project answer lists
 const MAX_LINE = 8 << 20 // bytes in one message
 
 const INSTRUCTIONS = `Grip records the screen and turns recordings into polished videos. These tools read, edit, export, and share Grip projects (.grip bundles) on this Mac.
 - Name a project by the absolute path of its .grip bundle, or by its name as list_projects shows it.
-- Every time is in output seconds: the video as it plays, after its cuts and speed changes. get_project shows each clip's output and recording times.
+- Every time is in output seconds: the video as it plays, after its cuts and speed changes. get_project shows each clip's output and recording times, and when and where each click lands.
+- Captions and get_transcript need a transcript: transcribe_project makes one on this Mac.
 - edit_project applies a list of edits together, or none of them when one is wrong. Every time in the list refers to the video as it was before the list. In a project open in Grip's editor, the list is one undo step.
 - Edits never change the recording: cuts, zooms, and caption fixes sit on top of it, and the user can undo them.
 - export_project and share_project wait up to 45 s. A longer export returns its id, and export_status waits for it again.`
@@ -93,6 +96,7 @@ const EDIT = {
       'Zoom in over start..end: on the point x, y, or following the cursor without them.',
       {
         ...RANGE,
+        look: { type: 'string', enum: ['zoom', 'loupe'], description: 'zoom: the camera moves in on the screen. loupe: a round glass lens magnifies the spot, and the rest of the screen stays in view. Default: the look last picked in Grip.' },
         level: { type: 'number', minimum: LIMITS.level[0], maximum: LIMITS.level[1], description: 'How far in: 2 shows a quarter of the screen. Default: the project’s auto zoom level.' },
         x: { type: 'number', minimum: 0, maximum: 1, description: 'The point to zoom on, across the recording: 0 left, 1 right. Give y too.' },
         y: { type: 'number', minimum: 0, maximum: 1, description: 'The point to zoom on, down the recording: 0 top, 1 bottom. Give x too.' },
@@ -151,7 +155,7 @@ const TOOLS: Tool[] = [
   {
     name: 'get_project',
     title: 'Get project',
-    description: `A project’s timeline: clips (output and recording times, speed, volume), zooms (id, output times, level, target), the caption settings, and whether it has a transcript. A project open in the editor reads as the editor shows it. Give start and end for the clips and zooms playing then. At most ${MAX_ITEMS} of each a call: next, when there, is the start to ask again with.`,
+    description: `A project’s timeline: clips (output and recording times, speed, volume), zooms (id, output times, level, target, look), clicks (output time, and where on the recording as the x, y add_zoom takes), the caption settings, and whether it has a transcript. A project open in the editor reads as the editor shows it. Give start and end for the clips, zooms, and clicks playing then. At most ${MAX_ITEMS} of each a call: next, when there, is the start to ask again with.`,
     inputSchema: { type: 'object', properties: { project: PROJECT, ...RANGE }, required: ['project'] },
     annotations: { readOnlyHint: true },
     run: async (a) => describe(await current(await locate(a.project)), '', range(a)),
@@ -163,6 +167,14 @@ const TOOLS: Tool[] = [
     inputSchema: { type: 'object', properties: { project: PROJECT, ...RANGE }, required: ['project'] },
     annotations: { readOnlyHint: true },
     run: getTranscript,
+  },
+  {
+    name: 'transcribe_project',
+    title: 'Transcribe project',
+    description: 'Transcribe what a project’s recording says, on this Mac, so get_transcript reads its words and the captions show them. The first run downloads the speech model once. Waits up to 45 s; when it is still going, ask again to keep waiting. A project that has a transcript keeps it.',
+    inputSchema: { type: 'object', properties: { project: PROJECT }, required: ['project'] },
+    annotations: { ...WRITES, idempotentHint: true },
+    run: transcribeProject,
   },
   {
     name: 'edit_project',
@@ -240,7 +252,7 @@ async function getTranscript(a: Args): Promise<Result> {
   const [from, to] = range(a)
   const { project } = await current(path)
   const t = await loadSpoken(path, project)
-  if (!t) throw new Error(`${quoted(path)} has no transcript yet. Transcribe it in Grip (Captions, in the editor’s inspector), then ask again.`)
+  if (!t) throw new Error(`${quoted(path)} has no transcript yet. transcribe_project makes one; then ask again.`)
   // Every play of a word, in output order: pages by output time hold up even when clips repeat or move.
   const plays = outputWords(t, timeMap(project.clips), project.captionEdits)
   const matching = plays.filter((o) => o.end > from && o.start < to)
@@ -271,6 +283,32 @@ async function getTranscript(a: Args): Promise<Result> {
   const head = `${quoted(path)}: ${count(t.words.length, 'word')}${cut ? `, ${cut} cut from the video` : ''}${between}. Each line: its output time, #index of its first word, its words. ~~word~~ is not in the captions (hidden, or a filler word).`
   const rest = next === undefined ? '' : `\n${words.length} of ${matching.length} shown. Ask again with start ${next} for the rest.`
   return { text: `${head}\n${lines.join('\n')}${rest}`, data: { language: t.language, count: t.words.length, cut, words, ...(next !== undefined && { next, more: matching.length - words.length }) } }
+}
+
+async function transcribeProject(a: Args, progress: Progress): Promise<Result> {
+  const path = await locate(a.project)
+  const words = async (note: string) => {
+    const t = await loadSpoken(path, (await current(path)).project)
+    const text = `${note} ${quoted(path)}: ${count(t?.words.length ?? 0, 'word')}. get_transcript reads them, and set_captions shows them.`
+    return { text, data: { message: text, state: 'done', language: t?.language, words: t?.words.length ?? 0 } }
+  }
+  if ((await readProject(path)).sources.transcript) return words('Already transcribed')
+  let at: Heard = { phase: 'queued', progress: 0 }
+  const step = (h: Heard) => (h.phase === 'download' ? `downloading the speech model, ${Math.floor(h.progress * 100)}%` : h.phase === 'transcribe' ? `transcribing, ${Math.floor(h.progress * 100)}%` : 'waiting to start')
+  const run = runTranscript(path, (h) => {
+    at = h
+    progress(h.phase === 'download' ? Math.floor(h.progress * 50) : h.phase === 'transcribe' ? 50 + Math.floor(h.progress * 50) : 0, step(h)) // the download, then the words
+  })
+  const t = await Promise.race([run, new Promise<undefined>((r) => setTimeout(r, WAIT_MS))])
+  if (t === undefined) {
+    const text = `Still working on ${quoted(path)}: ${step(at)}. transcribe_project again waits for it.`
+    return { text, data: { message: text, state: 'running', phase: at.phase, progress: Math.round(at.progress * 100) / 100 } }
+  }
+  if (!t && !(await readProject(path)).sources.takes?.length) {
+    const text = `The transcription of ${quoted(path)} was canceled in Grip.`
+    return { text, data: { message: text, state: 'canceled' }, failed: true }
+  }
+  return words('Transcribed')
 }
 
 async function editProject(a: Args): Promise<Result> {
@@ -404,11 +442,30 @@ function range(a: Args): [number, number] {
   return [from, to]
 }
 
+// ponytail: the last project's clicks, read once: a 2-hour recording's events run to a million lines,
+// and an agent reads the same project call after call. A map by bundle if agents juggle projects.
+type Press = Extract<InputEvent, { type: 'down' | 'up' }>
+let clicked: { file: string; stamp: string; downs: Press[] } | null = null
+/** The recording's mouse presses, as the editor's click effects take them (parseEvents drops the pen's). */
+async function downs(path: string, p: Project): Promise<Press[]> {
+  if (!p.sources.events) return []
+  const file = join(path, p.sources.events)
+  const s = await stat(file).catch(() => null)
+  if (!s) return []
+  const stamp = `${s.size}:${s.mtimeMs}`
+  if (clicked?.file !== file || clicked.stamp !== stamp) {
+    const lines = (await readFile(file, 'utf8')).split('\n').filter((l) => l.includes('"down"') || l.includes('"draw"')) // presses, and the pen strokes that are not clicks
+    clicked = { file, stamp, downs: parseEvents(lines.join('\n')).filter((e): e is Press => e.type === 'down') }
+  }
+  return clicked.downs
+}
+
 /** get_project's answer: the timeline in output seconds, with the recording time each clip plays. It
- *  lists the clips and zooms playing from `from` to `to`, MAX_ITEMS of each at most. */
+ *  lists the clips, zooms, and clicks playing from `from` to `to`, MAX_ITEMS of each at most. */
 async function describe({ path, project: p, open }: Opened, note: string, [from, to] = [0, Infinity]): Promise<Result> {
   const m = timeMap(p.clips)
   const t: Transcript | null = await loadSpoken(path, p).catch(() => null)
+  const screen = p.sources.screen
   const playing = (x: { start: number; end: number }) => x.end > from && x.start < to
   const allClips = p.clips
     .map((c, i) => ({
@@ -426,14 +483,22 @@ async function describe({ path, project: p, open }: Opened, note: string, [from,
       const spans = mapRange(m, z.start, z.end)
       if (!spans.length) return [] // cut out: it never plays
       const target = z.target.kind === 'point' ? { x: z.target.x, y: z.target.y } : ('cursor' as const)
-      return [{ id: z.id, start: r3(Math.min(...spans.map((s) => s[0]))), end: r3(Math.max(...spans.map((s) => s[1]))), level: z.level, target, enabled: z.enabled, ...(z.auto && { auto: true }) }]
+      return [{ id: z.id, start: r3(Math.min(...spans.map((s) => s[0]))), end: r3(Math.max(...spans.map((s) => s[1]))), level: z.level, target, look: z.mode === 'loupe' ? 'loupe' : 'zoom', enabled: z.enabled, ...(z.auto && { auto: true }) }]
     })
     .filter(playing)
     .sort((a, b) => a.start - b.start)
-  // A page ends where the clip or the zoom past MAX_ITEMS starts.
-  const next = Math.min(allClips[MAX_ITEMS]?.start ?? Infinity, allZooms[MAX_ITEMS]?.start ?? Infinity)
+  // Presses on the recorded screen that play (one inside a cut never shows), at their first play.
+  const allClicks = (screen ? await downs(path, p) : [])
+    .flatMap((e) => {
+      const [at, x, y] = [toOutput(m, e.t), e.x / screen!.width, e.y / screen!.height]
+      return at === null || at < from || at >= to || x < 0 || y < 0 || x > 1 || y > 1 ? [] : [{ t: r3(at), x: r3(x), y: r3(y) }]
+    })
+    .sort((a, b) => a.t - b.t)
+  // A page ends where the clip, the zoom, or the click past MAX_ITEMS starts.
+  const next = Math.min(allClips[MAX_ITEMS]?.start ?? Infinity, allZooms[MAX_ITEMS]?.start ?? Infinity, allClicks[MAX_ITEMS]?.t ?? Infinity)
   const clips = allClips.filter((c) => c.start < next)
   const zooms = allZooms.filter((z) => z.start < next)
+  const clicks = allClicks.filter((c) => c.t < next)
   const between = from > 0 || to < Infinity ? ` playing from ${sec(from)}${to < Infinity ? ` to ${sec(to)}` : ''}` : ''
   const { visible, mode, position, size, color, font, animation } = p.style.captions
   const text = [
@@ -443,10 +508,12 @@ async function describe({ path, project: p, open }: Opened, note: string, [from,
     `${count(clips.length, 'clip')}${between}, output ← recording:`,
     ...clips.map((c) => `  ${c.start}-${c.end} s ← ${c.source.start}-${c.source.end} s${c.speed !== 1 ? `, ${c.speed}×` : ''}${c.volume !== 1 ? `, volume ${Math.round(c.volume * 100)}%` : ''}${c.muted ? ', muted' : ''}`),
     `${count(zooms.length, 'zoom')}${between}${zooms.length ? ':' : ''}`,
-    ...zooms.map((z) => `  ${z.id}: ${z.start}-${z.end} s, ${z.level}×, ${z.target === 'cursor' ? 'follows the cursor' : `at ${z.target.x}, ${z.target.y}`}${z.enabled ? '' : ', off'}${z.auto ? ', auto' : ''}`),
-    ...(next < Infinity ? [`More clips and zooms play from ${sec(next)}: get_project with start ${next} lists them.`] : []),
+    ...zooms.map((z) => `  ${z.id}: ${z.start}-${z.end} s, ${z.level}×, ${z.target === 'cursor' ? 'follows the cursor' : `at ${z.target.x}, ${z.target.y}`}${z.look === 'loupe' ? ', loupe' : ''}${z.enabled ? '' : ', off'}${z.auto ? ', auto' : ''}`),
+    `${count(clicks.length, 'click')}${between}${clicks.length ? ', at output time, on the recording at x, y:' : ''}`,
+    ...(clicks.length ? [`  ${clicks.map((c) => `${c.t} s at ${c.x}, ${c.y}`).join('; ')}`] : []),
+    ...(next < Infinity ? [`More clips, zooms, and clicks play from ${sec(next)}: get_project with start ${next} lists them.`] : []),
     `Captions: ${visible ? 'shown' : 'hidden'}, ${mode}, ${position}, size ${size}, ${color}, ${font}, ${animation}`,
-    t ? `Transcript: ${count(t.words.length, 'word')} (get_transcript reads them)` : 'Transcript: none yet (transcribe it in Grip: Captions, in the editor’s inspector)',
+    t ? `Transcript: ${count(t.words.length, 'word')} (get_transcript reads them)` : 'Transcript: none yet (transcribe_project makes one)',
   ]
   const data = {
     ...(note && { message: note }), // what the text says first, for agent apps that only pass this on
@@ -457,6 +524,7 @@ async function describe({ path, project: p, open }: Opened, note: string, [from,
     recorded: r3(p.sources.duration),
     clips,
     zooms,
+    clicks,
     ...(next < Infinity && { next }),
     captions: { visible, mode, position, size, color, font, animation },
     transcript: { exists: !!t, words: t?.words.length ?? 0 },

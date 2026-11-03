@@ -3,9 +3,11 @@
 //   transcript:run(bundle) -> Transcript | null       null when cancelled. Downloads the model on first
 //     use, transcribes the mic track, writes sources/transcript.json, sets sources.transcript, then
 //     each voiceover take without words (voiceovers/<id>.json, sources.takes[].transcript; null when
-//     the recording has no audio of its own, only takes).
-//   transcript:progress (event) { bundle, phase: 'queued' | 'download' | 'transcribe', progress 0..1,
-//     received?, total? (download bytes) }
+//     the recording has no audio of its own, only takes). A run already under way, an agent's
+//     included (electron/agents.ts), is joined, not started again.
+//   transcript:progress (event, to every window) { bundle, phase: 'queued' | 'download' | 'transcribe',
+//     progress 0..1, received?, total? (download bytes) }, then { bundle, phase: '' } once it is done or
+//     cancelled, or { bundle, phase: 'error', error }
 //   transcript:cancel(bundle)
 //   transcript:load(bundle) -> Transcript | null
 //   transcript:export(bundle, 'srt' | 'vtt', text) -> saved path | null (save dialog)
@@ -111,7 +113,7 @@ async function writeAtomic(path: string, data: string) {
   await rename(tmp, path)
 }
 
-type Progress = { phase: 'queued' | 'download' | 'transcribe'; progress: number; received?: number; total?: number }
+export type Progress = { phase: 'queued' | 'download' | 'transcribe'; progress: number; received?: number; total?: number }
 
 /** The recording's own audio, which the transcript is made of. */
 const audioOf = (s: Sources) => s.mic?.file ?? (s.imported ? s.screen?.file : undefined) ?? s.system?.file
@@ -207,38 +209,60 @@ export async function loadSpoken(bundle: string, project: Project): Promise<Tran
   return spoken(await loadTranscript(bundle), takes, project.voiceovers)
 }
 
-const jobs = new Map<string, AbortController>()
+const jobs = new Map<string, { ac: AbortController; done: Promise<Transcript | null>; listeners: Set<(p: Progress) => void> }>()
 let queue: Promise<unknown> = Promise.resolve() // one at a time: each run holds the model in memory
 
-export function registerTranscript() {
-  ipcMain.handle('transcript:status', async () => ({ model: await hasModel(), size: MODEL_SIZE }))
-
-  ipcMain.handle('transcript:run', async (e, bundle: string) => {
-    inBundle(bundle, 'project.json')
-    if (jobs.has(bundle)) throw new Error('This project is already being transcribed.')
+/** Transcribe `bundle` (transcript:run), or join its run under way; null when cancelled. Every window
+ *  hears how it goes, so an editor shows an agent's run as its own; `progress` hears it too. */
+export function runTranscript(bundle: string, progress?: (p: Progress) => void): Promise<Transcript | null> {
+  inBundle(bundle, 'project.json')
+  const tell = (p: Progress | { phase: '' } | { phase: 'error'; error: string }) => {
+    for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('transcript:progress', { bundle, ...p })
+  }
+  let job = jobs.get(bundle)
+  if (!job) {
     const ac = new AbortController()
-    jobs.set(bundle, ac)
+    const listeners = new Set<(p: Progress) => void>()
     let last = { phase: '', at: 0 }
     const send = (p: Progress) => {
       const now = Date.now()
       if (p.phase === last.phase && p.progress < 1 && now - last.at < 100) return // ~10 updates a second
       last = { phase: p.phase, at: now }
-      if (!e.sender.isDestroyed()) e.sender.send('transcript:progress', { bundle, ...p })
+      for (const f of listeners) f(p)
+      tell(p)
     }
-    try {
-      send({ phase: 'queued', progress: 0 })
-      const job = queue.then(() => transcribe(bundle, ac.signal, send))
-      queue = job.catch(() => {})
-      return await job
-    } catch (err) {
-      if (ac.signal.aborted) return null
-      throw new Error(reason(err))
-    } finally {
-      jobs.delete(bundle)
-    }
-  })
+    send({ phase: 'queued', progress: 0 })
+    const run = queue.then(() => transcribe(bundle, ac.signal, send))
+    queue = run.catch(() => {})
+    const done = (async () => {
+      try {
+        const t = await run
+        tell({ phase: '' })
+        return t
+      } catch (err) {
+        if (ac.signal.aborted) {
+          tell({ phase: '' })
+          return null
+        }
+        tell({ phase: 'error', error: reason(err) })
+        throw new Error(reason(err))
+      } finally {
+        jobs.delete(bundle)
+      }
+    })()
+    job = { ac, done, listeners }
+    jobs.set(bundle, job)
+  }
+  if (progress) job.listeners.add(progress)
+  return job.done
+}
 
-  ipcMain.handle('transcript:cancel', (_e, bundle: string) => jobs.get(bundle)?.abort())
+export function registerTranscript() {
+  ipcMain.handle('transcript:status', async () => ({ model: await hasModel(), size: MODEL_SIZE }))
+
+  ipcMain.handle('transcript:run', (_e, bundle: string) => runTranscript(bundle))
+
+  ipcMain.handle('transcript:cancel', (_e, bundle: string) => jobs.get(bundle)?.ac.abort())
 
   ipcMain.handle('transcript:load', (_e, bundle: string) => loadTranscript(bundle))
 

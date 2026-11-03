@@ -25,6 +25,15 @@ test('every time is on the timeline as it was before the list', () => {
   assert.deepEqual([q.zooms[0].start, q.zooms[0].end, q.zooms[0].level, q.zooms[0].target], [2, 8, 3, { kind: 'point', x: 0.25, y: 0.75 }])
 })
 
+test('a zoom names its look, or takes the last one picked', () => {
+  const p = project()
+  apply(p, [{ type: 'add_zoom', start: 1, end: 2, look: 'zoom' }, { type: 'add_zoom', start: 3, end: 4, look: 'loupe' }, { type: 'add_zoom', start: 5, end: 6 }])
+  assert.deepEqual(p.zooms.map((z) => [z.mode, z.size]), [[undefined, undefined], ['loupe', 200], ['loupe', 200]])
+  applyEdits(p, parseEdits([{ type: 'add_zoom', start: 7, end: 8, look: 'loupe' }]), {}, null) // the last pick was a zoom
+  assert.deepEqual([p.zooms[3].mode, p.zooms[3].size], ['loupe', undefined])
+  assert.throws(() => parseEdits([{ type: 'add_zoom', start: 1, end: 2, look: 'lens' }]), /look must be zoom or loupe/)
+})
+
 test('captions: fixed words, hidden words, style', () => {
   const p = project()
   apply(p, [{ type: 'set_caption_text', index: 1, text: ' world ' }, { type: 'set_caption_text', index: 0, text: '' }, { type: 'set_captions', visible: true, mode: 'word', color: '#FFD60A' }])

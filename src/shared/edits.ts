@@ -12,7 +12,7 @@ type Captions = Style['captions']
 export type Edit =
   | { type: 'cut'; start: number; end: number }
   | { type: 'set_speed'; start: number; end: number; speed: number }
-  | { type: 'add_zoom'; start: number; end: number; level?: number; x?: number; y?: number }
+  | { type: 'add_zoom'; start: number; end: number; level?: number; x?: number; y?: number; look?: 'zoom' | 'loupe' }
   | { type: 'remove_zoom'; id: string }
   | { type: 'set_caption_text'; index: number; text: string }
   | ({ type: 'set_captions' } & Partial<Captions>)
@@ -32,7 +32,7 @@ const CHOICES = {
 const FIELDS: Record<Edit['type'], string[]> = {
   cut: ['start', 'end'],
   set_speed: ['start', 'end', 'speed'],
-  add_zoom: ['start', 'end', 'level', 'x', 'y'],
+  add_zoom: ['start', 'end', 'level', 'x', 'y', 'look'],
   remove_zoom: ['id'],
   set_caption_text: ['index', 'text'],
   set_captions: ['visible', 'mode', 'position', 'size', 'color', 'font', 'animation'],
@@ -71,7 +71,8 @@ export function parseEdits(x: unknown): Edit[] {
         if (e.level !== undefined) within('level', LIMITS.level, '×')
         check((e.x === undefined) === (e.y === undefined), 'x and y go together: give both to aim at a point, or neither to follow the cursor.')
         if (e.x !== undefined) for (const k of ['x', 'y']) within(k, [0, 1])
-        return { type: 'add_zoom', ...r, ...(e.level !== undefined && { level: e.level }), ...(e.x !== undefined && { x: e.x, y: e.y }) }
+        check(e.look === undefined || e.look === 'zoom' || e.look === 'loupe', 'look must be zoom or loupe.')
+        return { type: 'add_zoom', ...r, ...(e.level !== undefined && { level: e.level }), ...(e.x !== undefined && { x: e.x, y: e.y }), ...(e.look && { look: e.look }) }
       }
       case 'remove_zoom':
         check(typeof e.id === 'string' && !!e.id, 'id must be the id of a zoom, as get_project lists it.')
@@ -100,7 +101,8 @@ export function newZoom(p: Project, start: number, end: number, look: ZoomLook, 
 
 /** Apply `edits` (from parseEdits) to `p` in place, all or nothing: an edit that does not fit the
  *  project (a range past the end, an unknown zoom, a word the transcript lacks) throws before `p`
- *  changes. New zooms take `look`; caption text is checked against `transcript`. */
+ *  changes. New zooms take `look` unless they name theirs (a loupe keeps `look`'s size and shape);
+ *  caption text is checked against `transcript`. */
 export function applyEdits(p: Project, edits: Edit[], look: ZoomLook, transcript: Transcript | null): void {
   const m = timeMap(p.clips)
   const clamp = (e: { start: number; end: number }, i: number): [number, number] => {
@@ -138,12 +140,13 @@ export function applyEdits(p: Project, edits: Edit[], look: ZoomLook, transcript
       let end = toSource(m, b)
       // The range jumps back in the recording (clips out of order): the zoom ends with the clip it starts in.
       if (end <= start) end = m.clips[clipAt(m, a)].end
-      zooms = [...zooms, newZoom(p, start, end, look, e.x === undefined ? undefined : { x: e.x, y: e.y! }, e.level)]
+      const named = e.look === 'zoom' ? {} : e.look === 'loupe' && look.mode !== 'loupe' ? { mode: 'loupe' as const } : look
+      zooms = [...zooms, newZoom(p, start, end, named, e.x === undefined ? undefined : { x: e.x, y: e.y! }, e.level)]
     } else if (e.type === 'remove_zoom') {
       if (!zooms.some((z) => z.id === e.id)) throw new Error(`edits[${i}]: no zoom has the id “${e.id}”. get_project lists the zooms.`)
       zooms = zooms.filter((z) => z.id !== e.id)
     } else if (e.type === 'set_caption_text') {
-      if (!transcript) throw new Error('This project has no transcript, so its captions have no words to fix. Transcribe it in Grip first (Captions in the inspector).')
+      if (!transcript) throw new Error('This project has no transcript, so its captions have no words to fix. transcribe_project makes one.')
       const word = transcript.words[e.index]
       if (!word) throw new Error(`edits[${i}]: the transcript has ${transcript.words.length} words, so there is no word ${e.index}.`)
       const clean = (s: string) => s.replace(/\s+/g, ' ').trim()

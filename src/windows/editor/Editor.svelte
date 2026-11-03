@@ -157,13 +157,17 @@
   }
 
   // Main-process domains (camera analysis, transcription) add sources; keep the open document current.
+  // A transcript made outside this window (an agent's transcribe_project) arrives as its source.
   $effect(() =>
     on('projects:sources', async (path: string, sources: Sources) => {
       if (path !== doc.path || !doc.project) return
       doc.project.sources = sources
       doc.rev++
-      const takes = await takeWords(path, sources, doc.heard.takes)
-      if (path === doc.path && takes !== doc.heard.takes) hear({ takes })
+      const [mic, takes] = await Promise.all([
+        sources.transcript && !doc.heard.mic ? (invoke('transcript:load', path).catch(() => null) as Promise<Transcript | null>) : doc.heard.mic,
+        takeWords(path, sources, doc.heard.takes),
+      ])
+      if (path === doc.path && (mic !== doc.heard.mic || takes !== doc.heard.takes)) hear({ mic, takes })
     }),
   )
 
