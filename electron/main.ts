@@ -14,6 +14,7 @@ import { openSharedLink, registerShare } from './share.ts'
 import { registerTranscript } from './transcript.ts'
 import { registerCamera } from './camera.ts'
 import { registerAudio } from './audio.ts'
+import { registerVoiceover } from './voiceover.ts'
 import { registerEditor } from './editor.ts'
 import { registerWallpapers } from './wallpapers.ts'
 import { registerSettings, settings } from './shell/settings.ts'
@@ -21,6 +22,7 @@ import { afterToolbar, command, editorsDone, isQuitting, openFilesOrAlert, openO
 import { setAppMenu } from './shell/menu.ts'
 import { createTray } from './shell/tray.ts'
 import { registerGrant } from './shell/grant.ts'
+import { registerAgents } from './agents.ts'
 import { restartedToUpdate, startUpdates } from './shell/update.ts'
 import { inTurn, parseLaunch, parseGripUrl } from './shell/url.ts'
 import { plainError } from './shell/errors.ts'
@@ -86,11 +88,11 @@ function openUrl(url: string) {
 
 /** Act on launch arguments (parseLaunch); `cwd` is the launching shell's directory. False when there were none. */
 function launch(argv: string[], cwd = process.cwd()): boolean {
-  const { lab, urls, files } = parseLaunch(argv, cwd)
+  const { lab, urls, files, background } = parseLaunch(argv, cwd)
   if (lab !== undefined) openWindow(`dev?lab=${lab}`)
   urls.forEach(openUrl)
   for (const f of files) openFilesOrAlert([f])
-  return lab !== undefined || urls.length + files.length > 0
+  return !!background || lab !== undefined || urls.length + files.length > 0
 }
 
 // Before ready, in place of the default menu Electron builds at will-finish-launching.
@@ -111,12 +113,14 @@ app.whenReady().then(() => {
   registerShare()
   registerTranscript()
   registerAudio()
+  registerVoiceover()
   registerEditor()
   registerWallpapers()
   if (!app.isPackaged && process.env.STUDIO_FAKE_RECORDING) registerFakeRecording(process.env.STUDIO_FAKE_RECORDING)
   registerSettings()
   registerRecorder()
   registerGrant()
+  registerAgents()
   watchDisplays()
   ready = true
 
@@ -124,9 +128,9 @@ app.whenReady().then(() => {
   const queued = early.splice(0)
   const acted = launch(process.argv)
   for (const item of queued) /^grip:/i.test(item) ? openUrl(item) : openFilesOrAlert([item])
-  // Restarted into an update, or opened at login: back in the menu bar only, its dock icon gone too
-  // (no window hides it). The picker waits for the user to ask.
-  if (updated || app.getLoginItemSettings().wasOpenedAtLogin) updateDock()
+  // Restarted into an update, opened at login, or started in the background (grip-mcp, for an agent):
+  // back in the menu bar only, its dock icon gone too (no window hides it). The picker waits for the user to ask.
+  if (updated || app.getLoginItemSettings().wasOpenedAtLogin || parseLaunch(process.argv, '/').background) updateDock()
   else if (!acted && !queued.length) settings().onboarded ? showPicker(null) : openOnboarding(settings().welcomed ? 'page=permissions' : '')
   afterToolbar(() => {
     if (!hidden) createTray() // agent runs, one per worktree, stay out of the menu bar

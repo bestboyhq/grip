@@ -1,0 +1,42 @@
+#!/bin/sh
+# Grip's MCP server for agent apps (electron/agents.ts): pipes stdin and stdout to the socket Grip
+# listens on, after starting Grip in the menu bar when nothing listens there yet. Grip.app ships it as
+# Contents/Resources/grip-mcp; from a checkout, build/grip-mcp starts that checkout's dev build.
+# Agent apps start it with a bare environment, so every tool goes by its full path.
+here=$(cd "$(dirname "$0")" && pwd -P)
+tmp=$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)
+if [ -x "$here/../MacOS/Grip" ]; then
+  sock="${tmp}Grip.sock"
+  app=$(cd "$here/../.." && pwd -P)
+  start() { /usr/bin/open -n -g -a "$app" --args --background; }
+  why='Grip did not start. Open Grip, then reconnect it in your agent app.'
+else
+  repo=$(cd "$here/.." && pwd -P)
+  sock="${tmp}Grip-$(/sbin/md5 -q -s "$repo" | /usr/bin/cut -c1-12).sock"
+  # Detached through node: a background job of this shell would die with it.
+  start() {
+    cd "$repo" && node -e "const { spawn } = require('node:child_process'), fs = require('node:fs'); fs.mkdirSync('.context', { recursive: true }); const log = fs.openSync('.context/agents.log', 'a'); spawn('npm', ['run', 'dev', '--', '--background'], { detached: true, stdio: ['ignore', log, log] }).unref()"
+  }
+  why='The dev build did not start: see .context/agents.log in the checkout, or run npm run dev there.'
+fi
+
+up() { /usr/bin/nc -U "$sock" </dev/null >/dev/null 2>&1; }
+if ! up; then
+  start >/dev/null 2>&1
+  i=0
+  while [ $i -lt 100 ] && ! up; do
+    /bin/sleep 0.2
+    i=$((i + 1))
+  done
+fi
+# ponytail: the session ends when Grip quits, an update's restart included, and the agent app has to
+# reconnect. Riding out a restart needs a check for the end of stdin that sh cannot make without eating input.
+up && exec /usr/bin/nc -U "$sock"
+
+# No Grip to talk to: every request gets an error that says why, so the agent app can tell the user.
+# ponytail: the id is the last "id" on the line, where clients put it, and no "id" inside params goes
+# after it; a full JSON parser in sh is not worth it for one error.
+while IFS= read -r line; do
+  id=$(printf '%s\n' "$line" | /usr/bin/sed -nE 's/.*"id"[[:space:]]*:[[:space:]]*(-?[0-9]+|"([^"\\]|\\.)*").*/\1/p')
+  [ -n "$id" ] && printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32000,"message":"%s"}}\n' "$id" "$why"
+done

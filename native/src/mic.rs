@@ -1,6 +1,7 @@
-//! Owner: capture (follows the audio skill). Microphones: listing, the toolbar level meter, and
-//! recording to sources/mic.m4a on the master clock. A plain AVCaptureSession: no automatic gain
-//! control and no voice processing, so the level is the user's. A mono mic stays mono.
+//! Owner: capture (follows the audio skill). Microphones: listing, the toolbar level meter,
+//! recording to sources/mic.m4a on the master clock, and voiceover takes the editor records while
+//! the video plays. A plain AVCaptureSession: no automatic gain control and no voice processing, so
+//! the level is the user's. A mono mic stays mono.
 #![cfg_attr(test, allow(dead_code))] // napi exports are only referenced from JS
 
 use std::path::Path;
@@ -24,7 +25,7 @@ use objc2_core_media::{CMAudioFormatDescriptionGetStreamBasicDescription, CMSamp
 use objc2_foundation::{NSArray, NSString};
 
 use crate::writer::{AudioWriter, interleaved_f32, ns_error, pcm_settings};
-use crate::clock::SESSION;
+use crate::clock::{SessionClock, now_ns};
 use crate::permissions::{Permission, PermissionStatus, missing, permission_status};
 
 pub const RATE: f64 = 48_000.0;
@@ -102,6 +103,9 @@ fn channels(d: &AVCaptureDevice) -> usize {
 
 /// (host time ns of the first sample, interleaved float samples)
 type OnPcm = Box<dyn Fn(u64, &[f32]) + Send + Sync>;
+/// (source seconds a stretch of about 33 ms starts at, its linear peak 0..1): what a recorder writes,
+/// as it writes it.
+pub type OnLevel = Box<dyn Fn(f64, f64) + Send + Sync>;
 
 define_class!(
     // SAFETY: NSObject has no subclassing requirements and Delegate does not implement Drop.
@@ -171,32 +175,46 @@ impl Drop for Capture {
     }
 }
 
-/// Records one microphone to an AAC file stamped by clock::SESSION. Pauses drop samples there.
+/// Records one microphone to an AAC file stamped by `clock` (clock::SESSION for a recording). Samples
+/// before the clock starts and while it is paused are dropped.
 pub struct MicRecorder {
     capture: Capture,
     writer: Arc<Mutex<Option<AudioWriter>>>,
     zero_run: Arc<AtomicU64>, // consecutive samples of digital silence
     pub name: String,
     pub built_in: bool,
+    pub channels: usize,
 }
 
 impl MicRecorder {
-    pub fn start(id: Option<&str>, path: &Path) -> Result<Self, String> {
+    pub fn start(id: Option<&str>, path: &Path, clock: &'static SessionClock, on_level: Option<OnLevel>) -> Result<Self, String> {
         let device = device(id)?;
         let ch = channels(&device);
         let writer = Arc::new(Mutex::new(Some(AudioWriter::new(path, RATE, ch)?)));
         let zero_run = Arc::new(AtomicU64::new(0));
         let (w, z) = (writer.clone(), zero_run.clone());
+        let level = on_level.map(|f| (f, Mutex::new((0f32, f64::NAN)))); // peak so far, and where it started
         let on_pcm: OnPcm = Box::new(move |host_ns, samples| {
             if samples.iter().all(|s| *s == 0.0) {
                 z.fetch_add((samples.len() / ch) as u64, Ordering::Relaxed);
             } else {
                 z.store(0, Ordering::Relaxed);
             }
-            if let Some(t) = SESSION.source_secs(host_ns)
-                && let Some(w) = w.lock().unwrap().as_mut()
-            {
+            let Some(t) = clock.source_secs(host_ns) else { return };
+            if let Some(w) = w.lock().unwrap().as_mut() {
                 w.push(t, samples);
+            }
+            if let Some((f, acc)) = &level {
+                let mut a = acc.lock().unwrap();
+                if a.1.is_nan() {
+                    a.1 = t;
+                }
+                a.0 = samples.iter().fold(a.0, |m, s| m.max(s.abs()));
+                let end = t + (samples.len() / ch) as f64 / RATE;
+                if end - a.1 >= 0.033 {
+                    f(a.1, a.0.min(1.0) as f64);
+                    *a = (0.0, end);
+                }
             }
         });
         let name = unsafe { device.localizedName() }.to_string();
@@ -211,7 +229,7 @@ impl MicRecorder {
                 return Err(e);
             }
         };
-        Ok(Self { capture, writer, zero_run, name, built_in })
+        Ok(Self { capture, writer, zero_run, name, built_in, channels: ch })
     }
 
     pub fn connected(&self) -> bool {
@@ -227,12 +245,11 @@ impl MicRecorder {
         self.writer.lock().unwrap().as_ref().and_then(|w| w.error())
     }
 
-    /// Stop and finalize, padded to `end`. Returns the channel count.
-    pub fn finish(self, end: f64) -> Result<usize, String> {
+    /// Stop and finalize, padded to `end`. Returns the duration.
+    pub fn finish(self, end: f64) -> Result<f64, String> {
         drop(self.capture);
         let w = self.writer.lock().unwrap().take().ok_or("Microphone already stopped")?;
-        let ch = w.channels;
-        w.finish(end).map(|_| ch)
+        w.finish(end)
     }
 
     pub fn cancel(self) {
@@ -317,16 +334,120 @@ pub fn stop_mic_monitor() {
     drop(old); // stops the session outside the lock
 }
 
+// ---- Voiceover takes ----
+// The editor records a take while the video plays (electron/voiceover.ts). The mic opens during the
+// countdown and writes nothing until roll_take names the host time of take second 0: the moment the
+// video starts being heard, so every word lands where it was spoken.
+
+static TAKE_CLOCK: SessionClock = SessionClock::new();
+static TAKE: Mutex<Option<MicRecorder>> = Mutex::new(None);
+/// Taken on the JS thread by every open, finish, and cancel: a take whose mic opened after a later
+/// one of them is cancelled, as with the meter.
+static TAKE_GEN: AtomicU64 = AtomicU64::new(0);
+
+#[napi(object)]
+pub struct TakeMic {
+    pub name: String,
+    pub channels: u32,
+}
+
+#[napi(object)]
+pub struct TakeLevel {
+    /// Take seconds the stretch starts at.
+    pub t: f64,
+    /// Linear 0..1 over its ~33 ms.
+    pub peak: f64,
+}
+
+/// Open `micId` (the default mic when absent) to record a take to `path`, replacing one still open.
+/// Once it rolls, `onLevel` hears what it records about 30 times a second. Rejects with one plain
+/// line when the mic can't open, or "Voiceover cancelled" after a cancel.
+#[napi(ts_return_type = "Promise<TakeMic>")]
+pub fn open_take<'env>(
+    env: &'env Env,
+    mic_id: Option<String>,
+    path: String,
+    on_level: ThreadsafeFunction<TakeLevel, (), TakeLevel, napi::Status, false>,
+) -> napi::Result<PromiseRaw<'env, TakeMic>> {
+    let generation = TAKE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    TAKE_CLOCK.start(0);
+    let level: OnLevel = Box::new(move |t, peak| {
+        on_level.call(TakeLevel { t, peak }, ThreadsafeFunctionCallMode::NonBlocking);
+    });
+    env.spawn_future(async move {
+        spawn_blocking(move || open(generation, mic_id.as_deref(), Path::new(&path), level))
+            .await
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?
+            .map_err(napi::Error::from_reason)
+    })
+}
+
+fn open(generation: u64, id: Option<&str>, path: &Path, level: OnLevel) -> Result<TakeMic, String> {
+    let rec = MicRecorder::start(id, path, &TAKE_CLOCK, Some(level))?;
+    let mic = TakeMic { name: rec.name.clone(), channels: rec.channels as u32 };
+    let mut slot = TAKE.lock().unwrap();
+    let (old, err) = if TAKE_GEN.load(Ordering::SeqCst) == generation { (slot.replace(rec), None) } else { (Some(rec), Some("Voiceover cancelled")) };
+    drop(slot);
+    if let Some(old) = old {
+        old.cancel();
+    }
+    err.map_or(Ok(mic), |e| Err(e.into()))
+}
+
+/// Start writing the open take: its second 0 is host time `atMs` (milliseconds, the clock of
+/// `hostNowMs`). Samples captured before it are dropped.
+#[napi]
+pub fn roll_take(at_ms: f64) {
+    TAKE_CLOCK.start((at_ms * 1e6).max(1.0) as u64);
+}
+
+/// Stop the take and finalize its file. Resolves with its duration in seconds.
+#[napi(ts_return_type = "Promise<number>")]
+pub fn finish_take<'env>(env: &'env Env) -> napi::Result<PromiseRaw<'env, f64>> {
+    let rec = take_take();
+    let end = TAKE_CLOCK.source_secs(now_ns()).unwrap_or(0.0);
+    TAKE_CLOCK.start(0);
+    env.spawn_future(async move {
+        let rec = rec.ok_or_else(|| napi::Error::from_reason("No voiceover is recording."))?;
+        spawn_blocking(move || rec.finish(end))
+            .await
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?
+            .map_err(napi::Error::from_reason)
+    })
+}
+
+/// Stop the take and remove its file.
+#[napi]
+pub fn cancel_take() {
+    if let Some(rec) = take_take() {
+        rec.cancel();
+    }
+    TAKE_CLOCK.start(0);
+}
+
+fn take_take() -> Option<MicRecorder> {
+    let mut slot = TAKE.lock().unwrap();
+    TAKE_GEN.fetch_add(1, Ordering::SeqCst);
+    slot.take()
+}
+
+/// Host time in milliseconds: the clock a renderer's performance.now() is offset from.
+#[napi]
+pub fn host_now_ms() -> f64 {
+    now_ns() as f64 / 1e6
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clock::SESSION;
 
     #[test]
     fn listing_needs_no_permission_and_missing_mic_fails_cleanly() {
         for m in microphones() {
             assert!(!m.id.is_empty() && !m.name.is_empty());
         }
-        let err = MicRecorder::start(Some("no-such-mic"), Path::new("/tmp/studio-mic-test.m4a")).err().unwrap();
+        let err = MicRecorder::start(Some("no-such-mic"), Path::new("/tmp/studio-mic-test.m4a"), &SESSION, None).err().unwrap();
         assert!(err == missing(Permission::Microphone) || err == "The selected microphone is not connected.", "{err}");
         assert!(!err.contains('\n'));
         assert!(!Path::new("/tmp/studio-mic-test.m4a").exists());

@@ -46,6 +46,9 @@ export interface Settings {
   /** macOS shortcuts (ids) Grip turned off because they use the record shortcut's keys: back on when
    *  it changes, at quit, and at the next launch after a crash. */
   borrowedShortcuts: number[]
+  /** The folder the last file export went to ('' before the first): the save panel opens there, and
+   *  an agent's export lands there (electron/export.ts). */
+  exportFolder: string
 }
 
 const defaults: Settings = {
@@ -71,6 +74,7 @@ const defaults: Settings = {
   windows: {},
   recordShortcut: '', // none until the user picks one: people reach for different keys
   borrowedShortcuts: [],
+  exportFolder: '',
 }
 
 const file = () => join(app.getPath('userData'), 'settings.json')

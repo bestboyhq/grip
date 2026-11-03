@@ -2,12 +2,66 @@
 // filler words and long pauses offered as cuts, and cutting words out of the video.
 // Words stay in source time; every conversion to output time goes through src/shared/timemap.ts.
 
-import type { Clip, Transcript, Word } from '../../shared/project.ts'
+import type { Clip, Transcript, Voiceover, Word } from '../../shared/project.ts'
 import { mapRange, removeSourceRange, timeMap, type TimeMap } from '../../shared/timemap.ts'
+import { sourceSpan, takeAt } from '../../shared/voiceover.ts'
 
 const EPS = 1e-6
 const MIN_WORD = 0.04 // s: zero-length ASR words still get a frame
 const HOLD = 0.7 // s: a cue stays this long after its last word, unless the next cue or a cut comes first
+
+/** What the video says, in source time: the recording's words but those under a voiceover that mutes
+ *  the mic, and each voiceover's words where it plays (`takes`: their transcripts by take id, in take
+ *  seconds). A word belongs where its middle is. Merged words carry their caption fix key (Word.key):
+ *  the index in the recording's transcript, or "<take id>:<index>" in the take's. With no voiceover
+ *  to hear or hide, the recording's transcript itself. */
+export function spoken(mic: Transcript | null, takes: Record<string, Transcript>, items: Voiceover[]): Transcript | null {
+  const on = items.filter((v) => !v.muted)
+  const add: Word[] = []
+  for (const v of on) {
+    const t = takes[v.take]
+    if (!t || v.volume <= 0) continue
+    const fa = takeAt(v.knots, v.start)
+    const fb = takeAt(v.knots, v.end)
+    const words = t.words
+    let lo = 0
+    let hi = words.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (words[mid].start < fa) lo = mid + 1
+      else hi = mid
+    }
+    while (lo > 0 && words[lo - 1].end > fa) lo--
+    for (let i = lo; i < words.length && words[i].start < fb; i++) {
+      const w = words[i]
+      const r = sourceSpan(v.knots, w.start, w.end)
+      const mid = r ? (r[0] + r[1]) / 2 : NaN
+      if (r && mid >= v.start && mid < v.end) add.push({ ...w, start: Math.max(r[0], v.start), end: Math.min(r[1], v.end), key: `${v.take}:${i}` })
+    }
+  }
+  // Source ranges where the mic is muted under a voiceover, merged, for a binary search per word.
+  const duck: Array<[number, number]> = []
+  for (const v of on.filter((v) => v.duck).sort((a, b) => a.start - b.start)) {
+    const last = duck.at(-1)
+    if (last && v.start <= last[1]) last[1] = Math.max(last[1], v.end)
+    else duck.push([v.start, v.end])
+  }
+  const hidden = (w: Word) => {
+    const m = (w.start + w.end) / 2
+    let lo = 0
+    let hi = duck.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (duck[mid][1] <= m) lo = mid + 1
+      else hi = mid
+    }
+    return lo < duck.length && duck[lo][0] <= m
+  }
+  const heard = on.find((v) => takes[v.take])
+  if (!add.length && !(mic && duck.length && mic.words.some(hidden))) return mic ?? (heard ? { language: takes[heard.take].language, words: [] } : null)
+  const words = (mic?.words ?? []).flatMap((w, i) => (hidden(w) ? [] : [{ ...w, key: String(i) }]))
+  return { language: mic?.language ?? takes[heard!.take].language, words: [...words, ...add].sort((a, b) => a.start - b.start) }
+}
 
 /** A word as it plays: output seconds, caption fix applied. `i` indexes transcript.words;
  *  `first`/`last` are the clips it plays in (more than one when a split runs through it). */
@@ -23,7 +77,7 @@ export interface OutWord {
 /** The words that survive the cuts, in output order. A word cut through keeps each piece that
  *  holds more than half of it; a word in a repeated clip plays, and shows, each time. Words last
  *  at least MIN_WORD, so a zero-length word from the recognizer is never lost. */
-export function outputWords(t: Transcript, m: TimeMap, edits: Record<number, string> = {}): OutWord[] {
+export function outputWords(t: Transcript, m: TimeMap, edits: Record<string, string> = {}): OutWord[] {
   const words = t.words
   const endOf = (w: Word) => Math.max(w.end, w.start + MIN_WORD)
   const out: Array<OutWord & { heard: number }> = []
@@ -51,7 +105,7 @@ export function outputWords(t: Transcript, m: TimeMap, edits: Record<number, str
         prev.last = k
         prev.heard += e - s
       } else {
-        const text = (edits[i] ?? w.text).replace(/\s+/g, ' ').trim()
+        const text = (edits[w.key ?? i] ?? w.text).replace(/\s+/g, ' ').trim()
         out.push({ i, start, end, text, first: k, last: k, heard: e - s })
       }
     }
@@ -116,8 +170,8 @@ export function cues(words: OutWord[], m: TimeMap): Cue[] {
 
 /** The captions: what the video shows and what SRT and VTT export, so both agree on which words
  *  show when. Filler words stay out unless a caption fix brings one back. */
-export function captionCues(t: Transcript, m: TimeMap, edits: Record<number, string> = {}): Cue[] {
-  return cues(outputWords(t, m, edits).filter((w) => !t.words[w.i].filler || edits[w.i] !== undefined), m)
+export function captionCues(t: Transcript, m: TimeMap, edits: Record<string, string> = {}): Cue[] {
+  return cues(outputWords(t, m, edits).filter((w) => !t.words[w.i].filler || edits[t.words[w.i].key ?? w.i] !== undefined), m)
 }
 
 function stamp(s: number, sep: ',' | '.'): string {
@@ -126,13 +180,13 @@ function stamp(s: number, sep: ',' | '.'): string {
   return `${p(Math.floor(ms / 3600000))}:${p(Math.floor(ms / 60000) % 60)}:${p(Math.floor(ms / 1000) % 60)}${sep}${p(ms % 1000, 3)}`
 }
 
-export function toSRT(t: Transcript, clips: Clip[], edits: Record<number, string> = {}): string {
+export function toSRT(t: Transcript, clips: Clip[], edits: Record<string, string> = {}): string {
   return captionCues(t, timeMap(clips), edits)
     .map((c, i) => `${i + 1}\n${stamp(c.start, ',')} --> ${stamp(c.end, ',')}\n${c.text}\n`)
     .join('\n')
 }
 
-export function toVTT(t: Transcript, clips: Clip[], edits: Record<number, string> = {}): string {
+export function toVTT(t: Transcript, clips: Clip[], edits: Record<string, string> = {}): string {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const body = captionCues(t, timeMap(clips), edits).map((c) => `${stamp(c.start, '.')} --> ${stamp(c.end, '.')}\n${esc(c.text)}\n`)
   return ['WEBVTT\n', ...body].join('\n')

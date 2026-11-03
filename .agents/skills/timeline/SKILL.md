@@ -7,8 +7,8 @@ description: The editor timeline for cutting, speed changes, and directing the v
 
 The editor where users cut, speed up, and direct the video.
 
-- Tracks, top to bottom as the frame is built: camera layouts, zooms, masks, then clips (trim, cut, speed, volume, with their audio), then keystrokes and captions.
-  An item track shows once it has items and stays for the session; the Add menu, Z, L, B, and ⌘K add items, so no empty track waits for them.
+- Tracks, top to bottom as the frame is built: camera layouts, zooms, masks, then clips (trim, cut, speed, volume, with their audio), voiceovers heard over them, then keystrokes and captions.
+  An item track shows once it has items and stays for the session; the Add menu, Z, L, B, V, and ⌘K add items, so no empty track waits for them.
   B and the editor's Blur button add a blur: hiding a name or email is one click, and ⌘K finds it by "blur".
 - Zooms pass over each other on their one track: no extra rows.
   Where they overlap, an inset outline over them names what combines there, with a narrower, brighter outline inside wherever more of them overlap; outlines have no fill, so the zooms show through.
@@ -19,6 +19,7 @@ The editor where users cut, speed up, and direct the video.
 - Selection is a hairline ring and a soft glow in the item's colour, never a thick white border.
 - Keyboard-first: ⌘B (or C) cuts at the playhead, Q and W delete the clip under the playhead before or after it, X ripple-deletes, holding ⌥ arms the split tool, arrows step 0.5 s (1 s with Shift), 0-9 set zoom level, and ⌘K reaches every action.
   People bring these keys from other editors: the bar shows Cut with ⌘B, and ⌘K finds it by "split".
+  ⌫ and ⌦ do what X does, as in any Mac app: either one doing nothing reads as an editor that ignores its own platform.
   Shortcuts stay inactive while a text field has focus.
 - Undo and redo cover every edit and return the playhead to the same source moment.
 - Dragging and resizing leave the playhead in place, and a dragged edge tracks the pointer exactly, on sped-up clips too.
@@ -29,5 +30,12 @@ The editor where users cut, speed up, and direct the video.
   After an edit a fitted timeline glides to its new length, and a trimmed start edge's gap closes in the same glide, so nothing jumps.
 - Timeline zoom with pinch and ⌘-scroll, animated and centered on the playhead.
 - Multi-select, copy and paste, duplicate, and apply-to-all for zooms, speeds, and layouts.
+- V, or Voiceover after Cut in the bar, records a take from the playhead, from the start when the playhead is at the end.
+  A 3-2-1 names the mic; Space, V, Esc, or Stop cancel it, and stop the take once it records.
+  Other keys, clicks, and edits do nothing while a take runs, so nothing moves the video under the voice; agents' edits get an error that says to try again.
+  The Voiceover track opens with the 3-2-1, without its empty-track hint, and the take grows in it with its waveform as it records.
+  A take lands selected where it was heard, punched in over older ones, and the Audio tab opens on it; a take under 0.2 s was a slip of the key and is dropped.
+  Voiceovers slide with their audio, trim only within their take's audio, and mute with M; the mic's waveform under one that mutes it is ghosted.
+  Record again hides the item and records from its start under its number; cancelled, the item is back.
 
 Done when scrolling, zooming, and dragging hold 60 fps on a 2-hour project with hundreds of items.

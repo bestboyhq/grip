@@ -351,7 +351,7 @@ impl Recording {
         }
         // Mic, camera, and input start first (devices warm up); they stamp nothing until SESSION starts.
         if let Some(id) = &self.opts.mic_id {
-            match MicRecorder::start(Some(id), &self.dir.join("mic.m4a")) {
+            match MicRecorder::start(Some(id), &self.dir.join("mic.m4a"), &SESSION, None) {
                 Ok(m) => *self.mic.lock().unwrap() = Some(m),
                 Err(e) => self.warn("mic", format!("Recording without the microphone. {e}")),
             }
@@ -560,7 +560,10 @@ impl Recording {
             }
         };
         let taken = self.mic.lock().unwrap().take();
-        let mic = taken.and_then(|m| audio(m.finish(end), "mic.m4a", &mut problems));
+        let mic = taken.and_then(|m| {
+            let ch = m.channels;
+            audio(m.finish(end).map(|_| ch), "mic.m4a", &mut problems)
+        });
         let taken = self.tracks.system.lock().unwrap().take();
         let mut system = taken.and_then(|a| {
             let ch = a.channels;

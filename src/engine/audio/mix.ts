@@ -1,15 +1,16 @@
 // The audio graph: one pure mixer for preview and export (parity). Output samples [start, start+n)
 // at 48 kHz stereo are a function of (plan, start): sources mapped through the shared time map,
 // pitch-preserving stretch for speed != 1, 10 ms crossfades at cuts, clip and track volume, an
-// enhanced mic as its voice track (made once, natively) with a static gain to -14 LUFS, looped music,
-// click sounds, and a true-peak limiter on the master so the mix never clips. Stateful stages
-// (stretch, limiter) run sequentially; any jump re-primes them with a pre-roll, so chunk boundaries
-// never click.
+// enhanced mic as its voice track (made once, natively) with a static gain to -14 LUFS, voiceover
+// takes with the mic muted under them, looped music, click sounds, and a true-peak limiter on the
+// master so the mix never clips. Stateful stages (stretch, limiter) run sequentially; any jump
+// re-primes them with a pre-roll, so chunk boundaries never click.
 
 import type { Source } from 'mediabunny'
 import type { Clip, Project } from '../../shared/project.ts'
 import type { InputEvent } from '../../shared/events.ts'
-import { timeMap, toOutput } from '../../shared/timemap.ts'
+import { mapRange, timeMap, toOutput, type TimeMap } from '../../shared/timemap.ts'
+import { pieces, type Piece } from '../../shared/voiceover.ts'
 import { fileUrl } from '../media/index.ts'
 import { Limiter, SR, Stretcher, clickSound, voiceGain } from './dsp.ts'
 import { Reader, openAudio, type AudioFile } from './source.ts'
@@ -21,17 +22,27 @@ export interface PlanTrack {
   system?: boolean // follows the clips' systemVolume instead of their volume
 }
 
+/** One take file's voiceovers on the output timeline, each piece at its item's gain. */
+export interface PlanVoice {
+  url: string
+  label: string
+  pieces: Array<Piece & { gain: number }> // in output order
+}
+
 /** Everything the mixer needs, as plain data (it crosses into the audio worker). */
 export interface Plan {
   duration: number // output seconds
   clips: Clip[] // the time map, in output order; drives every source track
   tracks: PlanTrack[] // mic and system audio, already without muted tracks
+  voices: PlanVoice[] // voiceover takes; they follow their own volume, not the clips'
+  duck: Array<[number, number]> // output seconds where the mic is muted under a voiceover, in order
   music: { url: string; label: string; volume: number } | null // plays in output time, looped
   clicks: number[] // output seconds of click sounds
 }
 
-/** Build the plan for a project. */
-export function planOf(project: Project, events: InputEvent[], bundle: string): Plan {
+/** Build the plan for a project. `take`: a voiceover is being recorded from that output second on, so
+ *  the mic is muted from there and the voiceovers it records over stay quiet. */
+export function planOf(project: Project, events: InputEvent[], bundle: string, take?: number): Plan {
   const map = timeMap(project.clips)
   const src = project.sources
   const { mic, system, music } = project.audio
@@ -47,15 +58,45 @@ export function planOf(project: Project, events: InputEvent[], bundle: string): 
   const clicks = project.style.cursor.clickSound
     ? events.flatMap((e) => (e.type === 'down' ? [toOutput(map, e.t)] : [])).filter((t): t is number => t !== null).sort((a, b) => a - b)
     : []
+  const { voices, duck } = take === undefined ? voicesOf(project, map, url) : { voices: [], duck: [[take, map.duration] as [number, number]] }
   return {
     duration: map.duration,
     clips: project.clips.map(({ id, start, end, speed, volume, systemVolume, muted }) => ({
       id, start, end, speed, volume, ...(systemVolume !== undefined ? { systemVolume } : {}), ...(muted ? { muted } : {}),
     })),
     tracks,
+    voices,
+    duck,
     music: music && music.volume > 0 ? { url: url(music.file), label: music.file, volume: music.volume } : null,
     clicks,
   }
+}
+
+/** The voiceovers' audio, one track per file they play, and the output ranges where they mute the mic. */
+function voicesOf(project: Project, map: TimeMap, url: (file: string) => string): Pick<Plan, 'voices' | 'duck'> {
+  const takes = new Map((project.sources.takes ?? []).map((t) => [t.id, t]))
+  const files = new Map<string, PlanVoice>()
+  const ranges: Array<[number, number]> = []
+  for (const v of project.voiceovers) {
+    const t = takes.get(v.take)
+    if (!t || v.muted) continue
+    const voice = v.enhance ? t.voice : undefined // Enhance voice: its voice track, once the voice pass made it
+    const file = voice?.file ?? t.file
+    const gain = v.volume * (voice ? voiceGain(voice.lufs) : 1)
+    let pv = files.get(file)
+    if (!pv) files.set(file, (pv = { url: url(file), label: file, pieces: [] }))
+    if (gain > 0) pv.pieces.push(...pieces(map, v).map((p) => ({ ...p, gain })))
+    if (v.duck) ranges.push(...mapRange(map, v.start, v.end))
+  }
+  const voices = [...files.values()].filter((pv) => pv.pieces.length)
+  for (const pv of voices) pv.pieces.sort((a, b) => a.o0 - b.o0)
+  const duck: Array<[number, number]> = []
+  for (const [a, b] of ranges.sort((x, y) => x[0] - y[0])) {
+    const last = duck.at(-1)
+    if (last && a <= last[1] + 1e-6) last[1] = Math.max(last[1], b)
+    else duck.push([a, b])
+  }
+  return { voices, duck }
 }
 
 /** Platform hooks, so the same mixer runs in the browser worker and in node tests. */
@@ -266,7 +307,8 @@ export class Mixer {
   private plan: Plan | null = null
   private key = ''
   private ready: Promise<void> | null = null
-  private tracks: Array<{ t: Track; gain: number; segs: GainSeg[] }> = []
+  private tracks: Array<{ t: Track; gain: number; segs: GainSeg[]; ducked: boolean }> = []
+  private duck: GainSeg[] = []
   private music: { t: Loop; volume: number } | null = null
   private clicks: number[] = []
   private total = 0
@@ -311,9 +353,18 @@ export class Mixer {
         first: i === 0,
         last: i === plan.clips.length - 1,
       }))
-    this.tracks = await Promise.all(
-      plan.tracks.map(async (p) => ({ t: new Track(await openFile(this.env, p.url, p.label), segs), gain: p.volume, segs: gainSegs(!!p.system) })),
-    )
+    // Every edge of a voiceover fades, and the mic fades back in where one that mutes it ends.
+    const ramp = (o0: number, o1: number, v = 1): GainSeg => ({ o0: o0 * SR, o1: o1 * SR, v, first: false, last: false })
+    this.tracks = await Promise.all([
+      ...plan.tracks.map(async (p) => ({ t: new Track(await openFile(this.env, p.url, p.label), segs), gain: p.volume, segs: gainSegs(!!p.system), ducked: !p.system })),
+      ...plan.voices.map(async (v) => ({
+        t: new Track(await openFile(this.env, v.url, v.label), v.pieces.map((p) => ({ o0: p.o0 * SR, o1: p.o1 * SR, s0: p.f0 * SR, speed: p.rate, first: false, last: false }))),
+        gain: 1,
+        segs: v.pieces.map((p) => ramp(p.o0, p.o1, p.gain)),
+        ducked: false,
+      })),
+    ])
+    this.duck = plan.duck.map(([a, b]) => ramp(a, b))
     if (plan.music) {
       const f = await openFile(this.env, plan.music.url, plan.music.label)
       const len = Math.round(f.duration * SR)
@@ -345,8 +396,10 @@ export class Mixer {
     if (b <= a) return [L, R]
     const len = b - a
     const off = a - pos
-    for (const { t, gain, segs } of this.tracks) {
+    const duck = this.duck.length ? this.gain(this.duck, a, len) : null
+    for (const { t, gain, segs, ducked } of this.tracks) {
       const G = this.gain(segs, a, len)
+      if (ducked && duck) for (let i = 0; i < len; i++) G[i] *= Math.max(0, 1 - duck[i])
       const chs = await t.assemble(a, len)
       const l = chs[0]
       const r = chs[1] ?? chs[0] // a mono source plays centered on both channels
@@ -414,6 +467,7 @@ export class Mixer {
     for (const t of this.tracks) t.t.reset()
     this.music?.t.reset()
     this.tracks = []
+    this.duck = []
     this.music = null
   }
 }

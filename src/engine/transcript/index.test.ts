@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Clip, Transcript, Word } from '../../shared/project.ts'
+import type { Clip, Transcript, Voiceover, Word } from '../../shared/project.ts'
 import { removeOutputRange, removeSourceRange, setSpeed, timeMap, toSource } from '../../shared/timemap.ts'
-import { captionCues, cues, deleteWords, detectLanguage, fillers, isFiller, longPauses, outputWords, shortenPauses, toSRT, toVTT, wordAt } from './index.ts'
+import { captionCues, cues, deleteWords, detectLanguage, fillers, isFiller, longPauses, outputWords, shortenPauses, spoken, toSRT, toVTT, wordAt } from './index.ts'
 
 // Words as Parakeet gives them for the fixture mic track (source seconds).
 const SPOKEN: Array<[number, number, string]> = [
@@ -156,4 +156,32 @@ test('long pauses: suggested, shortened, and kept when the demo is busy', () => 
   assert.deepEqual(longPauses(transcript, timeMap(clips)), [], 'nothing left to shorten')
   assert.equal(wordAt(words, 15.5), -1)
   assert.equal(words[wordAt(words, 16.8)].text, 'You')
+})
+
+test('a voiceover says its words where it plays, over the mic words it mutes', () => {
+  // Take "a" re-says "you click on the project name field," (source 6.94-8.84): take second 0 at source 7.
+  const take: Transcript = { language: 'en', words: [[0.05, 0.2, 'you'], [0.2, 0.5, 'click'], [0.5, 1.0, 'the'], [1.0, 1.6, 'name'], [1.6, 1.9, 'field.'], [2.9, 3.4, 'Um,']].map(([start, end, text]) => ({ start: +start, end: +end, text: `${text}` })) }
+  const v: Voiceover = { id: 'v', take: 'a', start: 7, end: 10, knots: [[0, 7], [3, 10]], volume: 1, duck: true, enhance: true }
+  const texts = (t: Transcript | null) => t!.words.filter((w) => w.start >= 6.5 && w.start < 10.5).map((w) => w.text).join(' ')
+  const out = spoken(transcript, { a: take }, [v])!
+  // Mic words whose middle is under it go ("you" at 6.94-7.16 too: its middle is past 7), the take's
+  // land in source time, and the one past the item's end ("Um," mid 3.15 → source 10.15) stays out.
+  assert.equal(texts(out), 'you click the name field.')
+  assert.deepEqual(out.words.find((w) => w.text === 'name'), { start: 8, end: 8.6, text: 'name', key: 'a:3' })
+  assert.equal(out.words.find((w) => w.text === 'Hi,')!.key, '0', 'mic words keep their index as their key')
+  assert.ok(out.words.every((w, i) => !i || out.words[i - 1].start <= w.start), 'in source order')
+  // A caption fix on a take word is keyed by the take, so it holds however the mic words move.
+  assert.ok(toSRT(out, full(), { 'a:3': 'title' }).includes('click the title field.'))
+  // Without ducking both voices are in; muted, or with nothing to say, it changes nothing.
+  assert.equal(texts(spoken(transcript, { a: take }, [{ ...v, duck: false }])), 'you you click click on the the project name name field, field. and you type a name.')
+  assert.equal(spoken(transcript, { a: take }, [{ ...v, muted: true }]), transcript)
+  assert.equal(spoken(transcript, {}, []), transcript)
+  // At volume 0 it still mutes the mic, so neither says anything there.
+  assert.equal(texts(spoken(transcript, { a: take }, [{ ...v, volume: 0 }])), '')
+  // A recording with no words of its own: the voiceover's alone, or none yet.
+  assert.deepEqual(spoken(null, { a: take }, [v])!.words.map((w) => w.text), ['you', 'click', 'the', 'name', 'field.'])
+  assert.equal(spoken(null, {}, [v]), null)
+  // A word the video cut through while it was said stays in the stretch most of it played in.
+  const cut: Voiceover = { ...v, start: 7, end: 10, knots: [[0, 7], [1.1, 8.1], [1.1, 9], [2, 9.9]] }
+  assert.deepEqual(spoken(null, { a: take }, [cut])!.words.find((w) => w.text === 'name'), { start: 9, end: 9.5, text: 'name', key: 'a:3' })
 })

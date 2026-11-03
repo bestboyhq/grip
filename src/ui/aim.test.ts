@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { submenuAim, toward } from './aim.ts'
+import { step, submenuAim, toward } from './aim.ts'
 
 // A 232 px menu with 26 px rows; its submenu hangs off the right edge.
 const sub = { left: 230, right: 330, top: 0, bottom: 234, width: 100, height: 234 }
@@ -44,4 +44,9 @@ test('submenuAim: rows crossed on the way into the submenu wait; a resting point
   t.mock.timers.tick(300)
   assert.equal(open, '')
   assert.ok(!attrs.has('data-aiming'))
+})
+
+test('step: ↓ and ↑ wrap, and from no row ↓ takes the first and ↑ the last', () => {
+  assert.deepEqual([step(-1, 4, false), step(-1, 4, true)], [0, 3])
+  assert.deepEqual([step(1, 4, false), step(3, 4, false), step(2, 4, true), step(0, 4, true)], [2, 0, 1, 3])
 })

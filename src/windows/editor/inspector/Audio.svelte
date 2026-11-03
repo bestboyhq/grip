@@ -1,4 +1,5 @@
-<!-- Track mix: microphone, system audio, and background music. Per-clip volume lives on the timeline. -->
+<!-- Track mix: the selected voiceover, microphone, system audio, and background music. Per-clip volume
+     lives on the timeline. -->
 <script lang="ts" module>
   import { doc } from '../../../lib/doc.svelte.ts'
   import { invoke, listen } from '../../../lib/ipc.ts'
@@ -32,7 +33,9 @@
 </script>
 
 <script lang="ts">
-  import { edit } from '../../../lib/doc.svelte.ts'
+  import { edit, selection } from '../../../lib/doc.svelte.ts'
+  import type { Voiceover } from '../../../shared/project.ts'
+  import * as A from '../timeline/actions.svelte.ts'
   import Section from '../../../ui/Section.svelte'
   import Slider from '../../../ui/Slider.svelte'
   import Toggle from '../../../ui/Toggle.svelte'
@@ -43,6 +46,20 @@
   const project = $derived(doc.project!)
   const a = $derived(project.audio)
   const pct = (v: number) => `${Math.round(v * 100)}%`
+  // The voiceovers selected on the timeline: the first one's settings show, and changes go to all of them.
+  const vos = $derived(project.voiceovers.filter((v) => selection.ids.includes(v.id)))
+  const vo = $derived(vos[0])
+  function setVo(patch: Partial<Voiceover>, merge?: string) {
+    const ids = new Set(vos.map((v) => v.id))
+    edit((p) => p.voiceovers.forEach((v) => ids.has(v.id) && Object.assign(v, patch)), merge)
+  }
+  function deleteVo() {
+    const ids = new Set(vos.map((v) => v.id))
+    edit((p) => {
+      p.voiceovers = p.voiceovers.filter((v) => !ids.has(v.id))
+    })
+    selection.ids = selection.ids.filter((id) => !ids.has(id))
+  }
   let error = $state('')
   // The voice track plays as soon as it exists; a newer pass replacing it reports progress too.
   const enhanceHint = $derived(
@@ -61,6 +78,25 @@
     }
   }
 </script>
+
+{#if vo}
+  <Section title="Voiceover">
+    {#snippet aside()}
+      <button class="icon-btn mute" aria-pressed={!!vo.muted} onclick={A.toggleVoiceovers} {@attach tooltip(vo.muted ? 'Unmute voiceover' : 'Mute voiceover')}>
+        <Icon name={vo.muted ? 'muted' : 'sound'} size={16} />
+      </button>
+    {/snippet}
+    <Slider label="Volume" value={vo.volume} min={0} max={2} step={0.01} initial={1} disabled={vo.muted} format={pct} onchange={(v, m) => setVo({ volume: v }, m)} />
+    {#if project.sources.mic}
+      <Toggle label="Mute the recording’s mic under it" checked={vo.duck} disabled={vo.muted} onchange={(v) => setVo({ duck: v })} />
+    {/if}
+    <Toggle label="Enhance voice" checked={vo.enhance} disabled={vo.muted} onchange={(v) => setVo({ enhance: v })} />
+    <div class="vo-buttons">
+      <button class="btn" disabled={vos.length > 1} onclick={A.recordAgain}><Icon name="mic" size={15} />Record again</button>
+      <button class="btn" onclick={deleteVo}><Icon name="trash" size={15} />Delete</button>
+    </div>
+  </Section>
+{/if}
 
 {#if project.sources.mic}
   <Section title="Microphone">
@@ -109,6 +145,8 @@
   .file span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-default); font-size: 12.5px; }
   .small { width: 24px; height: 24px; }
   .wide { width: 100%; }
+  .vo-buttons { display: flex; gap: 6px; margin-top: 8px; }
+  .vo-buttons .btn { flex: 1; min-width: 0; }
   .hint { margin: 6px 0 0; font-size: 11.5px; color: var(--fg-faint); }
   .error { margin: 6px 0 0; font-size: 12px; color: var(--error-content); }
 </style>

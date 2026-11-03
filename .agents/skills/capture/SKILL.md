@@ -29,6 +29,8 @@ Screen, window, area, and device recording.
 - One recording session exists at a time.
   Start, pause, resume, finish, cancel, and restart are idempotent and race-free under key spam and errors.
 - Check free disk space before and during recording, warn early, and finish cleanly when it runs out.
+- Each track is one file that grows by a movie fragment a second (`native/src/writer.rs`), crash-safe without a file per segment.
+  A 3-hour recording kept as tens of thousands of segment files is slow to copy, back up, and upload.
 - Window mode resizes the window to preset sizes precisely, focuses it before start, and follows it as it moves.
 - iPhone and iPad over USB (CoreMediaIO) and iPhone Mirroring, including device rotation and device audio.
 - Request screen recording, accessibility, microphone, and camera permissions just in time, each with a one-line reason, and recover from a revoked permission.

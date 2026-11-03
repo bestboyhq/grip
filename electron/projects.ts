@@ -1,10 +1,12 @@
 // Owner: projects. Bundle lifecycle and the "projects:*" IPC channels. A bundle is a folder
-// `<name>.grip/` holding sources/ (immutable raw recordings), project.json (the edit document),
-// project.json.bak (the previous save), thumbnail.png, and assets/ (preset images, LUTs).
+// `<name>.grip/` holding sources/ (immutable raw recordings), voiceovers/ (takes recorded in the
+// editor, electron/voiceover.ts), project.json (the edit document), project.json.bak (the previous
+// save), thumbnail.png, and assets/ (preset images, LUTs).
 //
 //   projects:open(path) -> { project, path, notice? }  migrated + validated; path follows in-app
 //                                             renames; an interrupted recording or a damaged
-//                                             project.json is rebuilt first (notice says so)
+//                                             project.json is rebuilt first, and an interrupted
+//                                             voiceover placed (notice says so)
 //   projects:save(path, project)              validated, atomic, keeps project.json.bak; `sources`
 //                                             already on disk win (main-side domains own them)
 //   projects:recovered() -> Recovered[]       interrupted recordings rebuilt at launch
@@ -216,8 +218,9 @@ export async function recoverBundles(dir = projectsDir()): Promise<Recovered[]> 
 export async function openBundle(bundle: string): Promise<{ project: Project | null; notice?: string }> {
   const file = join(bundle, 'project.json')
   if (await exists(file)) {
+    let project: Project
     try {
-      return { project: await readProject(bundle) }
+      project = await readProject(bundle)
     } catch (e) {
       if ((e as { code?: string }).code) throw e
       console.warn(`[projects] ${file} is damaged (${(e as Error).message}), rebuilding from the recording`)
@@ -225,6 +228,8 @@ export async function openBundle(bundle: string): Promise<{ project: Project | n
       const project = await rebuildProject(bundle)
       return { project, notice: 'This project’s edits were damaged, so Grip rebuilt it from the recording.' }
     }
+    // A voiceover cut off before the editor saved it is placed first.
+    return project.sources.takes?.some((t) => t.pending) ? (await import('./voiceover.ts')).recoverTakes(bundle, project) : { project }
   }
   return { project: await rebuildProject(bundle), notice: 'This recording was recovered after Grip quit unexpectedly.' }
 }
@@ -466,7 +471,7 @@ type Probe = {
 }
 /** Duration and track info of a media file, read with mediabunny. Null when it has no tracks (for
  *  example an MP4 cut off before its index was written). */
-async function probe(file: string): Promise<Probe | null> {
+export async function probe(file: string): Promise<Probe | null> {
   await access(file)
   const { Input, ALL_FORMATS, FilePathSource } = await import('mediabunny')
   const input = new Input({ source: new FilePathSource(file), formats: ALL_FORMATS })

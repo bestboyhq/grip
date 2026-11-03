@@ -1,7 +1,7 @@
 <!-- Caption style. The words come from the transcript (Transcript tab); fixes to them live there too. -->
 <script lang="ts">
   import { doc, edit } from '../../../lib/doc.svelte.ts'
-  import { defaultStyle, type Style } from '../../../shared/project.ts'
+  import { CAPTION_FONTS, defaultStyle, type Style } from '../../../shared/project.ts'
   import Section from '../../../ui/Section.svelte'
   import Segmented from '../../../ui/Segmented.svelte'
   import Select from '../../../ui/Select.svelte'
@@ -22,17 +22,7 @@
     transcribe()
   }
 
-  // Fonts every Mac has, so a project renders the same on any machine and in export.
-  const fonts = [
-    { value: 'system-ui', label: 'System' },
-    { value: 'Avenir Next', label: 'Avenir Next' },
-    { value: 'Helvetica Neue', label: 'Helvetica Neue' },
-    { value: 'Futura', label: 'Futura' },
-    { value: 'Arial Rounded MT Bold', label: 'Rounded' },
-    { value: 'Georgia', label: 'Georgia' },
-    { value: 'Menlo', label: 'Menlo' },
-  ]
-  const known = $derived(fonts.some((f) => f.value === c.font) ? fonts : [...fonts, { value: c.font, label: c.font }])
+  const known = $derived(CAPTION_FONTS.some((f) => f.value === c.font) ? CAPTION_FONTS : [...CAPTION_FONTS, { value: c.font, label: c.font }])
 </script>
 
 <Section>
@@ -44,7 +34,7 @@
         {job.phase === 'download' ? 'Downloading the speech model' : 'Transcribing'}{job.progress ? ` · ${Math.round(job.progress * 100)}%.` : '…'}
         Captions appear when it is done.
       </p>
-    {:else if s.mic || s.system || s.imported}
+    {:else if s.mic || s.system || s.imported || s.takes?.length}
       <p class="note">Captions come from the transcript, made on this Mac. Fix their words in the Transcript tab.</p>
       {#if job.bundle === doc.path && job.phase === 'error'}<p class="note error" role="alert">{job.error}</p>{/if}
       <button class="btn" onclick={generate}>Transcribe</button>

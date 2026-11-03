@@ -61,7 +61,7 @@
   import { canEncodeVideo } from 'mediabunny'
   import Icon from '../../../ui/Icon.svelte'
   import { tooltip } from '../../../ui/tooltip.ts'
-  import { submenuAim } from '../../../ui/aim.ts'
+  import { step, submenuAim } from '../../../ui/aim.ts'
   import { registerCommands } from '../commands/registry.ts'
   import { timeMap } from '../../../shared/timemap.ts'
   import { formatTime } from '../helpers.ts'
@@ -226,7 +226,7 @@
     e.stopPropagation()
     const items = [...(e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>(':scope > .mi, :scope > .has-sub > .mi')].filter((b) => !b.matches(':disabled'))
     const i = items.indexOf(document.activeElement as HTMLElement)
-    items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
+    items[step(i, items.length, e.key === 'ArrowUp')]?.focus()
   }
 </script>
 
@@ -269,7 +269,7 @@
     open = e.newState === 'open'
     aim.stop()
     sub = ''
-    if (open) menu.querySelector<HTMLElement>('.mi')?.focus({ focusVisible: false } as FocusOptions)
+    if (open) menu.focus({ focusVisible: false } as FocusOptions) // no row lit yet: ↓ takes the first, ↑ the last
   }}
   onpointermove={hover}
   onkeydown={nav}

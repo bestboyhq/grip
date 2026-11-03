@@ -16,6 +16,7 @@
 //   recording:draw(phase, x, y, color?, width?): pen strokes land in the take's events.jsonl
 //   broadcasts recording:state(state), recording:finished(bundle, { reason }); recordingEvents too
 //   camera:list -> [{ id, name, kind: 'built-in' | 'external' | 'continuity' | 'ios', formats }]
+//   voiceover takes (electron/voiceover.ts `takes`): the stand-in's mic, said again for as long as the take ran
 import { ipcMain, nativeImage, screen, systemPreferences } from 'electron'
 import { constants, existsSync } from 'node:fs'
 import { appendFile, cp, readFile } from 'node:fs/promises'
@@ -24,6 +25,7 @@ import type { Project } from '../../src/shared/project.ts'
 import { sendAll } from '../windows.ts'
 import { capture, recordingEvents, recordingName } from '../recording.ts'
 import { createBundle, projectsDir, writeNewRecording } from '../projects.ts'
+import { takes } from '../voiceover.ts'
 import { settings } from './settings.ts'
 
 export function registerFakeRecording(bundle: string) {
@@ -110,6 +112,31 @@ export function registerFakeRecording(bundle: string) {
     ink.push(JSON.stringify({ t: (Date.now() - t0) / 1000, type: 'draw', phase, x: (x - d.x) * k, y: (y - d.y) * k, ...(phase === 'start' && { color, width: (width ?? 4) * k }) }))
     return true
   })
+  let take = { path: '', at: 0, level: (_: { t: number; peak: number }) => {}, timer: undefined as NodeJS.Timeout | undefined }
+  takes.open = async (_mic, path, level) => {
+    clearInterval(take.timer)
+    take = { path, at: 0, level, timer: undefined }
+    const { sources } = JSON.parse(await readFile(join(bundle, 'project.json'), 'utf8')) as Project
+    if (!sources.mic) throw new Error('No microphone is connected.')
+    return { name: 'MacBook Pro Microphone', channels: sources.mic.channels }
+  }
+  takes.roll = (at) => {
+    take.at = at
+    // Words about a third of a second long, and a breath now and then.
+    const peak = (t: number) => (Math.sin(t * 1.3) > -0.7 ? 0.04 + 0.4 * Math.abs(Math.sin(t * 9.7) * Math.sin(t * 3.1 + 1)) : 0.02)
+    take.timer = setInterval(() => {
+      const t = (takes.now() - at) / 1000
+      if (t >= 0) take.level({ t, peak: peak(t) })
+    }, 33)
+  }
+  takes.finish = async () => {
+    clearInterval(take.timer)
+    const { sources } = JSON.parse(await readFile(join(bundle, 'project.json'), 'utf8')) as Project
+    await cp(join(bundle, sources.mic!.file), take.path, { mode: constants.COPYFILE_FICLONE })
+    return Math.min((takes.now() - take.at) / 1000, sources.duration)
+  }
+  takes.cancel = () => clearInterval(take.timer)
+  takes.repair = async () => {}
   let inputs = { cameraId: '', micId: '', systemAudio: true }
   handle('recording:start', async (req: typeof inputs) => {
     console.log('[fake recording] start', JSON.stringify(req))

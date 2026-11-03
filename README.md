@@ -197,6 +197,8 @@ Drag the preview straight into another app to drop the file.
   Zooms, camera layouts, and masks sit in lanes above the video, and a lane shows up once it has something in it.
 - **Crop** the recording down to the part that matters, and zooms aim inside the crop.
 - **Speed without chipmunks.** Any clip from 0.25× to 8×, with pitch-preserving time-stretch.
+- **Redo a line with a voiceover.** Press `V` and talk over the video from the playhead, and the recording's own voice steps aside under it.
+  The new voice gets the same cleanup, and the captions show what you said.
 - **Per-clip sound and cursor.** Set the mic and system audio from muted to 200% each, hide the cursor, or turn off its smoothing for one clip.
   A background music track sits under the mix.
 - **Camera layouts.** Picture-in-picture, fullscreen, split screen, or hidden, animated as they change.
@@ -305,6 +307,30 @@ open "grip://stop"
 open "grip://open?path=/Users/me/Movies/Demo.grip"
 open "grip://open?url=https://bestboy.dev/v/x7Kq2mP9aB3c"   # a shared project
 ```
+
+## Agents
+
+Grip is an MCP server: agent apps can list, cut, speed up, zoom, caption, export, and share your projects with its tools.
+Edits to a project open in the editor land there as you watch, as one step you can undo.
+No tool deletes anything, exports never replace a file, and an agent that needs Grip starts it in the menu bar.
+
+Add Grip to Claude Code:
+
+```sh
+claude mcp add --scope user grip -- /Applications/Grip.app/Contents/Resources/grip-mcp
+```
+
+For Claude Desktop, add it to `~/Library/Application Support/Claude/claude_desktop_config.json`; other agent apps take the same JSON:
+
+```json
+{
+  "mcpServers": {
+    "grip": { "command": "/Applications/Grip.app/Contents/Resources/grip-mcp" }
+  }
+}
+```
+
+Settings shows both under Agents, with Copy buttons.
 
 ## Under the hood
 

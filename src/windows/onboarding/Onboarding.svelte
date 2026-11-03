@@ -77,6 +77,18 @@
   // Open at login: onboarding proposes it and sets it as it ends; Settings shows and sets macOS's own.
   let atLogin = $state(true)
   if (query.page === 'settings') invoke('shell:login-item').then((on) => (atLogin = on))
+
+  // Agents: how an agent app adds Grip's tools (electron/agents.ts), each one copied with a click.
+  let agents = $state<{ command: string; config: string } | null>(null)
+  if (query.page === 'settings') invoke('agents:setup').then((s) => (agents = s))
+  let copied = $state('')
+  let uncopy: ReturnType<typeof setTimeout> | undefined
+  async function copy(what: string, text: string) {
+    await invoke('share:copy', text)
+    copied = what
+    clearTimeout(uncopy)
+    uncopy = setTimeout(() => (copied = ''), 1500)
+  }
   const finish = () => invoke('shell:finish-onboarding', atLogin)
 
   // The record shortcut is the user's, none until they pick one: click it, type a new one (Esc keeps the
@@ -320,6 +332,21 @@
           </label>
         </li>
       </ul>
+      <h3>Agents</h3>
+      <p class="note">Agent apps can list, cut, zoom, caption, export, and share your projects with Grip’s tools.</p>
+      {#if agents}
+        <ul class="rows compact">
+          {#each [['Claude Code', agents.command], ['Other agent apps', agents.config]] as [title, code] (title)}
+            <li>
+              <div class="text">
+                <div class="title">{title}</div>
+                <pre class="code">{code}</pre>
+              </div>
+              <button class="button copy" onclick={() => copy(title, code)}>{copied === title ? 'Copied' : 'Copy'}</button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
       <!-- Last: onboarding is where permissions come first, and an allowed one needs nothing here. -->
       <h3>Permissions</h3>
       {@render permissionList()}
@@ -624,6 +651,28 @@
     margin-top: 2px;
     font-size: 12px;
     color: var(--fg-secondary);
+  }
+  .note {
+    margin: -2px 0 10px;
+    color: var(--fg-secondary);
+    font-size: 13px;
+  }
+  /* What to copy, in mono on a well, like a share link. */
+  .code {
+    margin: 6px 0 0;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--control-track);
+    box-shadow: var(--hairline);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere; /* a long path breaks where it must, the command's words stay whole */
+    user-select: text;
+  }
+  .copy {
+    min-width: 76px; /* Copy and Copied take the same room */
   }
   .ok {
     display: flex;
