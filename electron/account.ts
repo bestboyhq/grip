@@ -10,14 +10,19 @@ import { createHash, randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { api } from './upload.ts'
+import { api, client } from './upload.ts'
 
 /** The Bestboy platform: links, accounts, teams. STUDIO_SHARE_URL points a dev build at a local one. */
 export const SERVER = (process.env.STUDIO_SHARE_URL ?? 'https://bestboy.dev').replace(/\/+$/, '')
+/** Grip in every call to it (docs/api.md): browser-like, so its counts break down by macOS version, the same for every
+ *  Mac on that version. */
+export const USER_AGENT = `Grip/${app.getVersion()} (Macintosh; Mac OS X ${process.getSystemVersion()})`
+client.userAgent = USER_AGENT
 
 export interface Account {
-  user: { id: string; email: string; name: string; avatar: string | null }
+  user: { id: string; email: string; name: string; avatar: string | null; terms: string | null } // terms: the date they accepted
   team: { id: string; name: string; plan: string }
+  terms: string // the date of the current Terms and Privacy Policy
   // Its `usage` stays unread: Grip says nothing about uploads until the server refuses one (electron/upload.ts).
 }
 
@@ -48,7 +53,7 @@ export function forget() {
   emit()
 }
 
-async function refresh(): Promise<Account | null> {
+export async function refresh(): Promise<Account | null> {
   if (!token) return null
   try {
     known = await api(SERVER, token, 'GET', '/api/me', undefined, AbortSignal.timeout(8000))

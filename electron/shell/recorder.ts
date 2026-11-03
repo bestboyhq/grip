@@ -71,6 +71,7 @@ import { setSettings, settings, settingsListeners, type Settings } from './setti
 import { addCapture, captureRows, captures, moveCapture, projectRows, shotsDir } from './captures.ts'
 import { toolbarUpdate, updateListeners } from './update.ts'
 import { setAppMenu } from './menu.ts'
+import { count } from '../usage.ts'
 import { symbols } from '../../src/shared/shortcut.ts'
 import type { Mode } from './url.ts'
 import type { Rect, StartOptions, Still } from '../../native/index.d.ts'
@@ -603,6 +604,7 @@ async function finishShot(png: Uint8Array, scale: number, save: boolean) {
   png = withScale(png, scale) // pastes and opens as big as it was on screen
   const file = await writeShot(save ? app.getPath('desktop') : shotsDir(), png)
   addCapture({ kind: 'shot', path: file, at: Date.now() })
+  count('screenshot', { saved: save })
   if (!save) await copyImage(png)
   closePicker()
   showResult(`shot=${encodeURIComponent(file)}${save ? '&saved' : ''}`)
@@ -735,6 +737,7 @@ export function openProject(path: string, recovered = false) {
   const win = openWindow(route)
   routes.set(win, `#/${route}`)
   closeGracefully(win)
+  count('project_opened', { recovered })
 }
 
 /** Open what the user hands us (Finder, dock, menu bar icon, window drops, File menu): bundles open
@@ -901,6 +904,7 @@ export function registerRecorder() {
   ipcMain.handle('shell:finish-onboarding', (_e, atLogin: unknown) => {
     if (typeof atLogin === 'boolean') setLoginItem(atLogin)
     setSettings({ onboarded: true })
+    count('onboarded', { at_login: atLogin === true })
     for (const w of windowsOf('onboarding')) w.destroy()
     showPicker(null)
   })

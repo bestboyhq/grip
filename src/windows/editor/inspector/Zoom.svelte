@@ -115,7 +115,7 @@
 {/if}
 
 <Section title="Auto zoom">
-  <Toggle label="Zoom on clicks and typing" hint="Automatic zooms are ordinary timeline items you can edit or turn off one by one. Settings turns it off for new recordings." checked={auto.enabled} onchange={setAuto} />
+  <Toggle label="Zoom on clicks and typing" hint="Automatic zooms are ordinary timeline items you can edit or turn off one by one. Turn it off for new recordings in Settings." checked={auto.enabled} onchange={setAuto} />
   <Slider label="Default level" value={auto.level} min={1.25} max={4} step={0.05} initial={2} disabled={!auto.enabled} format={(v) => `${v.toFixed(1)}×`} onchange={setAutoLevel} />
 </Section>
 

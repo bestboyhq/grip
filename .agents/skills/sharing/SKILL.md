@@ -14,6 +14,9 @@ Its `docs/api.md` is the contract; a change to what Grip sends or reads changes 
 - Share a whole editable project as a link.
 - Sharing needs an account: sign-in runs in the browser (Google or an email code) and hands Grip a token through `grip://auth` (`electron/account.ts`).
   Viewers and commenters never need one.
+- Signing in accepts the current Terms and Privacy Policy; a change to them reaches people in place, never by email.
+  While `/api/me`'s `user.terms` differs from its `terms`, the Share popover says "Sharing accepts the Terms and Privacy Policy" under the button that shares, and that share sends `terms`.
+  The platform counts nobody's account events until they accept.
 - Usage, not seats: uploads a month, file size, and how long links live are limited; teammates, viewers, comments, and plays are not.
   A shared project counts as an upload too.
   The server owns the numbers.

@@ -27,6 +27,7 @@ import { restartedToUpdate, startUpdates } from './shell/update.ts'
 import { inTurn, parseLaunch, parseGripUrl } from './shell/url.ts'
 import { plainError } from './shell/errors.ts'
 import { registerFakeRecording } from './shell/fake-recording.ts'
+import { count } from './usage.ts'
 
 // Dev: per-worktree user data, so parallel checkouts do not share locks, settings, or projects.
 if (!app.isPackaged) app.setPath('userData', join(import.meta.dirname, '../.context/userdata'))
@@ -125,16 +126,18 @@ app.whenReady().then(() => {
   ready = true
 
   const updated = restartedToUpdate()
+  const atLogin = app.getLoginItemSettings().wasOpenedAtLogin
   const queued = early.splice(0)
   const acted = launch(process.argv)
   for (const item of queued) /^grip:/i.test(item) ? openUrl(item) : openFilesOrAlert([item])
   // Restarted into an update, opened at login, or started in the background (grip-mcp, for an agent):
   // back in the menu bar only, its dock icon gone too (no window hides it). The picker waits for the user to ask.
-  if (updated || app.getLoginItemSettings().wasOpenedAtLogin || parseLaunch(process.argv, '/').background) updateDock()
+  if (updated || atLogin || parseLaunch(process.argv, '/').background) updateDock()
   else if (!acted && !queued.length) settings().onboarded ? showPicker(null) : openOnboarding(settings().welcomed ? 'page=permissions' : '')
   afterToolbar(() => {
     if (!hidden) createTray() // agent runs, one per worktree, stay out of the menu bar
     startUpdates(logError)
+    count('launched', { at_login: atLogin, update: updated })
   })
 })
 
