@@ -1,8 +1,8 @@
 <!-- Onboarding and settings (#/onboarding?page=welcome|permissions|shortcut|settings[&need=<permission>]).
      Welcome, then permissions: each with a one-line reason, live status, a request button that
      shows the system prompt the first time and System Settings after that, and a way back from a
-     revoked permission (`need`). Then the record shortcut: none until the user types one, or skips. One line under
-     every step says Grip shares usage stats. Settings puts recording options and shortcuts first, then the same
+     revoked permission (`need`). Then the record shortcut: none until the user types one, or skips; its description
+     says Grip shares usage stats. Settings puts recording options and shortcuts first, then the same
      permission list with every allowed one folded into a single row. Each recording option plays on a
      small desktop beside the list while it is pointed at or focused. -->
 <script lang="ts">
@@ -242,7 +242,10 @@
         {/if}
       </button>
       <h1>Use your favorite shortcut</h1>
-      <p>Press the keys that should open Grip from any app, ready to record. macOS’s screenshot keys work too.</p>
+      <p>
+        Press the keys that should open Grip from any app, ready to record. macOS’s screenshot keys work too. Grip shares
+        usage stats, never what you record. Turn it off in Settings.
+      </p>
       <p class="after" role="status">
         {#if keysNote}{keysNote}
         {:else if !typingKeys && recordKeys}Saved. Click the keys to change them.
@@ -362,8 +365,6 @@
       {@render permissionList()}
     </section>
   {/if}
-  <!-- Said, not asked: under every step of onboarding, and Settings has the switch. -->
-  {#if page !== 'settings'}<p class="fine">Grip shares usage stats, never what you record. Settings turns them off.</p>{/if}
 </main>
 
 <style>
@@ -480,13 +481,6 @@
     .caret {
       animation: none;
     }
-  }
-  .fine {
-    margin: 0;
-    padding: 0 40px 14px;
-    color: var(--fg-muted);
-    font-size: 12px;
-    text-align: center;
   }
   .welcome .after {
     min-height: 17px; /* a note coming and going never moves the page */
@@ -750,7 +744,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 18px 40px 14px; /* the usage stats line sits under it */
+    padding: 18px 40px 28px;
   }
   footer .link {
     font-size: 13px;

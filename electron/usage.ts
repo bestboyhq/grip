@@ -2,9 +2,9 @@
 // Each count goes to the platform's POST /api/events (bestboy.dev docs/api.md, "Usage counts"), which relays it to
 // Logdash. Signed in, it carries the account's token, so the count joins that account's days (Logdash keeps a hash);
 // signed out, it adds to a daily count of people that follows no one. No names, no paths, no content.
-// On until Settings turns it off; onboarding's last step says so in one line. Turning it off sends one last count,
-// with no account, so the numbers know how many people they leave out. Dev runs send only to a local platform
-// (STUDIO_SHARE_URL).
+// On until it is turned off in Settings; onboarding's shortcut step says so in its description. Turning it off sends
+// one last count, with no account, so the numbers know how many people they leave out. Dev runs send only to a local
+// platform (STUDIO_SHARE_URL).
 import { app } from 'electron'
 import { SERVER, USER_AGENT, accountToken } from './account.ts'
 import { settings, settingsListeners } from './shell/settings.ts'

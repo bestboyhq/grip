@@ -175,11 +175,7 @@
       <p class="lead">Links live on bestboy.dev and need an account. Sign in once, in your browser.</p>
       <button class="primary wide" onclick={signIn} disabled={signing}>{signing ? 'Finish signing in in your browser…' : 'Sign in'}</button>
     {:else if !job}
-      <p class="lead">
-        {kind === 'video'
-          ? 'Upload the video and get a link that plays in any browser, phones included.'
-          : 'Send the editable project. It opens in Grip with every edit intact.'}
-      </p>
+      {#if kind === 'project'}<p class="lead">Send the editable project. It opens in Grip with every edit intact.</p>{/if}
       <button class="primary wide" onclick={share} disabled={kind === 'video' && !exportVideo}>Create link</button>
       {#if kind === 'video' && !exportVideo}<p class="hint">Video export is not available yet.</p>{/if}
     {:else}

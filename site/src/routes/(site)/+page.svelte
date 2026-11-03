@@ -177,7 +177,7 @@
 		},
 		{
 			title: 'Runs on your Mac',
-			body: 'Recording, editing, transcription, and background removal stay on it. Only usage stats leave it, never what you record, and Settings turns them off.',
+			body: 'Recording, editing, transcription, and background removal stay on it. Only usage stats leave it, never what you record, and you can turn them off in Settings.',
 		},
 		{
 			title: 'No account to record',
