@@ -46,8 +46,8 @@ export interface Settings {
   /** macOS shortcuts (ids) Grip turned off because they use the record shortcut's keys: back on when
    *  it changes, at quit, and at the next launch after a crash. */
   borrowedShortcuts: number[]
-  /** Usage counts to bestboy.dev (electron/usage.ts): sent unless false. null: not told yet. */
-  usageCounts: boolean | null
+  /** Usage counts to bestboy.dev (electron/usage.ts): on until turned off in Settings. */
+  usageCounts: boolean
   /** The folder the last file export went to ('' before the first): the save panel opens there, and
    *  an agent's export lands there (electron/export.ts). */
   exportFolder: string
@@ -76,14 +76,14 @@ const defaults: Settings = {
   windows: {},
   recordShortcut: '', // none until the user picks one: people reach for different keys
   borrowedShortcuts: [],
-  usageCounts: null,
+  usageCounts: true,
   exportFolder: '',
 }
 
 const file = () => join(app.getPath('userData'), 'settings.json')
 let current: Settings | null = null
 /** Main-process reactions to a change (the camera bubble follows the camera choice). */
-export const settingsListeners: Array<(s: Settings) => void> = []
+export const settingsListeners: Array<(s: Settings, prev: Settings) => void> = []
 
 export function settings(): Settings {
   if (!current) {
@@ -97,7 +97,8 @@ export function settings(): Settings {
 }
 
 export function setSettings(patch: Partial<Settings>) {
-  const next = { ...settings() }
+  const prev = settings()
+  const next = { ...prev }
   for (const k of Object.keys(patch) as Array<keyof Settings>) if (k in defaults) (next as any)[k] = patch[k]
   current = next
   const tmp = file() + '.tmp'
@@ -105,7 +106,7 @@ export function setSettings(patch: Partial<Settings>) {
   writeFileSync(tmp, JSON.stringify(next, null, 2))
   renameSync(tmp, file()) // atomic: a crash leaves the old file or the new one, never half of one
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && !w.webContents.isDestroyed()) w.webContents.send('settings:changed', next)
-  for (const f of settingsListeners) f(next)
+  for (const f of settingsListeners) f(next, prev)
 }
 
 export function registerSettings() {

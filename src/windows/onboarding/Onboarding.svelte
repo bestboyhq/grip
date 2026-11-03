@@ -1,8 +1,8 @@
-<!-- Onboarding and settings (#/onboarding?page=welcome|permissions|shortcut|usage|settings[&need=<permission>]).
+<!-- Onboarding and settings (#/onboarding?page=welcome|permissions|shortcut|settings[&need=<permission>]).
      Welcome, then permissions: each with a one-line reason, live status, a request button that
      shows the system prompt the first time and System Settings after that, and a way back from a
-     revoked permission (`need`). Then the record shortcut: none until the user types one, or skips. Then usage counts,
-     on unless turned off (`page=usage` alone tells whoever onboarded before). Settings puts recording options and shortcuts first, then the same
+     revoked permission (`need`). Then the record shortcut: none until the user types one, or skips, under one line on
+     usage stats. Settings puts recording options and shortcuts first, then the same
      permission list with every allowed one folded into a single row. Each recording option plays on a
      small desktop beside the list while it is pointed at or focused. -->
 <script lang="ts">
@@ -91,11 +91,6 @@
     uncopy = setTimeout(() => (copied = ''), 1500)
   }
   const finish = () => invoke('shell:finish-onboarding', atLogin)
-  // Said, not asked: counts stay on unless turned off, here or in Settings. Told alone, it only closes.
-  function shareCounts(on: boolean) {
-    setSettings({ usageCounts: on })
-    query.page === 'usage' ? window.close() : finish()
-  }
 
   // The record shortcut is the user's, none until they pick one: click it, type a new one (Esc keeps the
   // old one, ⌫ removes it).
@@ -121,10 +116,6 @@
   function toShortcut() {
     page = 'shortcut'
     if (!recordKeys) listen()
-  }
-  function toUsage() {
-    stopListening()
-    page = 'usage'
   }
   function stepKeys(e: KeyboardEvent) {
     if (page !== 'shortcut' || !typingKeys) return
@@ -260,24 +251,12 @@
         {:else if typingKeys && recordKeys}Press the new keys, or Esc to keep {recordKeys}.{/if}
       </p>
     </section>
+    <!-- Said, not asked: the last step tells, and Settings has the switch. -->
+    <p class="fine">Grip shares usage stats, never what you record. Settings turns them off.</p>
     <footer>
-      <span>{#if !recordKeys}<button class="link" onclick={toUsage}>Skip for now</button>{/if}</span>
+      <span>{#if !recordKeys}<button class="link" onclick={finish}>Skip for now</button>{/if}</span>
       <label class="login">Open at login <input type="checkbox" role="switch" bind:checked={atLogin} /></label>
-      <button class="button primary" disabled={!recordKeys} onclick={toUsage}>Continue</button>
-    </footer>
-  {:else if page === 'usage'}
-    <!-- What a count holds, shown as two of them: the notice is about these, not about a vague "data". -->
-    <section class="welcome">
-      <ul class="rows compact sample" aria-label="Two usage counts">
-        <li><span class="title">Recording finished</span><span class="reason">1 min 12 s · camera · mic</span></li>
-        <li><span class="title">Video exported</span><span class="reason">MP4 · 1080p · 4 zooms</span></li>
-      </ul>
-      <h1>Grip sends usage counts</h1>
-      <p>Counts like these show what to make better. When you’re signed in, they carry your account. Never what you record.</p>
-    </section>
-    <footer>
-      <span><button class="link" onclick={() => shareCounts(false)}>Turn Off</button></span>
-      <button class="button primary" onclick={() => shareCounts(true)}>Continue</button>
+      <button class="button primary" disabled={!recordKeys} onclick={finish}>Continue</button>
     </footer>
   {:else}
     <section class="body scroll">
@@ -358,7 +337,7 @@
         <li>
           <label class="switch">
             <span class="text">
-              <span class="title">Share usage counts</span>
+              <span class="title">Share usage stats</span>
               <span class="reason">Like a finished recording, with your account when signed in. Never what you record.</span>
             </span>
             <input type="checkbox" role="switch" checked={shell.settings?.usageCounts !== false} onchange={(e) => setSettings({ usageCounts: e.currentTarget.checked })} />
@@ -502,15 +481,12 @@
       animation: none;
     }
   }
-  .welcome .sample {
-    align-self: stretch;
-    margin: 0 0 32px;
-  }
-  .sample li {
-    justify-content: space-between;
-  }
-  .sample .reason {
+  .fine {
     margin: 0;
+    padding: 0 40px;
+    color: var(--fg-muted);
+    font-size: 12px;
+    text-align: center;
   }
   .welcome .after {
     min-height: 17px; /* a note coming and going never moves the page */
