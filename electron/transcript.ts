@@ -1,7 +1,9 @@
 // Owner: transcript. On-device speech to text, and the "transcript:*" IPC channels:
 //   transcript:status() -> { model: boolean, size }   whether the speech model is downloaded, its bytes
 //   transcript:run(bundle) -> Transcript | null       null when cancelled. Downloads the model on first
-//     use, transcribes the mic track, writes sources/transcript.json, sets sources.transcript.
+//     use, transcribes the mic track, writes sources/transcript.json, sets sources.transcript, then
+//     each voiceover take without words (voiceovers/<id>.json, sources.takes[].transcript; null when
+//     the recording has no audio of its own, only takes).
 //   transcript:progress (event) { bundle, phase: 'queued' | 'download' | 'transcribe', progress 0..1,
 //     received?, total? (download bytes) }
 //   transcript:cancel(bundle)
@@ -17,8 +19,8 @@ import { pipeline } from 'node:stream/promises'
 import type { ReadableStream } from 'node:stream/web'
 import { native } from './native.ts'
 import { readProject, updateProject } from './projects.ts'
-import { detectLanguage, isFiller } from '../src/engine/transcript/index.ts'
-import type { Transcript } from '../src/shared/project.ts'
+import { detectLanguage, isFiller, spoken } from '../src/engine/transcript/index.ts'
+import type { Project, Sources, Transcript } from '../src/shared/project.ts'
 
 // NVIDIA Parakeet TDT 0.6B v3, int8 ONNX export, pinned to a revision so the checksums hold.
 const MODEL_URL = 'https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/'
@@ -111,23 +113,66 @@ async function writeAtomic(path: string, data: string) {
 
 type Progress = { phase: 'queued' | 'download' | 'transcribe'; progress: number; received?: number; total?: number }
 
-async function transcribe(bundle: string, signal: AbortSignal, send: (p: Progress) => void): Promise<Transcript> {
+/** The recording's own audio, which the transcript is made of. */
+const audioOf = (s: Sources) => s.mic?.file ?? (s.imported ? s.screen?.file : undefined) ?? s.system?.file
+
+async function transcribe(bundle: string, signal: AbortSignal, send: (p: Progress) => void): Promise<Transcript | null> {
   signal.throwIfAborted()
   const s = (await readProject(bundle)).sources
-  const audio = s.mic?.file ?? (s.imported ? s.screen?.file : undefined) ?? s.system?.file
-  if (!audio) throw new Error('This recording has no audio to transcribe.')
-  const path = inBundle(bundle, audio)
-  if ((await sizeOf(path)) < 0) throw new Error(`The recording's audio file is missing (${audio}).`)
+  const audio = audioOf(s)
+  if (!audio && !s.takes?.length) throw new Error('This recording has no audio to transcribe.')
+  const path = audio && inBundle(bundle, audio)
+  if (path && (await sizeOf(path)) < 0) throw new Error(`The recording's audio file is missing (${audio}).`)
   const dir = await ensureModel(signal, (received) => send({ phase: 'download', progress: received / MODEL_SIZE, received, total: MODEL_SIZE }))
   send({ phase: 'transcribe', progress: 0 })
-  const words = await native.transcribe(path, { modelDir: dir }, (progress) => send({ phase: 'transcribe', progress }), signal)
-  const language = detectLanguage(words, app.getLocale().slice(0, 2))
-  const transcript: Transcript = { language, words: words.map((w) => (isFiller(w.text, language) ? { ...w, filler: true } : w)) }
-  await writeAtomic(inBundle(bundle, TRANSCRIPT), JSON.stringify(transcript))
-  // A source, not an edit: set on disk under the save lock; open editors get it via projects:sources.
-  await updateProject(bundle, (p) => void (p.sources.transcript = TRANSCRIPT))
+  let transcript: Transcript | null = null
+  if (path) {
+    transcript = await words(path, dir, signal, app.getLocale().slice(0, 2), (progress) => send({ phase: 'transcribe', progress }))
+    await writeAtomic(inBundle(bundle, TRANSCRIPT), JSON.stringify(transcript))
+    // A source, not an edit: set on disk under the save lock; open editors get it via projects:sources.
+    await updateProject(bundle, (p) => void (p.sources.transcript = TRANSCRIPT))
+  }
+  await takeWords(bundle, dir, signal, transcript?.language)
   return transcript
 }
+
+async function words(path: string, dir: string, signal: AbortSignal, language: string, progress: (p: number) => void): Promise<Transcript> {
+  const words = await native.transcribe(path, { modelDir: dir }, progress, signal)
+  const lang = detectLanguage(words, language)
+  return { language: lang, words: words.map((w) => (isFiller(w.text, lang) ? { ...w, filler: true } : w)) }
+}
+
+/** Words for each voiceover take on the timeline that has none yet, in take seconds. */
+async function takeWords(bundle: string, dir: string, signal: AbortSignal, language = app.getLocale().slice(0, 2)) {
+  for (const t of (await readProject(bundle)).sources.takes ?? []) {
+    if (t.pending || t.transcript) continue
+    signal.throwIfAborted()
+    const file = t.file.replace(/\.m4a$/, '.json')
+    await writeAtomic(inBundle(bundle, file), JSON.stringify(await words(inBundle(bundle, t.file), dir, signal, language, () => {})))
+    await updateProject(bundle, (p) => {
+      const x = p.sources.takes?.find((x) => x.id === t.id)
+      if (x) x.transcript = file
+    })
+  }
+}
+
+/** After a voiceover lands: its words, so the captions show it, when that needs no download and the
+ *  recording's own words are there (or it has no audio of its own). Otherwise the next Transcribe
+ *  covers it. Never throws. */
+export function transcribeTakes(bundle: string): Promise<void> {
+  const job = queue.then(async () => {
+    if (!(await hasModel())) return
+    const s = (await readProject(bundle)).sources
+    if (audioOf(s) && !s.transcript) return
+    const mic = s.transcript ? await loadTranscript(bundle).catch(() => null) : null
+    await takeWords(bundle, modelDir(), new AbortController().signal, mic?.language)
+  })
+  const done = job.catch((e) => console.warn(`[transcript] voiceover words for ${bundle}:`, e))
+  queue = done
+  return done
+}
+
+const hasModel = async () => (await Promise.all(MODEL_FILES.map((f) => sizeOf(join(modelDir(), f.name))))).every((s, i) => s === MODEL_FILES[i].size)
 
 /** One plain-language line for the UI. */
 function reason(err: unknown): string {
@@ -137,14 +182,36 @@ function reason(err: unknown): string {
   return e?.message ?? String(err)
 }
 
+/** The bundle's transcript, or null before it was transcribed (electron/agents.ts reads it too). */
+export async function loadTranscript(bundle: string): Promise<Transcript | null> {
+  inBundle(bundle, 'project.json')
+  const file = (await readProject(bundle)).sources.transcript ?? TRANSCRIPT // the file is the truth
+  try {
+    const t = JSON.parse(await readFile(inBundle(bundle, file), 'utf8'))
+    return Array.isArray(t?.words) ? t : null
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw new Error(`Could not read the transcript: ${reason(err)}`)
+  }
+}
+
+/** What `project`'s video says: its transcript merged with the words of its voiceovers (spoken()),
+ *  which the editor shows and agents read. Null before it was transcribed. */
+export async function loadSpoken(bundle: string, project: Project): Promise<Transcript | null> {
+  const takes: Record<string, Transcript> = {}
+  for (const t of project.sources.takes ?? []) {
+    if (!t.transcript || !project.voiceovers.some((v) => v.take === t.id)) continue
+    const x = await readFile(inBundle(bundle, t.transcript), 'utf8').then(JSON.parse, () => null)
+    if (Array.isArray(x?.words)) takes[t.id] = x
+  }
+  return spoken(await loadTranscript(bundle), takes, project.voiceovers)
+}
+
 const jobs = new Map<string, AbortController>()
 let queue: Promise<unknown> = Promise.resolve() // one at a time: each run holds the model in memory
 
 export function registerTranscript() {
-  ipcMain.handle('transcript:status', async () => {
-    const sizes = await Promise.all(MODEL_FILES.map((f) => sizeOf(join(modelDir(), f.name))))
-    return { model: sizes.every((s, i) => s === MODEL_FILES[i].size), size: MODEL_SIZE }
-  })
+  ipcMain.handle('transcript:status', async () => ({ model: await hasModel(), size: MODEL_SIZE }))
 
   ipcMain.handle('transcript:run', async (e, bundle: string) => {
     inBundle(bundle, 'project.json')
@@ -173,17 +240,7 @@ export function registerTranscript() {
 
   ipcMain.handle('transcript:cancel', (_e, bundle: string) => jobs.get(bundle)?.abort())
 
-  ipcMain.handle('transcript:load', async (_e, bundle: string): Promise<Transcript | null> => {
-    inBundle(bundle, 'project.json')
-    const file = (await readProject(bundle)).sources.transcript ?? TRANSCRIPT // the file is the truth
-    try {
-      const t = JSON.parse(await readFile(inBundle(bundle, file), 'utf8'))
-      return Array.isArray(t?.words) ? t : null
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
-      throw new Error(`Could not read the transcript: ${reason(err)}`)
-    }
-  })
+  ipcMain.handle('transcript:load', (_e, bundle: string) => loadTranscript(bundle))
 
   ipcMain.handle('transcript:export', async (e, bundle: string, format: 'srt' | 'vtt', text: string) => {
     inBundle(bundle, 'project.json')

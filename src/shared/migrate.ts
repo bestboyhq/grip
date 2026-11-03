@@ -76,12 +76,22 @@ export function validateProject(x: unknown, version = PROJECT_VERSION): Project 
     if (v !== undefined && !(isObj(v) && rel(v.file) && pos(v.channels) && pos(v.sampleRate))) fail(`sources.${k}`)
   }
   for (const k of ['events', 'transcript']) if (s[k] !== undefined && !rel(s[k])) fail(`sources.${k}`)
+  if (s.takes !== undefined) {
+    if (!Array.isArray(s.takes)) fail('sources.takes')
+    s.takes.forEach((t: any, i: number) => {
+      const ok = isObj(t) && typeof t.id === 'string' && rel(t.file) && pos(t.channels) && pos(t.sampleRate) && num(t.duration) && t.duration >= 0 && Number.isInteger(t.n) &&
+        (t.voice === undefined || (isObj(t.voice) && rel(t.voice.file))) && (t.transcript === undefined || rel(t.transcript)) &&
+        (t.pending === undefined || (Array.isArray(t.pending) && t.pending.every((x: any) => isObj(x) && num(x.start) && num(x.end) && knots(x.knots))))
+      if (!ok) fail(`sources.takes[${i}]`)
+    })
+  }
 
   timed(p.clips, 'clips', (c) => c.end > c.start && pos(c.speed) && num(c.volume) && c.volume >= 0 && (c.systemVolume === undefined || (num(c.systemVolume) && c.systemVolume >= 0)))
   timed(p.zooms, 'zooms', (z) => pos(z.level) && typeof z.enabled === 'boolean' && isObj(z.target) &&
     (z.target.kind === 'cursor' || (z.target.kind === 'point' && num(z.target.x) && num(z.target.y))))
   timed(p.layouts, 'layouts', (l) => typeof l.kind === 'string')
   timed(p.masks, 'masks', (m) => typeof m.kind === 'string' && isObj(m.rect) && ['x', 'y', 'w', 'h'].every((k) => num(m.rect[k])))
+  timed(p.voiceovers, 'voiceovers', (v) => typeof v.take === 'string' && knots(v.knots) && num(v.volume) && v.volume >= 0 && typeof v.duck === 'boolean' && typeof v.enhance === 'boolean')
   const c = p.crop
   if (c !== undefined && !(isObj(c) && ['x', 'y', 'w', 'h'].every((k) => num(c[k])) && c.x >= 0 && c.y >= 0 && c.w > 0 && c.h > 0 && c.x + c.w <= 1 + 1e-9 && c.y + c.h <= 1 + 1e-9)) fail('crop')
   if (!isObj(p.captionEdits) || !Object.values(p.captionEdits).every((v) => typeof v === 'string')) fail('captionEdits')
@@ -138,6 +148,11 @@ function timed(list: unknown, at: string, ok: (x: any) => boolean) {
     if (!(isObj(x) && typeof x.id === 'string' && num(x.start) && num(x.end) && x.end >= x.start && ok(x))) fail(`${at}[${i}]`)
   })
 }
+
+/** A voiceover's [take second, source second] knots: two or more, take seconds never falling, source
+ *  seconds always rising (src/shared/voiceover.ts). */
+const knots = (k: unknown) =>
+  Array.isArray(k) && k.length >= 2 && k.every((x, i) => Array.isArray(x) && x.length === 2 && num(x[0]) && num(x[1]) && (!i || (x[0] >= k[i - 1][0] && x[1] > k[i - 1][1])))
 
 function fail(what: string): never {
   throw new Error(`Invalid project: ${what}.`)

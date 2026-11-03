@@ -20,6 +20,7 @@ import { Renderer } from '../gpu/renderer.ts'
 import { fileUrl, openVideo } from '../media/index.ts'
 import { peaks, renderAudio } from '../audio/index.ts'
 import { voiceRanges } from '../layout.ts'
+import { spoken } from '../transcript/index.ts'
 import { parseEvents } from '../../shared/events.ts'
 import { timeMap } from '../../shared/timemap.ts'
 import type { Transcript } from '../../shared/project.ts'
@@ -38,12 +39,15 @@ export async function exportProject(job: JobSpec, io: ExportIO): Promise<number>
     if (!res?.ok) throw new Error(`Could not read the ${what} (${rel}).`)
     return res
   }
-  const [events, transcript, faces] = await Promise.all([
+  const heard = (s.takes ?? []).filter((t) => t.transcript && project.voiceovers.some((v) => v.take === t.id))
+  const [events, mic, faces, takes] = await Promise.all([
     s.events ? read(s.events, 'input events').then((r) => r.text()).then(parseEvents) : [],
     s.transcript ? read(s.transcript, 'transcript').then((r) => r.json() as Promise<Transcript>) : null,
     // Face follow is optional: without a readable face track the camera stays centered, as in preview.
     s.camera?.faces ? read(s.camera.faces, 'face track').then((r) => r.json()).then((f) => (Array.isArray(f) ? f : []), () => []) : [],
+    Promise.all(heard.map(async (t) => [t.id, (await (await read(t.transcript!, 'voiceover transcript')).json()) as Transcript] as const)),
   ])
+  const transcript = spoken(mic, Object.fromEntries(takes), project.voiceovers) // the voiceovers' words too, as in preview
   const video = (file: string, what: string) =>
     openVideo(url(file)).catch((e) => {
       throw new Error(`Could not read the ${what} (${file}): ${e instanceof Error ? e.message : e}`)

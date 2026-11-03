@@ -48,6 +48,9 @@ export interface Settings {
   borrowedShortcuts: number[]
   /** Anonymous usage counts to bestboy.dev (electron/usage.ts): sent only after a yes. null: not asked yet. */
   usageCounts: boolean | null
+  /** The folder the last file export went to ('' before the first): the save panel opens there, and
+   *  an agent's export lands there (electron/export.ts). */
+  exportFolder: string
 }
 
 const defaults: Settings = {
@@ -74,6 +77,7 @@ const defaults: Settings = {
   recordShortcut: '', // none until the user picks one: people reach for different keys
   borrowedShortcuts: [],
   usageCounts: null,
+  exportFolder: '',
 }
 
 const file = () => join(app.getPath('userData'), 'settings.json')

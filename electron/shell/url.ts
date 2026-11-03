@@ -4,7 +4,8 @@
 //   grip://open?path=<absolute path to a .grip bundle>
 //   grip://open?url=<shared project link>               download it and open it (electron/share.ts)
 //   grip://auth?code=<code>&state=<state>               the browser finishing sign-in (electron/account.ts)
-// Launch arguments: `[--open] <bundle.grip | video.mp4>`, `grip://` URLs, `--lab <Name>` (dev).
+// Launch arguments: `[--open] <bundle.grip | video.mp4>`, `grip://` URLs, `--background` (the menu bar
+// only: grip-mcp starting Grip for an agent, electron/agents.ts), `--lab <Name>` (dev).
 // Pure: no electron imports, so node:test can run it.
 import { closeSync, constants, mkdirSync, openSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -52,13 +53,13 @@ export function parseGripUrl(url: string): UrlAction | null {
 /** What a launch asks for. Files are absolute, relative ones resolved against `cwd` (the launching
  *  shell's directory). A second instance's argv has Chromium's order: switches first, then the app
  *  path ("." in dev), then the rest; lab names start with a letter. */
-export function parseLaunch(argv: string[], cwd: string): { lab?: string; urls: string[]; files: string[] } {
+export function parseLaunch(argv: string[], cwd: string): { lab?: string; urls: string[]; files: string[]; background?: true } {
   const args = argv.slice(1)
   const lab = args.indexOf('--lab')
   if (lab >= 0) return { lab: args.slice(lab + 1).find((a) => /^[a-z]/i.test(a)) ?? '', urls: [], files: [] }
   const urls = args.filter((a) => /^grip:/i.test(a))
   const files = args.filter((a) => !urls.includes(a) && !a.startsWith('-') && /\.(grip\/?|mp4|mov)$/i.test(a))
-  return { urls, files: files.map((a) => resolve(cwd, a)) }
+  return { urls, files: files.map((a) => resolve(cwd, a)), ...(args.includes('--background') && { background: true as const }) }
 }
 
 function decode(s: string): string {

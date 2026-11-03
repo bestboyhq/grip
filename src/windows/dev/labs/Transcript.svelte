@@ -4,7 +4,7 @@
      repeat=N tiles the transcript N times to feel a 2-hour project; edits save the tiled project
      into the bundle, so point it at a scratch copy. -->
 <script lang="ts">
-  import { doc } from '../../../lib/doc.svelte.ts'
+  import { doc, hear } from '../../../lib/doc.svelte.ts'
   import { player, toggle, seek } from '../../../lib/player.svelte.ts'
   import { invoke } from '../../../lib/ipc.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
@@ -29,7 +29,7 @@
         const t: Transcript | null = await invoke('transcript:load', path)
         if (t) {
           const d = project.sources.duration
-          doc.transcript = { ...t, words: Array.from({ length: repeat }, (_, k) => t.words.map((w) => ({ ...w, start: w.start + k * d, end: w.end + k * d }))).flat() }
+          hear({ mic: { ...t, words: Array.from({ length: repeat }, (_, k) => t.words.map((w) => ({ ...w, start: w.start + k * d, end: w.end + k * d }))).flat() } })
           project.sources.duration = d * repeat
           project.clips = [{ ...project.clips[0], start: 0, end: d * repeat }]
         }

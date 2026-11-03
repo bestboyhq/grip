@@ -4,11 +4,15 @@
      renderer draws, so it matches. -->
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { fade } from 'svelte/transition'
+  import { blur, fade, fly } from 'svelte/transition'
+  import { cubicOut } from 'svelte/easing'
   import { doc, edit, selection } from '../../lib/doc.svelte.ts'
   import { player, attach, currentScene, previewTime } from '../../lib/player.svelte.ts'
   import { outputSize, type Scene } from '../../engine/scene.ts'
   import type { CameraPosition } from '../../shared/project.ts'
+  import { take } from '../../lib/take.svelte.ts'
+  import Icon from '../../ui/Icon.svelte'
+  import Countdown, { burst, pop } from '../area/Countdown.svelte'
   import { cornerAt, outputPoint, reason, screenPoint } from './helpers.ts'
 
   const project = $derived(doc.project!)
@@ -190,12 +194,23 @@
       {#if failed}<p class="failed" role="alert">Preview unavailable: {failed}</p>
       {:else if player.error}<p class="failed" role="alert">{player.error}</p>{/if}
     </div>
+    <!-- A voiceover's 3-2-1, the mic it records under it. Over the frame, not in it, so a short preview
+         never clips the hint. It bursts as the take starts and fades when it is cancelled. -->
+    {#if take.phase === 'countdown'}
+      <div class="countdown" in:pop out:burst={{ fade: !take.phase }}>
+        <Countdown count={take.count} />
+        <div class="hint" in:fly|global={{ y: 6, duration: 320, delay: 120, easing: cubicOut }}>
+          {#key take.mic}<span class="state" in:blur={{ amount: 2, duration: 200 }}><Icon name="mic" size={16} />{take.mic || 'Microphone'}</span>{/key}
+          <span class="key"><kbd>Esc</kbd>to cancel</span>
+        </div>
+      </div>
+    {/if}
   </div>
 </div>
 
 <style>
   .viewport { position: relative; flex: 1; min-height: 0; display: flex; padding: 4px 24px 10px; }
-  .fit { flex: 1; min-width: 0; container-type: size; display: grid; place-items: center; }
+  .fit { position: relative; flex: 1; min-width: 0; container-type: size; display: grid; place-items: center; }
   .frame {
     position: relative; aspect-ratio: var(--ar); width: min(100cqw, 100cqh * var(--ar));
     background: #0a0a0b; box-shadow: 0 0 0 0.5px var(--ring-faint); overflow: hidden; touch-action: none;
@@ -222,5 +237,18 @@
     box-shadow: var(--hairline), 0 4px 14px rgb(0 0 0 / 0.3); font-size: 12px; color: var(--fg-secondary); white-space: nowrap; pointer-events: none;
   }
   .looking b { color: var(--fg-default); font-weight: 500; }
+  .countdown { position: absolute; left: 50%; top: 50%; translate: -50% -50%; pointer-events: none; }
+  /* The recorder's hint pill (ZoomHint), under the circle. */
+  .hint {
+    position: absolute; top: calc(100% + 16px); left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 10px;
+    height: 34px; padding: 0 12px 0 10px; border-radius: 17px; background: var(--surface-veil); box-shadow: var(--hairline);
+    color: var(--fg-secondary); font: 13px var(--font); white-space: nowrap;
+  }
+  .state { display: flex; align-items: center; gap: 6px; font-weight: 500; color: var(--fg-default); }
+  .key { display: flex; align-items: center; gap: 6px; padding-left: 10px; box-shadow: var(--hairline-l); }
+  kbd {
+    display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 5px;
+    background: var(--surface-100); color: var(--fg-default); font: 600 11.5px var(--font);
+  }
   .failed { position: absolute; inset: auto 0 0; margin: 0; padding: 10px 14px; background: rgb(0 0 0 / 0.6); color: var(--fg-secondary); font-size: 12px; text-align: center; }
 </style>

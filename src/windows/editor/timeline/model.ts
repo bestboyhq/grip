@@ -3,11 +3,12 @@
 // item spanning cuts into its surviving pieces). Plain data and functions only, so the 2-hour
 // stress project runs under node:test.
 
-import { uid, type CameraLayout, type Clip, type Mask, type Transcript, type Zoom } from '../../../shared/project.ts'
+import { uid, type CameraLayout, type Clip, type Mask, type Transcript, type Voiceover, type Zoom } from '../../../shared/project.ts'
 import type { InputEvent } from '../../../shared/events.ts'
 import { clipAt, mapRange, removeOutputRange, splitAt, timeMap, toOutput, toSource, type TimeMap } from '../../../shared/timemap.ts'
+import { reach, slid, type Span } from '../../../shared/voiceover.ts'
 
-export type ItemTrack = 'zooms' | 'layouts' | 'masks'
+export type ItemTrack = 'zooms' | 'layouts' | 'masks' | 'voiceovers'
 export type ChipTrack = 'keys' | 'captions'
 export type TrackId = 'clips' | ItemTrack | ChipTrack
 
@@ -62,6 +63,7 @@ export interface Parts {
   zooms: Zoom[]
   layouts: CameraLayout[]
   masks: Mask[]
+  voiceovers: Voiceover[]
   duration: number // sources.duration
 }
 
@@ -71,6 +73,7 @@ export interface Model {
   zooms: Lane<Zoom>
   layouts: Lane<CameraLayout>
   masks: Lane<Mask>
+  voiceovers: Lane<Voiceover>
   keys: Lane<Chip>
   captions: Lane<Chip>
   cuts: Cut[]
@@ -155,6 +158,7 @@ export function buildModel(p: Parts, keys: Chip[], words: Chip[], prev?: Model):
     zooms: reuse(prev?.zooms, p.zooms, true),
     layouts: reuse(prev?.layouts, p.layouts),
     masks: reuse(prev?.masks, p.masks),
+    voiceovers: reuse(prev?.voiceovers, p.voiceovers),
     keys: reuse(prev?.keys, keys),
     captions: reuse(prev?.captions, words),
     cuts: same && prev ? prev.cuts : cuts(map, p.duration),
@@ -162,16 +166,15 @@ export function buildModel(p: Parts, keys: Chip[], words: Chip[], prev?: Model):
 }
 
 /** Lanes top to bottom, in the order the frame is built: camera layouts arrange the whole frame, zooms
- *  frame the screen, masks sit on its content, then the video itself; keystrokes and captions are read
- *  from the recording. An item lane shows once it has items and then stays (`shown` holds it for the
+ *  frame the screen, masks sit on its content, then the video itself and the voiceovers heard over it;
+ *  keystrokes and captions are read from the recording. An item lane shows once it has items (the
+ *  voiceover lane once a take starts, see Timeline.svelte) and then stays (`shown` holds it for the
  *  session), so deleting the last item does not pull the lanes out from under the pointer. */
 export function tracks(m: Record<ItemTrack | ChipTrack, { items: unknown[] }>, camera: boolean, shown: Set<ItemTrack>): TrackId[] {
-  const ids: TrackId[] = []
-  for (const t of ['layouts', 'zooms', 'masks'] as const) {
-    if (m[t].items.length) shown.add(t)
-    if (shown.has(t) && (t !== 'layouts' || camera)) ids.push(t)
-  }
+  for (const t of ['layouts', 'zooms', 'masks', 'voiceovers'] as const) if (m[t].items.length) shown.add(t)
+  const ids: TrackId[] = (['layouts', 'zooms', 'masks'] as const).filter((t) => shown.has(t) && (t !== 'layouts' || camera))
   ids.push('clips')
+  if (shown.has('voiceovers')) ids.push('voiceovers')
   if (m.keys.items.length) ids.push('keys')
   if (m.captions.items.length) ids.push('captions')
   return ids
@@ -367,7 +370,7 @@ export function sameMoment(before: TimeMap, after: TimeMap, t: number): number {
   return toOutput(after, src) ?? mapRange(after, src, Infinity)[0]?.[0] ?? after.duration
 }
 
-// ---- Zooms, layouts, masks: items in source time; with `overlap` (zooms) they pass over each other ----
+// ---- Zooms, layouts, masks, voiceovers: items in source time; with `overlap` (zooms) they pass over each other ----
 
 /** Free source space around [s, e] among items (ignoring `skip`): previous end and next start. */
 function room(items: Item[], s: number, e: number, duration: number, skip?: Set<string>) {
@@ -405,15 +408,17 @@ export function moveItems<T extends Item>(items: T[], ids: Set<string>, delta: n
     hi = Math.min(hi, r.hi - it.end)
   }
   const d = clamp(delta, Math.min(lo, 0), Math.max(hi, 0))
-  return items.map((it) => (ids.has(it.id) ? { ...it, start: it.start + d, end: it.end + d } : it))
+  return items.map((it) => (ids.has(it.id) ? ('knots' in it ? slid(it as T & Span, d) : { ...it, start: it.start + d, end: it.end + d }) : it)) // a voiceover's audio moves with it
 }
 
-/** Move one edge of an item to a source time, clamped to its neighbors and a minimum length. */
+/** Move one edge of an item to a source time, clamped to its neighbors and a minimum length; a
+ *  voiceover's also to its take's audio. */
 export function resizeItem<T extends Item>(items: T[], id: string, side: 'start' | 'end', src: number, duration: number, overlap = false): T[] {
   return items.map((it) => {
     if (it.id !== id) return it
     const r = room(overlap ? [] : items, it.start, it.end, duration, new Set([id]))
-    return side === 'start' ? { ...it, start: clamp(src, r.lo, it.end - MIN_LEN) } : { ...it, end: clamp(src, it.start + MIN_LEN, r.hi) }
+    const [lo, hi] = 'knots' in it ? reach(it as T & Span) : [-Infinity, Infinity]
+    return side === 'start' ? { ...it, start: clamp(src, Math.max(r.lo, lo), it.end - MIN_LEN) } : { ...it, end: clamp(src, it.start + MIN_LEN, Math.min(r.hi, hi)) }
   })
 }
 
@@ -425,7 +430,7 @@ export function placeCopies<T extends Item>(items: T[], copies: T[], delta: numb
     const r = fit(next, c.start + delta, c.end + delta, duration, MIN_LEN, overlap)
     if (!r) continue
     const id = uid()
-    next.push({ ...c, id, start: r[0], end: r[1] })
+    next.push({ ...('knots' in c ? slid(c as T & Span, r[0] - c.start) : c), id, start: r[0], end: r[1] }) // a voiceover's audio comes along
     added.push(id)
   }
   return { items: next, added }
@@ -457,8 +462,8 @@ export function keyChips(events: InputEvent[]): Chip[] {
   return out
 }
 
-export function wordChips(t: Transcript | null, edits: Record<number, string>): Chip[] {
-  return t ? t.words.map((w, i) => ({ start: w.start, end: w.end, label: edits[i] ?? w.text, dim: w.filler })) : []
+export function wordChips(t: Transcript | null, edits: Record<string, string>): Chip[] {
+  return t ? t.words.map((w, i) => ({ start: w.start, end: w.end, label: edits[w.key ?? i] ?? w.text, dim: w.filler })) : []
 }
 
 // ---- Numbers ----

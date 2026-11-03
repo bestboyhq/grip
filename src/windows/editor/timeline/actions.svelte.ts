@@ -3,17 +3,21 @@
 // keep the source time, seek through toOutput afterwards.
 
 import { tick } from 'svelte'
-import { screenCrop, uid, type CameraLayout, type CameraLayoutKind, type Clip, type Mask, type Project, type Zoom } from '../../../shared/project.ts'
+import { screenCrop, uid, type CameraLayout, type CameraLayoutKind, type Clip, type Mask, type Project, type Voiceover, type Zoom } from '../../../shared/project.ts'
 import { clipAt, splitAt, timeMap, toSource } from '../../../shared/timemap.ts'
+import { newZoom } from '../../../shared/edits.ts'
 import { canRedo, canUndo, doc, edit, pickLook, redo, selection, undo, zoomLook } from '../../../lib/doc.svelte.ts'
 import { player, seek, toggle } from '../../../lib/player.svelte.ts'
+import { startTake } from '../../../lib/take.svelte.ts'
 import type { Command } from '../commands/registry.ts'
 import * as M from './model.ts'
 
 export type Kind = 'clips' | M.ItemTrack
-type Items = { clips: Clip[]; zooms: Zoom[]; layouts: CameraLayout[]; masks: Mask[] }
-const KINDS: Kind[] = ['clips', 'zooms', 'layouts', 'masks']
-const ITEM_KINDS: M.ItemTrack[] = ['zooms', 'layouts', 'masks']
+type Items = { clips: Clip[]; zooms: Zoom[]; layouts: CameraLayout[]; masks: Mask[]; voiceovers: Voiceover[] }
+const KINDS: Kind[] = ['clips', 'zooms', 'layouts', 'masks', 'voiceovers']
+const ITEM_KINDS: M.ItemTrack[] = ['zooms', 'layouts', 'masks', 'voiceovers']
+/** Items the timeline makes; a voiceover is recorded (src/lib/take.svelte.ts). */
+export type Made = Exclude<M.ItemTrack, 'voiceovers'>
 
 export const SPEEDS = [0.25, 0.5, 1, 1.25, 1.5, 2, 3, 4, 8]
 export const VOLUMES = [0, 0.5, 1, 1.5, 2]
@@ -172,10 +176,19 @@ export function layoutToAll() {
 }
 export const setMask = (kind: Mask['kind']) => each('masks', ids('masks'), (m) => ({ ...m, kind }))
 
+/** Mute every selected voiceover unless all of them are muted already. */
+export function toggleVoiceovers() {
+  const on = !selected('voiceovers').every((v) => v.muted)
+  each('voiceovers', ids('voiceovers'), ({ muted: _, ...v }) => (on ? { ...v, muted: true } : v))
+}
+/** The one selected voiceover recorded again: the take starts where it starts and replaces it. */
+export const recordAgain = () => void startTake(selected('voiceovers')[0]?.id)
+export const canRecordAgain = () => selection.ids.length === 1 && has('voiceovers')
+
 /** A new item of `track` over source [start, end]; a zoom looks like the last one picked. */
-export function make(track: M.ItemTrack, start: number, end: number): Zoom | CameraLayout | Mask {
+export function make(track: Made, start: number, end: number): Zoom | CameraLayout | Mask {
   const id = uid()
-  if (track === 'zooms') return { id, start, end, level: project().style.autoZoom.level || 2, target: { kind: 'cursor' }, enabled: true, ...zoomLook() } satisfies Zoom
+  if (track === 'zooms') return newZoom(project(), start, end, zoomLook())
   if (track === 'layouts') return { id, start, end, kind: 'fullscreen' } satisfies CameraLayout
   const c = screenCrop(project()) // over the shown part of the screen
   return { id, start, end, kind: 'blur', rect: { x: c.x + 0.3 * c.w, y: c.y + 0.3 * c.h, w: 0.4 * c.w, h: 0.3 * c.h } } satisfies Mask
@@ -183,7 +196,7 @@ export function make(track: M.ItemTrack, start: number, end: number): Zoom | Cam
 
 /** Add an item about 3 output seconds long at output time t, fitted into free space (a zoom goes over
  *  any there); selects it. */
-export function add(track: M.ItemTrack, t = player.time, len = 3) {
+export function add(track: Made, t = player.time, len = 3) {
   if (!doc.project) return
   const m = mapNow()
   const a = Math.min(t, Math.max(0, m.duration - len))
@@ -308,6 +321,7 @@ export function timelineCommands(view: { zoom: (f: number) => void; fit: () => v
     ...VOLUMES.map((v) => c(`volume${v}`, 'Clip', `Set mic volume ${v * 100}%`, () => setVolume(v), () => clipTarget() && !!project().sources.mic)),
     ...VOLUMES.map((v) => c(`systemVolume${v}`, 'Clip', `Set system audio volume ${v * 100}%`, () => setSystemVolume(v), () => clipTarget() && !!project().sources.system)),
     c('mute', 'Clip', 'Mute / unmute clip', () => toggleClips('muted'), clipTarget, ['M']),
+    c('muteVoiceover', 'Voiceover', 'Mute / unmute voiceover', toggleVoiceovers, () => open() && has('voiceovers'), ['M']),
     c('mergePrev', 'Clip', 'Merge with previous clip', () => merge(-1), () => open() && canMerge(-1)),
     c('mergeNext', 'Clip', 'Merge with next clip', () => merge(1), () => open() && canMerge(1)),
     c('resetTrim', 'Clip', 'Reset trim', resetTrim, canResetTrim, [], { hint: 'grows the clip over the source cut next to it' }),
@@ -332,6 +346,9 @@ export function timelineCommands(view: { zoom: (f: number) => void; fit: () => v
 
     c('addMask', 'Mask', 'Add blur at playhead', () => add('masks'), open, ['B'], { hint: 'hide a name or email' }),
     ...MASKS.map(([k, name]) => c(`mask-${k}`, 'Mask', `Mask: ${name}`, () => setMask(k), () => open() && has('masks'))),
+
+    c('voiceover', 'Voiceover', 'Record voiceover', () => void startTake(), open, ['V'], { hint: 'talk over the video from the playhead' }),
+    c('recordAgain', 'Voiceover', 'Record voiceover again', recordAgain, () => open() && canRecordAgain(), [], { hint: 'replaces the selected one' }),
 
     c('zoomIn', 'Timeline', 'Zoom in timeline', () => view.zoom(1.5), open, ['⌘=', '⇧⌘+'], { repeat: true }),
     c('zoomOut', 'Timeline', 'Zoom out timeline', () => view.zoom(1 / 1.5), open, ['⌘-'], { repeat: true }),

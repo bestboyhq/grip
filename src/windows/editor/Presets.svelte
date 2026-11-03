@@ -99,12 +99,21 @@
       })
     })
 
-  const save = (name: string, id?: string) => invoke('projects:presets:save', name, doc.path, $state.snapshot(doc.project!.style), id) as Promise<Preset>
+  /** Save the look as a preset and take the preset's names for its assets (the save copied them
+   *  into the bundle), so the look shows as in use; a look changed meanwhile stays as it is. */
+  async function save(name: string, id?: string) {
+    const sent = $state.snapshot(doc.project!.style)
+    const p = (await invoke('projects:presets:save', name, doc.path, sent, id)) as Preset
+    edit((pr) => {
+      if (sameLook(sent, pr.style)) pr.style = lookOn(p.style, pr.style)
+      pr.preset = p.id
+    })
+    return p
+  }
 
   const saveNew = (name: string) =>
     run(async () => {
       const p = await save(name.trim())
-      edit((pr) => (pr.preset = p.id))
       naming = false
       status = `Saved “${p.name}”.`
       await refresh()
@@ -245,7 +254,8 @@
   .list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 4px 8px 8px; mask-image: linear-gradient(transparent, #000 6px); }
 
   .edited { display: grid; gap: 8px; margin: 0 2px 8px; padding: 10px; border-radius: var(--radius); background: var(--control-track); box-shadow: var(--hairline); }
-  .edited p { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; color: var(--fg-secondary); }
+  .edited p { margin: 0; font-size: 12px; color: var(--fg-secondary); }
+  .edited .dot { display: inline-block; margin-right: 6px; vertical-align: middle; }
   .edited b { color: var(--fg-default); font-weight: 500; }
   .buttons { display: flex; gap: 6px; }
   .dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warm); }

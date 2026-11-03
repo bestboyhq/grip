@@ -1,6 +1,7 @@
 <!-- A real screenshot or clip from Grip in the screenshot frame: its own corner radius, a hairline ring, and a shadow.
-     A clip plays muted in a loop only while it is on screen; a press on its button pauses or plays it, and under
-     reduced motion it holds its still until someone presses play. It comes in the page's theme and follows a switch. -->
+     A clip plays muted in a loop only while it is the clip most on screen; a press on its button pauses or plays it,
+     and under reduced motion it holds its still until someone presses play. It comes in the page's theme and follows a
+     switch. -->
 <script module lang="ts">
 	import { asset } from '$app/paths';
 
@@ -12,6 +13,50 @@
 		light: { src: asset(`media/${name}-light.mp4`), still: asset(`media/${name}-light.webp`) },
 		dark: { src: asset(`media/${name}-dark.mp4`), still: asset(`media/${name}-dark.webp`) },
 	});
+
+	// Only the clip most in view plays: Chrome takes two playing at once for a video call and holds the whole page to
+	// 60 Hz while they play, so a scroll on a 120 Hz display drops every other frame. Another clip takes over once it
+	// shows a fifth more of itself than the playing one, so two clips in view at a like share do not trade back and forth.
+	const SWITCH = 0.2;
+	const clips = new Map<HTMLVideoElement, { share: number; held: () => boolean }>();
+	let playing: HTMLVideoElement | null = null;
+	let seen: IntersectionObserver | null = null;
+
+	function start(media: HTMLVideoElement | null): void {
+		playing = media;
+		for (const other of clips.keys()) if (other !== media) other.pause();
+		if (media?.paused) media.play().catch(() => {});
+	}
+
+	function choose(): void {
+		let most: HTMLVideoElement | null = null;
+		let top = 0;
+		for (const [media, { share, held }] of clips)
+			if (!held() && share > top) [most, top] = [media, share];
+		const current = playing ? clips.get(playing) : undefined;
+		const keep = current && !current.held() && current.share > 0 && current.share + SWITCH >= top;
+		start(keep ? playing : most);
+	}
+
+	function follow(media: HTMLVideoElement, held: () => boolean): () => void {
+		seen ??= new IntersectionObserver(
+			(entries) => {
+				for (const { target, isIntersecting, intersectionRatio } of entries) {
+					const clip = clips.get(target as HTMLVideoElement);
+					if (clip) clip.share = isIntersecting ? intersectionRatio : 0;
+				}
+				choose();
+			},
+			{ threshold: Array.from({ length: 21 }, (_, step) => step / 20) },
+		);
+		clips.set(media, { share: 0, held });
+		seen.observe(media);
+		return () => {
+			seen?.unobserve(media);
+			clips.delete(media);
+			if (playing === media) playing = null;
+		};
+	}
 </script>
 
 <script lang="ts">
@@ -38,10 +83,6 @@
 
 	function watch(media: HTMLVideoElement): () => void {
 		held = matchMedia('(prefers-reduced-motion: reduce)').matches;
-		const io = new IntersectionObserver(([entry]) => {
-			if (entry?.isIntersecting && !held) media.play().catch(() => {});
-			else media.pause();
-		});
 		// The clip in the page's theme. A switch swaps the other in at the same moment, playing if this one was.
 		const root = document.documentElement;
 		const scheme = matchMedia('(prefers-color-scheme: dark)');
@@ -60,9 +101,9 @@
 		const themed = new MutationObserver(pick);
 		themed.observe(root, { attributeFilter: ['data-theme'] });
 		scheme.addEventListener('change', pick);
-		io.observe(media);
+		const unfollow = follow(media, () => held);
 		return () => {
-			io.disconnect();
+			unfollow();
 			themed.disconnect();
 			scheme.removeEventListener('change', pick);
 		};
@@ -71,7 +112,7 @@
 	function toggle(): void {
 		held = !paused;
 		if (held) video?.pause();
-		else video?.play().catch(() => {});
+		else if (video) start(video);
 	}
 </script>
 

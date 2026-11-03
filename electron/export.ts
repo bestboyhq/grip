@@ -14,12 +14,14 @@
 //   export:done(id, size)        export:fail(id, message)
 // Share links: once the file is complete, main hands it to share:upload (electron/share.ts) and the
 // queue moves on; the job is done when the link exists.
+// Agents (electron/agents.ts) queue through exportWithoutAsking, which never shows a dialog.
 import { app, BrowserWindow, ClipboardItem, clipboard, dialog, ipcMain, Notification, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import { open, mkdir, readdir, readFile, rename, rm, stat, writeFile, type FileHandle } from 'node:fs/promises'
 import { existsSync, rmSync } from 'node:fs'
-import { basename, dirname, isAbsolute, join } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { hidden, openWindow } from './windows.ts'
+import { setSettings, settings } from './shell/settings.ts'
 import { projectsDir, readProject } from './projects.ts'
 import { analyzeVoice, owesVoice } from './audio.ts'
 import { accountToken, signIn } from './account.ts'
@@ -36,12 +38,15 @@ interface Job extends JobInfo {
   tmp?: string // partial file, deleted unless renamed into place
   writes: Promise<unknown>
   owner?: BrowserWindow // a quiet job's asking window: it shows the outcome, so no notification while it is open
+  private?: boolean // share: a private link
 }
 
 const jobs = new Map<string, Job>()
 let running: Job | undefined
 let batch = { done: 0, failed: 0, last: undefined as Job | undefined }
-let lastDir = ''
+/** The folder the last file export went to (settings.exportFolder): the save panel opens there, and an
+ *  agent's export lands there. The Desktop before the first one. */
+const exportFolder = () => settings().exportFolder || app.getPath('desktop')
 const tmpRoot = () => join(app.getPath('temp'), 'Grip Exports')
 const active = (j: Job) => j.state === 'queued' || j.state === 'running' || j.state === 'uploading'
 /** Exports still running or queued (the quit prompt asks before dropping them). Uploads are not
@@ -162,14 +167,16 @@ async function pump() {
     return finish(j, 'failed', fsMessage(err, j.path))
   }
   Object.assign(j, { state: 'running', phase: 'Starting', startedAt: Date.now() })
-  // An enhanced mic exports as it plays: its voice track first (made now if it never was). A pass that
-  // fails leaves the raw mic, as the preview plays it.
+  // An enhanced mic or voiceover exports as it plays: its voice track first (made now if it never was).
+  // A pass that fails leaves the raw audio, as the preview plays it.
   if (j.project && owesVoice(j.project)) {
     j.phase = 'Enhancing voice'
     broadcast(j)
     await analyzeVoice(j.bundle)
     if (j.state !== 'running' || !j.project) return // canceled meanwhile
-    j.project.sources.mic = (await readProject(j.bundle)).sources.mic ?? j.project.sources.mic
+    const s = (await readProject(j.bundle)).sources
+    j.project.sources.mic = s.mic ?? j.project.sources.mic
+    j.project.sources.takes = s.takes ?? j.project.sources.takes
     j.phase = 'Starting'
   }
   const win = (j.win = openWindow(`export?job=${encodeURIComponent(j.id)}`, { show: false, width: 480, height: 320, webPreferences: { backgroundThrottling: false } }))
@@ -217,28 +224,28 @@ function freePath(dir: string, name: string, ext: string, taken = new Set<string
 /** Resolve every destination up front (one save dialog, or one folder for many files), so the
  *  queue then runs without asking anything. Returns false when the user cancels. */
 async function chooseFiles(parent: BrowserWindow | null, items: Array<{ name: string; ext: string; path?: string }>): Promise<boolean> {
-  const desktop = app.getPath('desktop')
   if (items.length === 1) {
     const it = items[0]
-    const opts = { defaultPath: join(lastDir || desktop, `${safeFileName(it.name)}.${it.ext}`), filters: [{ name: it.ext.toUpperCase(), extensions: [it.ext] }] }
+    const opts = { defaultPath: join(exportFolder(), `${safeFileName(it.name)}.${it.ext}`), filters: [{ name: it.ext.toUpperCase(), extensions: [it.ext] }] }
     const res = await (parent ? dialog.showSaveDialog(parent, opts) : dialog.showSaveDialog(opts))
     if (res.canceled || !res.filePath) return false
     it.path = res.filePath
   } else if (items.length > 1) {
-    const opts = { defaultPath: lastDir || desktop, properties: ['openDirectory', 'createDirectory'] as Array<'openDirectory' | 'createDirectory'>, buttonLabel: 'Export Here', message: `Choose a folder for ${items.length} exports` }
+    const opts = { defaultPath: exportFolder(), properties: ['openDirectory', 'createDirectory'] as Array<'openDirectory' | 'createDirectory'>, buttonLabel: 'Export Here', message: `Choose a folder for ${items.length} exports` }
     const res = await (parent ? dialog.showOpenDialog(parent, opts) : dialog.showOpenDialog(opts))
     if (res.canceled || !res.filePaths[0]) return false
     const dir = res.filePaths[0]
     const taken = new Set<string>()
     for (const it of items) it.path = freePath(dir, it.name, it.ext, taken)
   }
-  if (items.length) lastDir = dirname(items[items.length - 1].path!)
+  if (items.length) setSettings({ exportFolder: dirname(items[items.length - 1].path!) })
   return true
 }
 
-async function enqueue(parent: BrowserWindow | null, reqs: ExportRequest[]): Promise<JobInfo[] | null> {
+/** Requests checked and their projects read: what each job exports, and where it may go. */
+function prepare(reqs: ExportRequest[]) {
   if (!Array.isArray(reqs) || !reqs.length) throw new Error('Nothing to export.')
-  const items = await Promise.all(
+  return Promise.all(
     reqs.map(async (r) => {
       if (typeof r?.bundle !== 'string' || !isAbsolute(r.bundle)) throw new Error('Export needs the absolute path of a project.')
       if (r.path !== undefined && (typeof r.path !== 'string' || !isAbsolute(r.path))) throw new Error('Export paths must be absolute.')
@@ -246,25 +253,50 @@ async function enqueue(parent: BrowserWindow | null, reqs: ExportRequest[]): Pro
       const project = r.project ?? (await readProject(r.bundle))
       const dest = DESTINATIONS.includes(r.dest) ? r.dest : 'file'
       const options = jobOptions(dest, r.options)
-      return { project, options, dest, bundle: r.bundle, name: project.name || basename(r.bundle, '.grip'), ext: options.format, path: r.path, dir: r.dir, quiet: r.quiet === true }
+      return { project, options, dest, bundle: r.bundle, name: project.name || basename(r.bundle, '.grip'), ext: options.format, path: r.path, dir: r.dir, quiet: r.quiet === true, private: r.private === true }
     }),
   )
-  const taken = new Set<string>()
-  for (const it of items) if (it.dest === 'file' && !it.path && it.dir && existsSync(it.dir)) it.path = freePath((lastDir = it.dir), it.name, it.ext, taken)
-  if (!(await chooseFiles(parent, items.filter((it) => it.dest === 'file' && !it.path)))) return null
-  // Links need an account: sign in (in the browser) before an export that would only fail at upload.
-  if (items.some((it) => it.dest === 'share') && !accountToken() && !(await signIn())) return null
+}
+
+/** Queue prepared jobs whose destinations are all known. */
+function queue(items: Awaited<ReturnType<typeof prepare>>, parent: BrowserWindow | null): JobInfo[] {
   const out = items.map((it) => {
     const id = crypto.randomUUID()
     // Clipboard, share, and temp exports land in a per-job temp folder, so the file keeps the project's name.
     const path = it.path ?? join(tmpRoot(), id, `${safeFileName(it.name)}.${it.ext}`)
-    const j: Job = { id, name: it.name, bundle: it.bundle, options: it.options, dest: it.dest, path, project: it.project, state: 'queued', progress: 0, phase: 'Waiting', writes: Promise.resolve(), owner: (it.quiet && parent) || undefined }
+    const j: Job = { id, name: it.name, bundle: it.bundle, options: it.options, dest: it.dest, path, project: it.project, state: 'queued', progress: 0, phase: 'Waiting', writes: Promise.resolve(), owner: (it.quiet && parent) || undefined, private: it.private }
     jobs.set(id, j)
     broadcast(j)
     return info(j)
   })
   void pump()
   return out
+}
+
+async function enqueue(parent: BrowserWindow | null, reqs: ExportRequest[]): Promise<JobInfo[] | null> {
+  const items = await prepare(reqs)
+  const taken = new Set<string>()
+  let folder = ''
+  for (const it of items) if (it.dest === 'file' && !it.path && it.dir && existsSync(it.dir)) it.path = freePath((folder = it.dir), it.name, it.ext, taken)
+  if (folder) setSettings({ exportFolder: folder })
+  if (!(await chooseFiles(parent, items.filter((it) => it.dest === 'file' && !it.path)))) return null
+  // Links need an account: sign in (in the browser) before an export that would only fail at upload.
+  if (items.some((it) => it.dest === 'share') && !accountToken() && !(await signIn())) return null
+  return queue(items, parent)
+}
+
+/** Queue one export for a caller that can answer no dialog (electron/agents.ts). A file goes to
+ *  `path`, or into the export folder under the project's name, numbered past any file already there,
+ *  so it never replaces one; a link needs an account already signed in. */
+export async function exportWithoutAsking(r: ExportRequest): Promise<JobInfo> {
+  const [it] = await prepare([r])
+  if (it.dest === 'share' && !accountToken()) throw new Error('Grip is signed out, and share links need a Bestboy account. Sign in from Grip (Share in the editor, or Sign In to Share Links in the menu bar menu), then share again.')
+  if (it.dest === 'file') {
+    const dir = it.path ? dirname(it.path) : exportFolder()
+    if (!existsSync(dir)) throw new Error(`The folder “${dir}” does not exist.`)
+    it.path = freePath(dir, it.path ? basename(it.path, extname(it.path)) : it.name, it.ext)
+  }
+  return queue([it], null)[0]
 }
 
 /** The partial file of the running export, so the next launch deletes it if Grip dies mid-export
@@ -388,7 +420,7 @@ export function registerExport() {
     Object.assign(j, { state: 'uploading', phase: 'Uploading', progress: 1 })
     release(j)
     broadcast(j)
-    shareFile(j.path, { title: j.name, project: j.bundle }).then(
+    shareFile(j.path, { title: j.name, project: j.bundle, private: j.private }).then(
       (url: unknown) => {
         if (typeof url === 'string' && /^https?:\/\//.test(url)) return finish(Object.assign(j, { url }), 'done')
         return url === null ? finish(j, 'canceled') : finish(j, 'failed', 'The upload finished without a link.')

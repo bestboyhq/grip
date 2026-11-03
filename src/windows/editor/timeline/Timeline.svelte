@@ -8,6 +8,7 @@
   import { timeMap, toSource, type TimeMap } from '../../../shared/timemap.ts'
   import { doc, edit, selection } from '../../../lib/doc.svelte.ts'
   import { pause, player, previewTime, scrub, seek, showEdge, toggle } from '../../../lib/player.svelte.ts'
+  import { live as heard, startTake, stopTake, take } from '../../../lib/take.svelte.ts'
   import { peaks as enginePeaks, voiceGain } from '../../../engine/audio/index.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
   import CommandMenu from '../commands/CommandMenu.svelte'
@@ -16,7 +17,7 @@
   import * as A from './actions.svelte.ts'
   import { formatTime } from '../helpers.ts'
   import { tooltip } from '../../../ui/tooltip.ts'
-  import { PAD, RULER, draw, hit, rows as layoutRows, thumb, timeOf, xOf, type Audio, type Hit, type View } from './draw.ts'
+  import { PAD, RULER, draw, hit, rows as layoutRows, thumb, timeOf, xOf, type Audio, type Hit, type Scene, type View } from './draw.ts'
   import { Waveforms, type PeaksFn } from './waveform.ts'
   import Menu, { type Target } from './Menu.svelte'
   import Lens, { LENS, type LensVideo } from './Lens.svelte'
@@ -35,7 +36,7 @@
     | { kind: 'trim'; i: number; side: 'start' | 'end'; lim: { lo: number; hi: number }; off: number; full: Clip[]; fine: { src: number; x: number } | null }
     | { kind: 'move'; track: M.ItemTrack; ids: Set<string>; grab: number }
     | { kind: 'resize'; track: M.ItemTrack; id: string; side: 'start' | 'end'; off: number }
-    | { kind: 'create'; track: M.ItemTrack; t0: number }
+    | { kind: 'create'; track: A.Made; t0: number }
     | { kind: 'marquee'; t: number; y: number; keep: string[] }
     | { kind: 'cut'; cut: M.Cut }
   type Drag = Gesture & { sx: number; sy: number; moved: boolean; map: TimeMap; select?: string }
@@ -60,6 +61,7 @@
   let drag: Drag | null = null
   let mic: Audio | null = null
   let system: Audio | null = null
+  let voices: Scene['voices'] = new Map()
   let video: LensVideo | null = null // the recording the trim lens shows
   let lens: Lens | undefined
   let lensOn = false
@@ -80,7 +82,7 @@
 
   const waves = $derived(new Waveforms(peaks, requestDraw))
   const armed = () => splitTool || alt
-  const isItem = (t: M.TrackId): t is M.ItemTrack => t === 'zooms' || t === 'layouts' || t === 'masks'
+  const isItem = (t: M.TrackId): t is M.ItemTrack => t === 'zooms' || t === 'layouts' || t === 'masks' || t === 'voiceovers'
 
   // ---- Inputs from the document ----
 
@@ -97,6 +99,7 @@
         zooms: $state.snapshot(p.zooms),
         layouts: $state.snapshot(p.layouts),
         masks: $state.snapshot(p.masks),
+        voiceovers: $state.snapshot(p.voiceovers),
         duration: p.sources.duration,
       }
       camera = !!p.sources.camera
@@ -105,6 +108,15 @@
       const voice = p.audio.mic.enhance ? p.sources.mic?.voice : undefined
       mic = audio(voice?.file ?? p.sources.mic?.file, p.audio.mic.muted ? 0 : p.audio.mic.volume * (voice ? voiceGain(voice.lufs) : 1))
       system = audio(p.sources.system?.file, p.audio.system.muted ? 0 : p.audio.system.volume)
+      // Each voiceover as the mixer plays it (planOf): its take's voice track when enhanced, at its gain.
+      const takes = new Map((p.sources.takes ?? []).map((t) => [t.id, t]))
+      voices = new Map(
+        p.voiceovers.map((it) => {
+          const t = takes.get(it.take)
+          const voice = it.enhance ? t?.voice : undefined
+          return [it.id, { n: t?.n ?? 0, audio: t && !it.muted ? audio(voice?.file ?? t.file, it.volume * (voice ? voiceGain(voice.lufs) : 1)) : null }]
+        }),
+      )
       const v = p.sources.screen ?? p.sources.camera
       video = v && doc.path ? { url: fileUrl(`${doc.path}/${v.file}`), width: v.width, height: v.height, fps: v.fps } : null
       rebuild()
@@ -121,7 +133,7 @@
 
   $effect(() => {
     const t = doc.transcript
-    const edits: Record<number, string> = doc.project ? JSON.parse(JSON.stringify(doc.project.captionEdits)) : {}
+    const edits: Record<string, string> = doc.project ? JSON.parse(JSON.stringify(doc.project.captionEdits)) : {}
     untrack(() => {
       words = M.wordChips(t, edits)
       rebuild()
@@ -131,6 +143,19 @@
   $effect(() => {
     sel = new Set(selection.ids)
     untrack(requestDraw)
+  })
+
+  // A take opens the voiceover lane at its 3-2-1, which then stays; nothing hovers until it is done.
+  $effect(() => {
+    const phase = take.phase
+    untrack(() => {
+      if (phase && !shown.has('voiceovers')) {
+        shown.add('voiceovers')
+        rebuild()
+      }
+      hovered()
+      requestDraw()
+    })
   })
 
   $effect(() => {
@@ -274,7 +299,8 @@
     }
     if (ctx && view.W) {
       if (model) {
-        draw(ctx, { view, model, time: player.time, sel, hover, pointer, armed: armed(), dragging: !!drag, marquee: marqueeRect(), mic, system, waves })
+        const live = take.phase === 'recording' || take.phase === 'saving' ? { from: take.from, n: take.n, ...heard } : null // grows until its items land
+        draw(ctx, { view, model, time: player.time, sel, hover, pointer: take.phase ? null : pointer, armed: armed(), dragging: !!drag, marquee: marqueeRect(), mic, system, voices, take: live, hidden: take.again, taking: !!take.phase, waves })
       } else ctx.clearRect(0, 0, canvas!.width, canvas!.height)
     }
     if (drag?.kind === 'trim') showLens(drag)
@@ -378,7 +404,7 @@
     else if (h.kind === 'none') g = marquee()
     else if (h.kind === 'lane') {
       if (add && h.track !== 'keys' && h.track !== 'captions') g = marquee()
-      else if (isItem(h.track)) g = { kind: 'create', track: h.track, t0: t }
+      else if (isItem(h.track) && h.track !== 'voiceovers') g = { kind: 'create', track: h.track, t0: t } // a voiceover is recorded, not drawn
       else {
         seek(t)
         g = { kind: 'scrub' }
@@ -575,21 +601,21 @@
     return out
   }
 
-  /** Hover state, cursor, and the add-item preview for the pointer's position. */
+  /** Hover state, cursor, and the add-item preview for the pointer's position; none while a take runs. */
   function hovered() {
     if (!model || !pointer || drag) return
-    hover = hit(view, model, pointer.x, pointer.y)
-    if (hover.kind === 'block' && hover.track === 'clips' && hover.edge) lens?.warm(video) // its frames are ready when the trim starts
+    hover = take.phase ? null : hit(view, model, pointer.x, pointer.y)
+    if (hover?.kind === 'block' && hover.track === 'clips' && hover.edge) lens?.warm(video) // its frames are ready when the trim starts
     // Hover scrub: the preview shows the moment under the pointer while paused; the playhead stays put.
-    player.hover = player.playing || hover.kind === 'scrollbar' || hover.kind === 'none' ? null : outTime(pointer.x)
-    cursor = hoverCursor(hover)
+    player.hover = !hover || player.playing || hover.kind === 'scrollbar' || hover.kind === 'none' ? null : outTime(pointer.x)
+    cursor = hover ? hoverCursor(hover) : 'default'
     requestDraw()
   }
 
   function hoverCursor(h: Hit): string {
     if (armed() && (h.kind === 'block' || h.kind === 'lane') && h.track === 'clips') return SCISSORS
     if (h.kind === 'block') return h.edge ? 'ew-resize' : isItem(h.track) ? 'grab' : 'default'
-        return h.kind === 'cut' || h.kind === 'ruler' ? 'pointer' : 'default'
+    return h.kind === 'cut' || h.kind === 'ruler' ? 'pointer' : 'default'
   }
   const dragCursor = (d: Drag) => (d.kind === 'move' ? 'grabbing' : d.kind === 'trim' || d.kind === 'resize' ? 'ew-resize' : cursor)
 
@@ -648,7 +674,7 @@
         <span>Commands</span>
         <kbd>⌘K</kbd>
       </button>
-      <button class="labeled" aria-haspopup="menu" aria-expanded={menu?.target.kind === 'add'} onclick={openAdd} {@attach tooltip('Add a zoom, camera layout, or blur at the playhead')}>
+      <button class="labeled" aria-haspopup="menu" aria-expanded={menu?.target.kind === 'add'} onclick={openAdd} {@attach tooltip('Add a zoom, camera layout, blur, or voiceover at the playhead')}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" /></svg>
         <span>Add</span>
       </button>
@@ -656,6 +682,17 @@
         <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="6.5" width="5" height="7" rx="1.5" /><rect x="12.5" y="6.5" width="5" height="7" rx="1.5" /><path d="M10 3v14" /></svg>
         <span>Cut</span>
         <kbd>⌘B</kbd>
+      </button>
+      <!-- data-take-stop: the one control a take lets through (Editor.svelte) -->
+      <button class="labeled" data-take-stop onclick={() => (take.phase ? stopTake() : startTake())} {@attach tooltip(take.phase ? 'Stop recording' : 'Record voiceover', take.phase ? undefined : 'V')}>
+        {#if take.phase}
+          <svg viewBox="0 0 20 20" aria-hidden="true"><rect class="stop" x="4.75" y="4.75" width="10.5" height="10.5" rx="2.5" /></svg>
+          <span>Stop</span>
+          <kbd>Space</kbd>
+        {:else}
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.5 5.5a2.5 2.5 0 0 1 5 0v4a2.5 2.5 0 0 1-5 0z" /><path d="M4.8 9.5a5.2 5.2 0 0 0 10.4 0M10 14.7v2.3" /></svg>
+          <span>Voiceover</span>
+        {/if}
       </button>
     </div>
     <div class="center">
@@ -804,6 +841,10 @@
   }
   svg .fill {
     fill: currentColor;
+    stroke: none;
+  }
+  svg .stop {
+    fill: var(--record);
     stroke: none;
   }
   .labeled {

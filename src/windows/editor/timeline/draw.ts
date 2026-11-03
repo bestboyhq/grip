@@ -2,7 +2,9 @@
 // waveforms, and overlays; only blocks in view are visited (binary search) and sub-pixel blocks are
 // merged, so a frame costs the same for a 2-minute and a 2-hour project.
 
-import type { CameraLayout, Clip, Mask, Zoom } from '../../../shared/project.ts'
+import type { CameraLayout, Clip, Mask, Voiceover, Zoom } from '../../../shared/project.ts'
+import type { TimeMap } from '../../../shared/timemap.ts'
+import { pieces, type Piece } from '../../../shared/voiceover.ts'
 import * as M from './model.ts'
 import { formatTime } from '../helpers.ts'
 import type { Waveforms } from './waveform.ts'
@@ -12,7 +14,7 @@ export const RULER = 38 // playhead knob on top, labels, tick dots
 const TOP = RULER + 4
 const GAP = 6
 const BOTTOM = 16
-const HEIGHTS: Record<M.TrackId, number> = { clips: 40, zooms: 36, layouts: 26, masks: 26, keys: 20, captions: 20 }
+const HEIGHTS: Record<M.TrackId, number> = { clips: 40, voiceovers: 36, zooms: 36, layouts: 26, masks: 26, keys: 20, captions: 20 }
 const BAND_INSET = 5 // px a band where zooms overlap sits in from the layer under it, top and bottom
 const MAX_STACK = 4 // the zoom track grows a step per zoom stacked at once, up to this many
 const EDGE = 12 // px of a block's end that grabs the edge
@@ -121,6 +123,13 @@ export interface Scene {
   marquee: { x0: number; y0: number; x1: number; y1: number } | null
   mic: Audio | null
   system: Audio | null
+  /** Per voiceover item: its take's number and the audio it plays (null while muted). */
+  voices: Map<string, { n: number; audio: Audio | null }>
+  /** The take recording now, from output `from` to the playhead: its take second 0 played at output
+   *  `zero`, and `levels` is what the mic heard so far ([take second, linear peak], in order). */
+  take: { from: number; n: number; zero: number; levels: Array<[number, number]> } | null
+  hidden: string | null // the item a take records again, from its countdown on
+  taking: boolean // a take counts down or records, so the empty voiceover lane drops its hint
   waves: Waveforms
 }
 
@@ -161,6 +170,11 @@ const C = {
   zoomOff: ['#292928', '#545453', 'rgba(255,255,255,0.08)', '#343433', 'rgba(205,205,215,0.75)', 'rgba(170,170,180,0.3)'],
   layouts: ['#3b3039', '#cf72bf', 'rgba(255,255,255,0.12)', '#4b3a48', 'rgba(238,165,224,0.95)', 'rgba(207,114,191,0.55)'],
   masks: ['#3c302e', '#e8604c', 'rgba(255,255,255,0.12)', '#4d3934', 'rgba(255,165,145,0.95)', 'rgba(232,96,76,0.55)'],
+  voiceovers: ['#3b3228', '#ee9e10', 'rgba(255,255,255,0.12)', '#4b3d2c', 'rgba(245,192,118,0.95)', 'rgba(238,158,16,0.55)'], // amber: a voice, warm like system audio
+  voice: 'rgba(238,158,16,0.36)', // a take's waveform on its item
+  voiceEdge: 'rgba(250,198,110,0.9)',
+  ducked: 'rgba(214,224,255,0.09)', // the mic where a voiceover mutes it: a ghost of its waveform
+  duckedEdge: 'rgba(232,238,255,0.24)',
   // Where zooms overlap: a hairline outline per layer, brighter the more zooms it holds; the + between them.
   bands: ['rgba(143,128,245,0.55)', 'rgba(169,156,255,0.75)', 'rgba(196,188,255,0.92)'],
   plus: 'rgba(255,255,255,0.5)',
@@ -176,6 +190,7 @@ const C = {
   word: '#292928',
   filler: 'rgba(255,95,87,0.16)', // filler words: the ones worth cutting
   playhead: '#f4f4f3', // --fg-default
+  record: '#f04600', // --record: the playhead while a take records
   ghost: 'rgba(255,255,255,0.22)',
   split: '#ff5f57',
   cut: '#f47a1c',
@@ -192,6 +207,7 @@ const HINTS: Record<M.ItemTrack, string> = {
   zooms: 'Click or drag to add a zoom',
   layouts: 'Click or drag to add a camera layout',
   masks: 'Click or drag to add a blur or highlight',
+  voiceovers: 'Press V to record a voiceover from the playhead',
 }
 const LAYOUT_NAMES: Record<CameraLayout['kind'], [string, string]> = {
   pip: ['Picture in picture', 'PiP'],
@@ -378,29 +394,108 @@ function wave(ctx: CanvasRenderingContext2D, s: Scene, c: Clip, b: M.Block, xa: 
   const max = h - 22 // peaks stay under the labels (baseline at y + 16)
   const x0 = Math.max(Math.floor(xa), 0)
   const x1 = Math.min(Math.ceil(xb), v.W)
-  // Mic behind, system audio in front: each a translucent body under a crisp edge.
+  const ducks = s.mic ? ducked(s, b.a, b.b) : []
+  // Mic behind, system audio in front.
   for (const [src, volume, color, edge] of [[s.mic, c.volume, C.wave, C.waveEdge], [s.system, c.systemVolume ?? 1, C.waveSys, C.waveSysEdge]] as const) {
     const gain = src ? src.gain * (c.muted ? 0 : volume) : 0
     if (!src || gain <= 0) continue
-    const top = new Path2D()
-    for (let x = x0; x <= x1; x++) {
+    const w = contour(x0, x1, base, max, gain, (x) => {
       const s0 = c.start + (timeOf(v, x) - off - b.a) * c.speed
-      const p = s0 < c.start || s0 >= c.end ? 0 : s.waves.peak(src.url, level, s0, s0 + perPx)
-      const yy = base - (p > 0 ? Math.min(1, Math.sqrt(p * gain)) * max : 0)
-      if (x === x0) top.moveTo(x, yy)
-      else top.lineTo(x, yy)
+      return s0 < c.start || s0 >= c.end ? 0 : s.waves.peak(src.url, level, s0, s0 + perPx)
+    })
+    if (src !== s.mic || !ducks.length) paint(ctx, w, color, edge)
+    else {
+      // Where a voiceover mutes the mic, its waveform stays as a ghost: what the voiceover covers.
+      for (const under of [false, true]) {
+        ctx.save()
+        ctx.beginPath()
+        let x = x0
+        for (const [a, e] of ducks) {
+          const [xa, xe] = [xOf(v, a), xOf(v, e)]
+          if (under) ctx.rect(xa, y, xe - xa, h + 4)
+          else if (xa > x) ctx.rect(x, y, xa - x, h + 4)
+          x = Math.max(x, xe)
+        }
+        if (!under && x < x1) ctx.rect(x, y, x1 - x, h + 4)
+        ctx.clip()
+        paint(ctx, w, under ? C.ducked : color, under ? C.duckedEdge : edge)
+        ctx.restore()
+      }
     }
-    const body = new Path2D(top)
-    body.lineTo(x1, base + 1)
-    body.lineTo(x0, base + 1)
-    body.closePath()
-    ctx.fillStyle = color
-    ctx.fill(body)
-    ctx.lineWidth = 1
-    ctx.lineJoin = 'round'
-    ctx.strokeStyle = edge
-    ctx.stroke(top)
   }
+}
+
+/** Output stretches over [t0, t1] where a voiceover mutes the mic (and the take being recorded does),
+ *  merged, in order. */
+function ducked(s: Scene, t0: number, t1: number): Array<[number, number]> {
+  const l = s.model.voiceovers
+  const [from, to] = M.visible(l, t0, t1)
+  const all: Array<[number, number]> = []
+  for (let k = from; k < to; k++) {
+    const b = l.blocks[k]
+    const it = l.items[b.i]
+    if (b.b > t0 && it.duck && !it.muted && it.id !== s.hidden) all.push([b.a, b.b])
+  }
+  if (s.take) all.push([s.take.from, s.time])
+  const out: Array<[number, number]> = []
+  for (const [a, e] of all.sort((p, q) => p[0] - q[0])) {
+    const last = out.at(-1)
+    if (last && a <= last[1]) last[1] = Math.max(last[1], e)
+    else out.push([a, e])
+  }
+  return out
+}
+
+/** A waveform from the loudest moment `at(x)` of each pixel column (0..1; below 0 while loading), on
+ *  a square-root scale: a body to fill and the edge over it. */
+function contour(x0: number, x1: number, base: number, max: number, gain: number, at: (x: number) => number) {
+  const top = new Path2D()
+  for (let x = x0; x <= x1; x++) {
+    const p = at(x)
+    const yy = base - (p > 0 ? Math.min(1, Math.sqrt(p * gain)) * max : 0)
+    if (x === x0) top.moveTo(x, yy)
+    else top.lineTo(x, yy)
+  }
+  const body = new Path2D(top)
+  body.lineTo(x1, base + 1)
+  body.lineTo(x0, base + 1)
+  body.closePath()
+  return { top, body }
+}
+
+/** A translucent body under a crisp edge. */
+function paint(ctx: CanvasRenderingContext2D, w: { top: Path2D; body: Path2D }, color: string, edge: string) {
+  ctx.fillStyle = color
+  ctx.fill(w.body)
+  ctx.lineWidth = 1
+  ctx.lineJoin = 'round'
+  ctx.strokeStyle = edge
+  ctx.stroke(w.top)
+}
+
+const played = new WeakMap<Voiceover, { map: TimeMap; pieces: Piece[] }>()
+/** A voiceover's take as it plays, between its grips: the loudest moment per pixel. */
+function voiceWave(ctx: CanvasRenderingContext2D, s: Scene, it: Voiceover, b: M.Block, x0: number, x1: number, y: number, h: number) {
+  const a = s.voices.get(it.id)?.audio
+  const v = s.view
+  x0 = Math.max(Math.floor(x0), 0)
+  x1 = Math.min(Math.ceil(x1), v.W)
+  if (!a || a.gain <= 0 || x1 <= x0) return
+  let got = played.get(it)
+  if (got?.map !== s.model.map) played.set(it, (got = { map: s.model.map, pieces: pieces(s.model.map, it) }))
+  const ps = got.pieces
+  const off = shiftOf(v, b.a)
+  let k = 0
+  const w = contour(x0, x1, y + h + 1, h - 20, a.gain, (x) => {
+    const t = timeOf(v, x) - off
+    while (k < ps.length - 1 && ps[k].o1 <= t) k++
+    const p = ps[k]
+    if (!p || t < p.o0 || t >= p.o1) return 0 // recorded through a cut since cut back in: plays nothing
+    const f = p.f0 + (t - p.o0) * p.rate
+    const per = p.rate / v.pps
+    return s.waves.peak(a.url, s.waves.level(per), f, f + per)
+  })
+  paint(ctx, w, C.voice, C.voiceEdge)
 }
 
 function itemLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.ItemTrack, tA: number, tB: number) {
@@ -414,7 +509,8 @@ function itemLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.It
     ctx.fillStyle = C.lane
     ctx.fill()
   }
-  if (!l.items.length && lb - la > 160) {
+  const live = track === 'voiceovers' ? s.take : null
+  if (!l.items.length && !(track === 'voiceovers' && s.taking) && lb - la > 160) {
     ctx.font = F_META
     ctx.textAlign = 'center'
     ctx.fillStyle = C.hint
@@ -423,9 +519,17 @@ function itemLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.It
   const [from, to] = M.visible(l, tA, tB)
   const shown: Array<[M.Block, number, number]> = []
   const run = merger(ctx, C[track][1], row) // slivers are all ends, so they take the grip colour, not the grey
+  if (live) {
+    // The take punches in as it records: what it records over shows only outside it.
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(-8, row.y - 16, xOf(v, live.from) + 8, row.h + 32)
+    ctx.rect(xOf(v, s.time), row.y - 16, v.W + 8, row.h + 32)
+    ctx.clip()
+  }
   for (let k = from; k < to; k++) {
     const b = l.blocks[k]
-    if (b.b < tA) continue
+    if (b.b < tA || (l.items[b.i] as M.Item).id === s.hidden) continue
     const [xa, xb] = xs(v, b)
     if (xb - xa < 3) run.add(xa, xb)
     else {
@@ -443,6 +547,63 @@ function itemLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.It
   const bands = l.overlaps.filter((o) => o.b >= tA && o.a <= tB)
   overlapBands(ctx, s, row, l as M.Lane<Zoom>, bands)
   for (const [b, xa, xb] of shown) itemBlock(ctx, s, row, track, l.items[b.i] as M.Item, b, xa, xb, 'top', labelSpan(l, b, bands))
+  if (live) {
+    ctx.restore()
+    liveTake(ctx, s, row, live)
+  }
+}
+
+/** The take being recorded: an item growing from where it started to the playhead, its end open. */
+function liveTake(ctx: CanvasRenderingContext2D, s: Scene, row: Row, take: NonNullable<Scene['take']>) {
+  const v = s.view
+  const { y, h } = row
+  const xa = snap(v, xOf(v, take.from))
+  const xb = snap(v, xOf(v, Math.max(s.time, take.from)))
+  const w = xb - xa
+  if (w < 1) return
+  const [fill, capColor, edge] = C.voiceovers
+  const r = Math.min(8, w / 2)
+  const cw = Math.min(9, w / 4)
+  ctx.save()
+  ctx.beginPath()
+  ctx.roundRect(xa, y, w, h, r)
+  ctx.fillStyle = fill
+  ctx.fill()
+  ctx.clip()
+  liveWave(ctx, s, take, xa + cw + 1, xb, y, h)
+  ;(cw < 5 ? cap : grip)(ctx, xa, y, cw, h, capColor)
+  ctx.restore()
+  topEdge(ctx, v, xa, y, w, h, r, edge)
+  const title: Seg[] = [{ icon: micIcon, text: `Voiceover ${take.n}`, font: F_TITLE, color: C.text }]
+  const meta: Seg[] = [{ text: M.span(s.time - take.from), font: F_META, color: C.meta }]
+  const room = Math.min(xb, v.W) - Math.max(xa + cw, 0) - 8
+  const pick = [[...title, ...meta], title].find((segs) => fitsRow(ctx, segs, room))
+  if (!pick) return
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(xa + cw, y, w - cw, h)
+  ctx.clip()
+  row1(ctx, pick, sticky(v, xa + cw, xb), y + 14)
+  ctx.restore()
+}
+
+/** What the mic heard so far in the take being recorded, drawn where it plays (output zero + take second). */
+function liveWave(ctx: CanvasRenderingContext2D, s: Scene, take: NonNullable<Scene['take']>, x0: number, x1: number, y: number, h: number) {
+  const v = s.view
+  const lv = take.levels
+  x0 = Math.max(Math.floor(x0), 0)
+  x1 = Math.min(Math.ceil(x1), v.W)
+  if (!lv.length || x1 <= x0) return
+  let k = 0
+  const w = contour(x0, x1, y + h + 1, h - 20, 1, (x) => {
+    const f0 = timeOf(v, x) - take.zero
+    const f1 = f0 + 1 / v.pps
+    while (k < lv.length - 1 && lv[k + 1][0] <= f0) k++
+    let p = 0
+    for (let j = k; j < lv.length && lv[j][0] < f1; j++) if (lv[j][0] + 0.04 > f0) p = Math.max(p, lv[j][1]) // ~33 ms each
+    return p
+  })
+  paint(ctx, w, C.voice, C.voiceEdge)
 }
 
 /** The longest stretch of block b no other block covers: none above it, and no band it is under. */
@@ -525,10 +686,11 @@ function itemBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.I
   xb = snap(v, xb)
   const w = xb - xa
   const zoom = track === 'zooms' ? (it as Zoom) : null
-  const [fill, capColor, edge, selFill, ring, glow] = zoom ? (zoom.enabled ? C.zooms : C.zoomOff) : C[track as 'layouts' | 'masks']
+  const [fill, capColor, edge, selFill, ring, glow] = zoom ? (zoom.enabled ? C.zooms : C.zoomOff) : C[track as 'layouts' | 'masks' | 'voiceovers']
   const sel = s.sel.has(it.id)
-  const r = Math.min(track === 'zooms' ? 8 : 6, w / 2)
+  const r = Math.min(track === 'zooms' || track === 'voiceovers' ? 8 : 6, w / 2)
   const radii = [b.head ? r : 1.5, b.tail ? r : 1.5, b.tail ? r : 1.5, b.head ? r : 1.5] // cut pieces get square inner ends
+  const cw = Math.min(9, w / 4)
   ctx.beginPath()
   ctx.roundRect(xa, y, w, h, radii)
   if (pass === 'body') {
@@ -541,10 +703,15 @@ function itemBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.I
     ctx.fillStyle = sel ? selFill : fill
     ctx.fill()
     ctx.restore()
+    if (track === 'voiceovers' && !(it as Voiceover).muted) {
+      ctx.save()
+      ctx.clip()
+      voiceWave(ctx, s, it as Voiceover, b, xa + (b.head ? cw + 1 : 0), xb - (b.tail ? cw + 1 : 0), y, h)
+      ctx.restore()
+    }
     return topEdge(ctx, v, xa, y, w, h, radii, edge)
   }
   const hv = s.hover?.kind === 'block' && s.hover.block === b ? s.hover.edge : null
-  const cw = Math.min(9, w / 4)
   if (b.head || b.tail) {
     ctx.save()
     ctx.clip()
@@ -575,6 +742,14 @@ function itemBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.I
       row1(ctx, title, cx, y + h / 2 - 3)
       row1(ctx, meta, cx, y + h / 2 + 10)
     } else if (fitsRow(ctx, [meta[0]], room)) row1(ctx, [meta[0]], cx, y + h / 2 + 4)
+  } else if (track === 'voiceovers') {
+    // The name over the take's waveform; muted, it dims and says so.
+    const vo = it as Voiceover
+    const color = vo.muted ? C.textOff : C.text
+    const title: Seg[] = [{ icon: micIcon, text: `Voiceover ${s.voices.get(vo.id)?.n ?? ''}`.trim(), font: F_TITLE, color }]
+    const meta: Seg[] = vo.muted ? [{ icon: mute, text: '', font: F_META, color, pill: C.pill }] : [{ text: M.span(b.b - b.a), font: F_META, color: C.meta }]
+    const pick = [[...title, ...meta], title].find((segs) => fitsRow(ctx, segs, room))
+    if (pick) row1(ctx, pick, cx, y + 14)
   } else {
     const [long, short] = track === 'layouts' ? LAYOUT_NAMES[(it as CameraLayout).kind] : [MASK_NAMES[(it as Mask).kind], MASK_NAMES[(it as Mask).kind]]
     const icon = track === 'layouts' ? camera : maskIcon
@@ -692,7 +867,7 @@ function overlays(ctx: CanvasRenderingContext2D, s: Scene, bottom: number) {
   }
   const x = snap(v, PAD + (s.time - v.x0) * v.pps) // unshifted: the playhead stays put while trimming
   if (x > -8 && x < v.W + 8) {
-    ctx.fillStyle = C.playhead
+    ctx.fillStyle = s.take ? C.record : C.playhead
     ctx.fillRect(x - 0.75, 8, 1.5, bottom - 8 + 4)
     dot(ctx, x, 8, 5.5)
     ctx.fillStyle = '#fff'
@@ -900,6 +1075,15 @@ const camera: Icon = (ctx, x, y, s) =>
     ctx.lineTo(x + s - 0.5, y + s * 0.28)
     ctx.lineTo(x + s - 0.5, y + s * 0.72)
     ctx.lineTo(x + s * 0.68, y + s * 0.55)
+  })
+const micIcon: Icon = (ctx, x, y, s) =>
+  line(ctx, () => {
+    ctx.roundRect(x + s * 0.34, y + 0.5, s * 0.32, s * 0.58, s * 0.16)
+    ctx.moveTo(x + s * 0.18, y + s * 0.46)
+    ctx.quadraticCurveTo(x + s * 0.18, y + s * 0.8, x + s / 2, y + s * 0.8)
+    ctx.quadraticCurveTo(x + s * 0.82, y + s * 0.8, x + s * 0.82, y + s * 0.46)
+    ctx.moveTo(x + s / 2, y + s * 0.8)
+    ctx.lineTo(x + s / 2, y + s)
   })
 const maskIcon: Icon = (ctx, x, y, s) =>
   line(ctx, () => {

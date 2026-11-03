@@ -1,5 +1,5 @@
 <!-- The inspector: a vertical tab rail and one settings panel. Selecting a zoom on the timeline opens
-     the Zoom tab. Arrow keys move between tabs (ARIA tabs pattern). -->
+     the Zoom tab, and a voiceover the Audio tab. Arrow keys move between tabs (ARIA tabs pattern). -->
 <script lang="ts">
   import { untrack } from 'svelte'
   import { doc, edit, selection } from '../../lib/doc.svelte.ts'
@@ -37,11 +37,13 @@
   let tab = $state<Tab>(tabs.some((t) => t.id === saved) ? (saved as Tab) : 'background')
   $effect(() => localStorage.setItem('editor.tab', tab))
 
-  // A newly selected zoom brings up its settings.
+  // A newly selected zoom or voiceover brings up its settings.
   $effect(() => {
     selection.ids.join()
     untrack(() => {
-      if (doc.project?.zooms.some((z) => selection.ids.includes(z.id))) tab = 'zoom'
+      const p = doc.project
+      if (p?.zooms.some((z) => selection.ids.includes(z.id))) tab = 'zoom'
+      else if (p?.voiceovers.some((v) => selection.ids.includes(v.id))) tab = 'audio'
     })
   })
 

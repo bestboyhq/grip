@@ -52,3 +52,7 @@ export function submenuAim(current: () => string, open: (key: string) => void) {
     stop,
   }
 }
+
+/** The row ↓ or ↑ (`up`) moves to from row `i` of `n`, wrapping. From no row (-1), as in a menu that just
+ *  opened, ↓ takes the first row and ↑ the last. */
+export const step = (i: number, n: number, up: boolean) => (i < 0 ? (up ? n - 1 : 0) : (i + (up ? n - 1 : 1)) % n)

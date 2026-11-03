@@ -80,7 +80,7 @@
   function project(): Project {
     const p = structuredClone(base!)
     const st = p.style
-    st.aspect = (s.aspect.includes(':') ? s.aspect : s.aspect === 'auto' ? 'auto' : JSON.parse(s.aspect)) as Aspect
+    st.aspect = (s.aspect.startsWith('{') ? JSON.parse(s.aspect) : s.aspect) as Aspect
     const [kind, value] = s.bg.split(':')
     st.background =
       kind === 'wallpaper' ? { kind, id: value }

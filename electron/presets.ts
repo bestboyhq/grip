@@ -1,7 +1,8 @@
 // Owner: projects. Style presets: one portable `.grippreset` file each (JSON, assets embedded as
 // base64), stored in <userData>/presets/<id>.grippreset. Export copies the file; import validates
 // it. Applying writes the assets into the bundle under content-addressed names and returns the style
-// for the editor to apply as an undoable edit. A missing asset falls back to the default. Listing
+// for the editor to apply as an undoable edit; saving writes them too, so the project takes the
+// preset's names and its look shows as in use. A missing asset falls back to the default. Listing
 // also writes each preset's assets out to <userData>/presets/assets, so a preset can be previewed
 // on a project before it is applied (Preset.look).
 //
@@ -15,7 +16,7 @@
 import electron from 'electron'
 import { createHash, randomUUID } from 'node:crypto'
 import { copyFile, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
-import { extname, isAbsolute, join } from 'node:path'
+import { basename, dirname, isAbsolute, join } from 'node:path'
 import { defaultStyle, type Style } from '../src/shared/project.ts'
 import { normalizeStyle } from '../src/shared/migrate.ts'
 import { bundleArg, locked, writeFileAtomic } from './projects.ts'
@@ -61,18 +62,20 @@ export async function listPresets(dir = presetsDir()): Promise<Preset[]> {
 }
 
 /** Save `style` as a preset, embedding the background image and LUT it references in `bundle`.
- *  `id`: overwrite that preset (Update), else a new one. */
+ *  `id`: overwrite that preset (Update), else a new one. The returned style points at copies of
+ *  the assets written into `bundle` under the preset's names, so the project can take it as is
+ *  and show the preset as in use. */
 export async function savePreset(name: string, bundle: string, style: unknown, dir = presetsDir(), id: string = randomUUID()): Promise<Preset> {
   const s = normalizeStyle(structuredClone(style))
   const assets: Record<string, string> = {}
   const embed = async (rel: string) => {
     const data = await readFile(join(bundle, rel)).catch(() => null)
     if (!data) return undefined
-    const key = assetName(data, rel)
+    const key = await writeAsset(bundle, rel, data)
     assets[key] = data.toString('base64')
     return key
   }
-  await relink(s, embed)
+  await locked(() => relink(s, embed))
   const preset: PresetFile = { format: FORMAT, version: VERSION, name: presetName(name), style: s, assets }
   const file = presetFile(id, dir)
   await mkdir(dir, { recursive: true })
@@ -105,7 +108,7 @@ async function writeAsset(root: string, key: string, data: Buffer): Promise<stri
   const rel = assetName(data, key)
   const file = join(root, rel)
   if (!(await stat(file).catch(() => null))) {
-    await mkdir(join(root, 'assets')).catch((e) => { if (e.code !== 'EEXIST') throw e }) // never recreate a moved bundle
+    for (const d of [join(root, 'assets'), dirname(file)]) await mkdir(d).catch((e) => { if (e.code !== 'EEXIST') throw e }) // never recreate a moved bundle
     await writeFileAtomic(file, data)
   }
   return rel
@@ -162,10 +165,10 @@ async function relink(s: Style, map: (path: string) => Promise<string | undefine
   }
 }
 
-/** Content-addressed, so applying presets never overwrites an asset another style still uses. */
+/** Content-addressed, so applying presets never overwrites an asset another style still uses. The
+ *  file keeps its name, which the editor shows (a LUT's in the Color menu). */
 function assetName(data: Uint8Array, from: string) {
-  const ext = extname(from).toLowerCase()
-  return `assets/${createHash('sha256').update(data).digest('hex').slice(0, 16)}${/^\.[a-z0-9]{1,8}$/.test(ext) ? ext : ''}`
+  return `assets/${createHash('sha256').update(data).digest('hex').slice(0, 16)}/${basename(from).replace(/^\.+$/, '') || 'asset'}`
 }
 
 function presetFile(id: unknown, dir: string) {

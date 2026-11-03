@@ -152,7 +152,7 @@
     await new Promise((r) => setTimeout(r, 600))
     const p = doc.project!
     const none = { items: [] }
-    const ids = tracks({ zooms: { items: p.zooms }, layouts: { items: p.layouts }, masks: { items: p.masks }, keys: none, captions: none }, !!p.sources.camera, new Set())
+    const ids = tracks({ zooms: { items: p.zooms }, layouts: { items: p.layouts }, masks: { items: p.masks }, voiceovers: { items: p.voiceovers }, keys: none, captions: none }, !!p.sources.camera, new Set())
     const middle = (id: string) => { const r = rows(ids).rows.find((r) => r.id === id); return r ? r.y + r.h / 2 : -1 } // lanes as the timeline lays them out
     const zy = middle('zooms')
     const zx = await find(zy, 'grab')
