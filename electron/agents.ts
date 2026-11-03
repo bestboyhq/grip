@@ -543,7 +543,7 @@ function range(a: Args): [number, number] {
 type Press = Extract<InputEvent, { type: 'down' | 'up' }>
 type Recorded = { events: InputEvent[]; downs: Press[]; activity: number[] }
 let input: { file: string; stamp: string; value: Recorded } | null = null
-/** The recording's presses, keys, and scrolls (no moves), the mouse presses as the editor's click effects
+/** The recording's presses, releases, keys, and scrolls (no moves), the mouse presses as the editor's click effects
  *  take them (parseEvents drops the pen's), and the source seconds of its clicks, key presses, and
  *  scrolls, as the Transcript tab's pauses take them. */
 async function recorded(path: string, p: Project): Promise<Recorded> {
@@ -554,8 +554,8 @@ async function recorded(path: string, p: Project): Promise<Recorded> {
   if (!s) return none
   const stamp = `${s.size}:${s.mtimeMs}`
   if (input?.file !== file || input.stamp !== stamp) {
-    // Presses and key presses ("down"), scrolls, and the pen strokes that are not clicks.
-    const lines = (await readFile(file, 'utf8')).split('\n').filter((l) => l.includes('"down"') || l.includes('"scroll"') || l.includes('"draw"'))
+    // Presses and key presses ("down"), releases, scrolls, and the pen strokes that are not clicks.
+    const lines = (await readFile(file, 'utf8')).split('\n').filter((l) => l.includes('"down"') || l.includes('"up"') || l.includes('"scroll"') || l.includes('"draw"'))
     const events = parseEvents(lines.join('\n'))
     const activity = events.flatMap((e) => (e.type === 'down' || e.type === 'scroll' || (e.type === 'key' && e.down) ? [e.t] : []))
     input = { file, stamp, value: { events, downs: events.filter((e): e is Press => e.type === 'down'), activity } }

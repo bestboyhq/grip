@@ -65,7 +65,7 @@ const CAMERA_CLEAR = 28 // screen points x cursor size (about a cursor's height,
 // zoom) the cursor and clicked elements keep from a picture-in-picture camera
 const LEAD = 6 / Math.sqrt(SPRINGS.focused.stiffness) // s: auto zooms start this long before a click or typing, so the focused spring is ~98% there
 const KEEP = 1 // s: a clicked element stays framed this long after the click
-const HOLD = 2 // s: an auto zoom holds this long after its last click or keystroke
+const HOLD = 2 // s: an auto zoom holds this long after its last click or keystroke, or a press's release
 const ZOOM_OUT = 6 / Math.sqrt(SPRINGS.smooth.stiffness) // s: the slower spring's zoom out; an auto zoom ending closer than this to the recording's end holds to it, so the video never ends mid-move
 const MERGE_GAP = 2 // s: auto zooms closer than this merge; zooming out and back in that fast looks erratic
 const MIN_AUTO = 1.2 // s: shorter auto zooms (clipped by the recording's ends) are dropped
@@ -103,19 +103,33 @@ interface Focus {
   t1: number // and ends (= t0 for a click)
   x: number
   y: number
+  up?: number // source seconds a click's press is released: an auto zoom holds through a drag
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi)
 
-/** Clicks and typing stretches with where they happen. Typing happens where the last click before it
- *  focused a field; typing with no click before it has no known place and is left out. */
+/** Clicks, with when each press is released, and typing stretches, with where they happen. Typing
+ *  happens where the last click before it focused a field; typing with no click before it has no known
+ *  place and is left out. */
 function focuses(events: InputEvent[], typing: Segment[], screen: NonNullable<Sources['screen']>): Focus[] {
-  const clicks = events.filter(
-    (e): e is Extract<InputEvent, { button: unknown }> => e.type === 'down' && e.x >= 0 && e.y >= 0 && e.x <= screen.width && e.y <= screen.height,
-  )
-  const out: Focus[] = clicks.map((c) => ({ t0: c.t, t1: c.t, x: c.x, y: c.y }))
+  const clicks: Focus[] = []
+  const pressed = new Map<string, Focus>() // by button, until its release
+  for (const e of events) {
+    if (e.type === 'up') {
+      const c = pressed.get(e.button)
+      if (c) c.up = e.t
+      pressed.delete(e.button)
+    }
+    if (e.type !== 'down') continue
+    pressed.delete(e.button) // a press off the screen holds nothing
+    if (e.x < 0 || e.y < 0 || e.x > screen.width || e.y > screen.height) continue
+    const c: Focus = { t0: e.t, t1: e.t, x: e.x, y: e.y }
+    clicks.push(c)
+    pressed.set(e.button, c)
+  }
+  const out = [...clicks]
   for (const g of typing) {
-    const c = clicks.findLast((c) => c.t <= g.start)
+    const c = clicks.findLast((c) => c.t0 <= g.start)
     if (c) out.push({ t0: g.start, t1: g.end, x: c.x, y: c.y })
   }
   return out.sort((p, q) => p.t0 - q.t0)
@@ -637,8 +651,8 @@ function lensAt(lens: ReturnType<typeof prepareZoom>['loupes'][number], t: numbe
 }
 
 /** Auto zooms (source time) from clicks and typing: merge activity close in time, start LEAD before
- *  it, hold HOLD after it (to the end when that leaves too little to zoom out), and skip stretches
- *  that would pan erratically. Each zoom follows the cursor with `look`; viewAt frames its clicks
+ *  it, hold HOLD after it (after a press's release, so a drag stays zoomed, and to the end when that
+ *  leaves too little to zoom out), and skip stretches that would pan erratically. Each zoom follows the cursor with `look`; viewAt frames its clicks
  *  and typing. `typing` defaults to the input domain's detector. */
 export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZoom: Style['autoZoom'], look: ZoomLook = {}, typing: Segment[] = typingSegments(events)): Zoom[] {
   const screen = sources.screen
@@ -647,10 +661,11 @@ export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZo
   const groups: Array<{ start: number; end: number; points: Pt[] }> = []
   for (const f of focuses(events, typing, screen)) {
     const g = groups.at(-1)
+    const end = (f.up ?? f.t1) + HOLD
     if (g && f.t0 - LEAD - g.end < MERGE_GAP) {
-      g.end = Math.max(g.end, f.t1 + HOLD)
+      g.end = Math.max(g.end, end)
       g.points.push(f)
-    } else groups.push({ start: f.t0 - LEAD, end: f.t1 + HOLD, points: [f] })
+    } else groups.push({ start: f.t0 - LEAD, end, points: [f] })
   }
   const erratic = (g: (typeof groups)[number]) => {
     // A jump to a place outside the half view means a big pan; many of them read as shaky.
