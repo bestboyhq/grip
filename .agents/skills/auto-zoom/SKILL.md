@@ -17,8 +17,11 @@ Turning clicks and typing into camera direction.
   Content that stands still at the rim smears every stroke that reaches it into a streak to the edge.
   A bevel that squeezes the frame around the lens back to 1x crams too much into a sliver, which aliases into streaks.
   The bevel splits the colors by a share of how far it bends the content; splitting the shown radius instead tears them into rainbows where the content turns back.
-  The rim rounds toward the viewer: it shades darker on the side turned from the light, and a hairline of light catches the edge.
-  Darkening the rim's last few px all around draws a gray outline over light UI.
+  The steep bevel defocuses what it bends, and light scattered inside the glass frosts the outer bevel with a wide blur of it, so the rim softens into its own content: milky over light UI, smoky over dark.
+  White added at the rim rings every dark window, and a rim that lets the screen under it show through shows it twice, a ghost beside what the glass bends.
+  While the lens moves, the shutter's samples share the frost's taps; taking them all at every sample more than doubles the export time of a moving lens.
+  The rim rounds toward the viewer: it shades a little darker on the side turned from the light, and a hairline of light catches the edge facing it.
+  An outline all around rings flat UI: darkened, a gray one over light UI; lit, a white one over dark.
   The light comes from straight above, where the window's and the camera's shadows say it is; a lens lit from a corner casts its shadow at odds with theirs.
   Broad specular crescents make the lens read as plastic.
   While a lens shows, the whole frame around it dims evenly by 8%, alike for every lens size, so the lens stands out.
