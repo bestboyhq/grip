@@ -9,8 +9,8 @@
 //   get_frame, export_project, share_project, export_status, open_project. Every time is in output
 //   seconds: the edited video. Grip does the craft, so any model gets the same video: cut_fillers and
 //   shorten_pauses cut what the Transcript tab cuts, a cut never clips a word, match_captions turns a
-//   script into caption fixes, auto_zoom places the editor's auto zooms, and every project answer lists
-//   its problems (zoomProblems) with the edit_project call that fixes each.
+//   script into caption fixes, and every project answer lists its problems (zoomProblems) with the
+//   edit_project call that fixes each.
 //
 // A project open in an editor is read and edited through that editor, so the user sees an agent's edits
 // as they land, as one undo step saved before the reply; a closed one is edited on disk under the bundle lock.
@@ -37,7 +37,7 @@ import { CAPTION_FONTS, type Project, type Transcript } from '../src/shared/proj
 import { parseEvents, type InputEvent } from '../src/shared/events.ts'
 import { cuts, mapRange, timeMap, toOutput, toSource, type TimeMap } from '../src/shared/timemap.ts'
 import { outputWords, PAUSE_KEEP, PAUSE_MIN, resolveWordEdits } from '../src/engine/transcript/index.ts'
-import { generateAutoZooms, lookOf, zoomProblems } from '../src/engine/zoom/index.ts'
+import { lookOf, zoomProblems } from '../src/engine/zoom/index.ts'
 import { layoutOf } from '../src/engine/scene.ts'
 import { cleanOptions, defaultOptions, formatBytes, QUALITIES, RATES, SIZES, type ExportOptions, type ExportRequest, type JobInfo } from '../src/engine/export/options.ts'
 
@@ -58,7 +58,7 @@ const INSTRUCTIONS = `Grip records the screen and turns recordings into polished
 - edit_project applies a list of edits together, or none of them when one is wrong. Every time in the list refers to the video as it was before the list. In a project open in Grip's editor, the list is one undo step.
 - Edits never change the recording: cuts, zooms, and caption fixes sit on top of it, and the user can undo them. restore_cut brings back what a cut removed.
 - Let Grip do the editing craft: cut_fillers and shorten_pauses cut filler words and dead air the way Grip's Transcript tab does, a cut that would clip a word moves to the word's edge, and match_captions makes the captions read a script you give it. When you know what is said, give the whole script to match_captions instead of fixing words one by one: it also catches the case and punctuation a word-by-word read misses.
-- Zoom in two passes. First auto_zoom: it places Grip's own zooms on every click, drag, and typing stretch, timed the way Grip times them. Then fit them to what the narration talks about while it does: set_zoom or remove_zoom the auto zooms, and add_zoom what they miss, aimed at the clicks get_project lists with their time and x, y.
+- Zoom on what the narration talks about while it does: get_project lists each click's time and x, y for add_zoom.
 - get_project and every edit_project answer list the video's problems (a zoom too short to read, or one the camera glides to and leaves before it holds still, the camera moving while a cut jumps the picture, the video ending mid zoom-out), each with the exact call that fixes it. Fix them all before export_project.
 - get_frame shows a frame as the export renders it, to check a zoom's framing or the captions.
 - export_project and share_project wait up to 45 s. A longer export returns its id, and export_status waits for it again.`
@@ -92,7 +92,6 @@ const AT = (what: string) => ({ type: 'number', minimum: 0, description: `${what
 const RANGE = { start: AT('Start'), end: AT('End, after start') }
 const ZOOM_ID = { type: 'string', minLength: 1, description: 'The zoom’s id, as get_project lists it.' }
 const LEVEL = { type: 'number', minimum: LIMITS.level[0], maximum: LIMITS.level[1], description: 'How far in: 2 shows a quarter of the screen. Default: the project’s auto zoom level.' }
-const LOOK = { type: 'string', enum: ['zoom', 'loupe'], description: 'zoom: the camera moves in on the screen. loupe: a round glass lens magnifies the spot, and the rest of the screen stays in view. Default: the look last picked in Grip.' }
 const X = { type: 'number', minimum: 0, maximum: 1, description: 'The point to zoom on, across the recording: 0 left, 1 right. Give y too.' }
 const Y = { type: 'number', minimum: 0, maximum: 1, description: 'The point to zoom on, down the recording: 0 top, 1 bottom. Give x too.' }
 const variant = (type: Edit['type'], description: string, properties: Record<string, unknown>, required: string[]) => ({
@@ -112,14 +111,14 @@ const EDIT = {
     variant(
       'add_zoom',
       'Zoom in over start..end: on the point x, y, or following the cursor without them.',
-      { ...RANGE, look: LOOK, level: LEVEL, x: X, y: Y },
+      {
+        ...RANGE,
+        look: { type: 'string', enum: ['zoom', 'loupe'], description: 'zoom: the camera moves in on the screen. loupe: a round glass lens magnifies the spot, and the rest of the screen stays in view. Default: the look last picked in Grip.' },
+        level: LEVEL,
+        x: X,
+        y: Y,
+      },
       ['start', 'end'],
-    ),
-    variant(
-      'auto_zoom',
-      'Zoom in where the recording clicks and types, as Grip’s Auto zoom does: each zoom starts just before a click or typing stretch, holds a moment after it, merges with the next one when they come close, and follows the cursor. Replaces the auto zooms placed before; set_zoom and remove_zoom change them like any zoom.',
-      { look: LOOK, level: LEVEL },
-      [],
     ),
     variant('set_zoom', 'Change a zoom: its start, end, level, or point. What is left out stays as it is.', { id: ZOOM_ID, start: AT('Its new start'), end: AT('Its new end'), level: { ...LEVEL, description: 'How far in: 2 shows a quarter of the screen.' }, x: X, y: Y }, ['id']),
     variant('remove_zoom', 'Remove a zoom.', { id: ZOOM_ID }, ['id']),
@@ -208,7 +207,7 @@ const TOOLS: Tool[] = [
   {
     name: 'edit_project',
     title: 'Edit project',
-    description: 'Edit a project: cut or restore a cut, cut filler words and long pauses, change speed, add, change, or remove zooms, place Grip’s auto zooms on the clicks and typing, fix caption words, set the captions’ look. To zoom, start with auto_zoom, then fit its zooms to the narration with set_zoom, remove_zoom, and add_zoom. The edits apply together or not at all, and every time refers to the video as it was before this call, as get_project showed it. In an open editor they are one undo step. Returns what Grip adjusted, then the project as get_project does, problems included.',
+    description: 'Edit a project: cut or restore a cut, cut filler words and long pauses, change speed, add, change, or remove zooms, fix caption words, set the captions’ look. The edits apply together or not at all, and every time refers to the video as it was before this call, as get_project showed it. In an open editor they are one undo step. Returns what Grip adjusted, then the project as get_project does, problems included.',
     inputSchema: { type: 'object', properties: { project: PROJECT, edits: { type: 'array', minItems: 1, maxItems: 1000, items: EDIT, description: 'The edits, applied together.' } }, required: ['project', 'edits'] },
     annotations: WRITES,
     run: editProject,
@@ -358,9 +357,7 @@ async function editProject(a: Args): Promise<Result> {
   const n = count(parsed.length, 'edit')
   for (let tries = 0; ; tries++) {
     const { project, open } = await current(path)
-    const auto = await autoZooms(path, project, parsed)
-    const { edits, notes } = await byWords(path, project, auto.edits)
-    notes.unshift(...auto.notes)
+    const { edits, notes } = await byWords(path, project, parsed)
     const said = notes.map((x) => `\n${x}`).join('')
     // ponytail: the cuts are worked out on the project as read just now; an edit landing in between
     // (the user, another agent) shifts them. Send the clips with the request if that ever bites.
@@ -381,27 +378,6 @@ async function byWords(path: string, p: Project, edits: Edit[]) {
   const t = await loadSpoken(path, p).catch(() => null)
   const activity = edits.some((e) => e.type === 'shorten_pauses') ? (await recorded(path, p)).activity : []
   return resolveWordEdits(edits, t, timeMap(p.clips), activity, p.captionEdits)
-}
-
-/** The edits with auto_zoom's spans worked out: Grip's auto zooms from the recording's clicks and typing. */
-async function autoZooms(path: string, p: Project, edits: Edit[]): Promise<{ edits: Edit[]; notes: string[] }> {
-  if (!edits.some((e) => e.type === 'auto_zoom')) return { edits, notes: [] }
-  const { events } = await recorded(path, p)
-  const was = p.zooms.filter((z) => z.auto).length
-  const notes: string[] = []
-  const out = edits.map((e, i): Edit => {
-    if (e.type !== 'auto_zoom') return e
-    const level = e.level ?? (p.style.autoZoom.level || 2)
-    const spans = generateAutoZooms(events, p.sources, { enabled: true, level }).map((z): [number, number] => [z.start, z.end])
-    const instead = was ? `, in place of the ${count(was, 'auto zoom')} there before` : ''
-    notes.push(
-      spans.length
-        ? `edits[${i}]: auto_zoom placed ${count(spans.length, 'zoom')} on the clicks and typing at ${level}×${instead}: the zooms marked auto.`
-        : `edits[${i}]: the recording has no clicks or typing to zoom on, so auto_zoom placed no zooms${instead}. add_zoom places one.`,
-    )
-    return { ...e, level, spans }
-  })
-  return { edits: out, notes }
 }
 
 async function editOnDisk(path: string, edits: Edit[]): Promise<Project> {
@@ -541,24 +517,23 @@ function range(a: Args): [number, number] {
 // ponytail: the last project's input, read once: a 2-hour recording's events run to a million lines,
 // and an agent reads the same project call after call. A map by bundle if agents juggle projects.
 type Press = Extract<InputEvent, { type: 'down' | 'up' }>
-type Recorded = { events: InputEvent[]; downs: Press[]; activity: number[] }
+type Recorded = { downs: Press[]; activity: number[] }
 let input: { file: string; stamp: string; value: Recorded } | null = null
-/** The recording's presses, releases, keys, and scrolls (no moves), the mouse presses as the editor's click effects
- *  take them (parseEvents drops the pen's), and the source seconds of its clicks, key presses, and
- *  scrolls, as the Transcript tab's pauses take them. */
+/** The recording's mouse presses, as the editor's click effects take them (parseEvents drops the pen's),
+ *  and the source seconds of its clicks, key presses, and scrolls, as the Transcript tab's pauses take them. */
 async function recorded(path: string, p: Project): Promise<Recorded> {
-  const none = { events: [], downs: [], activity: [] }
+  const none = { downs: [], activity: [] }
   if (!p.sources.events) return none
   const file = join(path, p.sources.events)
   const s = await stat(file).catch(() => null)
   if (!s) return none
   const stamp = `${s.size}:${s.mtimeMs}`
   if (input?.file !== file || input.stamp !== stamp) {
-    // Presses and key presses ("down"), releases, scrolls, and the pen strokes that are not clicks.
-    const lines = (await readFile(file, 'utf8')).split('\n').filter((l) => l.includes('"down"') || l.includes('"up"') || l.includes('"scroll"') || l.includes('"draw"'))
+    // Presses and key presses ("down"), scrolls, and the pen strokes that are not clicks.
+    const lines = (await readFile(file, 'utf8')).split('\n').filter((l) => l.includes('"down"') || l.includes('"scroll"') || l.includes('"draw"'))
     const events = parseEvents(lines.join('\n'))
     const activity = events.flatMap((e) => (e.type === 'down' || e.type === 'scroll' || (e.type === 'key' && e.down) ? [e.t] : []))
-    input = { file, stamp, value: { events, downs: events.filter((e): e is Press => e.type === 'down'), activity } }
+    input = { file, stamp, value: { downs: events.filter((e): e is Press => e.type === 'down'), activity } }
   }
   return input.value
 }

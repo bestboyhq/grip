@@ -4,8 +4,7 @@
 // the end back, so none moves the times of another, and zooms take their source times from the
 // timeline before any of them. cut_fillers and shorten_pauses are Grip's own transcript cuts, and
 // match_captions its own caption fixes: main works out their ranges and word texts (resolveWordEdits
-// in src/engine/transcript) before the list is applied. auto_zoom is Grip's own auto zooms: main
-// works them out from the recording's clicks and typing (generateAutoZooms in src/engine/zoom). Main
+// in src/engine/transcript) before the list is applied. Main
 // applies a list to a closed project on disk; an open editor applies it as one undo step
 // (Editor.svelte). Pure: node:test runs it.
 
@@ -20,8 +19,6 @@ export type Edit =
   | { type: 'cut_fillers' | 'shorten_pauses'; ranges?: Array<[number, number]> }
   | { type: 'set_speed'; start: number; end: number; speed: number }
   | { type: 'add_zoom'; start: number; end: number; level?: number; x?: number; y?: number; look?: 'zoom' | 'loupe' }
-  // Source ranges filled in by main from the recording's clicks and typing; an agent sends none.
-  | { type: 'auto_zoom'; level?: number; look?: 'zoom' | 'loupe'; spans?: Array<[number, number]> }
   | { type: 'set_zoom'; id: string; start?: number; end?: number; level?: number; x?: number; y?: number }
   | { type: 'remove_zoom'; id: string }
   | { type: 'set_caption_text'; index: number; text: string }
@@ -50,7 +47,6 @@ const FIELDS: Record<Edit['type'], string[]> = {
   shorten_pauses: [],
   set_speed: ['start', 'end', 'speed'],
   add_zoom: ['start', 'end', 'level', 'x', 'y', 'look'],
-  auto_zoom: ['level', 'look'],
   set_zoom: ['id', 'start', 'end', 'level', 'x', 'y'],
   remove_zoom: ['id'],
   set_caption_text: ['index', 'text'],
@@ -89,7 +85,6 @@ export function parseEdits(x: unknown): Edit[] {
       return { start: e.start as number, end: e.end as number }
     }
     const within = (k: string, [lo, hi]: readonly [number, number], unit = '') => check(num(e[k]) && e[k] >= lo && e[k] <= hi, `${k} must be a number from ${lo}${unit} to ${hi}${unit}.`)
-    const look = () => check(e.look === undefined || e.look === 'zoom' || e.look === 'loupe', 'look must be zoom or loupe.')
     const point = () => {
       check((e.x === undefined) === (e.y === undefined), 'x and y go together: give both to aim at a point, or neither to follow the cursor.')
       if (e.x !== undefined) for (const k of ['x', 'y']) within(k, [0, 1])
@@ -110,13 +105,9 @@ export function parseEdits(x: unknown): Edit[] {
         const r = range()
         if (e.level !== undefined) within('level', LIMITS.level, '×')
         point()
-        look()
+        check(e.look === undefined || e.look === 'zoom' || e.look === 'loupe', 'look must be zoom or loupe.')
         return { type: 'add_zoom', ...r, ...(e.level !== undefined && { level: e.level }), ...(e.x !== undefined && { x: e.x, y: e.y }), ...(e.look && { look: e.look }) }
       }
-      case 'auto_zoom':
-        if (e.level !== undefined) within('level', LIMITS.level, '×')
-        look()
-        return { type: 'auto_zoom', ...(e.level !== undefined && { level: e.level }), ...(e.look && { look: e.look }) }
       case 'set_zoom': {
         check(typeof e.id === 'string' && !!e.id, 'id must be the id of a zoom, as get_project lists it.')
         check(fields.some((k) => k !== 'id' && e[k] !== undefined), 'set_zoom needs at least one of start, end, level, or x and y.')
@@ -156,10 +147,10 @@ export function newZoom(p: Project, start: number, end: number, look: ZoomLook, 
   return { id: uid(), start, end, level: level ?? (p.style.autoZoom.level || 2), target: at ? { kind: 'point', ...at } : { kind: 'cursor' }, enabled: true, ...look }
 }
 
-/** Apply `edits` (from parseEdits, with resolveWordEdits' ranges and texts and auto_zoom's spans) to `p`
- *  in place, all or nothing: an edit that does not fit the project (a range past the end, an unknown
- *  zoom, a word the transcript lacks) throws before `p` changes. New zooms take `look` unless they name
- *  theirs (a loupe keeps `look`'s size and shape); caption text is checked against `transcript`. */
+/** Apply `edits` (from parseEdits, with resolveWordEdits' ranges and texts) to `p` in place, all or
+ *  nothing: an edit that does not fit the project (a range past the end, an unknown zoom, a word the
+ *  transcript lacks) throws before `p` changes. New zooms take `look` unless they name theirs (a loupe
+ *  keeps `look`'s size and shape); caption text is checked against `transcript`. */
 export function applyEdits(p: Project, edits: Edit[], look: ZoomLook, transcript: Transcript | null): void {
   const m = timeMap(p.clips)
   const clamp = (e: { start: number; end: number }, i: number): [number, number] => {
@@ -204,8 +195,6 @@ export function applyEdits(p: Project, edits: Edit[], look: ZoomLook, transcript
   let zooms = p.zooms
   let captionEdits = p.captionEdits
   let captions = p.style.captions
-  let autoZoom = p.style.autoZoom
-  const named = (want?: 'zoom' | 'loupe'): ZoomLook => (want === 'zoom' ? {} : want === 'loupe' && look.mode !== 'loupe' ? { mode: 'loupe' } : look)
   /** Output range a..b as a zoom's source range, on the timeline before the list. */
   const sourceOf = (a: number, b: number, i: number): [number, number] => {
     if (b - a < MIN_ZOOM) throw new Error(`edits[${i}]: a zoom lasts at least ${MIN_ZOOM} s.`)
@@ -217,13 +206,8 @@ export function applyEdits(p: Project, edits: Edit[], look: ZoomLook, transcript
   edits.forEach((e, i) => {
     if (e.type === 'add_zoom') {
       const [start, end] = sourceOf(...clamp(e, i), i)
-      zooms = [...zooms, newZoom(p, start, end, named(e.look), e.x === undefined ? undefined : { x: e.x, y: e.y! }, e.level)]
-    } else if (e.type === 'auto_zoom') {
-      if (!e.spans) throw new Error(`edits[${i}] (auto_zoom) has no spans: generateAutoZooms works them out first.`)
-      // As the editor's Auto zoom: on at this level, its zooms in place of the ones it placed before.
-      autoZoom = { enabled: true, level: e.level ?? (autoZoom.level || 2) }
-      const level = autoZoom.level
-      zooms = [...zooms.filter((z) => !z.auto), ...e.spans.map(([a, b]) => ({ ...newZoom(p, a, b, named(e.look), undefined, level), auto: true }))]
+      const named = e.look === 'zoom' ? {} : e.look === 'loupe' && look.mode !== 'loupe' ? { mode: 'loupe' as const } : look
+      zooms = [...zooms, newZoom(p, start, end, named, e.x === undefined ? undefined : { x: e.x, y: e.y! }, e.level)]
     } else if (e.type === 'set_zoom') {
       const z = zooms.find((z) => z.id === e.id)
       if (!z) throw new Error(`edits[${i}]: no zoom has the id “${e.id}”. get_project lists the zooms.`)
@@ -267,6 +251,5 @@ export function applyEdits(p: Project, edits: Edit[], look: ZoomLook, transcript
   if (zooms !== p.zooms) p.zooms = zooms
   if (captionEdits !== p.captionEdits) p.captionEdits = captionEdits
   if (captions !== p.style.captions) p.style.captions = captions
-  if (autoZoom !== p.style.autoZoom) p.style.autoZoom = autoZoom
   p.autoZoomed = true // the agent directed it: opening it later never adds auto zooms back
 }

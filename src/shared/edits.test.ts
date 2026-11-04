@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createProject, type Project, type Transcript } from './project.ts'
 import { timeMap } from './timemap.ts'
-import { applyEdits, parseEdits, type Edit } from './edits.ts'
+import { applyEdits, parseEdits } from './edits.ts'
 
 const project = (): Project => createProject('Demo #1 ✨ café', { duration: 30 })
 const ranges = (p: Project) => p.clips.map((c) => [c.start, c.end, c.speed])
@@ -113,19 +113,4 @@ test('a list sent as a JSON string, and optional fields sent as null, read as me
   const edits = parseEdits(JSON.stringify([{ type: 'add_zoom', start: 1, end: 3, level: null, x: null, y: null, look: null }]))
   assert.deepEqual(edits, [{ type: 'add_zoom', start: 1, end: 3 }])
   assert.throws(() => parseEdits('cut 1 to 2'), /not a string/)
-})
-
-test('auto_zoom turns Auto zoom on and puts its zooms in place of the last ones it placed', () => {
-  const p = project()
-  apply(p, [{ type: 'add_zoom', start: 1, end: 2, look: 'zoom' }])
-  p.style.autoZoom = { enabled: false, level: 2.5 }
-  const auto = (spans: Array<[number, number]>, extra = {}) => applyEdits(p, [{ ...parseEdits([{ type: 'auto_zoom', ...extra }])[0], spans } as Edit], { mode: 'loupe', size: 200 }, null)
-  auto([[3, 6], [10, 14]], { look: 'zoom' })
-  assert.deepEqual(p.style.autoZoom, { enabled: true, level: 2.5 })
-  assert.deepEqual(p.zooms.map((z) => [z.start, z.end, z.level, z.target.kind, z.mode, !!z.auto]), [[1, 2, 2, 'cursor', undefined, false], [3, 6, 2.5, 'cursor', undefined, true], [10, 14, 2.5, 'cursor', undefined, true]])
-  auto([[20, 22]], { level: 3 }) // the last look picked, a loupe
-  assert.deepEqual(p.zooms.map((z) => [z.start, z.level, z.mode, !!z.auto]), [[1, 2, undefined, false], [20, 3, 'loupe', true]])
-  assert.equal(p.style.autoZoom.level, 3)
-  assert.throws(() => apply(p, [{ type: 'auto_zoom' }]), /no spans/)
-  assert.throws(() => parseEdits([{ type: 'auto_zoom', start: 1 }]), /has no field “start”/)
 })
