@@ -27,6 +27,7 @@ import { analyzeVoice, owesVoice } from './audio.ts'
 import { accountToken, signIn } from './account.ts'
 import { shareFile } from './share.ts'
 import { ShareError } from './upload.ts'
+import { count } from './usage.ts'
 import type { Project } from '../src/shared/project.ts'
 import { DESTINATIONS, jobOptions, safeFileName, uniqueName, type ExportOptions, type ExportRequest, type JobInfo, type JobSpec, type JobState } from '../src/engine/export/options.ts'
 
@@ -116,6 +117,7 @@ function release(j: Job) {
 
 async function finish(j: Job, state: JobState, error?: string) {
   if (!active(j)) return
+  if (state === 'done') countExport(j)
   Object.assign(j, { state, error, finishedAt: Date.now(), project: undefined }, state === 'done' && { progress: 1, phase: 'Done' })
   release(j)
   await j.writes.catch(() => {})
@@ -132,6 +134,23 @@ async function finish(j: Job, state: JobState, error?: string) {
   }
   broadcast(j)
   if (!running) notifyIfIdle()
+}
+
+/** Which tools the exported video used: counts and switches, nothing it shows. */
+function countExport({ options, dest, project: p }: Job) {
+  count('exported', {
+    format: options.format,
+    size: options.size,
+    dest,
+    ...(p && {
+      zooms: p.zooms.length,
+      clips: p.clips.length,
+      captions: p.style.captions.visible,
+      camera: !!p.sources.camera && p.style.camera.visible,
+      camera_cutout: !!p.sources.camera && p.style.camera.removeBackground,
+      preset: !!p.preset,
+    }),
+  })
 }
 
 async function pump() {

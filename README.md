@@ -261,8 +261,11 @@ Drag the preview straight into another app to drop the file.
 
 Recording, editing, transcription, and background removal all run on your Mac.
 Recording and editing need no account; sharing a link signs in to bestboy.dev once.
-There is no telemetry, and crash reports stay on your disk.
-Grip goes online only to download the speech model once (about 670 MB), to check for updates, and to upload when you share.
+Grip shares usage stats, like a finished recording or an export, and never what you record.
+When you're signed in they carry your account; signed out they carry no ID.
+Onboarding says so, and you can turn them off in Settings, which sends one last stat with no ID.
+Crash reports stay on your disk.
+Grip goes online only to download the speech model once (about 670 MB), to check for updates, to upload when you share, and to send those stats.
 
 Grip lives in the menu bar, and opened at login it starts there quietly.
 Updates download in the background and install themselves while you're away, never during a recording or an export.

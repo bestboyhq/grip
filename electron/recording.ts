@@ -33,6 +33,7 @@ import { analyzeCamera } from './camera.ts'
 import { analyzeVoice } from './audio.ts'
 import { native } from './native.ts'
 import { setSettings, settings } from './shell/settings.ts'
+import { count } from './usage.ts'
 import { createBundle, projectEvents, projectsDir, readProject, writeNewRecording } from './projects.ts'
 
 /** Main-process listeners (dock, quit prompt, drag-to-allow panel): 'state' (RecState), 'finished'
@@ -105,6 +106,15 @@ function finish(dir: string, sources: RecordingSources, reason = 'user', message
         return
       }
       await writeNewRecording(dir, sources, { preset: settings().preset, camera: settings().cameraCorner, autoZoom: settings().autoZoom, zoomLook: settings().zoomLook })
+      count('recorded', {
+        seconds: Math.round(sources.duration),
+        mode: settings().mode ?? 'display',
+        screen: !!sources.screen,
+        camera: !!sources.camera,
+        mic: !!sources.mic,
+        system_audio: !!sources.system,
+        stopped: reason,
+      })
       if (sources.camera) analyzeCamera(dir).catch((err) => console.error('analyzeCamera', dir, err))
       if (sources.mic) void analyzeVoice(dir)
       broadcast('recording:finished', dir, { reason, message })

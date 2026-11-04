@@ -1,7 +1,8 @@
 <!-- Onboarding and settings (#/onboarding?page=welcome|permissions|shortcut|settings[&need=<permission>]).
      Welcome, then permissions: each with a one-line reason, live status, a request button that
      shows the system prompt the first time and System Settings after that, and a way back from a
-     revoked permission (`need`). Then the record shortcut: none until the user types one, or skips. Settings puts recording options and shortcuts first, then the same
+     revoked permission (`need`). Then the record shortcut: none until the user types one, or skips; its description
+     says Grip shares usage stats. Settings puts recording options and shortcuts first, then the same
      permission list with every allowed one folded into a single row. Each recording option plays on a
      small desktop beside the list while it is pointed at or focused. -->
 <script lang="ts">
@@ -241,7 +242,10 @@
         {/if}
       </button>
       <h1>Use your favorite shortcut</h1>
-      <p>Press the keys that should open Grip from any app, ready to record. macOS’s screenshot keys work too.</p>
+      <p>
+        Press the keys that should open Grip from any app, ready to record. macOS’s screenshot keys work too. Grip shares
+        usage stats, never what you record. Turn it off in Settings.
+      </p>
       <p class="after" role="status">
         {#if keysNote}{keysNote}
         {:else if !typingKeys && recordKeys}Saved. Click the keys to change them.
@@ -329,6 +333,15 @@
                 invoke('shell:login-item', input.checked).then((on) => (input.checked = atLogin = on))
               }}
             />
+          </label>
+        </li>
+        <li>
+          <label class="switch">
+            <span class="text">
+              <span class="title">Share usage stats</span>
+              <span class="reason">Like a finished recording, with your account when signed in. Never what you record.</span>
+            </span>
+            <input type="checkbox" role="switch" checked={shell.settings?.usageCounts !== false} onchange={(e) => setSettings({ usageCounts: e.currentTarget.checked })} />
           </label>
         </li>
       </ul>

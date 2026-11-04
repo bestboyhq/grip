@@ -5,13 +5,14 @@ import { createServer, type IncomingMessage } from 'node:http'
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ShareError, upload, usedUp, type Upload } from './upload.ts'
+import { client, ShareError, upload, usedUp, type Upload } from './upload.ts'
 
 const PART = 64 * 1024
 const TOKEN = 't'.repeat(43)
+client.userAgent = 'Grip/1.2.3 (Macintosh; Mac OS X 15.6.1)'
 
 /** What the server holds, and the misfortunes to stage on the next part uploads. */
-const fake = { parts: [] as Buffer[], size: 0, ready: false, limitReached: false, lostAnswer: false, cutPart: false }
+const fake = { parts: [] as Buffer[], size: 0, ready: false, limitReached: false, lostAnswer: false, cutPart: false, terms: undefined as unknown }
 
 const body = (req: IncomingMessage) =>
   new Promise<Buffer>((resolve) => {
@@ -25,11 +26,13 @@ const server = createServer(async (req, res) => {
   const item = () => ({ id: 'x7Kq2mP9aB3c', state: fake.ready ? 'ready' : 'uploading', private: false, size: fake.size, offset: offset(), part: PART, link: 'http://fake/v/x7Kq2mP9aB3c' })
   if (req.headers.authorization !== `Bearer ${TOKEN}`) return send(401, { error: 'Sign in first.' })
   if (req.method !== 'GET' && !req.headers['content-type']) return send(403, { error: 'No content type.' })
+  // Every call names Grip: the platform leaves a script's `node` out of its counts.
+  if (req.headers['user-agent'] !== client.userAgent) return send(403, { error: 'Not Grip.' })
   const url = new URL(req.url!, 'http://fake')
   if (req.method === 'POST' && url.pathname === '/api/items') {
     const b = JSON.parse((await body(req)).toString())
     if (fake.limitReached) return send(402, { error: 'Your team used its 25 uploads for this month.', limit: 25, resetsAt: '2026-11-01T00:00:00.000Z' })
-    Object.assign(fake, { parts: [], size: b.size, ready: false })
+    Object.assign(fake, { parts: [], size: b.size, ready: false, terms: b.terms })
     return send(201, item())
   }
   if (req.method === 'GET') return send(200, item())
@@ -67,11 +70,12 @@ function job(name: string, size: number): Upload {
 }
 
 test('parts resume after a lost answer and a dropped connection, and arrive whole and in order', async () => {
-  const j = job('Demo #1 ✨ café.mp4', 3 * PART + 1234)
+  const j = { ...job('Demo #1 ✨ café.mp4', 3 * PART + 1234), terms: '2026-11-02' }
   Object.assign(fake, { lostAnswer: true, cutPart: true })
   const states: string[] = []
   const item = await upload(URL_, TOKEN, j, { progress: (_n, s) => states.push(s), created() {} })
   assert.equal(item.state, 'ready')
+  assert.equal(fake.terms, '2026-11-02', 'the Terms date the Share button showed is accepted with the item')
   assert.ok(states.includes('waiting'), 'reported waiting while the part was resent')
   assert.deepEqual(Buffer.concat(fake.parts), readFileSync(j.file))
 })

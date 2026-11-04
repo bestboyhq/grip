@@ -1,7 +1,7 @@
 // Client side of the Bestboy platform's link API (bestboy.dev). Pure Node (fetch + fs): the main process runs it
 // (electron/share.ts, electron/account.ts), and electron/upload.test.ts drives it against a fake.
 //
-//   POST   /api/items {kind, title, private, size, name, duration?, width?, height?} -> item; counts one upload
+//   POST   /api/items {kind, title, private, size, name, duration?, width?, height?, terms?} -> item; counts one upload
 //   GET    /api/items/:id                       -> item: {id, state, offset, part, link, key, views, comments, …}
 //   PUT    /api/items/:id/data?offset=n <bytes> exactly min(part, size - n) bytes -> {offset}
 //   POST   /api/items/:id/finalize              -> item, state "ready"
@@ -45,6 +45,7 @@ export interface Upload {
   size: number // recorded when the share started: the file must not change underneath a resumed upload
   mtimeMs: number
   meta?: { duration: number; width: number; height: number } // a video's, for the link page's layout
+  terms?: string // the Terms date the Share button showed beside it: creating the item accepts them
   remote?: RemoteItem // set once the server created the item; the link works from then on
   posterSent?: boolean
 }
@@ -89,9 +90,13 @@ export class RemoteError extends Error {
   }
 }
 
+/** Sent with every call (electron/account.ts sets it): Node's own `node` reads as a script, whose calls the platform
+ *  leaves out of its counts. */
+export const client = { userAgent: '' }
+
 /** One API call. JSON in and out; a Readable is sent as bytes, a Buffer as a JPEG. */
 export async function api(server: string, token: string, method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<any> {
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = client.userAgent ? { 'user-agent': client.userAgent } : {}
   if (token) headers.authorization = `Bearer ${token}`
   const init: RequestInit & { duplex?: 'half' } = { method, headers, signal }
   if (body instanceof Readable) {
@@ -131,7 +136,7 @@ export async function upload(server: string, token: string, job: Upload, hooks: 
     const s = await stat(job.file).catch(() => null)
     if (!s) throw new ShareError('The file to share is gone. Share it again.')
     if (s.size !== job.size || s.mtimeMs !== job.mtimeMs) throw new ShareError('The file changed during the upload. Share it again.')
-    job.remote ??= await call('POST', '/api/items', { kind: job.kind, title: job.title, private: job.private, size: job.size, name: basename(job.file), ...job.meta })
+    job.remote ??= await call('POST', '/api/items', { kind: job.kind, title: job.title, private: job.private, size: job.size, name: basename(job.file), terms: job.terms, ...job.meta })
     const id = job.remote!.id
     // Privacy changed while the item was being created (or offline): the server must agree before the link goes out.
     if (job.remote!.private !== job.private) job.remote = await call('PATCH', `/api/items/${id}`, { private: job.private })

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 // recording.ts runs in Electron's main process: stand in for Electron, the native addon (a fake TCC
-// that counts prompts and Settings panes), and the modules that touch projects.
+// that counts prompts and Settings panes), the modules that touch projects, and usage counts.
 const dir = mkdtempSync(join(tmpdir(), 'studio recording #1 ✨ '))
 const stub = (code: string) => `data:text/javascript,${encodeURIComponent(code)}`
 const electron = `const h = globalThis.handlers = {}
@@ -23,7 +23,7 @@ register(
   stub(`export async function resolve(specifier, context, next) {
     const to = { electron: ${JSON.stringify(stub(electron))}, './native.ts': ${JSON.stringify(stub(native))},
       './projects.ts': ${JSON.stringify(stub(projects))}, './camera.ts': ${JSON.stringify(stub('export const analyzeCamera = 0'))},
-      './audio.ts': ${JSON.stringify(stub('export const analyzeVoice = 0'))} }[specifier]
+      './audio.ts': ${JSON.stringify(stub('export const analyzeVoice = 0'))}, './usage.ts': ${JSON.stringify(stub('export const count = () => {}'))} }[specifier]
     return to ? { url: to, shortCircuit: true } : next(specifier, context)
   }`),
 )
