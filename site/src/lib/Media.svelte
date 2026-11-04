@@ -1,4 +1,5 @@
-<!-- A real screenshot or clip from Grip in the screenshot frame: its own corner radius, a hairline ring, and a shadow.
+<!-- A real screenshot or clip from Grip in the screenshot frame: its own corner radius, a hairline ring, and a shadow
+     unless it lies flat on the page.
      A clip plays muted in a loop only while it is the clip most on screen; a press on its button pauses or plays it,
      and under reduced motion it holds its still until someone presses play. It comes in the page's theme and follows a
      switch. -->
@@ -72,9 +73,10 @@
 		// The window's box (x, y, width, height) inside a screenshot that bakes the window's shadow around it.
 		crop?: readonly [number, number, number, number];
 		eager?: boolean;
+		flat?: boolean;
 	};
 
-	let { src, clip, width, height, alt, r, crop, eager = false }: Props = $props();
+	let { src, clip, width, height, alt, r, crop, eager = false, flat = false }: Props = $props();
 
 	const box = $derived(crop ?? [0, 0, width, height]);
 	let paused = $state(true);
@@ -117,7 +119,7 @@
 </script>
 
 <div
-	class={['frame', { clip, held }]}
+	class={['frame', { clip, held, flat }]}
 	style:aspect-ratio="{box[2]} / {box[3]}"
 	style:border-radius="{(r / box[2]) * 100}% / {(r / box[3]) * 100}%"
 	style:--still-light={clip && `url(${clip.light.still})`}
@@ -180,6 +182,10 @@
 			0 0 0 1px var(--ring-faint),
 			0 2px 4px rgb(0 0 0 / 0.08),
 			0 32px 64px -24px rgb(0 0 0 / 0.45);
+	}
+
+	.flat {
+		box-shadow: 0 0 0 1px var(--ring-faint);
 	}
 
 	/* A clip's still in the page's theme, there before the script picks the clip and under its poster after. */

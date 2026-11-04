@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fingerprint, HASH, IMAGE, RENDER } from '../og.ts';
+import { RELEASES } from '../src/lib/changelog.ts';
 import { LOGDASH_SITE } from '../src/lib/logdash.ts';
 import worker, { type Env } from '../worker/index.ts';
 
@@ -11,6 +12,7 @@ const SITE = 'https://bestboy.dev/grip';
 const build = join(import.meta.dirname, '..', 'build', 'grip');
 const page = readFileSync(join(build, 'index.html'), 'utf8');
 const card = readFileSync(join(build, 'og.html'), 'utf8');
+const changelog = readFileSync(join(build, 'changelog.html'), 'utf8');
 // The Open Graph image, named by a hash of its content.
 const SHARED =
 	/<meta property="og:image" content="https:\/\/bestboy\.dev\/grip\/(_app\/immutable\/assets\/og\.[\w-]+\.jpg)"/u;
@@ -38,7 +40,7 @@ test('every page that shares the image names it by its content, with its size an
 		.replace(/\s+/gu, ' ')
 		.trim();
 	assert.ok(headline);
-	for (const file of ['index.html', '404.html']) {
+	for (const file of ['index.html', '404.html', 'changelog.html']) {
 		const html = readFileSync(join(build, file), 'utf8');
 		const image = SHARED.exec(html)?.[1];
 		assert.ok(image, `${file} shares no content-named image`);
@@ -72,6 +74,34 @@ test('every clip ships with the page in both themes, its still beside it', () =>
 		assert.ok(stills.some((other) => other[1] === name && other[2] !== theme), `${name} in one theme`);
 		for (const file of [`${name}-${theme}.webp`, `${name}-${theme}.mp4`])
 			assert.ok(existsSync(join(build, file)), file);
+	}
+});
+
+// The handler of each track in an MP4, as its `hdlr` boxes name it after their version and a zero: `vide` for video,
+// `soun` for sound.
+const tracks = (file: Buffer): string[] => {
+	const handlers = [];
+	for (let at = file.indexOf('hdlr'); at >= 0; at = file.indexOf('hdlr', at + 4))
+		handlers.push(file.toString('latin1', at + 12, at + 16));
+	return handlers;
+};
+
+test('the changelog runs newest first, each clip silent and its still beside it', () => {
+	assert.match(changelog, new RegExp(`<link rel="canonical" href="${SITE}/changelog"`, 'u'));
+	const versions = [...changelog.matchAll(/<article class="release[^"]*" id="v(\d+)\.(\d+)"/gu)].map(
+		([, major, minor]) => Number(major) * 1000 + Number(minor),
+	);
+	assert.equal(versions.length, RELEASES.length);
+	assert.ok(
+		versions.every((version, index) => index === 0 || version < (versions[index - 1] ?? 0)),
+		'releases out of order',
+	);
+	const stills = new Set([...changelog.matchAll(/url\(\/grip\/(media\/changelog-[\d.]+)\.webp\)/gu)].map((match) => match[1]));
+	assert.equal(stills.size, RELEASES.filter((release) => release.clip).length);
+	for (const name of stills) {
+		assert.ok(existsSync(join(build, `${name}.webp`)), `${name}.webp`);
+		const handlers = tracks(readFileSync(join(build, `${name}.mp4`)));
+		assert.ok(handlers.includes('vide') && !handlers.includes('soun'), `${name}.mp4 has ${handlers.join(', ')}`);
 	}
 });
 
