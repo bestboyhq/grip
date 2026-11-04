@@ -39,7 +39,7 @@
 	{/if}
 	<div class="line">
 		<p class="tiny">
-			<span>© 2026 Szymon Grącki and Grip contributors</span>
+			<span>© 2026 Bestboy and Grip contributors</span>
 		</p>
 		<div class="end tips">
 			<ThemeSwitcher />
