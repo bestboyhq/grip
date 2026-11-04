@@ -22,6 +22,7 @@ Agent apps list, read, edit, export, and share projects through Grip's MCP serve
   cut_fillers and shorten_pauses cut what the Transcript tab's buttons cut (`resolveWordEdits` in `src/engine/transcript`), and a cut whose end lands inside a word moves to that word's edge.
   match_captions takes the script and lines it up with the spoken words at the fewest caption changes, so a model never counts word indexes; a script that matches under half the words is refused.
   auto_zoom places the editor's auto zooms (`generateAutoZooms`) on the recording's clicks and typing, turns Auto zoom on at its level, and replaces the auto zooms placed before, so calling it twice never stacks them.
+  The server's instructions and edit_project's description make it the first zoom pass, which the model then fits to the narration with set_zoom, remove_zoom, and add_zoom: a model left to place every zoom itself never reaches for it.
   Its answer says how many zooms it placed, or that the recording has no clicks or typing, so the model knows to place its own.
   Every get_project and edit_project answer lists the problems (`zoomProblems` in `src/engine/zoom`) with the exact call that fixes each: a zoom too short to read, a zoom the camera glides to and leaves before it holds still, the camera moving while a cut jumps the picture, the video ending mid zoom-out, captions on with no transcript.
   The checks go by the camera's real springs and glide times (the export's layout, `layoutOf`), so a project without problems never moves the camera across a cut.
@@ -44,6 +45,7 @@ Agent apps list, read, edit, export, and share projects through Grip's MCP serve
 Gotchas:
 
 - Some agent apps hand the model `structuredContent` and drop the text, so every fact the text states is in the data too (`message`, `next`).
+- Some agent apps never show the model the server's instructions (Claude Code's `--bare` drops them), so what a model must know to use a tool well sits in that tool's description too.
   Pages stay near 8k tokens as JSON: 500 words a get_transcript answer, 100 clips, zooms, and clicks a get_project answer, with `next` as the start to ask again with.
 - Pages go by output time, every play of a word in output order, so clips that repeat or move never loop or skip a page.
 - `#`, emoji, and accents in a path round-trip: the editor's project rides its hash route's query, read with URLSearchParams and matched in NFC.

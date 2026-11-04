@@ -58,7 +58,7 @@ const INSTRUCTIONS = `Grip records the screen and turns recordings into polished
 - edit_project applies a list of edits together, or none of them when one is wrong. Every time in the list refers to the video as it was before the list. In a project open in Grip's editor, the list is one undo step.
 - Edits never change the recording: cuts, zooms, and caption fixes sit on top of it, and the user can undo them. restore_cut brings back what a cut removed.
 - Let Grip do the editing craft: cut_fillers and shorten_pauses cut filler words and dead air the way Grip's Transcript tab does, a cut that would clip a word moves to the word's edge, and match_captions makes the captions read a script you give it. When you know what is said, give the whole script to match_captions instead of fixing words one by one: it also catches the case and punctuation a word-by-word read misses.
-- Zoom on what the narration talks about while it does: auto_zoom places Grip's own zooms on every click and typing stretch, and get_project lists each click's time and x, y for add_zoom.
+- Zoom in two passes. First auto_zoom: it places Grip's own zooms on every click, drag, and typing stretch, timed the way Grip times them. Then fit them to what the narration talks about while it does: set_zoom or remove_zoom the auto zooms, and add_zoom what they miss, aimed at the clicks get_project lists with their time and x, y.
 - get_project and every edit_project answer list the video's problems (a zoom too short to read, or one the camera glides to and leaves before it holds still, the camera moving while a cut jumps the picture, the video ending mid zoom-out), each with the exact call that fixes it. Fix them all before export_project.
 - get_frame shows a frame as the export renders it, to check a zoom's framing or the captions.
 - export_project and share_project wait up to 45 s. A longer export returns its id, and export_status waits for it again.`
@@ -208,7 +208,7 @@ const TOOLS: Tool[] = [
   {
     name: 'edit_project',
     title: 'Edit project',
-    description: 'Edit a project: cut or restore a cut, cut filler words and long pauses, change speed, add, change, or remove zooms, place Grip’s auto zooms on the clicks and typing, fix caption words, set the captions’ look. The edits apply together or not at all, and every time refers to the video as it was before this call, as get_project showed it. In an open editor they are one undo step. Returns what Grip adjusted, then the project as get_project does, problems included.',
+    description: 'Edit a project: cut or restore a cut, cut filler words and long pauses, change speed, add, change, or remove zooms, place Grip’s auto zooms on the clicks and typing, fix caption words, set the captions’ look. To zoom, start with auto_zoom, then fit its zooms to the narration with set_zoom, remove_zoom, and add_zoom. The edits apply together or not at all, and every time refers to the video as it was before this call, as get_project showed it. In an open editor they are one undo step. Returns what Grip adjusted, then the project as get_project does, problems included.',
     inputSchema: { type: 'object', properties: { project: PROJECT, edits: { type: 'array', minItems: 1, maxItems: 1000, items: EDIT, description: 'The edits, applied together.' } }, required: ['project', 'edits'] },
     annotations: WRITES,
     run: editProject,
