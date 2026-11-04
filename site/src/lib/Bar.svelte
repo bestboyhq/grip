@@ -5,6 +5,7 @@
 	import GitHubIcon from './GitHubIcon.svelte';
 	import {
 		BESTBOY_URL,
+		CHANGELOG,
 		docHref,
 		DOWNLOAD_URL,
 		GITHUB_URL,
@@ -274,6 +275,9 @@
 						<a class="link" href={docHref()}>Docs</a>
 					</li>
 					<li>
+						<a class="link" href={CHANGELOG}>Changelog</a>
+					</li>
+					<li>
 						<a class="link" href={GITHUB_URL}><GitHubIcon size={15} />GitHub</a>
 					</li>
 				</ul>
@@ -317,6 +321,7 @@
 				{/each}
 				<div class="sheet-group">
 					<a class="row-link" href={docHref()} onclick={fold}>Docs</a>
+					<a class="row-link" href={CHANGELOG} onclick={fold}>Changelog</a>
 					<a class="row-link" href={GITHUB_URL} onclick={fold}><GitHubIcon size={15} />GitHub</a>
 				</div>
 			</div>

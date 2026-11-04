@@ -14,6 +14,7 @@ export const docHref = (section = 'readme'): string => `${GITHUB_URL}#${section}
 const README_MD = 'https://raw.githubusercontent.com/bestboyhq/grip/main/README.md';
 
 export const HOME = resolve('/(site)').replace(/\/$/u, '');
+export const CHANGELOG = resolve('/(site)/changelog');
 
 export type Link = Readonly<{
 	title: string;
@@ -149,7 +150,7 @@ export const SITEMAP: readonly Readonly<{ label: string; links: readonly Link[] 
 		label: 'Project',
 		links: [
 			{ title: 'Source code', href: GITHUB_URL },
-			{ title: 'Releases', href: `${GITHUB_URL}/releases` },
+			{ title: 'Changelog', href: CHANGELOG },
 			{ title: 'Issues', href: `${GITHUB_URL}/issues` },
 			{ title: 'bestboy.dev', href: BESTBOY_URL },
 		],
