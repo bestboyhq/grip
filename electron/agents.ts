@@ -5,34 +5,40 @@
 //
 //   Socket: Grip.sock in the user's temporary folder; a dev checkout's is Grip-<md5 of its path, 12 hex>.sock,
 //   well under the 104 bytes a socket path may take. grip-mcp works out the same path.
-//   Tools (TOOLS below): list_projects, get_project, get_transcript, edit_project, export_project,
-//   share_project, export_status, open_project. Every time is in output seconds: the edited video.
+//   Tools (TOOLS below): list_projects, get_project, get_transcript, transcribe_project, edit_project,
+//   get_frame, export_project, share_project, export_status, open_project. Every time is in output
+//   seconds: the edited video. Grip does the craft, so any model gets the same video: cut_fillers and
+//   shorten_pauses cut what the Transcript tab cuts, a cut never clips a word, match_captions turns a
+//   script into caption fixes, and every project answer lists its problems (zoomProblems) with the
+//   edit_project call that fixes each.
 //
 // A project open in an editor is read and edited through that editor, so the user sees an agent's edits
 // as they land, as one undo step saved before the reply; a closed one is edited on disk under the bundle lock.
-//   event agents:request(id, { edits?, time? })   to the editor (Editor.svelte)
-//   agents:reply(id, { project } | { error })      its answer
+//   event agents:request(id, { edits?, time?, frame? })   to the editor (Editor.svelte); frame: { t, height }
+//   agents:reply(id, { project, frame? } | { error })      its answer; frame: JPEG bytes
 //   agents:ready()                                 its page listens for requests (again after each load)
 //   agents:setup() -> { command, config }          how to add Grip to an agent app (Settings)
 import { app, ipcMain, type BrowserWindow, type WebContents } from 'electron'
 import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { chmod, existsSync, realpathSync, rmSync } from 'node:fs'
-import { readdir, stat } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { createServer, type Server, type Socket } from 'node:net'
 import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import { bundleArg, projectsDir, readProject, recentProjects, updateProject } from './projects.ts'
 import { exportListeners, exportWithoutAsking } from './export.ts'
-import { loadSpoken } from './transcript.ts'
+import { loadSpoken, runTranscript, type Progress as Heard } from './transcript.ts'
 import { editorFor, openProject } from './shell/recorder.ts'
 import { settings } from './shell/settings.ts'
 import { plainError } from './shell/errors.ts'
 import { hidden } from './windows.ts'
 import { applyEdits, LIMITS, parseEdits, type Edit } from '../src/shared/edits.ts'
 import { CAPTION_FONTS, type Project, type Transcript } from '../src/shared/project.ts'
-import { mapRange, timeMap, toSource } from '../src/shared/timemap.ts'
-import { outputWords } from '../src/engine/transcript/index.ts'
-import { lookOf } from '../src/engine/zoom/index.ts'
+import { parseEvents, type InputEvent } from '../src/shared/events.ts'
+import { cuts, mapRange, timeMap, toOutput, toSource, type TimeMap } from '../src/shared/timemap.ts'
+import { outputWords, PAUSE_KEEP, PAUSE_MIN, resolveWordEdits } from '../src/engine/transcript/index.ts'
+import { lookOf, zoomProblems } from '../src/engine/zoom/index.ts'
+import { layoutOf } from '../src/engine/scene.ts'
 import { cleanOptions, defaultOptions, formatBytes, QUALITIES, RATES, SIZES, type ExportOptions, type ExportRequest, type JobInfo } from '../src/engine/export/options.ts'
 
 /** Protocol versions this server speaks, newest first: a client gets its own, or the newest. */
@@ -41,20 +47,27 @@ const WAIT_MS = 45_000 // an export call returns by then: clients give up on a c
 const ASK_MS = 30_000 // an editor answers by then, even one still opening a 2-hour project
 // Pages: some agent apps hand the model structuredContent, as JSON, so a page stays near 8k tokens there.
 const MAX_WORDS = 500 // words a get_transcript answer lists
-const MAX_ITEMS = 100 // clips, and zooms, a get_project answer lists
+const MAX_ITEMS = 100 // clips, zooms, clicks, cuts, and problems a get_project answer lists
+const FRAME_SIZES = [360, 540, 720, 1080] // px tall: get_frame's sizes
 const MAX_LINE = 8 << 20 // bytes in one message
 
 const INSTRUCTIONS = `Grip records the screen and turns recordings into polished videos. These tools read, edit, export, and share Grip projects (.grip bundles) on this Mac.
 - Name a project by the absolute path of its .grip bundle, or by its name as list_projects shows it.
-- Every time is in output seconds: the video as it plays, after its cuts and speed changes. get_project shows each clip's output and recording times.
+- Every time is in output seconds: the video as it plays, after its cuts and speed changes. get_project shows each clip's output and recording times, and when and where each click lands.
+- Captions and get_transcript need a transcript: transcribe_project makes one on this Mac.
 - edit_project applies a list of edits together, or none of them when one is wrong. Every time in the list refers to the video as it was before the list. In a project open in Grip's editor, the list is one undo step.
-- Edits never change the recording: cuts, zooms, and caption fixes sit on top of it, and the user can undo them.
+- Edits never change the recording: cuts, zooms, and caption fixes sit on top of it, and the user can undo them. restore_cut brings back what a cut removed.
+- Let Grip do the editing craft: cut_fillers and shorten_pauses cut filler words and dead air the way Grip's Transcript tab does, a cut that would clip a word moves to the word's edge, and match_captions makes the captions read a script you give it. When you know what is said, give the whole script to match_captions instead of fixing words one by one: it also catches the case and punctuation a word-by-word read misses.
+- Zoom on what the narration talks about while it does: get_project lists each click's time and x, y for add_zoom.
+- get_project and every edit_project answer list the video's problems (a zoom too short to read, or one the camera glides to and leaves before it holds still, the camera moving while a cut jumps the picture, the video ending mid zoom-out), each with the exact call that fixes it. Fix them all before export_project.
+- get_frame shows a frame as the export renders it, to check a zoom's framing or the captions.
 - export_project and share_project wait up to 45 s. A longer export returns its id, and export_status waits for it again.`
 
 type Args = Record<string, unknown>
-type Result = { text: string; data: Record<string, unknown>; failed?: boolean }
+type Result = { text: string; data: Record<string, unknown>; image?: { data: string; mimeType: string }; failed?: boolean }
 type Progress = (percent: number, message: string) => void
-type Reply = { project?: Project; error?: string }
+type Reply = { project?: Project; frame?: Uint8Array; error?: string }
+type Request = { edits?: Edit[]; time?: number; frame?: { t: number; height: number } }
 type Opened = { path: string; project: Project; open: boolean }
 
 class RpcError extends Error {
@@ -77,6 +90,10 @@ const count = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
 const PROJECT = { type: 'string', minLength: 1, description: 'The project: the absolute path of its .grip bundle, or its name as list_projects shows it.' }
 const AT = (what: string) => ({ type: 'number', minimum: 0, description: `${what}, in output seconds.` })
 const RANGE = { start: AT('Start'), end: AT('End, after start') }
+const ZOOM_ID = { type: 'string', minLength: 1, description: 'The zoom’s id, as get_project lists it.' }
+const LEVEL = { type: 'number', minimum: LIMITS.level[0], maximum: LIMITS.level[1], description: 'How far in: 2 shows a quarter of the screen. Default: the project’s auto zoom level.' }
+const X = { type: 'number', minimum: 0, maximum: 1, description: 'The point to zoom on, across the recording: 0 left, 1 right. Give y too.' }
+const Y = { type: 'number', minimum: 0, maximum: 1, description: 'The point to zoom on, down the recording: 0 top, 1 bottom. Give x too.' }
 const variant = (type: Edit['type'], description: string, properties: Record<string, unknown>, required: string[]) => ({
   type: 'object',
   description,
@@ -86,28 +103,43 @@ const variant = (type: Edit['type'], description: string, properties: Record<str
 })
 const EDIT = {
   anyOf: [
-    variant('cut', 'Cut start..end out of the video; what follows moves up.', RANGE, ['start', 'end']),
+    variant('cut', 'Cut start..end out of the video; what follows moves up. An end inside a spoken word moves to the word’s edge, so no word plays clipped.', RANGE, ['start', 'end']),
+    variant('restore_cut', 'Bring back what a cut removed: the cut at this output time, as get_project lists it.', { at: AT('The cut') }, ['at']),
+    variant('cut_fillers', 'Cut every filler word the video still plays (um, uh, and the like), each with the pause around it, as Grip’s Transcript tab does. Needs a transcript.', {}, []),
+    variant('shorten_pauses', `Shorten every pause over ${PAUSE_MIN} s between spoken words to ${PAUSE_KEEP} s, as Grip’s Transcript tab does. Pauses with clicks, typing, or scrolling stay: they show the demo. Needs a transcript.`, {}, []),
     variant('set_speed', 'Play start..end at a speed.', { ...RANGE, speed: { type: 'number', minimum: LIMITS.speed[0], maximum: LIMITS.speed[1], description: '2 plays twice as fast, 0.5 at half speed.' } }, ['start', 'end', 'speed']),
     variant(
       'add_zoom',
       'Zoom in over start..end: on the point x, y, or following the cursor without them.',
       {
         ...RANGE,
-        level: { type: 'number', minimum: LIMITS.level[0], maximum: LIMITS.level[1], description: 'How far in: 2 shows a quarter of the screen. Default: the project’s auto zoom level.' },
-        x: { type: 'number', minimum: 0, maximum: 1, description: 'The point to zoom on, across the recording: 0 left, 1 right. Give y too.' },
-        y: { type: 'number', minimum: 0, maximum: 1, description: 'The point to zoom on, down the recording: 0 top, 1 bottom. Give x too.' },
+        look: { type: 'string', enum: ['zoom', 'loupe'], description: 'zoom: the camera moves in on the screen. loupe: a round glass lens magnifies the spot, and the rest of the screen stays in view. Default: the look last picked in Grip.' },
+        level: LEVEL,
+        x: X,
+        y: Y,
       },
       ['start', 'end'],
     ),
-    variant('remove_zoom', 'Remove a zoom.', { id: { type: 'string', minLength: 1, description: 'The zoom’s id, as get_project lists it.' } }, ['id']),
+    variant('set_zoom', 'Change a zoom: its start, end, level, or point. What is left out stays as it is.', { id: ZOOM_ID, start: AT('Its new start'), end: AT('Its new end'), level: { ...LEVEL, description: 'How far in: 2 shows a quarter of the screen.' }, x: X, y: Y }, ['id']),
+    variant('remove_zoom', 'Remove a zoom.', { id: ZOOM_ID }, ['id']),
     variant(
       'set_caption_text',
-      'Fix a word in the captions; the recording and its transcript stay as they are.',
+      'Fix one word in the captions; the recording and its transcript stay as they are. With the script at hand, match_captions fixes every word at once.',
       {
         index: { type: 'integer', minimum: 0, description: 'The word’s index, as get_transcript lists it.' },
         text: { type: 'string', maxLength: 200, description: 'What the captions show for it. An empty string hides the word.' },
       },
       ['index', 'text'],
+    ),
+    variant(
+      'match_captions',
+      'Make the captions read a script: the words said, as they should read. Grip lines its words up with the spoken ones and fixes each that differs (case, punctuation, a misheard word, “0.3” for “zero point three”), hiding spoken words the script leaves out. Needs a transcript.',
+      {
+        text: { type: 'string', minLength: 1, maxLength: 20000, description: 'The script of what is said over start..end.' },
+        start: AT('Where the script starts, when it covers only part of the video'),
+        end: AT('Where it ends'),
+      },
+      ['text'],
     ),
     {
       ...variant(
@@ -151,7 +183,7 @@ const TOOLS: Tool[] = [
   {
     name: 'get_project',
     title: 'Get project',
-    description: `A project’s timeline: clips (output and recording times, speed, volume), zooms (id, output times, level, target), the caption settings, and whether it has a transcript. A project open in the editor reads as the editor shows it. Give start and end for the clips and zooms playing then. At most ${MAX_ITEMS} of each a call: next, when there, is the start to ask again with.`,
+    description: `A project’s timeline: clips (output and recording times, speed, volume), zooms (id, output times, level, target, look), clicks (output time, and where on the recording as the x, y add_zoom takes), cuts (output time, for restore_cut), the caption settings, whether it has a transcript, and its problems, each with the call that fixes it. A project open in the editor reads as the editor shows it. Give start and end for the clips, zooms, clicks, and cuts playing then. At most ${MAX_ITEMS} of each a call: next, when there, is the start to ask again with.`,
     inputSchema: { type: 'object', properties: { project: PROJECT, ...RANGE }, required: ['project'] },
     annotations: { readOnlyHint: true },
     run: async (a) => describe(await current(await locate(a.project)), '', range(a)),
@@ -165,12 +197,32 @@ const TOOLS: Tool[] = [
     run: getTranscript,
   },
   {
+    name: 'transcribe_project',
+    title: 'Transcribe project',
+    description: 'Transcribe what a project’s recording says, on this Mac, so get_transcript reads its words and the captions show them. The first run downloads the speech model once. Waits up to 45 s; when it is still going, ask again to keep waiting. A project that has a transcript keeps it.',
+    inputSchema: { type: 'object', properties: { project: PROJECT }, required: ['project'] },
+    annotations: { ...WRITES, idempotentHint: true },
+    run: transcribeProject,
+  },
+  {
     name: 'edit_project',
     title: 'Edit project',
-    description: 'Edit a project: cut, change speed, add or remove zooms, fix caption words, set the captions’ look. The edits apply together or not at all, and every time refers to the video as it was before this call, as get_project showed it. In an open editor they are one undo step. Returns the project as get_project does.',
+    description: 'Edit a project: cut or restore a cut, cut filler words and long pauses, change speed, add, change, or remove zooms, fix caption words, set the captions’ look. The edits apply together or not at all, and every time refers to the video as it was before this call, as get_project showed it. In an open editor they are one undo step. Returns what Grip adjusted, then the project as get_project does, problems included.',
     inputSchema: { type: 'object', properties: { project: PROJECT, edits: { type: 'array', minItems: 1, maxItems: 1000, items: EDIT, description: 'The edits, applied together.' } }, required: ['project', 'edits'] },
     annotations: WRITES,
     run: editProject,
+  },
+  {
+    name: 'get_frame',
+    title: 'Get frame',
+    description: 'A frame of the edited video as a JPEG, rendered as the export renders it: to check a zoom’s framing, the captions, or what plays after a cut. A project that is not open opens in the editor to render it.',
+    inputSchema: {
+      type: 'object',
+      properties: { project: PROJECT, time: AT('The frame'), size: { type: 'integer', enum: FRAME_SIZES, description: 'The image’s height in px. Default: 720.' } },
+      required: ['project', 'time'],
+    },
+    annotations: { readOnlyHint: true },
+    run: getFrame,
   },
   {
     name: 'export_project',
@@ -240,7 +292,7 @@ async function getTranscript(a: Args): Promise<Result> {
   const [from, to] = range(a)
   const { project } = await current(path)
   const t = await loadSpoken(path, project)
-  if (!t) throw new Error(`${quoted(path)} has no transcript yet. Transcribe it in Grip (Captions, in the editor’s inspector), then ask again.`)
+  if (!t) throw new Error(`${quoted(path)} has no transcript yet. transcribe_project makes one; then ask again.`)
   // Every play of a word, in output order: pages by output time hold up even when clips repeat or move.
   const plays = outputWords(t, timeMap(project.clips), project.captionEdits)
   const matching = plays.filter((o) => o.end > from && o.start < to)
@@ -273,27 +325,81 @@ async function getTranscript(a: Args): Promise<Result> {
   return { text: `${head}\n${lines.join('\n')}${rest}`, data: { language: t.language, count: t.words.length, cut, words, ...(next !== undefined && { next, more: matching.length - words.length }) } }
 }
 
+async function transcribeProject(a: Args, progress: Progress): Promise<Result> {
+  const path = await locate(a.project)
+  const words = async (note: string) => {
+    const t = await loadSpoken(path, (await current(path)).project)
+    const text = `${note} ${quoted(path)}: ${count(t?.words.length ?? 0, 'word')}. get_transcript reads them, and set_captions shows them.`
+    return { text, data: { message: text, state: 'done', language: t?.language, words: t?.words.length ?? 0 } }
+  }
+  if ((await readProject(path)).sources.transcript) return words('Already transcribed')
+  let at: Heard = { phase: 'queued', progress: 0 }
+  const step = (h: Heard) => (h.phase === 'download' ? `downloading the speech model, ${Math.floor(h.progress * 100)}%` : h.phase === 'transcribe' ? `transcribing, ${Math.floor(h.progress * 100)}%` : 'waiting to start')
+  const run = runTranscript(path, (h) => {
+    at = h
+    progress(h.phase === 'download' ? Math.floor(h.progress * 50) : h.phase === 'transcribe' ? 50 + Math.floor(h.progress * 50) : 0, step(h)) // the download, then the words
+  })
+  const t = await Promise.race([run, new Promise<undefined>((r) => setTimeout(r, WAIT_MS))])
+  if (t === undefined) {
+    const text = `Still working on ${quoted(path)}: ${step(at)}. transcribe_project again waits for it.`
+    return { text, data: { message: text, state: 'running', phase: at.phase, progress: Math.round(at.progress * 100) / 100 } }
+  }
+  if (!t && !(await readProject(path)).sources.takes?.length) {
+    const text = `The transcription of ${quoted(path)} was canceled in Grip.`
+    return { text, data: { message: text, state: 'canceled' }, failed: true }
+  }
+  return words('Transcribed')
+}
+
 async function editProject(a: Args): Promise<Result> {
   const path = await locate(a.project)
-  const edits = parseEdits(a.edits)
-  const n = count(edits.length, 'edit')
+  const parsed = parseEdits(a.edits)
+  const n = count(parsed.length, 'edit')
   for (let tries = 0; ; tries++) {
-    const win = editorFor(path)
-    if (win) return describe({ path, project: await ask(win, { edits }), open: true }, `Applied ${n} in the open editor, as one undo step, and saved.`)
+    const { project, open } = await current(path)
+    const { edits, notes } = await byWords(path, project, parsed)
+    const said = notes.map((x) => `\n${x}`).join('')
+    // ponytail: the cuts are worked out on the project as read just now; an edit landing in between
+    // (the user, another agent) shifts them. Send the clips with the request if that ever bites.
+    const win = open && editorFor(path)
+    if (win) return describe({ path, project: (await ask(win, { edits })).project, open: true }, `Applied ${n} in the open editor, as one undo step, and saved.${said}`)
     try {
-      return describe({ path, project: await editOnDisk(path, edits), open: false }, `Applied ${n} and saved.`)
+      return describe({ path, project: await editOnDisk(path, edits), open: false }, `Applied ${n} and saved.${said}`)
     } catch (e) {
       if (!(e instanceof Reroute) || tries) throw e
     }
   }
 }
 
+/** The edits with their transcript edits worked out (resolveWordEdits): filler words and long pauses
+ *  as ranges, a script as caption fixes, and cut ends out of words. */
+async function byWords(path: string, p: Project, edits: Edit[]) {
+  if (!edits.some((e) => e.type === 'cut' || e.type === 'cut_fillers' || e.type === 'shorten_pauses' || e.type === 'match_captions')) return { edits, notes: [] }
+  const t = await loadSpoken(path, p).catch(() => null)
+  const activity = edits.some((e) => e.type === 'shorten_pauses') ? (await recorded(path, p)).activity : []
+  return resolveWordEdits(edits, t, timeMap(p.clips), activity, p.captionEdits)
+}
+
 async function editOnDisk(path: string, edits: Edit[]): Promise<Project> {
-  const transcript = edits.some((e) => e.type === 'set_caption_text') ? await loadSpoken(path, await readProject(path)) : null
+  const transcript = edits.some((e) => e.type === 'set_caption_text' || e.type === 'match_captions') ? await loadSpoken(path, await readProject(path)) : null
   return updateProject(path, (p) => {
     if (editorFor(path)) throw new Reroute() // its copy would save over this one
     applyEdits(p, edits, lookOf(settings().zoomLook), transcript)
   })
+}
+
+async function getFrame(a: Args): Promise<Result> {
+  const path = await locate(a.project)
+  const at = time(a.time, 'time')!
+  const height = a.size ?? 720
+  if (!FRAME_SIZES.includes(height as number)) throw new Error(`size must be one of ${FRAME_SIZES.join(', ')}.`)
+  if (!editorFor(path)) openProject(path)
+  const win = editorFor(path)
+  if (!win) throw new Error(`Grip could not open ${quoted(path)}.`)
+  const { frame } = await ask(win, { frame: { t: at, height: height as number } })
+  if (!frame) throw new Error(`Grip could not render ${quoted(path)} at ${sec(at)}.`)
+  const text = `${quoted(path)} at ${sec(at)}, ${height} px tall, as the export renders it.`
+  return { text, data: { message: text, time: at, height }, image: { data: Buffer.from(frame).toString('base64'), mimeType: 'image/jpeg' } }
 }
 
 async function exportProject(a: Args, progress: Progress): Promise<Result> {
@@ -308,7 +414,11 @@ async function exportProject(a: Args, progress: Progress): Promise<Result> {
     if (a[k] !== undefined && !(list as readonly unknown[]).includes(a[k])) throw new Error(`${k} must be one of ${list.join(', ')}${k === 'quality' ? '' : ` for ${format}`}.`)
   }
   const options = cleanOptions({ format, size: a.size, fps: a.fps, quality: a.quality } as Partial<ExportOptions>) // the rest: defaults
-  return report(await settle(await queue({ bundle: path, options, dest: 'file', path: out }), progress))
+  const r = report(await settle(await queue({ bundle: path, options, dest: 'file', path: out }), progress))
+  const left = await problemsIn(await current(path))
+  if (!left.length || r.failed) return r
+  const warn = `${count(left.length, 'problem')} left, each with its fix in get_project: ${left.map((x) => x.message).join(' ')}`
+  return { ...r, text: `${r.text}\n${warn}`, data: { ...r.data, problems: left } }
 }
 
 async function shareProject(a: Args, progress: Progress): Promise<Result> {
@@ -348,7 +458,7 @@ async function openInEditor(a: Args): Promise<Result> {
   const win = editorFor(path)
   if (!win) throw new Error(`Grip could not open ${quoted(path)}.`)
   if (!hidden) app.focus({ steal: true }) // the user asked their agent for it: Grip comes forward
-  const project = await ask(win, at !== undefined && !onDisk ? { time: at } : {}) // answers once it has loaded
+  const { project } = await ask(win, at !== undefined && !onDisk ? { time: at } : {}) // answers once it has loaded
   return describe({ path, project, open: true }, `${was ? 'Brought forward' : 'Opened'} ${quoted(path)} in the editor${at !== undefined ? ` at ${sec(at)}` : ''}.`)
 }
 
@@ -386,7 +496,7 @@ async function locate(x: unknown): Promise<string> {
 /** The project as the user sees it: an open editor's, unsaved edits included, else the saved one. */
 async function current(path: string): Promise<Opened> {
   const win = editorFor(path)
-  return { path, project: win ? await ask(win, {}) : await readProject(path), open: !!win }
+  return { path, project: win ? (await ask(win, {})).project : await readProject(path), open: !!win }
 }
 
 /** A time argument in seconds, or undefined when not given. */
@@ -404,11 +514,47 @@ function range(a: Args): [number, number] {
   return [from, to]
 }
 
+// ponytail: the last project's input, read once: a 2-hour recording's events run to a million lines,
+// and an agent reads the same project call after call. A map by bundle if agents juggle projects.
+type Press = Extract<InputEvent, { type: 'down' | 'up' }>
+type Recorded = { downs: Press[]; activity: number[] }
+let input: { file: string; stamp: string; value: Recorded } | null = null
+/** The recording's mouse presses, as the editor's click effects take them (parseEvents drops the pen's),
+ *  and the source seconds of its clicks, key presses, and scrolls, as the Transcript tab's pauses take them. */
+async function recorded(path: string, p: Project): Promise<Recorded> {
+  const none = { downs: [], activity: [] }
+  if (!p.sources.events) return none
+  const file = join(path, p.sources.events)
+  const s = await stat(file).catch(() => null)
+  if (!s) return none
+  const stamp = `${s.size}:${s.mtimeMs}`
+  if (input?.file !== file || input.stamp !== stamp) {
+    // Presses and key presses ("down"), scrolls, and the pen strokes that are not clicks.
+    const lines = (await readFile(file, 'utf8')).split('\n').filter((l) => l.includes('"down"') || l.includes('"scroll"') || l.includes('"draw"'))
+    const events = parseEvents(lines.join('\n'))
+    const activity = events.flatMap((e) => (e.type === 'down' || e.type === 'scroll' || (e.type === 'key' && e.down) ? [e.t] : []))
+    input = { file, stamp, value: { downs: events.filter((e): e is Press => e.type === 'down'), activity } }
+  }
+  return input.value
+}
+
+type Problem = { message: string; zoom?: string; fix: { tool: string; arguments: Args } }
+/** What would look wrong in the video, each with the call that fixes it. */
+function problems(p: Project, m: TimeMap, t: Transcript | null): Problem[] {
+  return [
+    ...zoomProblems(p, m, layoutOf(p, m, t)).map((z) => ({ message: z.message, zoom: z.id, fix: { tool: 'edit_project', arguments: { edits: z.fix } } })),
+    ...(p.style.captions.visible && !t ? [{ message: 'The captions are on, but the project has no transcript, so they show nothing.', fix: { tool: 'transcribe_project', arguments: {} } }] : []),
+  ]
+}
+const problemsIn = async ({ path, project: p }: Opened) => problems(p, timeMap(p.clips), await loadSpoken(path, p).catch(() => null))
+const callText = (f: Problem['fix']) => `${f.tool}${'edits' in f.arguments ? ` with edits ${JSON.stringify(f.arguments.edits)}` : ''}`
+
 /** get_project's answer: the timeline in output seconds, with the recording time each clip plays. It
- *  lists the clips and zooms playing from `from` to `to`, MAX_ITEMS of each at most. */
+ *  lists the clips, zooms, and clicks playing from `from` to `to`, MAX_ITEMS of each at most. */
 async function describe({ path, project: p, open }: Opened, note: string, [from, to] = [0, Infinity]): Promise<Result> {
   const m = timeMap(p.clips)
   const t: Transcript | null = await loadSpoken(path, p).catch(() => null)
+  const screen = p.sources.screen
   const playing = (x: { start: number; end: number }) => x.end > from && x.start < to
   const allClips = p.clips
     .map((c, i) => ({
@@ -426,14 +572,29 @@ async function describe({ path, project: p, open }: Opened, note: string, [from,
       const spans = mapRange(m, z.start, z.end)
       if (!spans.length) return [] // cut out: it never plays
       const target = z.target.kind === 'point' ? { x: z.target.x, y: z.target.y } : ('cursor' as const)
-      return [{ id: z.id, start: r3(Math.min(...spans.map((s) => s[0]))), end: r3(Math.max(...spans.map((s) => s[1]))), level: z.level, target, enabled: z.enabled, ...(z.auto && { auto: true }) }]
+      return [{ id: z.id, start: r3(Math.min(...spans.map((s) => s[0]))), end: r3(Math.max(...spans.map((s) => s[1]))), level: z.level, target, look: z.mode === 'loupe' ? 'loupe' : 'zoom', enabled: z.enabled, ...(z.auto && { auto: true }) }]
     })
     .filter(playing)
     .sort((a, b) => a.start - b.start)
-  // A page ends where the clip or the zoom past MAX_ITEMS starts.
-  const next = Math.min(allClips[MAX_ITEMS]?.start ?? Infinity, allZooms[MAX_ITEMS]?.start ?? Infinity)
+  // Presses on the recorded screen that play (one inside a cut never shows), at their first play.
+  const allClicks = (screen ? (await recorded(path, p)).downs : [])
+    .flatMap((e) => {
+      const [at, x, y] = [toOutput(m, e.t), e.x / screen!.width, e.y / screen!.height]
+      return at === null || at < from || at >= to || x < 0 || y < 0 || x > 1 || y > 1 ? [] : [{ t: r3(at), x: r3(x), y: r3(y) }]
+    })
+    .sort((a, b) => a.t - b.t)
+  const allCuts = cuts(m, p.sources.duration)
+    .filter((c) => c.t >= from && c.t < to)
+    .map((c) => ({ t: r3(c.t), removed: r3(c.removed) }))
+  // A page ends where the clip, the zoom, the click, or the cut past MAX_ITEMS starts.
+  const next = Math.min(allClips[MAX_ITEMS]?.start ?? Infinity, allZooms[MAX_ITEMS]?.start ?? Infinity, allClicks[MAX_ITEMS]?.t ?? Infinity, allCuts[MAX_ITEMS]?.t ?? Infinity)
   const clips = allClips.filter((c) => c.start < next)
   const zooms = allZooms.filter((z) => z.start < next)
+  const clicks = allClicks.filter((c) => c.t < next)
+  const cutList = allCuts.filter((c) => c.t < next)
+  // Problems are the whole video's, whatever the page.
+  const found = problems(p, m, t).slice(0, MAX_ITEMS)
+  const edits = found.flatMap((x) => (x.fix.tool === 'edit_project' ? (x.fix.arguments.edits as Edit[]) : []))
   const between = from > 0 || to < Infinity ? ` playing from ${sec(from)}${to < Infinity ? ` to ${sec(to)}` : ''}` : ''
   const { visible, mode, position, size, color, font, animation } = p.style.captions
   const text = [
@@ -443,10 +604,17 @@ async function describe({ path, project: p, open }: Opened, note: string, [from,
     `${count(clips.length, 'clip')}${between}, output ← recording:`,
     ...clips.map((c) => `  ${c.start}-${c.end} s ← ${c.source.start}-${c.source.end} s${c.speed !== 1 ? `, ${c.speed}×` : ''}${c.volume !== 1 ? `, volume ${Math.round(c.volume * 100)}%` : ''}${c.muted ? ', muted' : ''}`),
     `${count(zooms.length, 'zoom')}${between}${zooms.length ? ':' : ''}`,
-    ...zooms.map((z) => `  ${z.id}: ${z.start}-${z.end} s, ${z.level}×, ${z.target === 'cursor' ? 'follows the cursor' : `at ${z.target.x}, ${z.target.y}`}${z.enabled ? '' : ', off'}${z.auto ? ', auto' : ''}`),
-    ...(next < Infinity ? [`More clips and zooms play from ${sec(next)}: get_project with start ${next} lists them.`] : []),
+    ...zooms.map((z) => `  ${z.id}: ${z.start}-${z.end} s, ${z.level}×, ${z.target === 'cursor' ? 'follows the cursor' : `at ${z.target.x}, ${z.target.y}`}${z.look === 'loupe' ? ', loupe' : ''}${z.enabled ? '' : ', off'}${z.auto ? ', auto' : ''}`),
+    `${count(clicks.length, 'click')}${between}${clicks.length ? ', at output time, on the recording at x, y:' : ''}`,
+    ...(clicks.length ? [`  ${clicks.map((c) => `${c.t} s at ${c.x}, ${c.y}`).join('; ')}`] : []),
+    `${count(cutList.length, 'cut')}${between}${cutList.length ? ', at output time, with the recording each removed (restore_cut brings one back):' : ''}`,
+    ...(cutList.length ? [`  ${cutList.map((c) => `${c.t} s (${sec(c.removed)})`).join('; ')}`] : []),
+    ...(next < Infinity ? [`More clips, zooms, clicks, and cuts play from ${sec(next)}: get_project with start ${next} lists them.`] : []),
     `Captions: ${visible ? 'shown' : 'hidden'}, ${mode}, ${position}, size ${size}, ${color}, ${font}, ${animation}`,
-    t ? `Transcript: ${count(t.words.length, 'word')} (get_transcript reads them)` : 'Transcript: none yet (transcribe it in Grip: Captions, in the editor’s inspector)',
+    t ? `Transcript: ${count(t.words.length, 'word')} (get_transcript reads them)` : 'Transcript: none yet (transcribe_project makes one)',
+    found.length ? `${count(found.length, 'problem')} to fix before export:` : 'Problems: none.',
+    ...found.map((x) => `  - ${x.message} Fix: ${callText(x.fix)}`),
+    ...(edits.length > 1 && found.filter((x) => x.fix.tool === 'edit_project').length > 1 ? [`  All the zoom fixes in one call: edit_project with edits ${JSON.stringify(edits)}`] : []),
   ]
   const data = {
     ...(note && { message: note }), // what the text says first, for agent apps that only pass this on
@@ -457,9 +625,12 @@ async function describe({ path, project: p, open }: Opened, note: string, [from,
     recorded: r3(p.sources.duration),
     clips,
     zooms,
+    clicks,
+    cuts: cutList,
     ...(next < Infinity && { next }),
     captions: { visible, mode, position, size, color, font, animation },
     transcript: { exists: !!t, words: t?.words.length ?? 0 },
+    problems: found,
   }
   return { text: text.join('\n'), data }
 }
@@ -473,7 +644,7 @@ const ended = (j: JobInfo) => j.state === 'done' || j.state === 'failed' || j.st
 /** Queue an export of what the user sees: an open editor's project, unsaved edits included. */
 async function queue(r: ExportRequest): Promise<string> {
   const win = editorFor(r.bundle)
-  const job = await exportWithoutAsking({ ...r, project: win ? await ask(win, {}) : undefined })
+  const job = await exportWithoutAsking({ ...r, project: win ? (await ask(win, {})).project : undefined })
   ours.set(job.id, job)
   if (ours.size > 200) ours.delete(ours.keys().next().value!)
   return job.id
@@ -521,8 +692,8 @@ const listening = new WeakSet<WebContents>()
 const queued = new WeakMap<WebContents, Array<() => void>>() // requests for a page that does not listen yet
 const asked = new Map<string, { from: WebContents; answer: (r: Reply) => void }>()
 
-/** Send `request` to an editor's page (Editor.svelte), and wait for its project or its error. */
-function ask(win: BrowserWindow, request: { edits?: Edit[]; time?: number }): Promise<Project> {
+/** Send `request` to an editor's page (Editor.svelte), and wait for its project (and frame) or its error. */
+function ask(win: BrowserWindow, request: Request): Promise<{ project: Project; frame?: Uint8Array }> {
   const wc = win.webContents
   const id = randomUUID()
   return new Promise((resolve, reject) => {
@@ -530,7 +701,7 @@ function ask(win: BrowserWindow, request: { edits?: Edit[]; time?: number }): Pr
       clearTimeout(timer)
       asked.delete(id)
       wc.off('destroyed', gone)
-      if (r.project) resolve(r.project)
+      if (r.project) resolve({ project: r.project, frame: r.frame })
       else reject(new Error(r.error || 'The editor could not do that.'))
     }
     const gone = () => answer({ error: 'The editor closed before it answered. get_project shows where the project stands.' })
@@ -571,13 +742,14 @@ async function call(params: Args, send: (m: unknown) => void): Promise<unknown> 
     send({ jsonrpc: '2.0', method: 'notifications/progress', params: { progressToken: token, progress: percent, total: 100, message } })
   }
   try {
-    const a = params.arguments ?? {}
-    if (typeof a !== 'object' || Array.isArray(a)) throw new Error('arguments must be an object.')
+    const given = params.arguments ?? {}
+    if (typeof given !== 'object' || Array.isArray(given)) throw new Error('arguments must be an object.')
+    const a = Object.fromEntries(Object.entries(given).filter(([, v]) => v !== null)) // some models send null for what they leave out
     const names = Object.keys(tool.inputSchema.properties)
     for (const k of Object.keys(a)) if (!names.includes(k)) throw new Error(`${tool.name} has no argument “${k}”. It takes ${names.join(', ') || 'none'}.`)
     for (const k of tool.inputSchema.required ?? []) if ((a as Args)[k] === undefined) throw new Error(`${tool.name} needs ${k}.`)
     const r = await tool.run(a as Args, progress)
-    return { content: [{ type: 'text', text: r.text }], structuredContent: r.data, ...(r.failed && { isError: true }) }
+    return { content: [{ type: 'text', text: r.text }, ...(r.image ? [{ type: 'image', ...r.image }] : [])], structuredContent: r.data, ...(r.failed && { isError: true }) }
   } catch (e) {
     if (!(e instanceof Error) || e.constructor !== Error) console.error(`[agents] ${tool.name}:`, e) // a bug, not a bad request
     return { content: [{ type: 'text', text: plainError(e).message }], isError: true }
@@ -725,7 +897,8 @@ export function registerAgents() {
     const a = typeof id === 'string' ? asked.get(id) : undefined
     if (!a || a.from !== e.sender) return
     const reply = (r && typeof r === 'object' ? r : {}) as Reply
-    a.answer({ project: reply.project && typeof reply.project === 'object' ? reply.project : undefined, error: typeof reply.error === 'string' ? reply.error : undefined })
+    const frame = reply.frame instanceof Uint8Array ? reply.frame : (reply.frame as unknown) instanceof ArrayBuffer ? new Uint8Array(reply.frame as unknown as ArrayBuffer) : undefined
+    a.answer({ project: reply.project && typeof reply.project === 'object' ? reply.project : undefined, frame, error: typeof reply.error === 'string' ? reply.error : undefined })
   })
   ipcMain.handle('agents:setup', setup)
 }

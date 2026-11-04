@@ -1,8 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Clip, Transcript, Voiceover, Word } from '../../shared/project.ts'
+import { createProject, type Clip, type Transcript, type Voiceover, type Word } from '../../shared/project.ts'
+import { applyEdits } from '../../shared/edits.ts'
 import { removeOutputRange, removeSourceRange, setSpeed, timeMap, toSource } from '../../shared/timemap.ts'
-import { captionCues, cues, deleteWords, detectLanguage, fillers, isFiller, longPauses, outputWords, shortenPauses, spoken, toSRT, toVTT, wordAt } from './index.ts'
+import { captionCues, cues, deleteWords, detectLanguage, fillers, isFiller, keptWords, longPauses, outputWords, PAUSE_KEEP, resolveWordEdits, shortenPauses, spoken, toSRT, toVTT, wordAt } from './index.ts'
 
 // Words as Parakeet gives them for the fixture mic track (source seconds).
 const SPOKEN: Array<[number, number, string]> = [
@@ -184,4 +185,55 @@ test('a voiceover says its words where it plays, over the mic words it mutes', (
   // A word the video cut through while it was said stays in the stretch most of it played in.
   const cut: Voiceover = { ...v, start: 7, end: 10, knots: [[0, 7], [1.1, 8.1], [1.1, 9], [2, 9.9]] }
   assert.deepEqual(spoken(null, { a: take }, [cut])!.words.find((w) => w.text === 'name'), { start: 9, end: 9.5, text: 'name', key: 'a:3' })
+})
+
+test('agent transcript cuts: fillers and pauses cut what the Transcript tab cuts, and cuts never clip a word', () => {
+  // A sped-up start, so output time is not source time.
+  const clips = setSpeed(full(), 0, 1.1, 2)
+  const m = timeMap(clips)
+  const r = resolveWordEdits([{ type: 'cut_fillers' }], transcript, m)
+  const ranges = r.edits[0].type === 'cut_fillers' ? r.edits[0].ranges! : []
+  const cut = [...ranges].reverse().reduce((c, [a, b]) => removeOutputRange(c, a, b), clips)
+  const byTab = deleteWords(clips, words, fillers(transcript, m))
+  assert.deepEqual(keptWords(transcript, timeMap(cut)), keptWords(transcript, timeMap(byTab)))
+  assert.ok(Math.abs(timeMap(cut).duration - timeMap(byTab).duration) < 1e-6)
+  assert.match(r.notes[0], /Cut 3 filler words: “um,”, “Ah,”, “um,”/)
+
+  // Two pauses over a second; a click in the second keeps it.
+  const p = resolveWordEdits([{ type: 'shorten_pauses' }], transcript, timeMap(full()), [16])
+  assert.deepEqual(p.edits, [{ type: 'shorten_pauses', ranges: [[10.09 + PAUSE_KEEP / 2, 11.2 - PAUSE_KEEP / 2]] }])
+  assert.match(p.notes[0], /Shortened 1 pause to 0.5 s, and left 1 pause with clicks/)
+
+  // “today” (1.96-2.33) is mostly inside the cut and goes; “project.” (4.24-4.9) is mostly after it and stays.
+  const w = resolveWordEdits([{ type: 'cut', start: 2.1, end: 4.5 }, { type: 'cut', start: 10.5, end: 11 }, { type: 'cut', start: 2.52, end: 2.57 }, { type: 'cut', start: 3.55, end: 3.7 }], transcript, timeMap(full()))
+  assert.deepEqual(w.edits, [{ type: 'cut', start: 1.96, end: 4.24 }, { type: 'cut', start: 10.5, end: 11 }, { type: 'cut', start: 2.52, end: 2.52 }, { type: 'cut', start: 3.5, end: 3.8 }])
+  assert.match(w.notes[0], /edits\[0\]: the cut runs 1.96-4.24 s instead of 2.1-4.5 s, so “today” goes whole, and “project.” stays whole/)
+  assert.match(w.notes[1], /edits\[2\] would only clip “want”, so it cuts nothing. To remove the word, cut 2.47-2.62 s/)
+  assert.match(w.notes[2], /edits\[3\]: the cut runs 3.5-3.8 s instead of 3.55-3.7 s, so “create” goes whole/)
+
+  assert.throws(() => resolveWordEdits([{ type: 'cut_fillers' }], null, m), /transcribe_project/)
+  assert.deepEqual(resolveWordEdits([{ type: 'cut', start: 2.1, end: 4.5 }], null, m).edits, [{ type: 'cut', start: 2.1, end: 4.5 }])
+})
+
+test('agent caption match: the captions read the script, and a script that is not what is said throws', () => {
+  const m = timeMap(full())
+  const project = createProject('t', { duration: DURATION })
+  const read = (a: number, b: number) => captionCues(transcript, m, project.captionEdits).flatMap((c) => c.words).filter((w) => w.start >= a && w.end <= b).map((w) => w.text).join(' ')
+  const match = (text: string, start?: number, end?: number) => {
+    const r = resolveWordEdits([{ type: 'match_captions', text, start, end }], transcript, m, [], project.captionEdits)
+    applyEdits(project, r.edits, {}, transcript)
+    return r.notes[0]
+  }
+  // Case and punctuation, a word said differently, a word the script drops, and one it adds.
+  const note = match('Hi! Today I really want to show you how to make a new project.', 0, 5)
+  assert.equal(read(0, 5), 'Hi! Today I really want to show you how to make a new project.')
+  assert.match(note, /changed “Hi,” → “Hi!”, “today” → “Today”, “I” → “I really”, “create” → “make”, and hid “so”, which the script leaves out/)
+  assert.match(match('Hi! Today I really want to show you how to make a new project.', 0, 5), /already read as the script/)
+  // The filler stays out of the captions, and the rest of the video keeps its words.
+  assert.equal(project.captionEdits[1], undefined)
+  assert.equal(read(5, 11), 'first, you click on the project name field, and you type a name.')
+  // A line of the script alone, without its range, is not what the whole video says.
+  assert.throws(() => match('Thanks for watching!'), /matches only 3 of the 51 caption words/)
+  match('Thanks for watching!', 19.5, 21)
+  assert.equal(read(19.5, 21), 'Thanks for watching!')
 })

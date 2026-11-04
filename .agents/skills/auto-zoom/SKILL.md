@@ -8,6 +8,7 @@ description: Turning clicks and typing into zoom ranges and cursor follow. Use w
 Turning clicks and typing into camera direction.
 
 - Generate zoom ranges from clicks and typing as ordinary timeline items the user edits or disables.
+  A press holds its zoom until it is released, so a drag stays zoomed in from the press to the drop.
 - A zoomed view follows the cursor through a dead zone, panning only as the cursor nears the edge.
 - Manual zooms set target, level, and duration, animated or instant.
 - A zoom that starts on the first frame starts zoomed in.

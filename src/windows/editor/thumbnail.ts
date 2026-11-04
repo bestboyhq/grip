@@ -1,6 +1,6 @@
 // Stills of the open project, rendered by the same compositor as preview and export: the project's
 // Finder, Quick Look, and recent-projects thumbnail (handed to the main process as PNG bytes,
-// projects:thumbnail), and the Presets tab's view of this project in each preset.
+// projects:thumbnail), the Presets tab's view of this project in each preset, and agents' get_frame.
 import { doc } from '../../lib/doc.svelte.ts'
 import { loadedExtras, pathsOffThread } from '../../lib/player.svelte.ts'
 import { invoke } from '../../lib/ipc.ts'
@@ -12,11 +12,11 @@ import { fileUrl, openVideo } from '../../engine/media/index.ts'
 import { timeMap } from '../../shared/timemap.ts'
 import { resumeAt } from './helpers.ts'
 
-/** Render the open project at output time `t` in each of `styles`, `height` px tall, and hand each PNG
- *  to `each` as it lands. One renderer and one set of decoders serve them all. Asset paths in a style
+/** Render the open project at output time `t` in each of `styles`, `height` px tall, and hand each image
+ *  (PNG, or `type`) to `each` as it lands. One renderer and one set of decoders serve them all. Asset paths in a style
  *  are bundle-relative, or absolute (a preset's look before it is applied). */
 // ponytail: opens its own decoders per call; share the player's sources if this shows up in profiles.
-export async function renderStills(styles: Style[], height: number, t: number, each: (i: number, png: Blob) => unknown): Promise<void> {
+export async function renderStills(styles: Style[], height: number, t: number, each: (i: number, image: Blob) => unknown, type: 'image/png' | 'image/jpeg' = 'image/png'): Promise<void> {
   const path = doc.path
   if (!doc.project || !path) return
   const project: Project = JSON.parse(JSON.stringify(doc.project)) // a plain copy: edits during the render must not tear it
@@ -36,7 +36,7 @@ export async function renderStills(styles: Style[], height: number, t: number, e
       canvas.height = size.height
       const input = { project: p, events: doc.events, transcript: doc.transcript, ...size, ...loadedExtras() }
       await renderFrame(renderer, prepare(input, await pathsOffThread(input)), media, t) // the heavy part off the main thread
-      await each(i, await canvas.convertToBlob({ type: 'image/png' }))
+      await each(i, await canvas.convertToBlob({ type, quality: 0.85 }))
     }
   } finally {
     media.screen?.close()

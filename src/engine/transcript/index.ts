@@ -1,8 +1,10 @@
 // Owner: transcript. Pure transcript logic: captions and subtitles through the shared time map,
-// filler words and long pauses offered as cuts, and cutting words out of the video.
+// filler words and long pauses offered as cuts, and cutting words out of the video, for the editor
+// and for agents (resolveWordEdits).
 // Words stay in source time; every conversion to output time goes through src/shared/timemap.ts.
 
 import type { Clip, Transcript, Voiceover, Word } from '../../shared/project.ts'
+import type { Edit } from '../../shared/edits.ts'
 import { mapRange, removeSourceRange, timeMap, type TimeMap } from '../../shared/timemap.ts'
 import { sourceSpan, takeAt } from '../../shared/voiceover.ts'
 
@@ -281,12 +283,15 @@ export function detectLanguage(words: Word[], fallback = 'und'): string {
  *  left behind is as long as a natural one, but never seconds of a silent demo. */
 const REACH = 0.5
 
-/** Cut words out of the video: one removeSourceRange per run of consecutive words, reaching into
- *  the pauses around the run but never into the neighbouring words. */
-export function deleteWords(clips: Clip[], words: Word[], indices: Iterable<number>): Clip[] {
+/** Cut words out of the video: one removeSourceRange per run of consecutive words (wordRanges). */
+export const deleteWords = (clips: Clip[], words: Word[], indices: Iterable<number>): Clip[] =>
+  wordRanges(words, indices, Math.max(0, ...clips.map((c) => c.end))).reduce((out, [a, b]) => removeSourceRange(out, a, b), clips)
+
+/** The source ranges that cut `indices` out: one per run of consecutive words, reaching into the
+ *  pauses around the run but never into the neighbouring words. */
+export function wordRanges(words: Word[], indices: Iterable<number>, sourceEnd: number): Array<[number, number]> {
   const sorted = [...new Set(indices)].filter((i) => i >= 0 && i < words.length).sort((a, b) => a - b)
-  const sourceEnd = Math.max(0, ...clips.map((c) => c.end))
-  let out = clips
+  const out: Array<[number, number]> = []
   for (let r = 0; r < sorted.length; r++) {
     const i = sorted[r]
     while (sorted[r + 1] === sorted[r] + 1) r++
@@ -295,7 +300,7 @@ export function deleteWords(clips: Clip[], words: Word[], indices: Iterable<numb
     const after = j < words.length - 1 ? words[j + 1].start : Math.max(sourceEnd, words[j].end)
     const a = Math.max(before, words[i].start - Math.min(Math.max(0, words[i].start - before) / 2, REACH))
     const b = Math.min(after, words[j].end + Math.min(Math.max(0, after - words[j].end) / 2, REACH))
-    if (b > a) out = removeSourceRange(out, a, b)
+    if (b > a) out.push([a, b])
   }
   return out
 }
@@ -350,3 +355,176 @@ export function longPauses(t: Transcript, m: TimeMap, activity: number[] = []): 
 
 export const shortenPauses = (clips: Clip[], pauses: Pause[]): Clip[] =>
   pauses.reduce((c, p) => removeSourceRange(c, p.start, p.end), clips)
+
+// ---- Agents' transcript edits ----
+
+const SNAP = 0.02 // s: a cut edge this close to a word's own edge already leaves the word whole
+const MATCH_MAX = 2000 // words match_captions aligns at once
+const r2 = (t: number) => Math.round(t * 100) / 100
+const list = (ws: string[]) => ws.slice(0, 8).join(', ') + (ws.length > 8 ? `, and ${ws.length - 8} more` : '')
+const quote = (ws: string[]) => list(ws.map((w) => `“${w}”`))
+const letters = (s: string) => s.normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+
+/** The caption texts, as [transcript word index, text], that make the captions over output a..b read
+ *  `script`: its words aligned to the caption words by their letters and digits (case, accents, and
+ *  punctuation aside) at the fewest changes to the captions. A caption word aligned to a script word takes its text,
+ *  one the script lacks hides, and a script word left over joins the caption word before it. Throws
+ *  when fewer than half of the words align: that script is not what is said there. */
+// ponytail: full O(words x script) alignment, so at most MATCH_MAX words a call; band it if whole long videos must go at once.
+function matchCaptions(t: Transcript, m: TimeMap, edits: Record<string, string>, script: string, a = 0, b = Infinity) {
+  const over = Number.isFinite(b) || a > 0 ? ` over ${r2(a)}-${Number.isFinite(b) ? r2(b) : r2(m.duration)} s` : ''
+  const seen = new Set<number>()
+  const words = outputWords(t, m, edits).filter((w) => {
+    const word = t.words[w.i]
+    const shows = !word.filler || edits[word.key ?? w.i] !== undefined // as captionCues shows them
+    const mid = (w.start + w.end) / 2
+    if (!shows || mid < a || mid > b || seen.has(w.i)) return false
+    return seen.add(w.i)
+  })
+  const tokens: string[] = []
+  for (const s of script.split(/\s+/).filter(Boolean)) {
+    if (letters(s) || !tokens.length) tokens.push(s)
+    else tokens[tokens.length - 1] += ' ' + s // a dash or other mark alone stays with the word before it
+  }
+  const n = words.length
+  const k = tokens.length
+  if (!n) throw new Error(`no caption words play${over}, so there is nothing to match.`)
+  if (n > MATCH_MAX || k > MATCH_MAX) throw new Error(`match at most ${MATCH_MAX} words at a time: give start and end to match the script part by part.`)
+  const said = words.map((w) => letters(w.text || t.words[w.i].text))
+  const meant = tokens.map(letters)
+  const same = (i: number, j: number) => !!said[i] && said[i] === meant[j]
+  // Fewest changes to the captions as they read now: a word keeps its text free (one script word, or
+  // the few it already reads), takes one with the same letters at 1, takes another word or hides at 3
+  // (hidden already: free), and a script word with no caption word comes in at 3.
+  const pair = (i: number, j: number) => (words[i].text === tokens[j] ? 0 : same(i, j) ? 1 : 3)
+  const drop = (i: number) => (words[i].text ? 3 : 0)
+  const parts = words.map((w) => w.text.split(' ').length)
+  /** How many script words up to j word i reads as it is, when that is more than one; else 0. */
+  const reads = (i: number, j: number) => {
+    for (let r = 2; r <= Math.min(parts[i], j); r++) if (words[i].text === tokens.slice(j - r, j).join(' ')) return r
+    return 0
+  }
+  const cost = new Uint32Array((n + 1) * (k + 1))
+  const at = (i: number, j: number) => i * (k + 1) + j
+  for (let i = 1; i <= n; i++) cost[at(i, 0)] = cost[at(i - 1, 0)] + drop(i - 1)
+  for (let j = 1; j <= k; j++) cost[at(0, j)] = 3 * j
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= k; j++) {
+      const r = parts[i - 1] > 1 ? reads(i - 1, j) : 0
+      cost[at(i, j)] = Math.min(r ? cost[at(i - 1, j - r)] : Infinity, cost[at(i - 1, j - 1)] + pair(i - 1, j - 1), cost[at(i - 1, j)] + drop(i - 1), cost[at(i, j - 1)] + 3)
+    }
+  }
+  const got: string[][] = words.map(() => [])
+  const left: Array<[number, string]> = [] // script words with no caption word, after caption word [0]
+  let matched = 0
+  for (let i = n, j = k; i > 0 || j > 0; ) {
+    const c = cost[at(i, j)]
+    const r = i && j && parts[i - 1] > 1 ? reads(i - 1, j) : 0
+    if (r && c === cost[at(i - 1, j - r)]) {
+      matched++
+      got[--i] = tokens.slice(j - r, j)
+      j -= r
+    } else if (i && j && c === cost[at(i - 1, j - 1)] + pair(i - 1, j - 1)) {
+      if (same(i - 1, j - 1)) matched++
+      got[--i].unshift(tokens[--j])
+    } else if (i && c === cost[at(i - 1, j)] + drop(i - 1)) i--
+    else left.unshift([i - 1, tokens[--j]])
+  }
+  if (2 * matched < Math.max(n, k)) {
+    throw new Error(`the script matches only ${matched} of the ${n} caption words${over}, so it is not what is said there. Give start and end when it covers only part of the video, or fix single words with set_caption_text.`)
+  }
+  const lead: string[] = []
+  for (const [w, s] of left) {
+    let p = w
+    while (p >= 0 && !got[p].length) p--
+    if (p >= 0) got[p].push(s)
+    else lead.push(s)
+  }
+  if (lead.length) got[got.findIndex((g) => g.length)].unshift(...lead)
+  const texts: Array<[number, string]> = []
+  const changed: string[] = []
+  const hidden: string[] = []
+  words.forEach((w, p) => {
+    const text = got[p].join(' ')
+    if (text === w.text) return
+    texts.push([w.i, text])
+    if (text) changed.push(`“${w.text || t.words[w.i].text}” → “${text}”`)
+    else hidden.push(w.text)
+  })
+  const note = texts.length
+    ? `Matched the captions${over} to the script: ${changed.length ? `changed ${list(changed)}` : ''}${changed.length && hidden.length ? ', and ' : ''}${hidden.length ? `hid ${quote(hidden)}, which the script leaves out` : ''}.`
+    : `The captions${over} already read as the script.`
+  return { texts, note }
+}
+
+/** An agent's edits (src/shared/edits.ts) ready to apply on the timeline `m`: cut_fillers and
+ *  shorten_pauses get the output ranges the Transcript tab's buttons cut, match_captions the caption
+ *  texts that make the captions read its script (`captionEdits`: the project's caption fixes so far),
+ *  and a cut whose edge falls inside a word moves to that word's nearer edge, so no word plays clipped.
+ *  `activity`: sorted source seconds of clicks, key presses, and scrolls, which make a pause part of the
+ *  demo. `notes` say what Grip decided, for the agent. Throws when a transcript edit has no transcript
+ *  to go by, or a script does not fit. */
+export function resolveWordEdits(edits: Edit[], t: Transcript | null, m: TimeMap, activity: number[] = [], captionEdits: Record<string, string> = {}): { edits: Edit[]; notes: string[] } {
+  const notes: string[] = []
+  const plays = t ? outputWords(t, m) : []
+  /** The word playing across output time x, not merely touching it. */
+  const across = (x: number) => {
+    let lo = 0
+    let hi = plays.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (plays[mid].start <= x) lo = mid + 1
+      else hi = mid
+    }
+    const w = plays[lo - 1]
+    return w && w.start + SNAP < x && x < w.end - SNAP ? w : undefined
+  }
+  const out = edits.map((e, i): Edit => {
+    if (e.type === 'cut_fillers' || e.type === 'shorten_pauses' || e.type === 'match_captions') {
+      if (!t) throw new Error(`edits[${i}] (${e.type}) goes by the transcript, and this project has none yet. transcribe_project makes one.`)
+      if (e.type === 'match_captions') {
+        try {
+          const { texts, note } = matchCaptions(t, m, captionEdits, e.text, e.start, e.end)
+          notes.push(`edits[${i}]: ${note}`)
+          return { ...e, texts }
+        } catch (err) {
+          throw new Error(`edits[${i}]: ${(err as Error).message}`)
+        }
+      }
+      let source: Array<[number, number]>
+      if (e.type === 'cut_fillers') {
+        const found = fillers(t, m)
+        source = wordRanges(t.words, found, Math.max(0, ...m.clips.map((c) => c.end)))
+        notes.push(found.length ? `Cut ${found.length} filler word${found.length === 1 ? '' : 's'}: ${quote(found.map((k) => t.words[k].text))}.` : 'No filler words play in the video: nothing to cut.')
+      } else {
+        const all = longPauses(t, m, activity)
+        const dead = all.filter((p) => !p.busy)
+        source = dead.map((p) => [p.start, p.end])
+        const busy = all.length - dead.length
+        const n = (k: number) => `${k} pause${k === 1 ? '' : 's'}`
+        notes.push(
+          dead.length
+            ? `Shortened ${n(dead.length)} to ${PAUSE_KEEP} s${busy ? `, and left ${n(busy)} with clicks, typing, or scrolling in them, which show the demo` : ''}.`
+            : busy
+              ? `Left the ${n(busy)} over ${PAUSE_MIN} s as they are: clicks, typing, or scrolling in them show the demo.`
+              : `No pause over ${PAUSE_MIN} s to shorten.`,
+        )
+      }
+      return { type: e.type, ranges: source.flatMap(([a, b]) => mapRange(m, a, b)) }
+    }
+    if (e.type !== 'cut') return e
+    const [wa, wb] = [across(e.start), across(e.end)]
+    if (!wa && !wb) return e
+    if (wa && wa === wb && 2 * (e.end - e.start) < wa.end - wa.start) {
+      notes.push(`edits[${i}] would only clip “${wa.text}”, so it cuts nothing. To remove the word, cut ${r2(wa.start)}-${r2(wa.end)} s.`)
+      return { type: 'cut', start: e.start, end: e.start }
+    }
+    // Most of the word on the kept side: it stays whole; most of it inside the cut: it goes whole.
+    const a = wa ? (wa === wb || e.start - wa.start < wa.end - e.start ? wa.start : wa.end) : e.start
+    const b = wb ? (wa === wb || e.end - wb.start >= wb.end - e.end ? wb.end : wb.start) : e.end
+    const why = [wa && `“${wa.text}” ${a === wa.end ? 'stays' : 'goes'} whole`, wb && wb !== wa && `“${wb.text}” ${b === wb.end ? 'goes' : 'stays'} whole`].filter(Boolean).join(', and ')
+    notes.push(`edits[${i}]: the cut runs ${r2(a)}-${r2(b)} s instead of ${r2(e.start)}-${r2(e.end)} s, so ${why}.`)
+    return { type: 'cut', start: a, end: b }
+  })
+  return { edits: out, notes }
+}

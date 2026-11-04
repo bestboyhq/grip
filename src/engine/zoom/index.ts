@@ -35,6 +35,7 @@
 
 import { uid, type Project, type Rect, type Sources, type Style, type Zoom, type ZoomLook } from '../../shared/project.ts'
 import type { InputEvent } from '../../shared/events.ts'
+import type { Edit } from '../../shared/edits.ts'
 import { mapRange, toOutput, type TimeMap } from '../../shared/timemap.ts'
 import type { Loupe, SceneInput, View } from '../scene.ts'
 import { pipCameraAt, screenAt, type prepareLayout, type ScreenPlace } from '../layout.ts'
@@ -64,7 +65,8 @@ const CAMERA_CLEAR = 28 // screen points x cursor size (about a cursor's height,
 // zoom) the cursor and clicked elements keep from a picture-in-picture camera
 const LEAD = 6 / Math.sqrt(SPRINGS.focused.stiffness) // s: auto zooms start this long before a click or typing, so the focused spring is ~98% there
 const KEEP = 1 // s: a clicked element stays framed this long after the click
-const HOLD = 2 // s: an auto zoom holds this long after its last click or keystroke
+const HOLD = 2 // s: an auto zoom holds this long after its last click or keystroke, or a press's release
+const ZOOM_OUT = 6 / Math.sqrt(SPRINGS.smooth.stiffness) // s: the slower spring's zoom out; an auto zoom ending closer than this to the recording's end holds to it, so the video never ends mid-move
 const MERGE_GAP = 2 // s: auto zooms closer than this merge; zooming out and back in that fast looks erratic
 const MIN_AUTO = 1.2 // s: shorter auto zooms (clipped by the recording's ends) are dropped
 const FAR_JUMPS_PER_S = 0.5 // an auto zoom panning a half view more often than this is erratic: skipped
@@ -101,19 +103,33 @@ interface Focus {
   t1: number // and ends (= t0 for a click)
   x: number
   y: number
+  up?: number // source seconds a click's press is released: an auto zoom holds through a drag
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi)
 
-/** Clicks and typing stretches with where they happen. Typing happens where the last click before it
- *  focused a field; typing with no click before it has no known place and is left out. */
+/** Clicks, with when each press is released, and typing stretches, with where they happen. Typing
+ *  happens where the last click before it focused a field; typing with no click before it has no known
+ *  place and is left out. */
 function focuses(events: InputEvent[], typing: Segment[], screen: NonNullable<Sources['screen']>): Focus[] {
-  const clicks = events.filter(
-    (e): e is Extract<InputEvent, { button: unknown }> => e.type === 'down' && e.x >= 0 && e.y >= 0 && e.x <= screen.width && e.y <= screen.height,
-  )
-  const out: Focus[] = clicks.map((c) => ({ t0: c.t, t1: c.t, x: c.x, y: c.y }))
+  const clicks: Focus[] = []
+  const pressed = new Map<string, Focus>() // by button, until its release
+  for (const e of events) {
+    if (e.type === 'up') {
+      const c = pressed.get(e.button)
+      if (c) c.up = e.t
+      pressed.delete(e.button)
+    }
+    if (e.type !== 'down') continue
+    pressed.delete(e.button) // a press off the screen holds nothing
+    if (e.x < 0 || e.y < 0 || e.x > screen.width || e.y > screen.height) continue
+    const c: Focus = { t0: e.t, t1: e.t, x: e.x, y: e.y }
+    clicks.push(c)
+    pressed.set(e.button, c)
+  }
+  const out = [...clicks]
   for (const g of typing) {
-    const c = clicks.findLast((c) => c.t <= g.start)
+    const c = clicks.findLast((c) => c.t0 <= g.start)
     if (c) out.push({ t0: g.start, t1: g.end, x: c.x, y: c.y })
   }
   return out.sort((p, q) => p.t0 - q.t0)
@@ -213,6 +229,33 @@ function clampCenter(c: Pt, r: Rect, s: number, vp: Rect): Pt {
   const axis = (v: number, lo: number, size: number, view: number, from: number, full: number) =>
     view <= size ? clamp(v, lo + view / 2, lo + size - view / 2) : clamp(lo + size / 2, from + view / 2, from + full - view / 2)
   return { x: axis(c.x, r.x, r.w, vp.w / s, vp.x, vp.w), y: axis(c.y, r.y, r.h, vp.h / s, vp.y, vp.h) }
+}
+
+/** What zooms zs frame on screen rect r of viewport vp: the points they target, the deepest level on
+ *  backed out until those and the followed cursor cp fit (never past the shallowest zoom, nor under
+ *  the rest scale b0), and the middle of the points. */
+function framing(zs: Zoom[], r: Rect, vp: Rect, b0: number, cp: Pt | null) {
+  const points = zs.flatMap((z) => (z.target.kind === 'point' ? [{ x: r.x + z.target.x * r.w, y: r.y + z.target.y * r.h }] : []))
+  let s = b0
+  if (zs.length) {
+    const hold = points.map((p) => ({ p, zone: FOCUS_ZONE }))
+    if (cp && hold.length) hold.push({ p: cp, zone: EDGE_ZONE })
+    const levels = zs.map((z) => z.level)
+    s = Math.max(b0, clamp(fitScale(hold, vp), Math.min(...levels), Math.max(...levels)))
+  }
+  const mid: Pt | null = points.length
+    ? { x: (Math.min(...points.map((p) => p.x)) + Math.max(...points.map((p) => p.x))) / 2, y: (Math.min(...points.map((p) => p.y)) + Math.max(...points.map((p) => p.y))) / 2 }
+    : null
+  return { points, s, mid }
+}
+
+/** Seconds the camera glides from scale `from` to scale s with its center moving `off` viewport px. */
+function glideTime(off: number[], from: number, s: number, vp: Rect): number {
+  // How far the framing moves, in views: the pan as the view sees it on the way (at the scale half
+  // way), or the zoom (doubling the magnification moves the frame's edges half a view).
+  const halfway = (s + from) / 2
+  const views = Math.max(Math.hypot((off[0] * halfway) / vp.w, (off[1] * halfway) / vp.h), Math.abs(Math.log2(from / s)) / 2)
+  return Math.min(GLIDE.min + GLIDE.perView * views, GLIDE.max)
 }
 
 /** Move center c the least so that p lies within (rx, ry) of it. */
@@ -460,18 +503,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
     // Everything is read lag ahead so the trailing spring lands on time.
     const tl = t + lag
     const cp = follow ? cursorPt(tl, shown) : null
-    const points = zs.flatMap((z) => (z.target.kind === 'point' ? [{ x: r.x + z.target.x * r.w, y: r.y + z.target.y * r.h }] : []))
-    // The deepest level on, backed out until the points and the followed cursor fit, but never past the shallowest.
-    let s = b0
-    if (zs.length) {
-      const hold = points.map((p) => ({ p, zone: FOCUS_ZONE }))
-      if (cp && hold.length) hold.push({ p: cp, zone: EDGE_ZONE })
-      const levels = zs.map((z) => z.level)
-      s = Math.max(b0, clamp(fitScale(hold, vp), Math.min(...levels), Math.max(...levels)))
-    }
-    const mid: Pt | null = points.length
-      ? { x: (Math.min(...points.map((p) => p.x)) + Math.max(...points.map((p) => p.x))) / 2, y: (Math.min(...points.map((p) => p.y)) + Math.max(...points.map((p) => p.y))) / 2 }
-      : null
+    const { points, s, mid } = framing(zs, r, vp, b0, cp)
 
     let c: Pt = { x: vp.x + vp.w / 2, y: vp.y + vp.h / 2 }
     if (!follow && mid) c = aim = mid
@@ -513,11 +545,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
       // the range between the two.
       const from = target[2] + drift[2]
       const off = [target[0] + drift[0] - c.x, target[1] + drift[1] - c.y]
-      // How far the framing moves, in views: the pan as the view sees it on the way (at the scale half
-      // way), or the zoom (doubling the magnification moves the frame's edges half a view).
-      const halfway = (s + from) / 2
-      const views = Math.max(Math.hypot((off[0] * halfway) / vp.w, (off[1] * halfway) / vp.h), Math.abs(Math.log2(from / s)) / 2)
-      glide = { t0: t, dur: Math.min(GLIDE.min + GLIDE.perView * views, GLIDE.max), off, from }
+      glide = { t0: t, dur: glideTime(off, from, s, vp), off, from }
     }
     let next = [c.x, c.y, s]
     const u = glide ? (t - glide.t0) / glide.dur : 1
@@ -623,8 +651,9 @@ function lensAt(lens: ReturnType<typeof prepareZoom>['loupes'][number], t: numbe
 }
 
 /** Auto zooms (source time) from clicks and typing: merge activity close in time, start LEAD before
- *  it, hold HOLD after it, and skip stretches that would pan erratically. Each zoom follows the
- *  cursor with `look`; viewAt frames its clicks and typing. `typing` defaults to the input domain's detector. */
+ *  it, hold HOLD after it (after a press's release, so a drag stays zoomed, and to the end when that
+ *  leaves too little to zoom out), and skip stretches that would pan erratically. Each zoom follows the cursor with `look`; viewAt frames its clicks
+ *  and typing. `typing` defaults to the input domain's detector. */
 export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZoom: Style['autoZoom'], look: ZoomLook = {}, typing: Segment[] = typingSegments(events)): Zoom[] {
   const screen = sources.screen
   if (!autoZoom.enabled || !screen) return []
@@ -632,10 +661,11 @@ export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZo
   const groups: Array<{ start: number; end: number; points: Pt[] }> = []
   for (const f of focuses(events, typing, screen)) {
     const g = groups.at(-1)
+    const end = (f.up ?? f.t1) + HOLD
     if (g && f.t0 - LEAD - g.end < MERGE_GAP) {
-      g.end = Math.max(g.end, f.t1 + HOLD)
+      g.end = Math.max(g.end, end)
       g.points.push(f)
-    } else groups.push({ start: f.t0 - LEAD, end: f.t1 + HOLD, points: [f] })
+    } else groups.push({ start: f.t0 - LEAD, end, points: [f] })
   }
   const erratic = (g: (typeof groups)[number]) => {
     // A jump to a place outside the half view means a big pan; many of them read as shaky.
@@ -648,7 +678,7 @@ export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZo
     return far >= 2 && far / (g.end - g.start) > FAR_JUMPS_PER_S
   }
   return groups
-    .map((g) => ({ ...g, start: Math.max(0, g.start), end: Math.min(sources.duration, g.end) }))
+    .map((g) => ({ ...g, start: Math.max(0, g.start), end: g.end > sources.duration - ZOOM_OUT ? sources.duration : g.end }))
     .filter((g) => g.end - g.start >= MIN_AUTO && !erratic(g))
     .map((g): Zoom => ({ id: uid(), start: g.start, end: g.end, level, target: { kind: 'cursor' }, auto: true, enabled: true, ...lookOf(look) }))
 }
@@ -674,4 +704,132 @@ export function autoZoomOnce(p: Project, events: InputEvent[]): boolean {
   if (!p.zooms.length) p.zooms = generateAutoZooms(events, p.sources, p.style.autoZoom)
   p.autoZoomed = true
   return true
+}
+
+// ---- What an agent's zooms get wrong, with the edits that fix it ----
+
+const MIN_HOLD = 1 // s: a zoom shows its framing this long once in, or it reads as a flinch
+const GLIDE_HOLD = 0.5 // s: ...and this long once the camera glides to it from another zoom's framing
+const ON_CUT = 0.02 // s: a zoom starting or ending this close to a cut moves with it
+
+export interface ZoomProblem {
+  id: string // the zoom to change
+  message: string
+  fix: Edit[] // output seconds, on the timeline as it is
+}
+
+const s2 = (t: number) => Math.round(t * 100) / 100
+const floor2 = (t: number) => Math.floor(t * 100 + 1e-6) / 100
+const ceil2 = (t: number) => Math.ceil(t * 100 - 1e-6) / 100
+
+/** How the zooms of `p` would look wrong on timeline `m` with layout `layout`, each with the edits
+ *  (src/shared/edits.ts) that fix it: a zoom that never plays, one that leaves before it shows
+ *  anything, the camera moving while a cut jumps the picture, the video ending mid zoom-out, and a
+ *  zoom the camera glides to from the one before but leaves before it holds still. The camera is
+ *  checked per zoomed stretch (zooms less than BRIDGE apart glide from one to the next instead of
+ *  zooming out and back in), a loupe per piece. At most one problem per stretch: its fix changes
+ *  what the others would be. */
+// ponytail: loupes that share a lens or glide to the next are checked one by one; group them like lenses() if that misleads.
+// ponytail: only glides between single zooms on points are checked; overlapping zooms and ones following the cursor pass.
+export function zoomProblems(p: Project, m: TimeMap, layout: ReturnType<typeof prepareLayout>): ZoomProblem[] {
+  const out: ZoomProblem[] = []
+  const D = m.duration
+  const jumps = m.clips.flatMap((c, i) => (i && Math.abs(m.clips[i - 1].end - c.start) > 1e-6 ? [m.outStarts[i]] : []))
+  const spring = SPRINGS[p.style.screenAnimation] ?? SPRINGS.focused
+  const lead = 6 / Math.sqrt(spring.stiffness / spring.mass)
+  const on = p.zooms.filter((z) => z.enabled)
+  for (const z of on) {
+    if (!mapRange(m, z.start, z.end).length) out.push({ id: z.id, message: `Zoom ${z.id} never plays: its part of the recording is cut out.`, fix: [{ type: 'remove_zoom', id: z.id }] })
+  }
+
+  type Stretch = { a: number; b: number; first: Zoom; last: Zoom; lastA: number }
+  const stretches = (ps: Span[], bridge: number) =>
+    ps.reduce<Stretch[]>((acc, s) => {
+      const r = acc.at(-1)
+      if (r && bridge > 0 && s.a - r.b < bridge) {
+        if (s.b > r.b) Object.assign(r, { b: s.b, last: s.zoom, lastA: s.a })
+      } else acc.push({ a: s.a, b: s.b, first: s.zoom, last: s.zoom, lastA: s.a })
+      return acc
+    }, [])
+  const camera = stretches(pieces(on.filter((z) => z.mode !== 'loupe'), m), BRIDGE).map((r) => ({ ...r, what: 'zooms', early: lead - LEAD, settle: LEAD, leave: lead }))
+  const glass = stretches(pieces(on.filter((z) => z.mode === 'loupe'), m), 0).map((r) => ({ ...r, what: 'loupe', early: 0, settle: LOUPE_FADE, leave: LOUPE_FADE }))
+
+  // The glides inside the camera's stretches, timed the way simulate times them.
+  const framed = (zs: Zoom[], t: number) => {
+    const at = screenAt(layout, t)
+    if (!at) return null
+    const bounds = inner(at.visible, at.screenRadius)
+    const f = framing(zs, at.screen, at.viewport, baseScale(at.viewport, at.visible, bounds), null)
+    return { c: clampCenter(f.mid!, bounds, f.s, at.viewport), s: f.s, vp: at.viewport }
+  }
+  const segs = segments(on.filter((z) => z.mode !== 'loupe'), m)
+  const glides = segs.flatMap((g, i) => {
+    const prev = segs[i - 1]
+    const zs = [...(prev?.zooms ?? []), ...g.zooms]
+    if (!prev || g.a - prev.b > 1e-9 || prev.zooms.length > 1 || g.zooms.length > 1 || cutsTo(prev.zooms, g.zooms) || zs.some((z) => z.target.kind !== 'point')) return []
+    const from = framed(prev.zooms, g.a)
+    const to = framed(g.zooms, g.a)
+    if (!from || !to) return []
+    const dur = glideTime([from.c.x - to.c.x, from.c.y - to.c.y], from.s, to.s, to.vp)
+    return [{ a: g.a, b: Math.min(g.b, D), dur, zoom: g.zooms[0], prev: prev.zooms[0], prevA: prev.a, last: segs[i + 1]?.a !== g.b }]
+  })
+
+  for (const r of [...camera, ...glass]) {
+    const atStart = r.a < AT_START
+    const early = atStart || r.first.instant ? 0 : r.early
+    const inEnd = atStart || r.first.instant ? r.a : r.a + r.settle
+    const toEnd = r.b > D - ON_CUT
+    const leave = toEnd || r.last.instant ? 0 : r.leave
+    const name = r.first === r.last ? `Zoom ${r.first.id}` : `Zooms ${r.first.id} to ${r.last.id}`
+    const look = r.what === 'loupe' ? 'The loupe' : 'The camera'
+    /** End the stretch at `end` (output seconds): set its last zoom's end, or drop that zoom when the end comes before it. */
+    const endAt = (end: number): Edit[] => {
+      if (r.last !== r.first && end < r.b && end < r.lastA + MIN_HOLD) return [{ type: 'remove_zoom', id: r.last.id }]
+      const e: Edit = { type: 'set_zoom', id: r.last.id, end }
+      if (r.last === r.first && end - inEnd < MIN_HOLD) e.start = Math.max(0, floor2(end - MIN_HOLD - r.settle))
+      return [e]
+    }
+    const into = jumps.find((c) => c > r.a - early + ON_CUT && c < inEnd)
+    const outOf = jumps.find((c) => c >= r.b - ON_CUT && c < r.b + leave)
+    const hold = Math.min(r.b, D) - inEnd
+    if (into !== undefined) {
+      out.push({
+        id: r.first.id,
+        message: `${name}: ${look.toLowerCase()} moves in over ${s2(r.a - early)}-${s2(inEnd)} s, and the cut at ${s2(into)} s jumps the picture mid-move. Start it on the cut.`,
+        fix: [{ type: 'set_zoom', id: r.first.id, start: ceil2(into + early) }],
+      })
+    } else if (outOf !== undefined) {
+      out.push({
+        id: r.last.id,
+        message: `${name}: ${look.toLowerCase()} moves out over ${s2(r.b)}-${s2(r.b + leave)} s, and the cut at ${s2(outOf)} s jumps the picture mid-move. It has to be out before the cut.`,
+        fix: endAt(floor2(outOf - r.leave)),
+      })
+    } else if (!toEnd && r.b + leave > D) {
+      out.push({ id: r.last.id, message: `${name}: the video ends at ${s2(D)} s while ${look.toLowerCase()} is still moving out. End it at the video's end, so the video ends zoomed in.`, fix: endAt(s2(D)) })
+    } else if (hold < MIN_HOLD - 1e-6) {
+      const end = inEnd + MIN_HOLD
+      out.push({
+        id: r.last.id,
+        message: `${name}: ${look.toLowerCase()} is in at ${s2(inEnd)} s and leaves at ${s2(Math.min(r.b, D))} s, so it holds only ${s2(Math.max(0, hold))} s and reads as a flinch. Hold it at least ${MIN_HOLD} s.`,
+        fix: end + r.leave > D ? endAt(s2(D)) : endAt(ceil2(end)),
+      })
+    } else if (r.what === 'zooms') {
+      const g = glides.find((g) => g.a > r.a && g.a < r.b && g.b - g.a - g.dur < GLIDE_HOLD - 1e-6)
+      if (g) out.push({ id: g.zoom.id, message: `Zoom ${g.zoom.id}: the camera glides to it from zoom ${g.prev.id} over ${s2(g.a)}-${s2(g.a + g.dur)} s and moves on at ${s2(g.b)} s, so it holds only ${s2(Math.max(0, g.b - g.a - g.dur))} s. Hold it at least ${GLIDE_HOLD} s.`, fix: glideFix(g, r.leave) })
+    }
+  }
+  return out
+
+  /** Lengthen glide g's zoom: end it later when it is the stretch's last and nothing is in the way,
+   *  else start it earlier, ending the zoom before it there or dropping that one when too little is left. */
+  function glideFix(g: (typeof glides)[number], leave: number): Edit[] {
+    const need = g.dur + GLIDE_HOLD
+    const end = ceil2(g.a + need)
+    const next = camera.find((r) => r.a > g.b)
+    if (g.last && end + leave <= D && !jumps.some((c) => c >= g.b - ON_CUT && c < end + leave) && !(next && next.a - end < BRIDGE)) return [{ type: 'set_zoom', id: g.zoom.id, end }]
+    const start = floor2(g.b - need)
+    const prev = pieces([g.prev], m).at(-1)!
+    if (start - g.prevA < MIN_HOLD) return [{ type: 'remove_zoom', id: g.prev.id }, { type: 'set_zoom', id: g.zoom.id, start }]
+    return [...(prev.b > start ? [{ type: 'set_zoom' as const, id: g.prev.id, end: start }] : []), { type: 'set_zoom', id: g.zoom.id, start }]
+  }
 }

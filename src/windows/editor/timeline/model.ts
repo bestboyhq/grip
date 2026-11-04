@@ -5,7 +5,8 @@
 
 import { uid, type CameraLayout, type Clip, type Mask, type Transcript, type Voiceover, type Zoom } from '../../../shared/project.ts'
 import type { InputEvent } from '../../../shared/events.ts'
-import { clipAt, mapRange, removeOutputRange, splitAt, timeMap, toOutput, toSource, type TimeMap } from '../../../shared/timemap.ts'
+import { clipAt, clipLimits, cuts, mapRange, removeOutputRange, splitAt, timeMap, toOutput, toSource, type Cut, type TimeMap } from '../../../shared/timemap.ts'
+export { clipLimits, cuts, restoreCut, type Cut } from '../../../shared/timemap.ts'
 import { reach, slid, type Span } from '../../../shared/voiceover.ts'
 
 export type ItemTrack = 'zooms' | 'layouts' | 'masks' | 'voiceovers'
@@ -49,13 +50,6 @@ export interface Overlap {
   a: number
   b: number
   items: number[] // bottom up
-}
-
-/** A removed stretch of source next to a clip edge: shown as a marker, click restores it. */
-export interface Cut {
-  t: number // output seconds
-  after: number // index of the clip before it (-1 = before the first clip)
-  removed: number // source seconds that a restore brings back
 }
 
 export interface Parts {
@@ -214,42 +208,6 @@ export const blockAt = (l: Lane, t: number, tol = 0): Block | null => blocksAt(l
 
 // ---- Clips ----
 
-function sorted(xs: number[]) {
-  return Float64Array.from(xs).sort()
-}
-/** Largest value <= x in a sorted array, or `fallback`. */
-function floorOf(xs: Float64Array, x: number, fallback: number) {
-  let lo = 0
-  let hi = xs.length
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1
-    if (xs[mid] <= x) lo = mid + 1
-    else hi = mid
-  }
-  return lo ? xs[lo - 1] : fallback
-}
-/** Smallest value >= x in a sorted array, or `fallback`. */
-function ceilOf(xs: Float64Array, x: number, fallback: number) {
-  let lo = 0
-  let hi = xs.length
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1
-    if (xs[mid] < x) lo = mid + 1
-    else hi = mid
-  }
-  return lo < xs.length ? xs[lo] : fallback
-}
-
-/** How far clip i's edges can grow: up to the nearest source another clip uses, or the recording's ends.
- *  Growing never shows the same source moment twice. */
-export function clipLimits(clips: Clip[], i: number, duration: number, ends = sorted(clips.map((c) => c.end)), starts = sorted(clips.map((c) => c.start))) {
-  const c = clips[i]
-  return {
-    lo: Math.min(c.start, Math.max(0, floorOf(ends, c.start + EPS, 0))),
-    hi: Math.max(c.end, Math.min(duration, ceilOf(starts, c.end - EPS, duration))),
-  }
-}
-
 /** Source time for clip i's edge dragged to output time `out`. The clip's own linear map, extended past
  *  its ends (toSource clamps to the timeline), so the edge lands exactly under the pointer at any speed. */
 export function edgeSource(map: TimeMap, i: number, out: number): number {
@@ -260,46 +218,6 @@ export function edgeSource(map: TimeMap, i: number, out: number): number {
 /** Output time at which source moment `src` on clip i's dragged edge plays in `full`, the clips with that
  *  edge as far out as it can go (player's showEdge). The clips before i are the same as in `map`. */
 export const edgeOutput = (map: TimeMap, full: Clip[], i: number, src: number) => map.outStarts[i] + (src - full[i].start) / full[i].speed
-
-/** Removed source next to each clip edge. */
-export function cuts(map: TimeMap, duration: number): Cut[] {
-  const clips = map.clips
-  if (!clips.length) return []
-  const ends = sorted(clips.map((c) => c.end))
-  const starts = sorted(clips.map((c) => c.start))
-  const out: Cut[] = []
-  const head = clips[0].start - clipLimits(clips, 0, duration, ends, starts).lo
-  if (head > 0.01) out.push({ t: 0, after: -1, removed: head })
-  clips.forEach((c, i) => {
-    const next = clips[i + 1]
-    const hi = clipLimits(clips, i, duration, ends, starts).hi
-    const removed = (next ? Math.min(next.start, hi) : hi) - c.end
-    if (removed > 0.01 && (!next || next.start > c.end)) out.push({ t: map.outStarts[i] + (c.end - c.start) / c.speed, after: i, removed })
-  })
-  return out
-}
-
-/** Bring back the removed source at a cut marker. Neighbors that become seamless and alike merge. */
-export function restoreCut(clips: Clip[], after: number, duration: number): Clip[] {
-  const next = clips.slice()
-  if (after < 0) {
-    next[0] = { ...clips[0], start: clipLimits(clips, 0, duration).lo }
-    return next
-  }
-  const c = clips[after]
-  const n = clips[after + 1]
-  const end = n ? Math.min(n.start, clipLimits(clips, after, duration).hi) : clipLimits(clips, after, duration).hi
-  next[after] = { ...c, end }
-  if (n && Math.abs(end - n.start) < EPS && alike(c, n)) {
-    next.splice(after, 2, { ...c, end: n.end })
-  }
-  return next
-}
-
-/** Same settings, so joining them changes nothing but the split. */
-const alike = (a: Clip, b: Clip) =>
-  a.speed === b.speed && a.volume === b.volume && (a.systemVolume ?? 1) === (b.systemVolume ?? 1) &&
-  !!a.muted === !!b.muted && !!a.hideCursor === !!b.hideCursor && !!a.rawCursor === !!b.rawCursor
 
 /** Grow the clips in `ids` back over the free source on both sides, in output order. */
 export function resetTrim(clips: Clip[], ids: Set<string>, duration: number): Clip[] {
