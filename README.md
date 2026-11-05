@@ -116,8 +116,8 @@ That is 12 times faster than the quickest blink (about 100 ms), 2 times faster t
 </p>
 
 - **Camera, mic, and system audio on one clock**, so lips stay in sync for hours.
-- **A camera bubble** in the corner of the area.
-  Drag it, and the video puts your camera there too.
+- **A camera bubble** right under your camera, so you look into the lens.
+  It fades when you point at it, drags anywhere, and stays out of the video: you place the camera there while editing.
 - **Draw on screen** with **⌥⇧⌘D**.
   The ink fades out on screen just as it will in the video.
 - **Speaker notes** in a scrolling prompter only you can see.

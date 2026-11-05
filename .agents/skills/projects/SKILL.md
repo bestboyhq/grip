@@ -19,7 +19,7 @@ Project files, presets, and their lifecycle.
 - Import any .mp4 or .mov as a project; features that need event data degrade gracefully.
 - Presets are portable files that bundle their assets, with a default fallback for a missing asset.
 - A preset is shown on the project's own frame before it is applied: thumbnails and a hover preview, through the one compositor.
-- A preset carries the look, not the recording: applying one keeps the camera in the corner it was recorded in.
+- A preset carries the look: a new recording starts with its camera corner, and applying one to a project keeps the corner the project has.
 - A project remembers the preset its look came from, so changes since show as edited, with Update and Revert.
   A preset keeps its assets under content-addressed names that end in the file's own name, and saving one points the project at those copies, so the look it just saved reads as in use, not edited.
 - One preset can be the look new recordings start with; a deleted one leaves the default look.

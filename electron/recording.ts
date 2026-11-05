@@ -105,7 +105,7 @@ function finish(dir: string, sources: RecordingSources, reason = 'user', message
         broadcast('recording:error', message ?? 'Nothing was recorded.')
         return
       }
-      await writeNewRecording(dir, sources, { preset: settings().preset, camera: settings().cameraCorner, autoZoom: settings().autoZoom, zoomLook: settings().zoomLook })
+      await writeNewRecording(dir, sources, { preset: settings().preset, autoZoom: settings().autoZoom, zoomLook: settings().zoomLook })
       count('recorded', {
         seconds: Math.round(sources.duration),
         mode: settings().mode ?? 'display',

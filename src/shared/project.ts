@@ -293,7 +293,7 @@ export const defaultStyle = (): Style => ({
 export const uid = () => crypto.randomUUID().slice(0, 8)
 
 /** A preset's look on a project: all of `look` but the camera's corner, which stays where the
- *  recording put it (where the bubble sat, clear of the content). */
+ *  project has it (a new recording starts in its preset's corner; after that it is an edit). */
 export const lookOn = (look: Style, style: Style): Style => ({ ...look, camera: { ...look.camera, position: style.camera.position } })
 
 /** Whether `style` is still `look` as applied (lookOn): equal as data, key order aside. */

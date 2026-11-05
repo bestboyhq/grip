@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { inTurn, parseLaunch, parseGripUrl } from './url.ts'
 import { plainError } from './errors.ts'
-import { areaOf, arrangement, fit, place, reachable, under } from './bounds.ts'
+import { areaOf, arrangement, fit, place, reachable, under, underCamera } from './bounds.ts'
 import { hold, release } from './session.ts'
 import { ring, withScale } from './png.ts'
 import { execFile } from 'node:child_process'
@@ -96,6 +96,9 @@ test('window placement', () => {
   assert.deepEqual(under(panel, { x: 400, y: 100, width: 700, height: 600 }, main, 12), { x: 560, y: 712, ...panel })
   assert.deepEqual(under(panel, { x: 400, y: 300, width: 700, height: 600 }, main, 12), { x: 560, y: 816, ...panel })
   assert.deepEqual(under(panel, { x: -300, y: 100, width: 500, height: 600 }, main, 12), { x: 0, y: 712, ...panel })
+  // The camera bubble: under the camera at the top center of the display, wherever the Dock puts the work area.
+  const docked = { bounds: { x: 0, y: 0, width: 1512, height: 982 }, workArea: { x: 64, y: 38, width: 1448, height: 944 } }
+  assert.deepEqual(underCamera(216, docked), { x: 648, y: 38, width: 216, height: 216 })
 })
 
 test('the packaged app opens .grip bundles by their type, declared once', () => {

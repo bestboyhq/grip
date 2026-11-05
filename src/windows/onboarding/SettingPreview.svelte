@@ -8,7 +8,7 @@
   import { fade } from 'svelte/transition'
   import Countdown, { burst, pop } from '../area/Countdown.svelte'
   import Widget from '../widget/Widget.svelte'
-  import { shell, type Settings } from '../recorder/shell.svelte.ts'
+  import type { Settings } from '../recorder/shell.svelte.ts'
 
   let { kind, on }: { kind: keyof Settings; on: boolean } = $props()
 
@@ -56,9 +56,10 @@
     {#if on}<div class="widget-at" transition:fade={{ duration: 200 }}><Widget params={new URLSearchParams('preview')} /></div>{/if}
   {:else if kind === 'showCamera'}
     {@render menubar(true)}
+    <span class="notch"></span>
     {@render app()}
     {#if on}
-      <div class="bubble {shell.settings?.cameraCorner ?? 'bottom-right'}" transition:fade={{ duration: 200 }}>
+      <div class="bubble" transition:fade={{ duration: 200 }}>
         <svg viewBox="0 0 64 64" aria-hidden="true">
           <circle class="head" cx="32" cy="26" r="11" />
           <path class="body" d="M10 64c2-14 11-21 22-21s20 7 22 21z" />
@@ -200,10 +201,20 @@
   }
 
   /* Camera bubble: the real one's ring and shadow, in its corner, with a stand-in for you. */
+  /* The camera bubble sits right under the camera, in the notch. */
+  .notch {
+    position: absolute;
+    top: 0;
+    left: 42%;
+    width: 16%;
+    height: 9px;
+    border-radius: 0 0 3px 3px;
+    background: #000;
+  }
   .bubble {
     position: absolute;
-    top: 13%;
-    left: 5%;
+    top: 12px;
+    left: 37.5%;
     width: 25%;
     aspect-ratio: 1;
     overflow: hidden;
@@ -212,14 +223,6 @@
     box-shadow:
       0 0 0 1.5px rgb(255 255 255 / 0.2),
       0 6px 16px rgb(0 0 0 / 0.38);
-  }
-  .bubble:is(.bottom-left, .bottom-right) {
-    top: auto;
-    bottom: 8%;
-  }
-  .bubble:is(.top-right, .bottom-right) {
-    left: auto;
-    right: 5%;
   }
   .bubble svg {
     width: 100%;

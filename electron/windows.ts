@@ -20,7 +20,7 @@ export const hidden = !!process.env.STUDIO_HIDDEN
 /** Window kind = route name. Normal windows show the dock icon; the rest float over the screen. */
 const NORMAL = new Set(['editor', 'export', 'onboarding', 'recorder', 'dev'])
 /** Kinds whose position is remembered per display. */
-const REMEMBER = new Set(['editor', 'export', 'widget', 'notes']) // the camera bubble goes by its corner
+const REMEMBER = new Set(['editor', 'export', 'widget', 'notes']) // the camera bubble keeps its own spot (shell/recorder.ts)
 const kinds = new WeakMap<BrowserWindow, string>()
 
 export const kindOf = (w: BrowserWindow) => kinds.get(w)

@@ -50,9 +50,10 @@
 //   shell:login-item(on?) -> on   Grip opens at login (macOS's login item; never in dev or hidden runs)
 //   shell:relaunch                macOS applies a new Screen Recording grant only after a relaunch
 //   notes:prompter                main -> speaker notes window: start or stop the prompter (⌥⌘.)
+//   shell:bubble-hover(over)      main -> camera bubble: the pointer is over its circle, so it fades
 // Editor windows: "editor:close" asks one to save and refresh its thumbnail; it answers
 // editor:closed(error), '' once saved.
-import { app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, shell, type BrowserWindowConstructorOptions, type MenuItemConstructorOptions, type Rectangle } from 'electron'
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, shell, type BrowserWindowConstructorOptions, type Display, type MenuItemConstructorOptions, type Rectangle } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
@@ -60,9 +61,8 @@ import { importVideo, recentProjects, recoveredAtLaunch } from '../projects.ts'
 import { capture, recordingEvents, recordingName } from '../recording.ts'
 import { native } from '../native.ts'
 import { DRAW_FADE, DRAW_HOLD } from '../../src/engine/overlays/drawings.ts'
-import type { CameraPosition } from '../../src/shared/project.ts'
 import { activeDisplay, hidden, openWindow, reveal, sendAll, setRecordingDock, updateDock, windowsOf } from '../windows.ts'
-import { arrangement, place } from './bounds.ts'
+import { arrangement, place, reachable, underCamera } from './bounds.ts'
 import { withScale } from './png.ts'
 import { plainError, type Permission } from './errors.ts'
 import { editorCloser, type Choice } from './closing.ts'
@@ -85,6 +85,8 @@ const TOOLBAR = { width: 882, height: 64 }
 const WIDGET = { width: 316, height: 48 }
 const RESULT = { width: 300, height: 400 } // taller than any card, which fits its height to its content (shell:fit)
 const BUBBLE = 216 // camera bubble window; the circle inside leaves room for its shadow
+const BUBBLE_PAD = 16 // the circle's inset in the bubble window (src/windows/camera/Camera.svelte)
+const SNAP = 72 // a bubble dropped this close to its spot under the camera settles there
 const NOTES = { width: 440, height: 260 }
 
 let toolbar: BrowserWindow | null = null
@@ -483,61 +485,59 @@ function showWidget() {
   w.once('ready-to-show', () => reveal(w, false))
 }
 
-/** What the camera bubble sits in: the area being recorded or picked, else the display's work area.
- *  Global points. */
-function bubbleBox(): Rectangle {
-  const display = (id: number) => screen.getAllDisplays().find((d) => d.id === id)
-  const global = (id: number, r: { x: number; y: number; width: number; height: number }) => {
-    const b = display(id)?.bounds
-    return b && { x: b.x + r.x, y: b.y + r.y, width: r.width, height: r.height }
-  }
-  const box =
-    status !== 'idle' && area ? global(area.display, { x: area.rect.x, y: area.rect.y, width: area.rect.w, height: area.rect.h })
-    : picking && mode === 'area' && selection ? global(selection.display, selection.rect)
-    : null
-  return box ?? displayOf(status !== 'idle' ? homeDisplay : null).workArea
-}
+/** The display the camera bubble is on: the one being recorded, else the one the area is picked on,
+ *  else the one under the mouse. */
+const bubbleDisplay = () => displayOf(status !== 'idle' ? homeDisplay : picking && mode === 'area' && selection ? selection.display : null)
 
-/** The bubble in its corner (settings.cameraCorner) of bubbleBox, where the video will show the
- *  camera; smaller in a small area. The window has room for the circle's shadow around it. */
-function bubbleBounds(): Rectangle {
-  const box = bubbleBox()
-  const size = Math.round(Math.min(BUBBLE, Math.max(128, Math.min(box.width, box.height) * 0.45)))
-  const corner = settings().cameraCorner
-  const inset = 6 // the circle sits 10 pt inside the box (the window pads it by 16)
-  return {
-    width: size,
-    height: size,
-    x: Math.round(corner.endsWith('left') ? box.x + inset : box.x + box.width - size - inset),
-    y: Math.round(corner.startsWith('top') ? box.y + inset : box.y + box.height - size - inset),
-  }
+/** Where the bubble sits on display `d`: where it was last dropped there, else under the camera. */
+function bubbleBounds(d: Display): Rectangle {
+  const saved = settings().windows[`camera@${d.id}`]
+  return saved && reachable(saved, [d.workArea]) ? saved : underCamera(BUBBLE, d)
 }
 
 let placed: Rectangle | null = null
+/** The display the bubble was placed for: it moves only when that changes, and stays wherever it is dropped. */
+let placedOn: number | null = null
 function updateBubble() {
   const s = settings()
   const want = !!s.camera && s.showCamera && (picking || status !== 'idle')
   const open = windowsOf('camera')[0]
   if (!want) return open?.destroy()
-  const b = bubbleBounds()
+  const d = bubbleDisplay()
   if (open) {
-    if (JSON.stringify(open.getBounds()) !== JSON.stringify(b)) open.setBounds((placed = b))
+    if (d.id !== placedOn) open.setBounds((placed = bubbleBounds(d)))
+    placedOn = d.id
     return
   }
-  const w = openWindow('camera', { ...floating, ...(placed = b), transparent: true, hasShadow: false, movable: true })
+  placedOn = d.id
+  const w = openWindow('camera', { ...floating, ...(placed = bubbleBounds(d)), transparent: true, hasShadow: false, movable: true })
   protect(w, 1)
   w.once('ready-to-show', () => frozen.then(() => w.isDestroyed() || reveal(w, false)))
-  // Dropped after a drag: it snaps to the nearest corner, which the next recording keeps.
+  // Dropped after a drag: it stays there, or settles under the camera when dropped near it, and that
+  // display keeps the spot. Where the video puts the camera is an edit, not this.
   w.on('moved', () => {
     const r = w.getBounds()
     if (JSON.stringify(r) === JSON.stringify(placed)) return
-    const box = bubbleBox()
-    const top = r.y + r.height / 2 < box.y + box.height / 2
-    const left = r.x + r.width / 2 < box.x + box.width / 2
-    const corner: CameraPosition = `${top ? 'top' : 'bottom'}-${left ? 'left' : 'right'}`
-    if (corner !== settings().cameraCorner) setSettings({ cameraCorner: corner }) // its listener moves it
-    else w.setBounds((placed = bubbleBounds()), true)
+    const on = screen.getDisplayMatching(r)
+    const home = underCamera(BUBBLE, on)
+    placed = Math.hypot(r.x - home.x, r.y - home.y) < SNAP ? home : r
+    if (placed === home) w.setBounds(home, true)
+    setSettings({ windows: { ...settings().windows, [`camera@${on.id}`]: placed } })
   })
+  watchPointer(w)
+}
+
+/** Fades the bubble while the pointer is over its circle, so what is under it shows; it still drags.
+ *  Main watches the pointer rather than the page: the drag region hands the pointer to the window server. */
+function watchPointer(w: BrowserWindow) {
+  let over = false
+  const timer = setInterval(() => {
+    if (w.isDestroyed()) return clearInterval(timer)
+    const p = screen.getCursorScreenPoint()
+    const b = w.getBounds()
+    const now = Math.hypot(p.x - b.x - b.width / 2, p.y - b.y - b.height / 2) <= b.width / 2 - BUBBLE_PAD
+    if (now !== over) w.webContents.send('shell:bubble-hover', (over = now))
+  }, 33)
 }
 
 // ---- Drawing on screen ----

@@ -25,7 +25,9 @@ Screen, window, area, and device recording.
   Picking a display or a window, ⌘C copies it without drawing; a window comes alone, as macOS takes it: nothing in front of it, clear corners, no shadow.
   The overlay under the pointer holds the keyboard, so ↩ and ⌘C reach the display the user is looking at.
   They leave out our UI and the cursor like recordings do, and carry their pixel density (144 dpi on Retina) so they paste at on-screen size.
-- The camera preview sits in the corner of the recorded area where the video will put the camera; moving it moves the camera.
+- The camera preview is for the person recording, never a layout: it starts under the camera, at the top center of the display, so looking at yourself is looking into the lens.
+  It drags anywhere, settles back under the camera when dropped near it, and fades while the pointer is over it.
+  Each display keeps where it was dropped; where the video puts the camera is an edit.
 - One recording session exists at a time.
   Start, pause, resume, finish, cancel, and restart are idempotent and race-free under key spam and errors.
 - Check free disk space before and during recording, warn early, and finish cleanly when it runs out.
