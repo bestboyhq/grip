@@ -1,12 +1,16 @@
 <!-- Camera bubble while picking and recording: live preview of the chosen camera, mirrored like a
-     mirror, circular, draggable. Out of the recording (the camera is its own track). -->
+     mirror, circular, draggable. Out of the recording (the camera is its own track), and only for the
+     person recording: it sits under the camera, and fades while the pointer is over it. -->
 <script lang="ts">
   import Icon from '../recorder/Icon.svelte'
   import { inputs, shell } from '../recorder/shell.svelte.ts'
+  import { on } from '../../lib/ipc.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
   let error = $state('')
+  let faded = $state(false)
+  $effect(() => on('shell:bubble-hover', (over: boolean) => (faded = over)))
 
   /** Attachment: streams the chosen camera into the video; reruns when the choice changes. */
   function preview(video: HTMLVideoElement) {
@@ -40,7 +44,7 @@
   }
 </script>
 
-<main class="bubble">
+<main class="bubble" class:faded>
   <video {@attach preview} autoplay muted playsinline class:hidden={!!error}></video>
   {#if error}
     <div class="off">
@@ -64,6 +68,10 @@
       0 0 0 1.5px var(--ring-faint),
       0 8px 22px rgb(0 0 0 / 0.38);
     -webkit-app-region: drag;
+    transition: opacity var(--come) var(--ease-out);
+  }
+  .faded {
+    opacity: 0.3;
   }
   video {
     width: 100%;

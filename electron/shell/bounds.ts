@@ -34,6 +34,12 @@ export function place(size: { width: number; height: number }, area: Rect, botto
   return fit({ x, y, ...size }, area)
 }
 
+/** A `size` square under the display's camera: top center, just below the menu bar, where a built-in camera sits
+ *  and most webcams clip on. Centered on the display, not on its work area, which the Dock shifts. */
+export function underCamera(size: number, d: { bounds: Rect; workArea: Rect }): Rect {
+  return fit({ x: d.bounds.x + (d.bounds.width - size) / 2, y: d.workArea.y, width: size, height: size }, d.workArea)
+}
+
 /** `size` centered under `w`, `gap` points below it, or over its bottom edge when `area` ends first. */
 export function under(size: { width: number; height: number }, w: Rect, area: Rect, gap: number): Rect {
   const below = w.y + w.height + gap

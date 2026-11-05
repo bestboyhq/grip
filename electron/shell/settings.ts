@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Permission } from '../../native/index.d.ts'
 import type { Rect } from './bounds.ts'
-import type { CameraPosition, ZoomLook } from '../../src/shared/project.ts'
+import type { ZoomLook } from '../../src/shared/project.ts'
 
 export interface Settings {
   camera: string | null // capture device id; null = no camera
@@ -14,8 +14,6 @@ export interface Settings {
   countdown: boolean
   showWidget: boolean
   showCamera: boolean // camera bubble on screen while picking and recording
-  /** The corner of the recorded area the camera bubble sits in; new recordings put the camera there. */
-  cameraCorner: CameraPosition
   /** New recordings zoom in on clicks and typing; each project can still turn it on or off. */
   autoZoom: boolean
   /** The preset new recordings start with (its id, electron/presets.ts); null: the default look. */
@@ -38,7 +36,7 @@ export interface Settings {
   onboarded: boolean
   /** Permissions Grip showed the system prompt for; macOS cannot tell these from denied. */
   prompted: Permission[]
-  /** Remembered window bounds, keyed `<kind>@<display id>`. */
+  /** Remembered window bounds, keyed `<kind>@<display id>`; the camera bubble's is where it was last dropped. */
   windows: Record<string, Rect>
   /** The global shortcut that opens the picker and finishes a recording: an Electron accelerator
    *  (src/shared/shortcut.ts), set through shell:shortcut. */
@@ -60,7 +58,6 @@ const defaults: Settings = {
   countdown: true,
   showWidget: true,
   showCamera: true,
-  cameraCorner: 'bottom-right',
   autoZoom: true,
   preset: null,
   zoomLook: {},
