@@ -283,11 +283,11 @@ export function duplicateClips(clips: Clip[], ids: Set<string>): Clip[] {
 }
 
 /** Where output time t of `before` is after an edit: the same source moment, or the next one that
- *  survives when it was cut out. Undo, redo, and timing edits put the playhead there. */
-export function sameMoment(before: TimeMap, after: TimeMap, t: number): number {
-  const src = toSource(before, t)
-  return toOutput(after, src) ?? mapRange(after, src, Infinity)[0]?.[0] ?? after.duration
-}
+ *  survives when it was cut out. Timing edits put the playhead there. */
+export const sameMoment = (before: TimeMap, after: TimeMap, t: number) => momentAt(after, toSource(before, t))
+
+/** Output time of source moment `src`, or of the next one that survives when it was cut out. */
+export const momentAt = (map: TimeMap, src: number) => toOutput(map, src) ?? mapRange(map, src, Infinity)[0]?.[0] ?? map.duration
 
 // ---- Zooms, layouts, masks, voiceovers: items in source time; with `overlap` (zooms) they pass over each other ----
 

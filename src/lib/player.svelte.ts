@@ -14,7 +14,7 @@
 // zoom camera) in a worker, so editing a 2-hour project never stalls the editor. Until the new
 // preparation lands the preview keeps the last frame rather than show the old timeline.
 
-import { doc, save } from './doc.svelte.ts'
+import { doc, save, trackPlayhead } from './doc.svelte.ts'
 import type { InputEvent } from '../shared/events.ts'
 import type { Clip, Project, Style, Transcript } from '../shared/project.ts'
 import { mapRange, timeMap, toOutput, toSource } from '../shared/timemap.ts'
@@ -37,6 +37,7 @@ export const player = $state({ time: 0, duration: 0, playing: false, error: null
 
 /** The output time the preview shows: the hovered moment, else the playhead. */
 export const previewTime = () => player.hover ?? player.time
+trackPlayhead(() => (doc.project ? toSource(timeMap(doc.project.clips), player.time) : 0))
 
 /** Timing for labs and logs; plain (not reactive) so the hot loop stays cheap. Set `sync` to an
  *  array to log [audio clock, frame time] (output seconds) for each frame drawn while playing. */

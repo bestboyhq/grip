@@ -62,10 +62,17 @@ export function pickLook(z: Zoom | undefined) {
 
 interface Snapshot {
   json: string
+  at: number // the playhead then, in source time: undo and redo return it there
 }
 const undoStack: Snapshot[] = []
 const redoStack: Snapshot[] = []
 const LIMIT = 300 // ponytail: full JSON snapshots; switch to patches if projects grow past a few MB
+
+let playheadNow = () => doc.project?.playhead ?? 0
+
+/** Where the playhead is now, in source time. The player tells: it saves the project's playhead only
+ *  on pause and seek, and an undo step taken while playing needs the moment it was taken. */
+export const trackPlayhead = (now: () => number) => (playheadNow = now)
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 let writing: Promise<unknown> = Promise.resolve() // the latest write
@@ -105,7 +112,7 @@ let mergeKey = ''
 export function edit(fn: (p: Project) => void, merge?: string) {
   if (!doc.project) return
   if (!merge || merge !== mergeKey) {
-    undoStack.push({ json: JSON.stringify(doc.project) })
+    undoStack.push({ json: JSON.stringify(doc.project), at: playheadNow() })
     if (undoStack.length > LIMIT) undoStack.shift()
     redoStack.length = 0
   }
@@ -118,8 +125,9 @@ function swap(from: Snapshot[], to: Snapshot[]) {
   const s = from.pop()
   if (!s || !doc.project) return
   mergeKey = ''
-  to.push({ json: JSON.stringify(doc.project) })
+  to.push({ json: JSON.stringify(doc.project), at: playheadNow() })
   const p: Project = JSON.parse(s.json)
+  p.playhead = s.at // where the playhead was at that step; the caller seeks there
   p.sources = $state.snapshot(doc.project.sources) // main-side domains own sources (camera matte, transcript): undo never takes them back
   doc.project = p
   pruneSelection()

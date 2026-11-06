@@ -55,6 +55,14 @@ export async function keepingPlayhead(fn: () => void) {
   if (doc.project) seek(M.sameMoment(before, mapNow(), t))
 }
 
+/** Undo or redo, returning the playhead to where it was at that step (inside a clip a ripple delete
+ *  took, not at the cut), so the view stays on what came back. */
+async function restoring(fn: () => void) {
+  fn()
+  await tick() // let the player see the new duration before seeking
+  if (doc.project) seek(M.momentAt(mapNow(), doc.project.playhead))
+}
+
 /** Edit only when `next` differs, so no-ops leave no undo step. */
 function set<K extends keyof Items>(k: K, next: Items[K]) {
   if (JSON.stringify(next) !== JSON.stringify(project()[k])) edit((p) => { p[k] = next as Project[K] })
@@ -300,8 +308,8 @@ export function timelineCommands(view: { zoom: (f: number) => void; fit: () => v
     c('start', 'Playback', 'Go to start', () => seek(0), open, ['↖']),
     c('end', 'Playback', 'Go to end', () => seek(mapNow().duration), open, ['↘']),
 
-    c('undo', 'Edit', 'Undo', () => keepingPlayhead(undo), () => open() && canUndo(), ['⌘Z'], { repeat: true }),
-    c('redo', 'Edit', 'Redo', () => keepingPlayhead(redo), () => open() && canRedo(), ['⇧⌘Z'], { repeat: true }),
+    c('undo', 'Edit', 'Undo', () => restoring(undo), () => open() && canUndo(), ['⌘Z'], { repeat: true }),
+    c('redo', 'Edit', 'Redo', () => restoring(redo), () => open() && canRedo(), ['⇧⌘Z'], { repeat: true }),
     c('cut', 'Edit', 'Cut at playhead', () => cut(), open, ['⌘B', 'C'], { hint: 'split the clip' }),
     c('trimBefore', 'Edit', 'Delete before playhead', () => trimToPlayhead(-1), open, ['Q'], { hint: 'in the clip under it' }),
     c('trimAfter', 'Edit', 'Delete after playhead', () => trimToPlayhead(1), open, ['W'], { hint: 'in the clip under it' }),

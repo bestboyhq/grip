@@ -21,7 +21,9 @@ The editor where users cut, speed up, and direct the video.
   People bring these keys from other editors: the bar shows Cut with ⌘B, and ⌘K finds it by "split".
   ⌫ and ⌦ do what X does, as in any Mac app: either one doing nothing reads as an editor that ignores its own platform.
   Shortcuts stay inactive while a text field has focus.
-- Undo and redo cover every edit and return the playhead to the same source moment.
+- Undo and redo cover every edit and return the playhead to the source moment it was on at that step, even while playing.
+  Undoing a ripple delete puts it back inside the clip that returns, not at the far end of it, so the view stays on what came back.
+  Timing edits keep the playhead on the source moment it shows.
 - Dragging and resizing leave the playhead in place, and a dragged edge tracks the pointer exactly, on sped-up clips too.
   Trimming a clip edge shows the frame at the edge in the preview as it moves, source being trimmed back in included, so no cut is blind.
   A lens above the edge magnifies the recording around it: frames, voice, and words, with the source outside the clip ghosted up to where another clip's source or the recording ends.
