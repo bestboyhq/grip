@@ -18,10 +18,14 @@ GPU composition of each output frame.
 - Sensitive-data masks blur or pixelate and take their color from what they cover; highlight masks dim the rest.
   Masks stay locked to content through zooms.
 - The keystroke overlay draws each key as its own keycap with the macOS symbol and name.
+  A repeated shortcut counts only the presses made so far: a ×3 badge on the first of three presses gives the ending away.
 - Click effects: swell, wave, circle, focus ring.
   All four live on the screen's glass, so they are drawn in the screen pass, not on the overlay canvas: the loupe and motion blur carry them, and the cursor stays sharp above them.
   A crest narrower than a few times its refraction folds text into rainbow noise and reads as a ring drawn over the UI; keep crests broad so text bends and swells.
   Lighting on a crest can only darken white UI, so it shows as a gray ring; the swell is unlit.
+- A click or shortcut cut out with the dead time before it still shows over the footage kept after the cut, as that footage showed it before the cut (`carryToOutput`).
+  Dropping it with its press erases what the user saw in footage they kept.
+  The click effect plays on mid-animation, since the cut changes the picture under it anyway; the shortcut label enters at the cut, so the stack of labels lasting across it slides instead of jumping.
 - Device mockups match each model: bezel, corner radius, Dynamic Island, portrait and landscape.
 
 Done when a frame grab of any export holds up at 200% zoom with no banding, aliasing, or misaligned layers.

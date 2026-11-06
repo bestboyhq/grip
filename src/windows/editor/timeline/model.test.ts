@@ -73,26 +73,51 @@ test('a dragged clip edge lands exactly under the pointer on a sped-up clip', ()
   const lim = M.clipLimits(clips, 1, 100)
   assert.deepEqual(lim, { lo: 10, hi: 50 })
   // end edge: dragged from output 15 to 13.25
-  const end = M.trimClip(clips, 1, 'end', M.edgeSource(map, 1, 13.25), lim)
+  const end = M.trimClip(clips, 1, 'end', M.edgeSource(map, 1, 13.25, 'end'), lim)
   near(timeMap(end).outStarts[2], 13.25)
   // start edge: dragged from output 10 to 11.5, drawn at outStart + (new - old) / speed
-  const start = M.trimClip(clips, 1, 'start', M.edgeSource(map, 1, 11.5), lim)
+  const start = M.trimClip(clips, 1, 'start', M.edgeSource(map, 1, 11.5, 'start'), lim)
   near(map.outStarts[1] + (start[1].start - 20) / 4, 11.5)
   // growing stops at the source the neighbours use
-  assert.equal(M.trimClip(clips, 1, 'start', M.edgeSource(map, 1, 0), lim)[1].start, 10)
-  assert.equal(M.trimClip(clips, 1, 'end', M.edgeSource(map, 1, 99), lim)[1].end, 50)
+  assert.equal(M.trimClip(clips, 1, 'start', M.edgeSource(map, 1, 0, 'start'), lim)[1].start, 10)
+  assert.equal(M.trimClip(clips, 1, 'end', M.edgeSource(map, 1, 99, 'end'), lim)[1].end, 50)
   // leaving the trim lens picks the timeline drag up from where the edge is: it does not move
-  for (const src of [12, 20, 33.3, 46]) near(M.edgeSource(map, 1, M.edgeOutput(map, map.clips, 1, src)), src)
+  for (const side of ['start', 'end'] as const) for (const src of [12, 20, 33.3, 46]) near(M.edgeSource(map, 1, M.edgeOutput(map, 1, src, side), side), src)
 })
 
-test('the preview finds a dragged clip edge, inside the clip or in source being trimmed back in', () => {
+test('the preview finds a dragged clip edge, inside the clip, in source being trimmed back in, or taken from the next clip', () => {
   const clips = [clip(0, 10), clip(20, 40, 4), clip(50, 60)]
-  const map = timeMap(clips)
-  const lim = M.clipLimits(clips, 1, 100)
+  const lim = M.trimLimits(clips, 1, 100)
   for (const side of ['start', 'end'] as const) {
-    const full = M.trimClip(clips, 1, side, side === 'start' ? lim.lo : lim.hi, lim)
-    for (const src of side === 'start' ? [12, 25] : [33, 46]) near(toSource(timeMap(full), M.edgeOutput(map, full, 1, src)), src)
+    const full = timeMap(M.trimClip(clips, 1, side, side === 'start' ? lim.lo : lim.hi, lim))
+    for (const src of side === 'start' ? [5, 12, 25] : [33, 46, 55]) near(toSource(full, M.edgeOutput(full, 1, src, side)), src)
   }
+})
+
+test('the edge between the parts of a split moves the split: the other part gives way', () => {
+  const at = (cs: Clip[]) => cs.map((c) => [c.start, c.end])
+  const clips = [clip(0, 10), clip(10, 24, 2)]
+  const lim = M.trimLimits(clips, 0, 24)
+  assert.deepEqual(lim, { lo: 0, hi: 23.8 })
+  assert.deepEqual(at(M.trimClip(clips, 0, 'end', 12, lim)), [[0, 12], [12, 24]])
+  assert.deepEqual(at(M.trimClip(clips, 1, 'start', 7, M.trimLimits(clips, 1, 24))), [[0, 7], [7, 24]])
+  assert.deepEqual(at(M.trimClip(clips, 0, 'end', 99, lim)), [[0, 23.8], [23.8, 24]], 'down to its shortest, never through it')
+  assert.deepEqual(at(M.trimClip(clips, 0, 'end', 8, lim)), [[0, 8], [10, 24]], 'trimmed in, the edge cuts and the other part keeps its source')
+  // A start edge taken into a slower part goes on at its speed, so the split stays under the pointer.
+  const map = timeMap(clips)
+  const rolled = M.trimClip(clips, 1, 'start', M.edgeSource(map, 1, 8, 'start'), M.trimLimits(clips, 1, 24))
+  assert.deepEqual(at(rolled), [[0, 8], [8, 24]])
+  near(timeMap(rolled).outStarts[1], 8)
+  // Past a cut, the edge brings the cut back, then takes over the clip before it, still under the pointer.
+  const cut = [clip(0, 5), clip(10, 20, 2)]
+  const cutMap = timeMap(cut)
+  assert.deepEqual(at(M.trimClip(cut, 1, 'start', 3, M.trimLimits(cut, 1, 20))), [[0, 3], [3, 20]])
+  for (const src of [3, 4.5, 7, 12]) near(M.edgeSource(cutMap, 1, M.edgeOutput(cutMap, 1, src, 'start'), 'start'), src)
+  near(M.edgeOutput(cutMap, 1, 4.5, 'start'), 2) // 5 s brought back at 2x, then 0.5 s of the clip before at 1x
+  // A clip before it whose source comes later is not taken over.
+  const swapped = [clip(10, 20), clip(2, 10)]
+  assert.deepEqual(at(M.trimClip(swapped, 1, 'start', 0, M.trimLimits(swapped, 1, 20))), [[10, 20], [0, 10]])
+  assert.deepEqual(M.trimLimits(swapped, 0, 20), { lo: 10, hi: 20 })
 })
 
 test('clip edits', () => {
@@ -239,4 +264,39 @@ test('waveform tiles: fetched once per tile, coarser cached levels stand in whil
   assert.equal(w.peak('a', coarse, 0, 0.08), 0.5)
   assert.equal(w.peak('a', coarse - 2, 0, 0.02), 0.5) // finer level not loaded: the coarse tile answers
   assert.equal(calls.length, 2) // ...and the finer tile was requested
+})
+
+test('the view rides along with the playhead, eases to seeks, and lets the user scroll away', () => {
+  const play = (f: M.Follow, v: M.Viewport, t0: number, t1: number, at: number, still = false) => {
+    for (let t = t0; t <= t1 + 1e-9; t += 1 / 60) v.x0 = M.follow(f, v, t, true, at + (t - t0) * 1000, still)
+    return v.x0
+  }
+  const f = M.follower()
+  const v: M.Viewport = { x0: 0, w: 10, duration: 100 }
+  assert.equal(play(f, v, 0, 5, 0), 0, 'the playhead walks to the middle')
+  near(play(f, v, 5, 20, 5000), 20 - 5) // then the view rides along, the playhead in the middle
+  // Scrolled back out of view while playing: the view stays, however long; in view again, it rides on after HOLD.
+  M.letGo(f, 20_000)
+  v.x0 = 2
+  assert.equal(play(f, v, 20, 30, 20_000), 2, 'never pulled back to a playhead out of view')
+  v.x0 = 32
+  assert.equal(play(f, v, 30, 30.5, 30_000), 32, 'in view, it waits while the user may still scroll')
+  M.letGo(f, 30_500)
+  assert.equal(play(f, v, 30.5, 31.4, 30_500), 32, 'each scroll restarts the wait')
+  assert.equal(play(f, v, 31.4, 37, 31_400), 32, 'after the wait the playhead walks to the middle')
+  near(play(f, v, 37, 39, 37_000), 39 - 5)
+  // Paused, a seek far out of view eases there from a view away, landing in the middle.
+  M.follow(f, v, 39, false, 39_000, false)
+  M.seeked(f, v, 90, false, 40_000, false)
+  const first = M.follow(f, v, 90, false, 40_000, false)
+  assert.ok(first >= 85 - 10 && first < 85, `starts a view away: ${first}`)
+  assert.equal(M.follow(f, v, 90, false, 40_000 + M.GLIDE, false), 85)
+  assert.equal(f.aim, null, 'and stops there')
+  // Reduced motion: the view pages instead of sliding.
+  const r = M.follower()
+  const rv: M.Viewport = { x0: 0, w: 10, duration: 100 }
+  assert.equal(play(r, rv, 0, 9.9, 0, true), 0)
+  const paged = play(r, rv, 9.9, 10.1, 9900, true)
+  assert.ok(Math.abs(paged - (10 - 0.5)) < 0.02, `pages once the playhead leaves, landing near the left: ${paged}`)
+  assert.equal(play(r, rv, 10.1, 15, 10_100, true), paged, 'and holds still until the next page')
 })

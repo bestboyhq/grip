@@ -64,6 +64,17 @@ export function toOutput(m: TimeMap, src: number): number | null {
   return best < 0 ? null : m.outStarts[best] + (Math.max(src, m.clips[best].start) - m.clips[best].start) / m.clips[best].speed
 }
 
+/** toOutput, carrying a moment cut out over to the footage kept within `reach` source seconds after it:
+ *  `from` is where that footage starts playing, and `out` lies as far before it as the moment lay before
+ *  that footage, so an animation the moment started plays on there as it did before the cut. A kept
+ *  moment is its own `from`. Null when nothing within reach is kept. */
+export function carryToOutput(m: TimeMap, src: number, reach: number): { out: number; from: number } | null {
+  const at = toOutput(m, src)
+  if (at !== null) return { out: at, from: at }
+  const from = mapRange(m, src, src + reach)[0]?.[0]
+  return from === undefined ? null : { out: from - (toSource(m, from) - src) / speedAt(m, from), from }
+}
+
 /** Clip indices sorted by source start, with a running max of source ends: lets mapRange and
  *  toOutput visit only the clips that can hold a time, O(log n + hits) instead of O(n). Built once per map. */
 const sourceIndex = new WeakMap<TimeMap, { order: number[]; maxEnd: number[] }>()

@@ -8,6 +8,7 @@ import type { InputEvent } from '../../../shared/events.ts'
 import { clipAt, clipLimits, cuts, mapRange, removeOutputRange, splitAt, timeMap, toOutput, toSource, type Cut, type TimeMap } from '../../../shared/timemap.ts'
 export { clipLimits, cuts, restoreCut, type Cut } from '../../../shared/timemap.ts'
 import { reach, slid, type Span } from '../../../shared/voiceover.ts'
+import { easeOut } from '../../../ui/motion.ts'
 
 export type ItemTrack = 'zooms' | 'layouts' | 'masks' | 'voiceovers'
 export type ChipTrack = 'keys' | 'captions'
@@ -209,15 +210,23 @@ export const blockAt = (l: Lane, t: number, tol = 0): Block | null => blocksAt(l
 // ---- Clips ----
 
 /** Source time for clip i's edge dragged to output time `out`. The clip's own linear map, extended past
- *  its ends (toSource clamps to the timeline), so the edge lands exactly under the pointer at any speed. */
-export function edgeSource(map: TimeMap, i: number, out: number): number {
+ *  its ends (toSource clamps to the timeline), so the edge lands exactly under the pointer at any speed.
+ *  A start edge taken on into the clip before it (trimLimits) goes on at that clip's speed, so the split
+ *  between them stays under the pointer as that clip gives way. */
+export function edgeSource(map: TimeMap, i: number, out: number, side: 'start' | 'end'): number {
   const c = map.clips[i]
-  return c.start + (out - map.outStarts[i]) * c.speed
+  const p = map.clips[i - 1]
+  const knee = side === 'start' && p && p.end <= c.start + EPS ? edgeOutput(map, i, p.end, side) : -Infinity
+  return out < knee ? p.end + (out - knee) * p.speed : c.start + (out - map.outStarts[i]) * c.speed
 }
 
-/** Output time at which source moment `src` on clip i's dragged edge plays in `full`, the clips with that
- *  edge as far out as it can go (player's showEdge). The clips before i are the same as in `map`. */
-export const edgeOutput = (map: TimeMap, full: Clip[], i: number, src: number) => map.outStarts[i] + (src - full[i].start) / full[i].speed
+/** Output time of source moment `src` on clip i's dragged edge: edgeSource undone. */
+export function edgeOutput(map: TimeMap, i: number, src: number, side: 'start' | 'end'): number {
+  const c = map.clips[i]
+  const p = map.clips[i - 1]
+  const own = (s: number) => map.outStarts[i] + (s - c.start) / c.speed
+  return side === 'start' && p && p.end <= c.start + EPS && src < p.end ? own(p.end) + (src - p.end) / p.speed : own(src)
+}
 
 /** Grow the clips in `ids` back over the free source on both sides, in output order. */
 export function resetTrim(clips: Clip[], ids: Set<string>, duration: number): Clip[] {
@@ -230,12 +239,37 @@ export function resetTrim(clips: Clip[], ids: Set<string>, duration: number): Cl
   return next
 }
 
-/** Trim one edge of clip i to a source time, clamped to its limits and a minimum length. */
+/** How far a dragged edge of clip i reaches: over the free source next to it (clipLimits), then on into
+ *  the clip next to that edge in the output when its source carries on from there, down to that clip's
+ *  shortest. That clip gives way (trimClip), so the edge between the parts of a split moves the split
+ *  rather than stopping at the other part. */
+export function trimLimits(clips: Clip[], i: number, duration: number) {
+  const { lo, hi } = clipLimits(clips, i, duration)
+  const p = clips[i - 1]
+  const n = clips[i + 1]
+  return {
+    lo: p && Math.abs(p.end - lo) < EPS ? Math.min(lo, p.start + MIN_LEN * p.speed) : lo,
+    hi: n && Math.abs(n.start - hi) < EPS ? Math.max(hi, n.end - MIN_LEN * n.speed) : hi,
+  }
+}
+
+/** Trim one edge of clip i to a source time, clamped to its limits and a minimum length. An edge taken
+ *  into the source of the clip next to it in the output (trimLimits) takes it over: that clip gives way. */
 export function trimClip(clips: Clip[], i: number, side: 'start' | 'end', src: number, lim: { lo: number; hi: number }): Clip[] {
   const c = clips[i]
   const min = MIN_LEN * c.speed
   const next = clips.slice()
-  next[i] = side === 'start' ? { ...c, start: clamp(src, lim.lo, c.end - min) } : { ...c, end: clamp(src, c.start + min, lim.hi) }
+  const p = clips[i - 1]
+  const n = clips[i + 1]
+  if (side === 'start') {
+    const start = clamp(src, lim.lo, c.end - min)
+    next[i] = { ...c, start }
+    if (p && start < p.end && p.end <= c.start + EPS) next[i - 1] = { ...p, end: start }
+  } else {
+    const end = clamp(src, c.start + min, lim.hi)
+    next[i] = { ...c, end }
+    if (n && end > n.start && n.start >= c.end - EPS) next[i + 1] = { ...n, start: end }
+  }
   return next
 }
 
@@ -282,11 +316,11 @@ export function duplicateClips(clips: Clip[], ids: Set<string>): Clip[] {
 }
 
 /** Where output time t of `before` is after an edit: the same source moment, or the next one that
- *  survives when it was cut out. Undo, redo, and timing edits put the playhead there. */
-export function sameMoment(before: TimeMap, after: TimeMap, t: number): number {
-  const src = toSource(before, t)
-  return toOutput(after, src) ?? mapRange(after, src, Infinity)[0]?.[0] ?? after.duration
-}
+ *  survives when it was cut out. Timing edits put the playhead there. */
+export const sameMoment = (before: TimeMap, after: TimeMap, t: number) => momentAt(after, toSource(before, t))
+
+/** Output time of source moment `src`, or of the next one that survives when it was cut out. */
+export const momentAt = (map: TimeMap, src: number) => toOutput(map, src) ?? mapRange(map, src, Infinity)[0]?.[0] ?? map.duration
 
 // ---- Zooms, layouts, masks, voiceovers: items in source time; with `overlap` (zooms) they pass over each other ----
 
@@ -407,3 +441,64 @@ export function span(sec: number): string {
 }
 
 export const clamp = (x: number, lo: number, hi: number) => Math.min(Math.max(x, lo), hi)
+
+// ---- Following the playhead ----
+
+export const HOLD = 1000 // ms: after the user scrolls the timeline, following waits this long
+export const GLIDE = 250 // ms: the view eases to the playhead
+
+/** How the view follows the playhead. Playing, it rides along once the playhead reaches the middle and
+ *  keeps it there; a seek out of view eases there; under reduced motion the view pages instead. A scroll
+ *  by the user lets go until the playhead is in view and the view was left alone for HOLD, so the
+ *  timeline never pulls the user back from where they look. */
+export interface Follow {
+  aim: 'ride' | number | null // the playhead while playing, a paused seek's output time, or nothing
+  glide: { from: number; t0: number } | null // easing there from left edge `from` since t0 (ms)
+  loose: boolean // the user scrolled away: following waits for the playhead to be in view
+  held: number // when the user last scrolled, ms
+}
+export const follower = (): Follow => ({ aim: null, glide: null, loose: false, held: -Infinity })
+
+/** The visible stretch of the timeline: its left edge and width, in output seconds. */
+export type Viewport = { x0: number; w: number; duration: number }
+
+const leftFor = (f: Follow, v: Viewport, t: number, still: boolean) =>
+  clamp(t - (f.aim === 'ride' && still ? v.w / 20 : v.w / 2), 0, Math.max(0, v.duration - v.w))
+
+/** Ease the view to `aim`: the playhead while playing ('ride', now at t) or output time t, in the middle. */
+export function aimAt(f: Follow, v: Viewport, aim: 'ride' | number, t: number, now: number, still: boolean) {
+  f.aim = aim
+  const to = leftFor(f, v, t, still)
+  // A far jump starts a view away, so the glide shows the way without racing through the timeline.
+  f.glide = still ? null : { from: clamp(v.x0, to - v.w, to + v.w), t0: now }
+}
+
+/** The user scrolled the view: following lets go. */
+export function letGo(f: Follow, now: number) {
+  f.aim = f.glide = null
+  f.loose = true
+  f.held = now
+}
+
+/** The playhead jumped (a seek, not playback): following takes it up again, easing to it when paused out of view. */
+export function seeked(f: Follow, v: Viewport, t: number, playing: boolean, now: number, still: boolean) {
+  f.loose = false
+  f.aim = f.glide = null // playing, the ride starts over from the new moment
+  if (!playing && (t < v.x0 || t > v.x0 + v.w)) aimAt(f, v, t, t, now, still)
+}
+
+/** The view's left edge this frame, following the playhead at output time t. */
+export function follow(f: Follow, v: Viewport, t: number, playing: boolean, now: number, still: boolean): number {
+  const seen = t >= v.x0 && t <= v.x0 + v.w
+  if (!playing && f.aim === 'ride') f.aim = f.glide = null // paused: the view stays where the ride left it
+  if (playing && f.loose && seen && now - f.held >= HOLD) f.loose = false
+  if (playing && !f.loose && f.aim !== 'ride' && (!seen || (!still && t > v.x0 + v.w / 2))) aimAt(f, v, 'ride', t, now, still)
+  if (f.aim === null) return v.x0
+  const to = leftFor(f, v, f.aim === 'ride' ? t : f.aim, still)
+  const g = f.glide
+  const u = g ? (now - g.t0) / GLIDE : 1
+  if (g && u < 1) return g.from + (to - g.from) * easeOut(u)
+  f.glide = null
+  if (f.aim !== 'ride' || still) f.aim = null // a seek has landed; under reduced motion, so has the page
+  return to
+}

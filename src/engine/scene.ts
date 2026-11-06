@@ -77,7 +77,7 @@ export interface Keystroke {
   keys: string[] // keycaps in macOS order, e.g. ['⇧', '⌘', 'P']; specials as symbols ('↩', '⎋', '←'), 'Space', 'F5'
   opacity: number
   age: number // seconds since the latest press in this group
-  count: number // presses merged into this group (⌘Z ⌘Z ⌘Z = 3); key repeat while held does not count
+  count: number // presses merged into this group so far (⌘Z ⌘Z ⌘Z = 3); key repeat while held does not count
   y: number // bottom edge of the group, unzoomed output px, stacking and entrance applied
   size: number // style.keystrokes.size
 }

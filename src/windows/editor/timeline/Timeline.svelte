@@ -17,6 +17,7 @@
   import * as A from './actions.svelte.ts'
   import { formatTime } from '../helpers.ts'
   import { tooltip } from '../../../ui/tooltip.ts'
+  import { still } from '../../../ui/motion.ts'
   import { PAD, RULER, draw, hit, rows as layoutRows, thumb, timeOf, xOf, type Audio, type Hit, type Scene, type View } from './draw.ts'
   import { Waveforms, type PeaksFn } from './waveform.ts'
   import Menu, { type Target } from './Menu.svelte'
@@ -33,7 +34,7 @@
   type Gesture =
     | { kind: 'scrub' }
     | { kind: 'scroll'; x: number; x0: number }
-    | { kind: 'trim'; i: number; side: 'start' | 'end'; lim: { lo: number; hi: number }; off: number; full: Clip[]; fine: { src: number; x: number } | null }
+    | { kind: 'trim'; i: number; side: 'start' | 'end'; lim: { lo: number; hi: number }; off: number; full: TimeMap; fine: { src: number; x: number } | null }
     | { kind: 'move'; track: M.ItemTrack; ids: Set<string>; grab: number }
     | { kind: 'resize'; track: M.ItemTrack; id: string; side: 'start' | 'end'; off: number }
     | { kind: 'create'; track: A.Made; t0: number }
@@ -49,6 +50,8 @@
   let anchor: { t: number; x: number; to: number } | null = null // playhead time, its screen x, where it settles
   let refit = false // the zoom animation is a fitted timeline gliding to its new length
   let closing: { at: number; by: number; t0: number } | null = null // view.shift easing to 0 after a start edge trim
+  let follow = M.follower() // the view following the playhead
+  let was = { t: 0, playing: false, at: 0 } // the playhead when last seen, to tell a seek from playback
   let base: M.Parts | null = null // committed project data (plain)
   let draft: Partial<M.Parts> | null = null // the drag in progress, drawn instead of base
   let camera = false
@@ -162,7 +165,12 @@
     const t = player.time
     const playing = player.playing
     untrack(() => {
-      reveal(t, playing)
+      const at = performance.now()
+      if (playing && !was.playing) follow.loose = false // play follows the playhead again
+      // A seek, not playback: the playhead moved while paused, or other than the time that passed.
+      else if (t !== was.t && playing === was.playing && (!playing || Math.abs(t - was.t - (at - was.at) / 1000) > 0.1))
+        M.seeked(follow, viewport(), t, playing, at, still())
+      was = { t, playing, at }
       requestDraw()
     })
   })
@@ -217,6 +225,7 @@
       view.pps = target = minPps()
       view.x0 = 0
       anchor = null
+      follow = M.follower()
       refit = false
     }
     clampView()
@@ -225,6 +234,7 @@
   }
 
   const minPps = () => (view.W - 2 * PAD) / Math.max(view.duration, 0.5)
+  const viewport = (): M.Viewport => ({ x0: view.x0, w: (view.W - 2 * PAD) / view.pps, duration: view.duration })
   const isFit = () => view.W > 0 && (refit || (!anchor && view.pps <= minPps() * 1.0001))
   const sliderOf = (pps: number) => Math.round((1000 * Math.log(pps / minPps())) / Math.log(MAX_PPS / minPps()))
 
@@ -237,22 +247,17 @@
     zoomValue = sliderOf(view.pps)
   }
 
-  /** Animate the timeline zoom, anchored on the playhead (brought to the middle when off screen). */
-  function zoomTo(pps: number) {
+  /** Animate the timeline zoom, anchored at canvas x `at`, where a pinch or ⌘-scroll points, so the moment
+   *  under the pointer stays under it; without one, on the playhead (brought to the middle when off screen). */
+  function zoomTo(pps: number, at?: number) {
     if (!model || !view.W) return
     target = M.clamp(pps, minPps(), MAX_PPS)
     refit = false
-    const x = PAD + (player.time - view.x0) * view.pps
-    anchor = { t: player.time, x, to: x >= PAD && x <= view.W - PAD ? x : view.W / 2 }
+    const x = at ?? PAD + (player.time - view.x0) * view.pps
+    // A zoom key pressed again mid-glide keeps the playhead heading where the first press sent it.
+    const to = at ?? (anchor?.t === player.time ? anchor.to : x >= PAD && x <= view.W - PAD ? x : view.W / 2)
+    anchor = { t: at === undefined ? player.time : timeOf(view, at), x, to }
     requestDraw()
-  }
-
-  function reveal(t: number, playing: boolean) {
-    if (!model || !view.W || drag) return
-    const x = PAD + (t - view.x0) * view.pps
-    if (x >= PAD && x <= view.W - PAD) return
-    view.x0 = t - (playing ? 32 : view.W / 2 - PAD) / view.pps // pages along while playing, centers on jumps
-    clampView()
   }
 
   // ---- Frames ----
@@ -274,9 +279,20 @@
       anchor.x = done ? anchor.to : anchor.x + (anchor.to - anchor.x) * k
       view.x0 = anchor.t - (anchor.x - PAD) / view.pps
       clampView()
+      if (pointer) hovered() // the moment under the pointer moves with the zoom
       if (done) anchor = null
       if (done) refit = false
       again = !done
+    }
+    if (anchor || drag) follow.aim = follow.glide = null // a zoom or a drag holds the view; following picks up after
+    else if (model && view.W) {
+      const x0 = M.follow(follow, viewport(), player.time, player.playing, now, still())
+      if (x0 !== view.x0) {
+        view.x0 = x0
+        clampView()
+        if (pointer) hovered()
+      }
+      if (follow.aim !== null) again = true
     }
     if (closing) {
       const u = Math.min(1, (now - closing.t0) / SETTLE)
@@ -291,6 +307,7 @@
       if (over) {
         view.x0 += (over * 0.6 * (dt / 16.7)) / view.pps
         clampView()
+        M.letGo(follow, now)
       }
       if (view.x0 !== x0) {
         dragTo(pointer)
@@ -349,9 +366,10 @@
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? view.W : 1
     if (e.ctrlKey || e.metaKey) {
       // Pinch arrives as ctrl+wheel; ⌘-scroll steps more coarsely.
-      zoomTo((target || view.pps) * Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.01 : 0.003)))
+      zoomTo((target || view.pps) * Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.01 : 0.003)), local(e).x)
     } else {
       const d = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * unit
+      M.letGo(follow, performance.now())
       if (anchor) {
         anchor.x -= d // mid-zoom: the anchor moves with the content, the zoom carries on
         anchor.to -= d
@@ -418,8 +436,8 @@
         select = id
         const off = (h.edge === 'start' ? h.block.a : h.block.b) - timeOf(view, p.x) // the edge keeps its distance to the pointer
         if (h.track === 'clips') {
-          const lim = M.clipLimits(base.clips, h.block.i, base.duration)
-          const full = M.trimClip(base.clips, h.block.i, h.edge, h.edge === 'start' ? lim.lo : lim.hi, lim) // the edge as far out as it goes, for the preview
+          const lim = M.trimLimits(base.clips, h.block.i, base.duration)
+          const full = timeMap(M.trimClip(base.clips, h.block.i, h.edge, h.edge === 'start' ? lim.lo : lim.hi, lim)) // the edge as far out as it goes, for the preview
           g = { kind: 'trim', i: h.block.i, side: h.edge, lim, off, full, fine: null }
         } else g = { kind: 'resize', track: h.track, id, side: h.edge, off }
       } else {
@@ -495,17 +513,20 @@
       if (!th) return
       const vis = (view.W - 2 * PAD) / view.pps
       view.x0 = d.x0 + ((p.x - d.x) / (view.W - 2 * PAD - th.w)) * (view.duration - vis)
+      M.letGo(follow, performance.now())
       return clampView()
     }
     if (d.kind === 'trim') {
-      const c = b.clips[d.i]
       // Edges follow the pointer exactly at any speed. A start edge is drawn where the pointer is and
       // the rest of the timeline stays put until release, when the gap closes (ripple). In the lens the
       // pointer moves the edge at the lens's scale instead, from where it entered.
-      const src = d.fine ? d.fine.src + (p.x - d.fine.x) / LENS.k : M.edgeSource(d.map, d.i, timeOf(view, p.x) + d.off)
+      const src = d.fine ? d.fine.src + (p.x - d.fine.x) / LENS.k : M.edgeSource(d.map, d.i, timeOf(view, p.x) + d.off, d.side)
       const clips = M.trimClip(b.clips, d.i, d.side, src, d.lim)
       draft = { clips }
-      view.shift = d.side === 'start' ? { at: d.map.outStarts[d.i], by: (clips[d.i].start - c.start) / c.speed } : null
+      // The clip before gives way when a start edge takes it over, so the edge starts that much earlier.
+      const prev = d.i ? clips[d.i - 1] : null
+      const at = d.map.outStarts[d.i] - (prev ? (b.clips[d.i - 1].end - prev.end) / prev.speed : 0)
+      view.shift = d.side === 'start' ? { at, by: M.edgeOutput(d.map, d.i, clips[d.i].start, 'start') - at } : null
       trimPreview(d, clips)
     } else if (d.kind === 'move') {
       draft = { [d.track]: M.moveItems(b[d.track] as M.Item[], d.ids, toSource(d.map, t) - d.grab, b.duration, M.overlaps(d.track)) }
@@ -525,8 +546,8 @@
    *  sees what they cut; the time readout shows where that edge sits. */
   function trimPreview(d: Extract<Drag, { kind: 'trim' }>, clips: Clip[]) {
     const src = clips[d.i][d.side]
-    player.hover = M.edgeOutput(d.map, d.map.clips, d.i, src)
-    showEdge({ clips: d.full, t: M.edgeOutput(d.map, d.full, d.i, src) })
+    player.hover = M.edgeOutput(d.map, d.i, src, d.side)
+    showEdge({ clips: d.full.clips, t: M.edgeOutput(d.full, d.i, src, d.side) })
   }
 
   /** Where the lens's bottom sits, in canvas px: just above the clip track. */
@@ -538,18 +559,19 @@
     const src = (draft?.clips ?? base!.clips)[d.i][d.side]
     if (!d.fine && p.y < y - 4) d.fine = { src, x: p.x }
     else if (d.fine && p.y > y + 14) {
-      d.off = M.edgeOutput(d.map, d.map.clips, d.i, src) - timeOf(view, p.x)
+      d.off = M.edgeOutput(d.map, d.i, src, d.side) - timeOf(view, p.x)
       d.fine = null
     }
   }
 
   function showLens(d: Extract<Drag, { kind: 'trim' }>) {
     if (!lens || !model || !base || !canvas) return
-    const c = (draft?.clips ?? base.clips)[d.i]
+    const clips = draft?.clips ?? base.clips
+    const c = clips[d.i]
     const m = model.map
     const out = d.side === 'start' ? m.outStarts[d.i] : m.outStarts[d.i] + (c.end - c.start) / c.speed
     const r = canvas.getBoundingClientRect()
-    const scene = { side: d.side, clip: c, was: base.clips[d.i], lim: d.lim, duration: base.duration, fine: !!d.fine, video, mic, system, waves, words }
+    const scene = { side: d.side, clip: c, was: base.clips[d.i], other: clips[d.side === 'end' ? d.i + 1 : d.i - 1] ?? null, lim: d.lim, duration: base.duration, fine: !!d.fine, video, mic, system, waves, words }
     lens.show(scene, r.left + xOf(view, out), r.top + lensBottom(), r.left, r.right)
     lensOn = true
   }
