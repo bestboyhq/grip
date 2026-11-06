@@ -46,6 +46,7 @@ export function openWindow(route: string, opts: BrowserWindowConstructorOptions 
     webPreferences: { preload, sandbox: true, contextIsolation: true, ...opts.webPreferences, ...(hidden ? { backgroundThrottling: false } : {}) },
   })
   kinds.set(win, kind)
+  if (opts.resizable === false) keepFixed(win)
   if (REMEMBER.has(kind)) {
     const remember = () => {
       const b = win.getBounds()
@@ -59,6 +60,21 @@ export function openWindow(route: string, opts: BrowserWindowConstructorOptions 
   if (dev) win.loadURL(`${dev}#/${route}`)
   else win.loadFile(join(import.meta.dirname, '../dist/index.html'), { hash: `/${route}` })
   return win
+}
+
+/** The first screen capture in a process (a still, a screenshot, or a recording) has ReplayKit re-set the
+ *  style mask of every window of ours: a frameless one that is not resizable turns resizable and grows
+ *  by a title bar, its bottom edge kept. The toolbar came up 96 points tall instead of 64, its edges
+ *  draggable. It goes back as it was in the same turn, so the window server never shows it grown. */
+function keepFixed(win: BrowserWindow) {
+  let last = win.getBounds()
+  const check = () => {
+    if (!win.isResizable()) return void (last = win.getBounds())
+    win.setResizable(false)
+    win.setBounds(last)
+  }
+  win.on('resize', check)
+  win.on('move', check)
 }
 
 /** Send to every live window (windows close mid-loop while quitting). */
