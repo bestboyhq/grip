@@ -17,6 +17,7 @@
   import * as A from './actions.svelte.ts'
   import { formatTime } from '../helpers.ts'
   import { tooltip } from '../../../ui/tooltip.ts'
+  import { still } from '../../../ui/motion.ts'
   import { PAD, RULER, draw, hit, rows as layoutRows, thumb, timeOf, xOf, type Audio, type Hit, type Scene, type View } from './draw.ts'
   import { Waveforms, type PeaksFn } from './waveform.ts'
   import Menu, { type Target } from './Menu.svelte'
@@ -49,6 +50,8 @@
   let anchor: { t: number; x: number; to: number } | null = null // playhead time, its screen x, where it settles
   let refit = false // the zoom animation is a fitted timeline gliding to its new length
   let closing: { at: number; by: number; t0: number } | null = null // view.shift easing to 0 after a start edge trim
+  let follow = M.follower() // the view following the playhead
+  let was = { t: 0, playing: false, at: 0 } // the playhead when last seen, to tell a seek from playback
   let base: M.Parts | null = null // committed project data (plain)
   let draft: Partial<M.Parts> | null = null // the drag in progress, drawn instead of base
   let camera = false
@@ -162,7 +165,12 @@
     const t = player.time
     const playing = player.playing
     untrack(() => {
-      reveal(t, playing)
+      const at = performance.now()
+      if (playing && !was.playing) follow.loose = false // play follows the playhead again
+      // A seek, not playback: the playhead moved while paused, or other than the time that passed.
+      else if (t !== was.t && playing === was.playing && (!playing || Math.abs(t - was.t - (at - was.at) / 1000) > 0.1))
+        M.seeked(follow, viewport(), t, playing, at, still())
+      was = { t, playing, at }
       requestDraw()
     })
   })
@@ -217,6 +225,7 @@
       view.pps = target = minPps()
       view.x0 = 0
       anchor = null
+      follow = M.follower()
       refit = false
     }
     clampView()
@@ -225,6 +234,7 @@
   }
 
   const minPps = () => (view.W - 2 * PAD) / Math.max(view.duration, 0.5)
+  const viewport = (): M.Viewport => ({ x0: view.x0, w: (view.W - 2 * PAD) / view.pps, duration: view.duration })
   const isFit = () => view.W > 0 && (refit || (!anchor && view.pps <= minPps() * 1.0001))
   const sliderOf = (pps: number) => Math.round((1000 * Math.log(pps / minPps())) / Math.log(MAX_PPS / minPps()))
 
@@ -245,14 +255,6 @@
     const x = PAD + (player.time - view.x0) * view.pps
     anchor = { t: player.time, x, to: x >= PAD && x <= view.W - PAD ? x : view.W / 2 }
     requestDraw()
-  }
-
-  function reveal(t: number, playing: boolean) {
-    if (!model || !view.W || drag) return
-    const x = PAD + (t - view.x0) * view.pps
-    if (x >= PAD && x <= view.W - PAD) return
-    view.x0 = t - (playing ? 32 : view.W / 2 - PAD) / view.pps // pages along while playing, centers on jumps
-    clampView()
   }
 
   // ---- Frames ----
@@ -278,6 +280,16 @@
       if (done) refit = false
       again = !done
     }
+    if (anchor || drag) follow.aim = follow.glide = null // a zoom or a drag holds the view; following picks up after
+    else if (model && view.W) {
+      const x0 = M.follow(follow, viewport(), player.time, player.playing, now, still())
+      if (x0 !== view.x0) {
+        view.x0 = x0
+        clampView()
+        if (pointer) hovered()
+      }
+      if (follow.aim !== null) again = true
+    }
     if (closing) {
       const u = Math.min(1, (now - closing.t0) / SETTLE)
       view.shift = u < 1 ? { at: closing.at, by: closing.by * (1 - u) ** 3 } : null
@@ -291,6 +303,7 @@
       if (over) {
         view.x0 += (over * 0.6 * (dt / 16.7)) / view.pps
         clampView()
+        M.letGo(follow, now)
       }
       if (view.x0 !== x0) {
         dragTo(pointer)
@@ -352,6 +365,7 @@
       zoomTo((target || view.pps) * Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.01 : 0.003)))
     } else {
       const d = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * unit
+      M.letGo(follow, performance.now())
       if (anchor) {
         anchor.x -= d // mid-zoom: the anchor moves with the content, the zoom carries on
         anchor.to -= d
@@ -495,6 +509,7 @@
       if (!th) return
       const vis = (view.W - 2 * PAD) / view.pps
       view.x0 = d.x0 + ((p.x - d.x) / (view.W - 2 * PAD - th.w)) * (view.duration - vis)
+      M.letGo(follow, performance.now())
       return clampView()
     }
     if (d.kind === 'trim') {

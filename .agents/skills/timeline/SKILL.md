@@ -29,6 +29,11 @@ The editor where users cut, speed up, and direct the video.
   The lens is the one magnifier: the timeline keeps its layout while trimming.
   After an edit a fitted timeline glides to its new length, and a trimmed start edge's gap closes in the same glide, so nothing jumps.
 - Timeline zoom with pinch and ⌘-scroll, animated and centered on the playhead.
+- Playing, the view rides along once the playhead reaches its middle, keeping it there while the recording slides under it; it never jumps a page.
+  A seek out of view eases there over 250 ms, a far one starting a view away, so the glide shows the way without racing through the timeline.
+  A scroll while playing lets go: the view stays where the user put it, and rides on once the playhead is in view and the timeline has been left alone for a second.
+  A view that pages, or snaps back to the playhead while the user scrolls, pulls them out of their work.
+  Under reduced motion the view pages instead of sliding.
 - Multi-select, copy and paste, duplicate, and apply-to-all for zooms, speeds, and layouts.
 - V, or Voiceover after Cut in the bar, records a take from the playhead, from the start when the playhead is at the end.
   A 3-2-1 names the mic; Space, V, Esc, or Stop cancel it, and stop the take once it records.

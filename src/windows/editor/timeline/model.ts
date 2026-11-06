@@ -8,6 +8,7 @@ import type { InputEvent } from '../../../shared/events.ts'
 import { clipAt, clipLimits, cuts, mapRange, removeOutputRange, splitAt, timeMap, toOutput, toSource, type Cut, type TimeMap } from '../../../shared/timemap.ts'
 export { clipLimits, cuts, restoreCut, type Cut } from '../../../shared/timemap.ts'
 import { reach, slid, type Span } from '../../../shared/voiceover.ts'
+import { easeOut } from '../../../ui/motion.ts'
 
 export type ItemTrack = 'zooms' | 'layouts' | 'masks' | 'voiceovers'
 export type ChipTrack = 'keys' | 'captions'
@@ -407,3 +408,64 @@ export function span(sec: number): string {
 }
 
 export const clamp = (x: number, lo: number, hi: number) => Math.min(Math.max(x, lo), hi)
+
+// ---- Following the playhead ----
+
+export const HOLD = 1000 // ms: after the user scrolls the timeline, following waits this long
+export const GLIDE = 250 // ms: the view eases to the playhead
+
+/** How the view follows the playhead. Playing, it rides along once the playhead reaches the middle and
+ *  keeps it there; a seek out of view eases there; under reduced motion the view pages instead. A scroll
+ *  by the user lets go until the playhead is in view and the view was left alone for HOLD, so the
+ *  timeline never pulls the user back from where they look. */
+export interface Follow {
+  aim: 'ride' | number | null // the playhead while playing, a paused seek's output time, or nothing
+  glide: { from: number; t0: number } | null // easing there from left edge `from` since t0 (ms)
+  loose: boolean // the user scrolled away: following waits for the playhead to be in view
+  held: number // when the user last scrolled, ms
+}
+export const follower = (): Follow => ({ aim: null, glide: null, loose: false, held: -Infinity })
+
+/** The visible stretch of the timeline: its left edge and width, in output seconds. */
+export type Viewport = { x0: number; w: number; duration: number }
+
+const leftFor = (f: Follow, v: Viewport, t: number, still: boolean) =>
+  clamp(t - (f.aim === 'ride' && still ? v.w / 20 : v.w / 2), 0, Math.max(0, v.duration - v.w))
+
+/** Ease the view to `aim`: the playhead while playing ('ride', now at t) or output time t, in the middle. */
+export function aimAt(f: Follow, v: Viewport, aim: 'ride' | number, t: number, now: number, still: boolean) {
+  f.aim = aim
+  const to = leftFor(f, v, t, still)
+  // A far jump starts a view away, so the glide shows the way without racing through the timeline.
+  f.glide = still ? null : { from: clamp(v.x0, to - v.w, to + v.w), t0: now }
+}
+
+/** The user scrolled the view: following lets go. */
+export function letGo(f: Follow, now: number) {
+  f.aim = f.glide = null
+  f.loose = true
+  f.held = now
+}
+
+/** The playhead jumped (a seek, not playback): following takes it up again, easing to it when paused out of view. */
+export function seeked(f: Follow, v: Viewport, t: number, playing: boolean, now: number, still: boolean) {
+  f.loose = false
+  f.aim = f.glide = null // playing, the ride starts over from the new moment
+  if (!playing && (t < v.x0 || t > v.x0 + v.w)) aimAt(f, v, t, t, now, still)
+}
+
+/** The view's left edge this frame, following the playhead at output time t. */
+export function follow(f: Follow, v: Viewport, t: number, playing: boolean, now: number, still: boolean): number {
+  const seen = t >= v.x0 && t <= v.x0 + v.w
+  if (!playing && f.aim === 'ride') f.aim = f.glide = null // paused: the view stays where the ride left it
+  if (playing && f.loose && seen && now - f.held >= HOLD) f.loose = false
+  if (playing && !f.loose && f.aim !== 'ride' && (!seen || (!still && t > v.x0 + v.w / 2))) aimAt(f, v, 'ride', t, now, still)
+  if (f.aim === null) return v.x0
+  const to = leftFor(f, v, f.aim === 'ride' ? t : f.aim, still)
+  const g = f.glide
+  const u = g ? (now - g.t0) / GLIDE : 1
+  if (g && u < 1) return g.from + (to - g.from) * easeOut(u)
+  f.glide = null
+  if (f.aim !== 'ride' || still) f.aim = null // a seek has landed; under reduced motion, so has the page
+  return to
+}
