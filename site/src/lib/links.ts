@@ -139,6 +139,7 @@ export const SITEMAP: readonly Readonly<{ label: string; links: readonly Link[] 
 			{ title: 'Auto-zoom', href: `${HOME}#zoom` },
 			{ title: 'Captions', href: `${HOME}#captions` },
 			{ title: 'Editor', href: `${HOME}#editor` },
+			{ title: 'Look', href: `${HOME}#look` },
 			{ title: 'Export', href: `${HOME}#export` },
 			{ title: 'Download', href: DOWNLOAD_URL },
 		],
@@ -161,6 +162,7 @@ export const SITEMAP: readonly Readonly<{ label: string; links: readonly Link[] 
 		links: [
 			{ title: 'Source code', href: GITHUB_URL },
 			{ title: 'Changelog', href: CHANGELOG },
+			{ title: 'Releases', href: `${GITHUB_URL}/releases` },
 			{ title: 'Issues', href: `${GITHUB_URL}/issues` },
 			{ title: 'bestboy.dev', href: BESTBOY_URL },
 		],
