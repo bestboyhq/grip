@@ -23,12 +23,13 @@ export type Link = Readonly<{
 	icon?: string;
 	tag?: string;
 	reload?: boolean;
+	current?: boolean;
 }>;
 
 export type Menu = Readonly<{
 	id: string;
 	title: string;
-	columns: readonly Readonly<{ label: string; plain?: boolean; links: readonly Link[] }>[];
+	columns: readonly Readonly<{ label?: string; plain?: boolean; links: readonly Link[] }>[];
 	strip?: Readonly<{ lead: string; text: string; link: Link }>;
 }>;
 
@@ -36,51 +37,67 @@ export const isExternal = (link: Link): boolean => link.href.startsWith('http');
 
 const LLMS: Link = { title: 'llms.txt', href: `${BESTBOY_URL}/llms.txt` };
 
+// The brand's switcher: one line each, read top to bottom as one story.
+export const APPS: Menu = {
+	id: 'apps',
+	title: 'Grip',
+	columns: [
+		{
+			links: [
+				{
+					title: 'Tony',
+					tag: 'Say it',
+					href: `${BESTBOY_URL}/tony`,
+					icon: asset('icons/tony.webp'),
+					line: 'Speak to your agents.',
+				},
+				{
+					title: 'Malini',
+					tag: 'Build it',
+					href: `${BESTBOY_URL}/malini`,
+					icon: asset('icons/malini.webp'),
+					line: 'Ship and automate them.',
+				},
+				{
+					title: 'Grip',
+					tag: 'Share it',
+					href: HOME,
+					icon: asset('icons/grip.webp'),
+					line: 'Showcase the results.',
+					current: true,
+				},
+			],
+		},
+	],
+	strip: {
+		lead: 'The suite',
+		text: 'Use one, or all three together',
+		link: { title: 'How they fit', href: `${BESTBOY_URL}/#turn` },
+	},
+};
+
 export const MENUS: readonly Menu[] = [
 	{
 		id: 'product',
 		title: 'Product',
 		columns: [
 			{
-				label: 'Apps',
+				label: 'Record',
 				links: [
-					{
-						title: 'Tony',
-						tag: 'Say it',
-						href: `${BESTBOY_URL}/tony`,
-						icon: asset('icons/tony.webp'),
-						line: 'Hold a key. Speak. Let go.',
-					},
-					{
-						title: 'Malini',
-						tag: 'Build it',
-						href: `${BESTBOY_URL}/malini`,
-						icon: asset('icons/malini.webp'),
-						line: 'Run many agents. Come back to merged pull requests.',
-					},
-					{
-						title: 'Grip',
-						tag: 'Share it',
-						href: HOME,
-						icon: asset('icons/grip.webp'),
-						line: 'Professional recordings and screenshots within seconds.',
-					},
+					{ title: 'Capture', href: `${HOME}#capture`, line: 'One keystroke, a screenshot or a video' },
+					{ title: 'Auto-zoom', href: `${HOME}#zoom`, line: 'Zooms that follow your clicks' },
+					{ title: 'Captions', href: `${HOME}#captions`, line: 'Word by word, made on your Mac' },
 				],
 			},
 			{
-				label: 'More',
-				plain: true,
+				label: 'Edit and share',
 				links: [
-					{ title: 'How they fit together', href: `${BESTBOY_URL}/#turn` },
-					{ title: 'Questions', href: `${BESTBOY_URL}/#faq` },
+					{ title: 'Editor', href: `${HOME}#editor`, line: 'Edit your video like a doc' },
+					{ title: 'Look', href: `${HOME}#look`, line: 'Pick the frame after the take' },
+					{ title: 'Export', href: `${HOME}#export`, line: 'MP4, GIF, subtitles, or a link' },
 				],
 			},
 		],
-		strip: {
-			lead: 'The suite',
-			text: 'Use one, or all three together',
-			link: { title: 'Download', href: `${BESTBOY_URL}/#top` },
-		},
 	},
 	{
 		id: 'resources',
@@ -89,32 +106,25 @@ export const MENUS: readonly Menu[] = [
 			{
 				label: 'Docs',
 				links: [
-					{
-						title: 'Grip docs',
-						href: docHref(),
-						line: 'Capture, edit, and share, in its README',
-					},
-					{
-						title: 'Malini docs',
-						href: `${BESTBOY_URL}/malini/docs`,
-						line: 'Install, workstreams, jobs, and extensions',
-					},
-					{
-						title: 'Tony docs',
-						href: `${BESTBOY_URL}/tony/docs`,
-						line: 'Install, languages, your words, and privacy',
-					},
+					{ title: 'Grip docs', href: docHref(), line: 'Capture, edit, and share, in its README' },
+					{ title: 'Shortcuts', href: docHref('shortcuts'), line: 'Every key, on one page' },
+					{ title: 'Changelog', href: CHANGELOG, line: 'What you can do now, release by release' },
 				],
 			},
 			{
 				label: 'For agents',
 				links: [
-					{ ...LLMS, line: "Every app's docs, as markdown" },
-					{
-						title: 'Grip in one file',
-						href: README_MD,
-						line: "All its docs at once, for an agent's context",
-					},
+					{ title: 'Agent tools', href: docHref('agents'), line: 'Let any agent cut, zoom, and caption' },
+					{ ...LLMS, line: 'Every app’s docs, as markdown' },
+					{ title: 'Grip in one file', href: README_MD, line: 'All its docs at once, for an agent’s context' },
+				],
+			},
+			{
+				label: 'Project',
+				plain: true,
+				links: [
+					{ title: 'Releases', href: `${GITHUB_URL}/releases` },
+					{ title: 'Issues', href: `${GITHUB_URL}/issues` },
 				],
 			},
 		],
@@ -129,6 +139,7 @@ export const SITEMAP: readonly Readonly<{ label: string; links: readonly Link[] 
 			{ title: 'Auto-zoom', href: `${HOME}#zoom` },
 			{ title: 'Captions', href: `${HOME}#captions` },
 			{ title: 'Editor', href: `${HOME}#editor` },
+			{ title: 'Look', href: `${HOME}#look` },
 			{ title: 'Export', href: `${HOME}#export` },
 			{ title: 'Download', href: DOWNLOAD_URL },
 		],
@@ -151,6 +162,7 @@ export const SITEMAP: readonly Readonly<{ label: string; links: readonly Link[] 
 		links: [
 			{ title: 'Source code', href: GITHUB_URL },
 			{ title: 'Changelog', href: CHANGELOG },
+			{ title: 'Releases', href: `${GITHUB_URL}/releases` },
 			{ title: 'Issues', href: `${GITHUB_URL}/issues` },
 			{ title: 'bestboy.dev', href: BESTBOY_URL },
 		],
