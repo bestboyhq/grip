@@ -210,15 +210,23 @@ export const blockAt = (l: Lane, t: number, tol = 0): Block | null => blocksAt(l
 // ---- Clips ----
 
 /** Source time for clip i's edge dragged to output time `out`. The clip's own linear map, extended past
- *  its ends (toSource clamps to the timeline), so the edge lands exactly under the pointer at any speed. */
-export function edgeSource(map: TimeMap, i: number, out: number): number {
+ *  its ends (toSource clamps to the timeline), so the edge lands exactly under the pointer at any speed.
+ *  A start edge taken on into the clip before it (trimLimits) goes on at that clip's speed, so the split
+ *  between them stays under the pointer as that clip gives way. */
+export function edgeSource(map: TimeMap, i: number, out: number, side: 'start' | 'end'): number {
   const c = map.clips[i]
-  return c.start + (out - map.outStarts[i]) * c.speed
+  const p = map.clips[i - 1]
+  const knee = side === 'start' && p && p.end <= c.start + EPS ? edgeOutput(map, i, p.end, side) : -Infinity
+  return out < knee ? p.end + (out - knee) * p.speed : c.start + (out - map.outStarts[i]) * c.speed
 }
 
-/** Output time at which source moment `src` on clip i's dragged edge plays in `full`, the clips with that
- *  edge as far out as it can go (player's showEdge). The clips before i are the same as in `map`. */
-export const edgeOutput = (map: TimeMap, full: Clip[], i: number, src: number) => map.outStarts[i] + (src - full[i].start) / full[i].speed
+/** Output time of source moment `src` on clip i's dragged edge: edgeSource undone. */
+export function edgeOutput(map: TimeMap, i: number, src: number, side: 'start' | 'end'): number {
+  const c = map.clips[i]
+  const p = map.clips[i - 1]
+  const own = (s: number) => map.outStarts[i] + (s - c.start) / c.speed
+  return side === 'start' && p && p.end <= c.start + EPS && src < p.end ? own(p.end) + (src - p.end) / p.speed : own(src)
+}
 
 /** Grow the clips in `ids` back over the free source on both sides, in output order. */
 export function resetTrim(clips: Clip[], ids: Set<string>, duration: number): Clip[] {
@@ -231,12 +239,37 @@ export function resetTrim(clips: Clip[], ids: Set<string>, duration: number): Cl
   return next
 }
 
-/** Trim one edge of clip i to a source time, clamped to its limits and a minimum length. */
+/** How far a dragged edge of clip i reaches: over the free source next to it (clipLimits), then on into
+ *  the clip next to that edge in the output when its source carries on from there, down to that clip's
+ *  shortest. That clip gives way (trimClip), so the edge between the parts of a split moves the split
+ *  rather than stopping at the other part. */
+export function trimLimits(clips: Clip[], i: number, duration: number) {
+  const { lo, hi } = clipLimits(clips, i, duration)
+  const p = clips[i - 1]
+  const n = clips[i + 1]
+  return {
+    lo: p && Math.abs(p.end - lo) < EPS ? Math.min(lo, p.start + MIN_LEN * p.speed) : lo,
+    hi: n && Math.abs(n.start - hi) < EPS ? Math.max(hi, n.end - MIN_LEN * n.speed) : hi,
+  }
+}
+
+/** Trim one edge of clip i to a source time, clamped to its limits and a minimum length. An edge taken
+ *  into the source of the clip next to it in the output (trimLimits) takes it over: that clip gives way. */
 export function trimClip(clips: Clip[], i: number, side: 'start' | 'end', src: number, lim: { lo: number; hi: number }): Clip[] {
   const c = clips[i]
   const min = MIN_LEN * c.speed
   const next = clips.slice()
-  next[i] = side === 'start' ? { ...c, start: clamp(src, lim.lo, c.end - min) } : { ...c, end: clamp(src, c.start + min, lim.hi) }
+  const p = clips[i - 1]
+  const n = clips[i + 1]
+  if (side === 'start') {
+    const start = clamp(src, lim.lo, c.end - min)
+    next[i] = { ...c, start }
+    if (p && start < p.end && p.end <= c.start + EPS) next[i - 1] = { ...p, end: start }
+  } else {
+    const end = clamp(src, c.start + min, lim.hi)
+    next[i] = { ...c, end }
+    if (n && end > n.start && n.start >= c.end - EPS) next[i + 1] = { ...n, start: end }
+  }
   return next
 }
 

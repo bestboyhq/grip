@@ -5,7 +5,7 @@
 // prepareOverlays maps every item through the one time map once per project revision and output size;
 // clicksAt / drawingsAt / keystrokesAt / captionAt are pure lookups, so any frame renders alone, in any order.
 
-import { mapRange, speedAt, toOutput, toSource, type TimeMap } from '../../shared/timemap.ts'
+import { carryToOutput, toOutput, type TimeMap } from '../../shared/timemap.ts'
 import type { InputEvent, Modifier } from '../../shared/events.ts'
 import type { Style } from '../../shared/project.ts'
 import { outputSize, type Caption, type Click, type Drawing, type Keystroke, type Scene, type SceneInput } from '../scene.ts'
@@ -145,10 +145,8 @@ const LONGEST = Math.max(...Object.values(CLICK_FX).map((fx) => fx.life))
 function clickTimes(events: InputEvent[], map: TimeMap) {
   const out: Array<{ start: number; from: number; x: number; y: number }> = []
   for (const e of scan(events).downs) {
-    const at = toOutput(map, e.t)
-    const from = at ?? mapRange(map, e.t, e.t + LONGEST)[0]?.[0]
-    if (from === undefined) continue // cut out with its whole effect
-    out.push({ start: at ?? from - (toSource(map, from) - e.t) / speedAt(map, from), from, x: e.x, y: e.y })
+    const at = carryToOutput(map, e.t, LONGEST)
+    if (at) out.push({ start: at.out, from: at.from, x: e.x, y: e.y }) // else cut out with its whole effect
   }
   return out.sort((a, b) => a.start - b.start)
 }
@@ -239,10 +237,9 @@ interface Group {
   keys: string[]
   sig: string
   main: string // the non-modifier key, whose release ends the group
-  start: number // output seconds of the first press
-  last: number // latest press
+  start: number // output seconds it enters: its first press, or for a press cut out, the footage kept after the cut
+  presses: Array<{ out: number; from: number }> // output seconds of each press, and where it counts from
   end: number // latest press, release, or key repeat
-  count: number
 }
 
 type Press = { t: number; id: string; up: boolean; repeat: boolean; keys: string[]; bare: boolean }
@@ -283,10 +280,16 @@ function keyGroups(events: InputEvent[], map: TimeMap): Group[] {
 
   const groups: Group[] = []
   for (const p of presses) {
-    const out = toOutput(map, p.t)
-    if (out === null) continue // inside a cut
+    // A press cut out still shows over the footage kept after the cut while its label would be showing there:
+    // it enters there, so the stack slides rather than jumps, with its count and press as they were.
+    // ponytail: reach counts from each press, so a key held down from further back than that is lost; pair
+    // downs with their ups if long holds across a cut need to show.
+    const at = carryToOutput(map, p.t, LINGER + KEY_OUT)
+    if (!at) continue // inside a cut, gone before the footage kept after it
+    const { out, from } = at
     const g = groups.at(-1)
-    const live = g && out >= g.last && out <= g.end + LINGER ? g : null
+    // `from`, not `out`: a press carried over a cut joins the same shortcut pressed just before the cut.
+    const live = g && from >= g.presses.at(-1)!.out && out <= g.end + LINGER ? g : null
     if (p.up || p.repeat) {
       // Release or key repeat while held: keeps the shortcut on screen, never counts as a press.
       if (live && live.main === p.id) live.end = Math.max(live.end, out)
@@ -295,10 +298,9 @@ function keyGroups(events: InputEvent[], map: TimeMap): Group[] {
     if (p.bare && nearTyping(p.t)) continue
     const sig = p.keys.join(' ')
     if (live && live.sig === sig) {
-      live.count++
-      live.last = out
+      live.presses.push(at)
       live.end = Math.max(live.end, out)
-    } else groups.push({ keys: p.keys, sig, main: p.id, start: out, last: out, end: out, count: 1 })
+    } else groups.push({ keys: p.keys, sig, main: p.id, start: from, presses: [at], end: out })
   }
   return groups.sort((a, b) => a.start - b.start)
 }
@@ -314,10 +316,11 @@ export function keystrokesAt(o: Prepared, t: number): Keystroke[] {
     const leave = clamp01((g.end + LINGER + KEY_OUT - t) / KEY_OUT)
     if (leave <= 0) continue
     const enter = easeOut((t - g.start) / KEY_SLIDE)
+    const pressed = g.presses.filter((q) => q.from <= t) // the first one at least, from g.start on
     out.unshift({
       keys: g.keys,
-      count: g.count,
-      age: t - g.last,
+      count: pressed.length,
+      age: t - pressed.at(-1)!.out,
       size: st.size,
       opacity: clamp01((t - g.start) / KEY_IN) * leave * clamp01(MAX_STACK - slot),
       y: o.keyBase - slot * (KEY_H + ROW_GAP) * k + (1 - enter) * 0.4 * KEY_H * k,

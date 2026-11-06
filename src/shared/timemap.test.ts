@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Clip } from './project.ts'
-import { timeMap, toSource, toOutput, mapRange, splitAt, removeOutputRange, removeSourceRange, setSpeed } from './timemap.ts'
+import { timeMap, toSource, toOutput, carryToOutput, mapRange, splitAt, removeOutputRange, removeSourceRange, setSpeed } from './timemap.ts'
 
 const clip = (start: number, end: number, speed = 1): Clip => ({ id: `${start}`, start, end, speed, volume: 1 })
 const near = (a: number | null, b: number) => assert.ok(a !== null && Math.abs(a - b) < 1e-6, `${a} != ${b}`)
@@ -16,6 +16,10 @@ test('round trip through cuts and speed changes', () => {
   assert.equal(toOutput(m, 15), null)
   near(toOutput(m, 30), 15)
   for (let t = 0; t <= 15; t += 0.37) near(toOutput(m, toSource(m, t)), t)
+  // A moment cut out is carried to the footage kept after it, as far before it as it was in source, at its speed.
+  assert.deepEqual(carryToOutput(m, 5, 1), { out: 5, from: 5 })
+  assert.deepEqual(carryToOutput(m, 19, 1.5), { out: 10 - 1 / 2, from: 10 })
+  assert.equal(carryToOutput(m, 18, 1.5), null) // nothing kept within reach
 })
 
 test('mapRange splits a range across a cut', () => {

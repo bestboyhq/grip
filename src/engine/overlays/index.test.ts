@@ -58,8 +58,8 @@ test('keystrokes: grouping, repeats, typing, secure input, cuts, stacking', () =
     { t: 13, type: 'secure', on: true }, ...key(13.5, 'v', ['⌘']), { t: 14, type: 'secure', on: false },
     // isolated ⎋
     ...key(16, 'Escape'),
-    // inside a cut (20-22)
-    ...key(21, 's', ['⌘']),
+    // inside a cut (20-22), and gone before the footage after it
+    ...key(20.2, 'p', ['⌘']),
     // a key-up lost (pause, torn file): the next press still shows
     { t: 26.5, type: 'key', down: true, key: 's', code: 0, mods: ['⌘'] }, ...key(29, 's', ['⌘']),
     // four quick shortcuts: stack of at most three
@@ -76,6 +76,8 @@ test('keystrokes: grouping, repeats, typing, secure input, cuts, stacking', () =
   const z = at(5).find((k) => k.keys.join('') === '⌘Z')!
   assert.equal(z.count, 3)
   assert.ok(Math.abs(z.age - 0.2) < 1e-9)
+  const first = at(4.1).find((k) => k.keys.join('') === '⌘Z')! // counts only the presses made so far
+  assert.ok(first.count === 1 && Math.abs(first.age - 0.1) < 1e-9, `${first.count} ${first.age}`)
   const down = at(10.5)
   assert.equal(down.length, 1)
   assert.equal(down[0].count, 1)
@@ -88,6 +90,20 @@ test('keystrokes: grouping, repeats, typing, secure input, cuts, stacking', () =
   assert.equal(stack.filter((k) => k.opacity > 0.01).length, 3)
   const ys = stack.map((k) => k.y)
   assert.deepEqual([...ys].sort((a, b) => a - b), ys, 'newest at the bottom')
+})
+
+test('keystrokes: a shortcut cut out shows over the footage kept after it, as it showed there before the cut', () => {
+  // Cut 10-12. ⌘P at 10.2 is gone by 11.78; ⌘C at 11.9 still shows at 12; ⌘X at 11.6 joins the ⌘X just before the cut.
+  const events = [...key(9.9, 'x', ['⌘']), ...key(10.2, 'p', ['⌘']), ...key(11.6, 'x', ['⌘']), ...key(11.9, 'c', ['⌘'])]
+  const p = prepare(input([{ id: 'a', start: 0, end: 10, speed: 1, volume: 1 }, { id: 'b', start: 12, end: 30, speed: 1, volume: 1 }], 1920, 1080, events))
+  const at = (t: number) => keystrokesAt(p.overlays, t)
+  const named = (t: number) => Object.fromEntries(at(t).map((k) => [k.keys.join(''), k]))
+  for (let t = 9; t < 13; t += 1 / 60) assert.ok(!named(t)['⌘P'], `⌘P at ${t}`)
+  assert.deepEqual(Object.keys(named(9.99)), ['⌘X']) // nothing carried shows before the cut
+  assert.equal(named(9.99)['⌘X'].count, 1)
+  const { '⌘X': x, '⌘C': c } = named(10.06)
+  assert.ok(x.count === 2 && Math.abs(x.age - 0.46) < 1e-9, `${x.count} ${x.age}`)
+  assert.ok(Math.abs(c.opacity - 0.5) < 1e-9 && Math.abs(c.age - 0.16) < 1e-9, `⌘C enters at the cut, pressed before it: ${c.opacity} ${c.age}`)
 })
 
 test('clicks: mapped through cuts, positioned on the screen rect, gone after their life', () => {

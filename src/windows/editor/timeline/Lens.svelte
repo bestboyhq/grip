@@ -21,6 +21,7 @@
     side: 'start' | 'end'
     clip: Clip // as trimmed so far
     was: Clip // before the drag
+    other: Clip | null // the clip next to the edge in the output, as trimmed so far: the edge takes it over
     lim: { lo: number; hi: number } // how far the edge can go
     duration: number // of the recording
     fine: boolean // the pointer is in the lens
@@ -176,6 +177,18 @@
     const xHi = Math.min(W, X(s.lim.hi))
     const kA = Math.min(Math.max(X(kept[0]), 0), W)
     const kB = Math.min(Math.max(X(kept[1]), 0), W)
+    // The clip next to the edge plays on past it, so it is not ghosted: the edge takes it over.
+    const o = s.other
+    const oA = o ? Math.min(Math.max(X(o.start), xLo), xHi) : 0
+    const oB = o ? Math.min(Math.max(X(o.end), xLo), xHi) : 0
+    const ghost: Array<[number, number]> = []
+    let from = xLo
+    for (const [a, b] of [[kA, kB], [oA, oB]].sort((p, q) => p[0] - q[0])) {
+      if (b <= a) continue
+      if (a > from) ghost.push([from, a])
+      from = Math.max(from, b)
+    }
+    if (xHi > from) ghost.push([from, xHi])
 
     g.save()
     g.beginPath()
@@ -209,21 +222,20 @@
       g.fillStyle = fill
       g.fillRect(xLo, FRAMES, xHi - xLo, ROW - FRAMES)
       voice(g, s, sL, xLo, xHi)
-      words(g, s, sL, sR, X, kept)
-      // Outside the clip, within reach: ghosted, there to bring back.
-      g.fillStyle = 'rgba(17,17,16,0.66)'
-      if (kA > xLo) g.fillRect(xLo, 0, kA - xLo, ROW)
-      if (xHi > kB) g.fillRect(kB, 0, xHi - kB, ROW)
-      g.fillStyle = hatch
-      if (kA > xLo) g.fillRect(xLo, 0, kA - xLo, ROW)
-      if (xHi > kB) g.fillRect(kB, 0, xHi - kB, ROW)
+      words(g, s, sL, sR, X, o ? [kept, [o.start, o.end]] : [kept])
+      // Cut out, within reach: ghosted, there to bring back.
+      for (const fill of ['rgba(17,17,16,0.66)', hatch]) {
+        g.fillStyle = fill
+        for (const [a, b] of ghost) g.fillRect(a, 0, b - a, ROW)
+      }
       g.restore()
     }
-    if (kB > kA) {
-      g.strokeStyle = 'rgba(196,212,255,0.55)'
-      g.lineWidth = 1
+    g.lineWidth = 1
+    for (const [a, b, line] of [[oA, oB, 'rgba(196,212,255,0.2)'], [kA, kB, 'rgba(196,212,255,0.55)']] as const) {
+      if (b <= a) continue
+      g.strokeStyle = line
       g.beginPath()
-      g.roundRect(kA + 0.5, 0.5, kB - kA - 1, ROW - 1, 6)
+      g.roundRect(a + 0.5, 0.5, b - a - 1, ROW - 1, 6)
       g.stroke()
     }
     g.font = `500 10px ${FONT}`
@@ -278,8 +290,8 @@
     }
   }
 
-  /** The transcript's words under the voice, bright inside the clip. */
-  function words(g: CanvasRenderingContext2D, s: LensScene, sL: number, sR: number, X: (t: number) => number, kept: number[]) {
+  /** The transcript's words under the voice, bright where they play: in the clip, or the one next to the edge. */
+  function words(g: CanvasRenderingContext2D, s: LensScene, sL: number, sR: number, X: (t: number) => number, kept: number[][]) {
     const w = s.words
     let lo = 0
     let hi = w.length
@@ -295,7 +307,7 @@
     for (let i = lo; i < w.length && w[i].start < sR; i++) {
       const x = X(w[i].start)
       if (x < right + 6) continue
-      const inside = w[i].start >= kept[0] - 0.02 && w[i].end <= kept[1] + 0.02
+      const inside = kept.some(([a, b]) => w[i].start >= a - 0.02 && w[i].end <= b + 0.02)
       g.fillStyle = inside && !w[i].dim ? 'rgba(244,244,243,0.88)' : 'rgba(244,244,243,0.34)'
       g.fillText(w[i].label, Math.max(x, 2), FRAMES + WORDS - 4)
       right = Math.max(x, 2) + g.measureText(w[i].label).width

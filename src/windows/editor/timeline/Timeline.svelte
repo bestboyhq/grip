@@ -34,7 +34,7 @@
   type Gesture =
     | { kind: 'scrub' }
     | { kind: 'scroll'; x: number; x0: number }
-    | { kind: 'trim'; i: number; side: 'start' | 'end'; lim: { lo: number; hi: number }; off: number; full: Clip[]; fine: { src: number; x: number } | null }
+    | { kind: 'trim'; i: number; side: 'start' | 'end'; lim: { lo: number; hi: number }; off: number; full: TimeMap; fine: { src: number; x: number } | null }
     | { kind: 'move'; track: M.ItemTrack; ids: Set<string>; grab: number }
     | { kind: 'resize'; track: M.ItemTrack; id: string; side: 'start' | 'end'; off: number }
     | { kind: 'create'; track: A.Made; t0: number }
@@ -432,8 +432,8 @@
         select = id
         const off = (h.edge === 'start' ? h.block.a : h.block.b) - timeOf(view, p.x) // the edge keeps its distance to the pointer
         if (h.track === 'clips') {
-          const lim = M.clipLimits(base.clips, h.block.i, base.duration)
-          const full = M.trimClip(base.clips, h.block.i, h.edge, h.edge === 'start' ? lim.lo : lim.hi, lim) // the edge as far out as it goes, for the preview
+          const lim = M.trimLimits(base.clips, h.block.i, base.duration)
+          const full = timeMap(M.trimClip(base.clips, h.block.i, h.edge, h.edge === 'start' ? lim.lo : lim.hi, lim)) // the edge as far out as it goes, for the preview
           g = { kind: 'trim', i: h.block.i, side: h.edge, lim, off, full, fine: null }
         } else g = { kind: 'resize', track: h.track, id, side: h.edge, off }
       } else {
@@ -513,14 +513,16 @@
       return clampView()
     }
     if (d.kind === 'trim') {
-      const c = b.clips[d.i]
       // Edges follow the pointer exactly at any speed. A start edge is drawn where the pointer is and
       // the rest of the timeline stays put until release, when the gap closes (ripple). In the lens the
       // pointer moves the edge at the lens's scale instead, from where it entered.
-      const src = d.fine ? d.fine.src + (p.x - d.fine.x) / LENS.k : M.edgeSource(d.map, d.i, timeOf(view, p.x) + d.off)
+      const src = d.fine ? d.fine.src + (p.x - d.fine.x) / LENS.k : M.edgeSource(d.map, d.i, timeOf(view, p.x) + d.off, d.side)
       const clips = M.trimClip(b.clips, d.i, d.side, src, d.lim)
       draft = { clips }
-      view.shift = d.side === 'start' ? { at: d.map.outStarts[d.i], by: (clips[d.i].start - c.start) / c.speed } : null
+      // The clip before gives way when a start edge takes it over, so the edge starts that much earlier.
+      const prev = d.i ? clips[d.i - 1] : null
+      const at = d.map.outStarts[d.i] - (prev ? (b.clips[d.i - 1].end - prev.end) / prev.speed : 0)
+      view.shift = d.side === 'start' ? { at, by: M.edgeOutput(d.map, d.i, clips[d.i].start, 'start') - at } : null
       trimPreview(d, clips)
     } else if (d.kind === 'move') {
       draft = { [d.track]: M.moveItems(b[d.track] as M.Item[], d.ids, toSource(d.map, t) - d.grab, b.duration, M.overlaps(d.track)) }
@@ -540,8 +542,8 @@
    *  sees what they cut; the time readout shows where that edge sits. */
   function trimPreview(d: Extract<Drag, { kind: 'trim' }>, clips: Clip[]) {
     const src = clips[d.i][d.side]
-    player.hover = M.edgeOutput(d.map, d.map.clips, d.i, src)
-    showEdge({ clips: d.full, t: M.edgeOutput(d.map, d.full, d.i, src) })
+    player.hover = M.edgeOutput(d.map, d.i, src, d.side)
+    showEdge({ clips: d.full.clips, t: M.edgeOutput(d.full, d.i, src, d.side) })
   }
 
   /** Where the lens's bottom sits, in canvas px: just above the clip track. */
@@ -553,18 +555,19 @@
     const src = (draft?.clips ?? base!.clips)[d.i][d.side]
     if (!d.fine && p.y < y - 4) d.fine = { src, x: p.x }
     else if (d.fine && p.y > y + 14) {
-      d.off = M.edgeOutput(d.map, d.map.clips, d.i, src) - timeOf(view, p.x)
+      d.off = M.edgeOutput(d.map, d.i, src, d.side) - timeOf(view, p.x)
       d.fine = null
     }
   }
 
   function showLens(d: Extract<Drag, { kind: 'trim' }>) {
     if (!lens || !model || !base || !canvas) return
-    const c = (draft?.clips ?? base.clips)[d.i]
+    const clips = draft?.clips ?? base.clips
+    const c = clips[d.i]
     const m = model.map
     const out = d.side === 'start' ? m.outStarts[d.i] : m.outStarts[d.i] + (c.end - c.start) / c.speed
     const r = canvas.getBoundingClientRect()
-    const scene = { side: d.side, clip: c, was: base.clips[d.i], lim: d.lim, duration: base.duration, fine: !!d.fine, video, mic, system, waves, words }
+    const scene = { side: d.side, clip: c, was: base.clips[d.i], other: clips[d.side === 'end' ? d.i + 1 : d.i - 1] ?? null, lim: d.lim, duration: base.duration, fine: !!d.fine, video, mic, system, waves, words }
     lens.show(scene, r.left + xOf(view, out), r.top + lensBottom(), r.left, r.right)
     lensOn = true
   }
