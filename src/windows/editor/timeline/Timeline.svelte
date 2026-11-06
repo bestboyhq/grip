@@ -247,13 +247,16 @@
     zoomValue = sliderOf(view.pps)
   }
 
-  /** Animate the timeline zoom, anchored on the playhead (brought to the middle when off screen). */
-  function zoomTo(pps: number) {
+  /** Animate the timeline zoom, anchored at canvas x `at`, where a pinch or ⌘-scroll points, so the moment
+   *  under the pointer stays under it; without one, on the playhead (brought to the middle when off screen). */
+  function zoomTo(pps: number, at?: number) {
     if (!model || !view.W) return
     target = M.clamp(pps, minPps(), MAX_PPS)
     refit = false
-    const x = PAD + (player.time - view.x0) * view.pps
-    anchor = { t: player.time, x, to: x >= PAD && x <= view.W - PAD ? x : view.W / 2 }
+    const x = at ?? PAD + (player.time - view.x0) * view.pps
+    // A zoom key pressed again mid-glide keeps the playhead heading where the first press sent it.
+    const to = at ?? (anchor?.t === player.time ? anchor.to : x >= PAD && x <= view.W - PAD ? x : view.W / 2)
+    anchor = { t: at === undefined ? player.time : timeOf(view, at), x, to }
     requestDraw()
   }
 
@@ -276,6 +279,7 @@
       anchor.x = done ? anchor.to : anchor.x + (anchor.to - anchor.x) * k
       view.x0 = anchor.t - (anchor.x - PAD) / view.pps
       clampView()
+      if (pointer) hovered() // the moment under the pointer moves with the zoom
       if (done) anchor = null
       if (done) refit = false
       again = !done
@@ -362,7 +366,7 @@
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? view.W : 1
     if (e.ctrlKey || e.metaKey) {
       // Pinch arrives as ctrl+wheel; ⌘-scroll steps more coarsely.
-      zoomTo((target || view.pps) * Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.01 : 0.003)))
+      zoomTo((target || view.pps) * Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.01 : 0.003)), local(e).x)
     } else {
       const d = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * unit
       M.letGo(follow, performance.now())

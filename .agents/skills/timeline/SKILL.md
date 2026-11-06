@@ -33,7 +33,9 @@ The editor where users cut, speed up, and direct the video.
   Moving the pointer up into the lens trims at the lens's scale, about 7 px a frame; back down, the drag carries on from where the edge is.
   The lens is the one magnifier: the timeline keeps its layout while trimming.
   After an edit a fitted timeline glides to its new length, and a trimmed start edge's gap closes in the same glide, so nothing jumps.
-- Timeline zoom with pinch and ⌘-scroll, animated and centered on the playhead.
+- Timeline zoom with pinch and ⌘-scroll, animated and anchored at the pointer: the moment under it stays under it.
+  Zooming around the playhead instead throws the view away from where the user points.
+  The zoom keys and slider, which point nowhere on the timeline, zoom around the playhead.
 - Playing, the view rides along once the playhead reaches its middle, keeping it there while the recording slides under it; it never jumps a page.
   A seek out of view eases there over 250 ms, a far one starting a view away, so the glide shows the way without racing through the timeline.
   A scroll while playing lets go: the view stays where the user put it, and rides on once the playhead is in view and the timeline has been left alone for a second.
