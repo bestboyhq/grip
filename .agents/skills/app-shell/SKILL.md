@@ -26,6 +26,7 @@ The native macOS app around everything else.
   A window is on screen once `reveal` shows it: AppKit hands window changes to the window server only when the main thread's turn ends, so `reveal` commits them at once (`commitWindows`); the toolbar's turn went on to make the overlays, and it showed 50 ms late.
   Shown again, the toolbar waits for a frame drawn with that pick's state (`whenDrawn`), never showing the last one's.
 - Windows remember positions per display and return on-screen after a display disconnects.
+  Fixed-size windows keep their size: the first screen capture in a process re-sets every window's style mask, which turns a frameless one resizable and a title bar taller (`keepFixed` puts it back).
   The recording controls, camera bubble, and result card show on the display the recording was started on, never where the mouse went since.
 - Global shortcuts, a URL scheme for automation (Raycast), and drag-and-drop of project files onto the app or menu bar icon.
   Many users want Grip on macOS's own screenshot keys (⇧⌘5), and macOS takes those before any app sees them.
