@@ -55,9 +55,11 @@ export async function keepingPlayhead(fn: () => void) {
   if (doc.project) seek(M.sameMoment(before, mapNow(), t))
 }
 
-/** Undo or redo, returning the playhead to where it was at that step (inside a clip a ripple delete
- *  took, not at the cut), so the view stays on what came back. */
+/** Undo or redo. Paused, the playhead returns to where it was at that step (inside a clip a ripple
+ *  delete took, not at the cut), so the view stays on what came back. Playing, it stays on the frame
+ *  it plays, so what is heard carries on rather than jump back to the step. */
 async function restoring(fn: () => void) {
+  if (player.playing) return keepingPlayhead(fn)
   fn()
   await tick() // let the player see the new duration before seeking
   if (doc.project) seek(M.momentAt(mapNow(), doc.project.playhead))

@@ -5,7 +5,7 @@
 // prepareOverlays maps every item through the one time map once per project revision and output size;
 // clicksAt / drawingsAt / keystrokesAt / captionAt are pure lookups, so any frame renders alone, in any order.
 
-import { toOutput, type TimeMap } from '../../shared/timemap.ts'
+import { mapRange, speedAt, toOutput, toSource, type TimeMap } from '../../shared/timemap.ts'
 import type { InputEvent, Modifier } from '../../shared/events.ts'
 import type { Style } from '../../shared/project.ts'
 import { outputSize, type Caption, type Click, type Drawing, type Keystroke, type Scene, type SceneInput } from '../scene.ts'
@@ -139,11 +139,16 @@ function scan(events: InputEvent[]) {
   return s
 }
 
+const LONGEST = Math.max(...Object.values(CLICK_FX).map((fx) => fx.life))
+/** Output start of each click's effect, and `from`, where it shows: a click inside a cut still plays the
+ *  rest of its effect over the footage kept right after it, as that footage showed it before the cut. */
 function clickTimes(events: InputEvent[], map: TimeMap) {
-  const out: Array<{ start: number; x: number; y: number }> = []
+  const out: Array<{ start: number; from: number; x: number; y: number }> = []
   for (const e of scan(events).downs) {
-    const start = toOutput(map, e.t)
-    if (start !== null) out.push({ start, x: e.x, y: e.y }) // a click inside a cut never shows
+    const at = toOutput(map, e.t)
+    const from = at ?? mapRange(map, e.t, e.t + LONGEST)[0]?.[0]
+    if (from === undefined) continue // cut out with its whole effect
+    out.push({ start: at ?? from - (toSource(map, from) - e.t) / speedAt(map, from), from, x: e.x, y: e.y })
   }
   return out.sort((a, b) => a.start - b.start)
 }
@@ -155,7 +160,7 @@ export function clicksAt(o: Prepared, t: number): Click[] {
   let lo = hi
   const life = style === 'none' ? 0 : (CLICK_FX[style]?.life ?? 0) // a style from a newer app: none
   while (lo > 0 && t - o.clicks[lo - 1].start < life) lo--
-  const live = o.clicks.slice(lo, hi)
+  const live = o.clicks.slice(lo, hi).filter((c) => t >= c.from)
   const r = live.length && s ? screenAt(o.layout, t)?.screen : null
   if (!r || !s) return []
   const k = r.w / s.width

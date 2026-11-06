@@ -91,7 +91,7 @@ test('keystrokes: grouping, repeats, typing, secure input, cuts, stacking', () =
 })
 
 test('clicks: mapped through cuts, positioned on the screen rect, gone after their life', () => {
-  const events = [click(2, 1440, 900), click(11, 0, 0), click(15, 2880, 1800)]
+  const events = [click(2, 1440, 900), click(11, 0, 0), click(11.8, 1440, 900), click(15, 2880, 1800)]
   const clips = removeSourceRange([{ id: 'a', start: 0, end: 30, speed: 1, volume: 1 }], 10, 12)
   const p = prepare(input(clips, 1920, 1080, events))
   const screen = sceneAt(p, 0).screen!.rect
@@ -99,7 +99,12 @@ test('clicks: mapped through cuts, positioned on the screen rect, gone after the
   assert.equal(c.length, 1)
   assert.ok(Math.abs(c[0].x - (screen.x + screen.w / 2)) < 1e-9 && Math.abs(c[0].y - (screen.y + screen.h / 2)) < 1e-9)
   assert.ok(Math.abs(c[0].age - 0.1) < 1e-9)
-  for (let t = 9; t < 11; t += 0.01) assert.equal(clicksAt(p.overlays, t).length, 0) // the click at source 11 is cut
+  for (let t = 9; t < 10; t += 0.01) assert.equal(clicksAt(p.overlays, t).length, 0) // the click at source 11 is cut, effect and all
+  // The click at source 11.8 is cut too, but its effect ran on past the cut: it carries on there (source 12 -> output 10).
+  const tail = clicksAt(p.overlays, 10.1)
+  assert.equal(tail.length, 1)
+  assert.ok(Math.abs(tail[0].age - 0.3) < 1e-9 && Math.abs(tail[0].x - (screen.x + screen.w / 2)) < 1e-9)
+  assert.equal(clicksAt(p.overlays, 10.41).length, 0) // a swell lives 0.6 s
   const last = clicksAt(p.overlays, 13) // source 15 -> output 13
   assert.equal(last.length, 1)
   assert.ok(Math.abs(last[0].x - (screen.x + screen.w)) < 1e-9 && last[0].age < 1e-9)

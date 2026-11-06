@@ -22,6 +22,8 @@ GPU composition of each output frame.
   All four live on the screen's glass, so they are drawn in the screen pass, not on the overlay canvas: the loupe and motion blur carry them, and the cursor stays sharp above them.
   A crest narrower than a few times its refraction folds text into rainbow noise and reads as a ring drawn over the UI; keep crests broad so text bends and swells.
   Lighting on a crest can only darken white UI, so it shows as a gray ring; the swell is unlit.
+  A press cut out with the dead time before it still plays the rest of its effect over the footage kept after the cut, as that footage showed it before the cut.
+  Dropping it whole, as a cut press does, erases what the user saw in footage they kept.
 - Device mockups match each model: bezel, corner radius, Dynamic Island, portrait and landscape.
 
 Done when a frame grab of any export holds up at 200% zoom with no banding, aliasing, or misaligned layers.
