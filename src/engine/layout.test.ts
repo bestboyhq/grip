@@ -44,7 +44,7 @@ test('inset: the recording keeps its aspect inside a frame grown by the inset, w
   const l = at(project((p) => Object.assign(p.style, { padding: 80, inset: 30, radius: 40 })), 1)
   assert.equal(l.screen!.inset, 30)
   assert.ok(Math.abs(l.screen!.rect.y - 30 - 80) < 1e-6, 'frame touches the padding')
-  assert.equal(l.screen!.radius, 40)
+  assert.equal(l.screen!.radius, 70, 'the frame grows the corners by the inset, so the recording keeps its 40')
   assert.deepEqual([l.screen!.insetColor, l.screen!.insetOpacity], [null, 1], "absent: the recording's edge, opaque")
   const band = (insetColor: string, insetOpacity: number) => at(project((p) => Object.assign(p.style, { inset: 30, insetColor, insetOpacity })), 1).screen!
   assert.deepEqual([band('#FF8000', 0.25).insetColor, band('#FF8000', 0.25).insetOpacity], [[1, 128 / 255, 0], 0.25])

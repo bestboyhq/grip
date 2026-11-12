@@ -139,10 +139,11 @@ function target(input: SceneInput, unit: number, kind: Kind): State {
   const pad = Math.max(0, st.padding * unit)
   const area = { x: pad, y: pad, w: Math.max(1, W - 2 * pad), h: Math.max(1, H - 2 * pad) }
   const inset = insetPx(st, unit)
-  // Corners belong to the frame around the recording.
+  // Roundness is the recording's own corners; the frame's grow by the inset, so the band stays even and
+  // the recording never turns square.
   const radius = (r: Rect) => {
     const f = grow(r, inset)
-    return st.device === 'none' ? Math.min(st.radius * unit, f.w / 2, f.h / 2) : deviceGeometry(st.device, f)!.displayRadius
+    return st.device === 'none' ? Math.min(st.radius * unit + inset, f.w / 2, f.h / 2) : deviceGeometry(st.device, f)!.displayRadius
   }
 
   if (kind === 'split' && project.sources.camera) {

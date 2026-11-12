@@ -153,7 +153,7 @@ export interface Style {
   background: Background
   backgroundBlur: number // 0..1
   padding: number // units around the screen
-  radius: number // units, screen corner radius
+  radius: number // units, the recording's corner radius; the inset frame's corners are this plus the inset
   /** Units of band between the screen frame's edge and the recording inside it, so content clears the
    *  rounded corners. Absent = 0. */
   inset?: number
