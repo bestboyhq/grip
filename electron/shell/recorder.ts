@@ -61,7 +61,7 @@ import { importVideo, recentProjects, recoveredAtLaunch } from '../projects.ts'
 import { capture, recordingEvents, recordingName } from '../recording.ts'
 import { native } from '../native.ts'
 import { DRAW_FADE, DRAW_HOLD } from '../../src/engine/overlays/drawings.ts'
-import { activeDisplay, hidden, openWindow, reveal, sendAll, setRecordingDock, updateDock, windowsOf } from '../windows.ts'
+import { activeDisplay, hidden, openWindow, reveal, sendAll, setRecordingDock, windowsOf, withDock } from '../windows.ts'
 import { arrangement, place, reachable, underCamera } from './bounds.ts'
 import { withScale } from './png.ts'
 import { plainError, type Permission } from './errors.ts'
@@ -150,10 +150,13 @@ const floating: BrowserWindowConstructorOptions = {
   fullscreenable: false,
   show: false,
 }
+/** A panel floats over fullscreen apps without Electron hiding the dock icon for it (updateDock owns that
+ *  icon), and stays when the user hides other apps: the recording controls must not go with them. */
 function protect(win: BrowserWindow, level: number) {
   win.setContentProtection(true)
   win.setAlwaysOnTop(true, 'screen-saver', level)
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
+  native.keepOnHide(win.getNativeWindowHandle())
 }
 
 /** Global shortcuts belong to the user's Mac: hidden runs (agents, tests) never take them. False when
@@ -760,35 +763,36 @@ export function openFilesOrAlert(paths: string[]) {
 }
 
 /** A dialog the user asked for, in front: the picker, which floats above it, goes, and Grip comes
- *  forward. The picker's toolbar takes the dock icon with it (updateDock), and with the icon the focus,
- *  so that happens first: after the dialog shows, it would drop the dialog behind other apps. */
-function toDialog() {
+ *  forward with its dock icon and menu bar, which stay until `show` opened what the user picked. */
+function inDialog(show: () => Promise<unknown>) {
   closePicker()
-  updateDock()
-  if (!hidden) app.focus({ steal: true })
+  return withDock(() => {
+    if (!hidden) app.focus({ steal: true })
+    return show()
+  })
 }
 
-export async function openProjectDialog() {
-  toDialog()
-  const r = await dialog.showOpenDialog({
-    title: 'Open Project',
-    // openDirectory too: where the .grip package type is not registered (dev), a bundle is a folder.
-    properties: ['openFile', 'openDirectory'],
-    filters: [{ name: 'Grip Project', extensions: ['grip'] }],
+export const openProjectDialog = () =>
+  inDialog(async () => {
+    const r = await dialog.showOpenDialog({
+      title: 'Open Project',
+      // openDirectory too: where the .grip package type is not registered (dev), a bundle is a folder.
+      properties: ['openFile', 'openDirectory'],
+      filters: [{ name: 'Grip Project', extensions: ['grip'] }],
+    })
+    for (const p of r.filePaths) openProject(p)
   })
-  for (const p of r.filePaths) openProject(p)
-}
 
-export async function importDialog() {
-  toDialog()
-  const r = await dialog.showOpenDialog({
-    title: 'Import Video',
-    message: 'Each video becomes a new project.',
-    properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'Videos', extensions: ['mp4', 'mov'] }],
+export const importDialog = () =>
+  inDialog(async () => {
+    const r = await dialog.showOpenDialog({
+      title: 'Import Video',
+      message: 'Each video becomes a new project.',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Videos', extensions: ['mp4', 'mov'] }],
+    })
+    await openFiles(r.filePaths).catch(async (e: Error) => void (await alert('Grip couldn’t open that.', e.message)))
   })
-  openFilesOrAlert(r.filePaths)
-}
 
 // An editor saves and refreshes its thumbnail before it goes (closing.ts): "editor:close" to the
 // page, "editor:closed"(error) back.

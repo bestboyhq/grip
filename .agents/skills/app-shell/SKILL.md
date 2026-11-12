@@ -8,6 +8,9 @@ description: The native macOS app shell. Use when changing the launch, menu bar,
 The native macOS app around everything else.
 
 - Menu bar app; the dock icon hides during recording and shows whenever a window is open.
+  The icon follows the activation policy (`updateDock`), never Electron's `app.dock.show()`: with Grip active, that brings the Dock forward first, and Finder stayed highlighted in it after every recording that ended in the editor.
+  The policy turns regular before a normal window shows: once the window has activated Grip, macOS keeps the other app's menu bar.
+  Floating panels skip Electron's dock change in `setVisibleOnAllWorkspaces` (`skipTransformProcessType`) and keep `canHide` off themselves, so hiding other apps never takes the recording controls.
   It opens at login unless the user turns that off (onboarding's last page proposes it, Settings has the switch): waiting in the menu bar, Grip opens within a frame or two, while a cold launch takes ~350 ms.
   A launch at login stays in the menu bar; macOS marks it with the launched-as-login-item Apple Event (`wasOpenedAtLogin`).
   Dev and hidden runs never add a login item: the bare dev Electron would open at login instead.
