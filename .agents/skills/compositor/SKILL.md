@@ -15,6 +15,11 @@ GPU composition of each output frame.
   The encoder strips that dither, so an export stays smooth only under a ramp that steps a level every few px: a faint one spread over hundreds of px bands into rings tens of px wide.
 - Rounded corners and shadows are antialiased on light and dark backgrounds at every scale.
 - Output aspect ratios: auto, 16:9, 9:16, 4:5, 1:1, and custom.
+  Auto hugs the framed recording (inset, device) with the padding even on every side (`hugRatio`).
+  An output shaped to the recording alone leaves the padding thicker at the sides and makes the rest framing zoom in over it.
+- Crop with a shape offers Cover and Fit.
+  Cover cuts the recording to the shape that fills the output up to its padding (`coverRatio`), not to the bare shape.
+  Fit keeps the whole recording and sets the output aspect instead, so the background fills the rest.
 - Sensitive-data masks blur or pixelate and take their color from what they cover; highlight masks dim the rest.
   Masks stay locked to content through zooms.
 - The keystroke overlay draws each key as its own keycap with the macOS symbol and name.

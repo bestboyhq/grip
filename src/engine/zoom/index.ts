@@ -38,7 +38,7 @@ import type { InputEvent } from '../../shared/events.ts'
 import type { Edit } from '../../shared/edits.ts'
 import { mapRange, toOutput, type TimeMap } from '../../shared/timemap.ts'
 import type { Loupe, SceneInput, View } from '../scene.ts'
-import { pipCameraAt, screenAt, type prepareLayout, type ScreenPlace } from '../layout.ts'
+import { frameOf, pipCameraAt, screenAt, type prepareLayout, type ScreenPlace } from '../layout.ts'
 import { cursorPoint, type prepareCursor } from '../motion/index.ts'
 import { springDuration, springProgress, mix, type SpringConfig } from '../motion/spring.ts'
 import { typingSegments, type Segment } from '../input/index.ts'
@@ -207,11 +207,14 @@ function cutsTo(from: Zoom[], to: Zoom[]): boolean {
   return on.length ? on.some((z) => z.instant) : from.some((z) => !to.includes(z) && z.instant)
 }
 
-/** Scale at which the screen covers a viewport narrower than it (cut to `b`, the part clear of the
- *  rounded corners); 1 otherwise. The aspect test uses the screen itself: a large corner radius
- *  must not make a screen as wide as the output look wider. */
-function baseScale(vp: Rect, r: Rect, b: Rect): number {
-  return vp.w / vp.h < (r.w / r.h) * 0.98 ? Math.max(1, vp.h / b.h) : 1
+/** Scale at which the screen `r` covers a viewport narrower than it (cut to `b`, the part clear of the
+ *  rounded corners); 1 otherwise. Narrower takes two tests. The aspect test uses the screen itself: a
+ *  large corner radius must not make a screen as wide as the output look wider. The room test uses the
+ *  frame `f` around it (inset, device): an output shaped to its even padding, as Auto and a Cover crop
+ *  make it, has as much room above and below as at the sides, and keeps that padding. */
+function baseScale(vp: Rect, r: Rect, f: Rect, b: Rect): number {
+  const narrower = vp.w / vp.h < (r.w / r.h) * 0.98 && vp.h - f.h - (vp.w - f.w) > 0.02 * vp.h
+  return narrower ? Math.max(1, vp.h / b.h) : 1
 }
 
 /** How far scale s magnifies past the rest framing `base`: 0 at rest, 1 at twice that or more. */
@@ -492,13 +495,14 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   let fi = 0
   for (let k = 0; k <= n; k++) {
     const t = k * DT
-    const { screen: r, visible: shown, screenRadius: radius, viewport: vp } = layerAt(t)
+    const place = layerAt(t)
+    const { screen: r, visible: shown, screenRadius: radius, viewport: vp } = place
     const bounds = inner(shown, radius)
     const ts = clamp(t, AT_START, map.duration - 1e-6) // a zoom starting at 0 or running to the end covers that frame
     while (si < cam.length && cam[si].b <= ts) si++
     const seg = si < cam.length && cam[si].a <= ts ? cam[si] : null
     const zs = seg?.zooms ?? []
-    const b0 = baseScale(vp, shown, bounds)
+    const b0 = baseScale(vp, shown, frameOf(layout, place), bounds)
     const follow = zs.length ? zs.some((z) => z.target.kind !== 'point') : b0 > 1
     // Everything is read lag ahead so the trailing spring lands on time.
     const tl = t + lag
@@ -611,7 +615,7 @@ export function viewAt(z: ReturnType<typeof prepareZoom>, t: number): View {
 export function zoomAmount(z: ReturnType<typeof prepareZoom>, t: number, v: View): number {
   const s = screenAt(z.layout, t)
   if (!s) return 0
-  return magnified(v.scale, baseScale(s.viewport, s.visible, inner(s.visible, s.screenRadius)))
+  return magnified(v.scale, baseScale(s.viewport, s.visible, frameOf(z.layout, s), inner(s.visible, s.screenRadius)))
 }
 
 /** The lenses showing at t, in start order (later ones over earlier ones). */
@@ -759,7 +763,7 @@ export function zoomProblems(p: Project, m: TimeMap, layout: ReturnType<typeof p
     const at = screenAt(layout, t)
     if (!at) return null
     const bounds = inner(at.visible, at.screenRadius)
-    const f = framing(zs, at.screen, at.viewport, baseScale(at.viewport, at.visible, bounds), null)
+    const f = framing(zs, at.screen, at.viewport, baseScale(at.viewport, at.visible, frameOf(layout, at), bounds), null)
     return { c: clampCenter(f.mid!, bounds, f.s, at.viewport), s: f.s, vp: at.viewport }
   }
   const segs = segments(on.filter((z) => z.mode !== 'loupe'), m)

@@ -4,8 +4,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createProject, type CameraPosition, type Clip, type Project, type Zoom } from '../../shared/project.ts'
 import { parseEvents, type InputEvent } from '../../shared/events.ts'
-import { layoutOf, prepare, sceneAt, type View } from '../scene.ts'
-import { layoutAt } from '../layout.ts'
+import { layoutOf, outputSize, prepare, sceneAt, type View } from '../scene.ts'
+import { coverRatio, layoutAt } from '../layout.ts'
 import { cursorPoint as cursorAt } from '../motion/index.ts'
 import { applyEdits } from '../../shared/edits.ts'
 import { timeMap } from '../../shared/timemap.ts'
@@ -280,12 +280,18 @@ test('split layouts zoom inside the screen panel and leave the stack in place', 
   assert.ok(c.x > r.x + r.w / 2 && c.y < r.y + r.h / 2, 'aimed at the target')
 })
 
-test('an output as wide as the screen never zooms at rest, however round and padded the screen', () => {
+test('an output as wide as the screen, as Auto sizes it, or a Cover crop fills, never zooms at rest, however round and padded the screen', () => {
   const project = createProject('t', { duration: 10, screen: SCREEN, events: 'sources/events.jsonl' })
-  for (const [padding, radius, inset] of [[80, 80, 0], [300, 80, 0], [300, 80, 120], [0, 80, 0]]) {
-    Object.assign(project.style, { padding, radius, inset })
-    const { view } = setup([], moves([[0, 100, 100], [10, 2700, 1700]]), { project, duration: 10 })
-    for (const t of [0, 5, 10]) near(view(t).scale, 1, 1e-6, `padding ${padding} radius ${radius} inset ${inset}`)
+  for (const device of ['none', 'macbook', 'iphone'] as const) {
+    for (const [padding, radius, inset] of [[80, 80, 0], [300, 80, 0], [300, 80, 120], [0, 80, 0]]) {
+      Object.assign(project.style, { padding, radius, inset, device })
+      const r = coverRatio(project.style, 16 / 9) / 1.6 // the 16:9 Cover crop, as a share of the 2880 x 1800 screen
+      for (const [aspect, crop, size] of [['auto', undefined, {}], ['auto', undefined, null], ['16:9', r > 1 ? { x: 0, y: 0, w: 1, h: 1 / r } : { x: 0, y: 0, w: r, h: 1 }, null]] as const) {
+        Object.assign(project, { crop, style: { ...project.style, aspect } })
+        const { view } = setup([], moves([[0, 100, 100], [10, 2700, 1700]]), { project, duration: 10, ...(size ?? outputSize(project, 1080)) })
+        for (const t of [0, 5, 10]) near(view(t).scale, 1, 1e-6, `${device} padding ${padding} radius ${radius} inset ${inset} ${aspect} ${size ? '1920x1200' : 'sized'}`)
+      }
+    }
   }
 })
 

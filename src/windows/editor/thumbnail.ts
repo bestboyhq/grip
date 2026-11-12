@@ -14,12 +14,14 @@ import { resumeAt } from './helpers.ts'
 
 /** Render the open project at output time `t` in each of `styles`, `height` px tall, and hand each image
  *  (PNG, or `type`) to `each` as it lands. One renderer and one set of decoders serve them all. Asset paths in a style
- *  are bundle-relative, or absolute (a preset's look before it is applied). */
+ *  are bundle-relative, or absolute (a preset's look before it is applied). `whole` leaves the crop out
+ *  (the Crop dialog's Fit). */
 // ponytail: opens its own decoders per call; share the player's sources if this shows up in profiles.
-export async function renderStills(styles: Style[], height: number, t: number, each: (i: number, image: Blob) => unknown, type: 'image/png' | 'image/jpeg' = 'image/png'): Promise<void> {
+export async function renderStills(styles: Style[], height: number, t: number, each: (i: number, image: Blob) => unknown, type: 'image/png' | 'image/jpeg' = 'image/png', whole = false): Promise<void> {
   const path = doc.path
   if (!doc.project || !path) return
   const project: Project = JSON.parse(JSON.stringify(doc.project)) // a plain copy: edits during the render must not tear it
+  if (whole) delete project.crop
   const url = (rel: string) => fileUrl(rel.startsWith('/') ? rel : `${path}/${rel}`)
   const canvas = new OffscreenCanvas(2, 2)
   const renderer = await Renderer.create(canvas, url)

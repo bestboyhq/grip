@@ -11,7 +11,7 @@
 import { screenCrop, type Background, type Project, type Rect, type Style, type Transcript } from '../shared/project.ts'
 import type { InputEvent } from '../shared/events.ts'
 import { timeMap, toSource, type TimeMap } from '../shared/timemap.ts'
-import { prepareLayout, layoutAt } from './layout.ts'
+import { prepareLayout, layoutAt, hugRatio } from './layout.ts'
 import { prepareCursor, cursorAt, cursorPath, type CursorPath } from './motion/index.ts'
 import { prepareZoom, viewAt, loupesAt, zoomAmount, zoomPath, type ZoomPath } from './zoom/index.ts'
 import { prepareOverlays, clicksAt, drawingsAt, keystrokesAt, captionAt } from './overlays/index.ts'
@@ -216,9 +216,9 @@ export function outputSize(project: Project, height: number): { width: number; h
   const a = project.style.aspect
   const s = project.sources.screen
   const c = screenCrop(project)
-  // Auto follows the shown part of the screen, within the 5:1 either way encoders and platforms take.
+  // Auto hugs the shown part of the screen with even padding, within the 5:1 either way encoders and platforms take.
   const ratio =
-    a === 'auto' ? (s ? Math.min(Math.max((s.width * c.w) / (s.height * c.h), 1 / 5), 5) : 16 / 9)
+    a === 'auto' ? (s ? Math.min(Math.max(hugRatio(project.style, (s.width * c.w) / (s.height * c.h)), 1 / 5), 5) : 16 / 9)
     : typeof a === 'object' ? a.w / a.h
     : (([w, h]) => w / h)(a.split(':').map(Number))
   const even = (n: number) => Math.max(2, Math.round(n / 2) * 2)

@@ -66,6 +66,15 @@ export function screenAt(l: PreparedLayout, t: number): ScreenPlace | null {
 }
 export type ScreenPlace = Pick<State, 'screen' | 'visible' | 'screenRadius' | 'viewport'>
 
+/** The frame around the shown recording at `s` (inset, device mockup), kept inside its viewport. */
+export function frameOf(l: PreparedLayout, s: ScreenPlace): Rect {
+  const st = l.input.project.style
+  const f = deviceBounds(st.device, grow(s.visible, insetPx(st, l.unit)))
+  const v = s.viewport
+  const x = Math.max(f.x, v.x), y = Math.max(f.y, v.y)
+  return { x, y, w: Math.min(f.x + f.w, v.x + v.w) - x, h: Math.min(f.y + f.h, v.y + v.h) - y }
+}
+
 /** `zoom`: how far the view is zoomed in past its rest framing at t (zoomAmount), 0..1. */
 export function layoutAt(l: PreparedLayout, t: number, zoom = 0): { screen: ScreenLayer | null; camera: CameraLayer | null; masks: MaskLayer[] } {
   const { project } = l.input
@@ -207,6 +216,33 @@ export function fitScreen(box: Rect, srcW: number, srcH: number, device: Style['
   else for (let i = 0; i < 48; i++) fits((lo + hi) / 2) ? (lo = (lo + hi) / 2) : (hi = (lo + hi) / 2)
   const b = bounds(lo)
   return { x: box.x + (box.w - b.w) / 2 - b.x, y: box.y + (box.h - b.h) / 2 - b.y, w: srcW * lo, h: srcH * lo }
+}
+
+type Frame = Pick<Style, 'padding' | 'inset' | 'device'>
+
+/** Auto's output shape: the recording of aspect `r` in its frame (inset, device mockup) with the
+ *  padding even on every side. Padding and inset are units, 1/1080 of the output's short side. */
+export function hugRatio(st: Frame, r: number): number {
+  const pad = Math.max(0, st.padding)
+  const frame = (s: number) => deviceBounds(st.device, grow({ x: 0, y: 0, w: r >= 1 ? s * r : s, h: r >= 1 ? s : s / r }, Math.max(0, st.inset ?? 0)))
+  // The frame grows with the recording's short side s: bisect for the s that leaves the output's at 1080.
+  let lo = 0, hi = 1080
+  for (let i = 0; i < 48; i++) {
+    const b = frame((lo + hi) / 2)
+    Math.min(b.w, b.h) + 2 * pad <= 1080 ? (lo = (lo + hi) / 2) : (hi = (lo + hi) / 2)
+  }
+  const b = frame(lo)
+  return lo > 0 ? (b.w + 2 * pad) / (b.h + 2 * pad) : r
+}
+
+/** The recording aspect that fills an output of aspect `k` up to its padding: hugRatio's inverse. */
+export function coverRatio(st: Frame, k: number): number {
+  let lo = Math.log(k) - 5, hi = Math.log(k) + 5 // hugRatio grows with r
+  for (let i = 0; i < 48; i++) {
+    const m = (lo + hi) / 2
+    hugRatio(st, Math.exp(m)) <= k ? (lo = m) : (hi = m)
+  }
+  return Math.exp(lo)
 }
 
 // ---- Camera layout timeline: which kind is active, and spring transitions between kinds. ----
