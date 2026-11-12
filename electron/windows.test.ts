@@ -7,7 +7,8 @@ import { register } from 'node:module'
 const stub = (code: string) => `data:text/javascript,${encodeURIComponent(code)}`
 const electron = `import { EventEmitter } from 'node:events'
   export class BrowserWindow extends EventEmitter {
-    constructor(o) { super(); this.bounds = { x: o.x, y: o.y, width: o.width, height: o.height }; this.resizable = o.resizable ?? true }
+    static getAllWindows() { return [] }
+    constructor(o) { super(); globalThis.dockLog?.push('window'); this.bounds = { x: o.x, y: o.y, width: o.width, height: o.height }; this.resizable = o.resizable ?? true }
     getBounds() { return { ...this.bounds } }
     setBounds(b) { this.bounds = { ...this.bounds, ...b }; this.emit('resize') }
     isResizable() { return this.resizable }
@@ -17,7 +18,8 @@ const electron = `import { EventEmitter } from 'node:events'
   }
   const display = { id: 1, workArea: { x: 0, y: 39, width: 2056, height: 1290 } }
   export const screen = { getDisplayMatching: () => display, getDisplayNearestPoint: () => display, getCursorScreenPoint: () => ({ x: 0, y: 0 }) }
-  export const app = {}`
+  const log = (what) => () => globalThis.dockLog?.push(what)
+  export const app = { dock: { show: log('dock.show'), hide: log('dock.hide') }, setActivationPolicy: (p) => globalThis.dockLog?.push(p) }`
 register(
   stub(`export async function resolve(specifier, context, next) {
     const to = { electron: ${JSON.stringify(stub(electron))}, './native.ts': ${JSON.stringify(stub('export const native = {}'))},
@@ -26,6 +28,14 @@ register(
   }`),
 )
 const { openWindow } = await import('./windows.ts')
+
+test('a normal window turns Grip regular before it shows, never through dock.show()', () => {
+  const log: string[] = ((globalThis as { dockLog?: string[] }).dockLog = [])
+  openWindow('editor?project=x')
+  // dock.show() with Grip active brings the Dock forward, and leaves Finder highlighted in it.
+  assert.deepEqual(log, ['regular', 'window'])
+  delete (globalThis as { dockLog?: string[] }).dockLog
+})
 
 test('a fixed-size window the first screen capture grows goes back as it was', () => {
   const win = openWindow('recorder', { x: 587, y: 1245, width: 882, height: 64, resizable: false }) as unknown as { resizable: boolean } & Electron.BrowserWindow

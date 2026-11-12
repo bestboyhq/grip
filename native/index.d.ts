@@ -90,7 +90,7 @@ export declare function commitWindows(): void
 
 /**
  * No zoom when the window shows: AppKit scales a window in over 150 ms, which would set the
- * picker's frozen screen moving. `handle`: BrowserWindow.getNativeWindowHandle(), its NSView.
+ * picker's frozen screen moving.
  */
 export declare function disableWindowAnimation(handle: Buffer): void
 
@@ -111,6 +111,9 @@ export declare function finishTake(): Promise<number>
 
 /** Host time in milliseconds: the clock a renderer's performance.now() is offset from. */
 export declare function hostNowMs(): number
+
+/** The window stays on screen when the user hides Grip or hides other apps (⌥⌘H elsewhere). */
+export declare function keepOnHide(handle: Buffer): void
 
 /** A key press, as src/shared/shortcut.ts reads one off a KeyboardEvent. */
 export interface KeyPress {
