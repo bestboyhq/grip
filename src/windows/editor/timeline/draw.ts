@@ -454,11 +454,15 @@ function strip(ctx: CanvasRenderingContext2D, s: Scene, c: Clip, b: M.Block, x0:
     const bx = xs(v, b)[0]
     const X = (src: number) => bx + ((src - c.start) / c.speed) * v.pps
     const left = c.start + ((Math.max(x0, 0) - bx) / v.pps) * c.speed // source at the strip's visible left
+    // The first tile starts before the clip: its frame comes from just inside it instead, never from what was
+    // cut, on a grid of T / 8 so a trim changes it every few px rather than decoding at every one.
+    const inside = Math.min(Math.ceil(c.start / (T / 8)) * (T / 8), (c.start + c.end) / 2)
     let prev: ImageBitmap | null = null
     for (let n = Math.floor(Math.max(left, c.start) / T); n * T < c.end && X(n * T) < Math.min(x1, v.W); n++) {
       const t = n * T
-      want.push(t)
-      const bmp: ImageBitmap | null = f.frames.get(t) ?? prev
+      const at = t < c.start ? inside : t
+      want.push(at)
+      const bmp: ImageBitmap | null = f.frames.get(at) ?? prev
       const a = X(t)
       const tp = X(t + T) - a
       if (bmp) {
@@ -632,12 +636,19 @@ function itemLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.It
   // Zooms may overlap. Their bodies draw bottom up (a selected one last, lit along its whole length),
   // then an outline over each stretch where they overlap names what combines there, then every
   // block's ends, label (outside the outlines), and selection ring.
+  // Items riding with a dragged clip draw last, over those gliding aside, as the clip does.
   const lit = (b: M.Block) => (s.sel.has((l.items[b.i] as M.Item).id) ? 1 : 0)
   shown.sort((p, q) => lit(p[0]) - lit(q[0]) || l.rank[p[0].i] - l.rank[q[0].i])
-  for (const [b, xa, xb] of shown) itemBlock(ctx, s, row, track, l.items[b.i] as M.Item, b, xa, xb, 'body')
+  const li = s.lifted ? s.model.clips.items.findIndex((c) => c.id === s.lifted) : -1
+  const lift = li >= 0 ? s.model.clips.blocks[li] : null
+  const rides = (o: { a: number; b: number }) => !!lift && o.a >= lift.a - 1e-9 && o.b <= lift.b + 1e-9
   const bands = l.overlaps.filter((o) => o.b >= tA && o.a <= tB)
-  overlapBands(ctx, s, row, l as M.Lane<Zoom>, bands)
-  for (const [b, xa, xb] of shown) itemBlock(ctx, s, row, track, l.items[b.i] as M.Item, b, xa, xb, 'top', labelSpan(l, b, bands))
+  for (const up of lift ? [false, true] : [false]) {
+    const set = shown.filter(([b]) => rides(b) === up)
+    for (const [b, xa, xb] of set) itemBlock(ctx, s, row, track, l.items[b.i] as M.Item, b, xa, xb, 'body')
+    overlapBands(ctx, s, row, l as M.Lane<Zoom>, bands.filter((o) => rides(o) === up))
+    for (const [b, xa, xb] of set) itemBlock(ctx, s, row, track, l.items[b.i] as M.Item, b, xa, xb, 'top', labelSpan(l, b, bands))
+  }
   if (live) {
     ctx.restore()
     liveTake(ctx, s, row, live)

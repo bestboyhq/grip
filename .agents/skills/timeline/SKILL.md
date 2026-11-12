@@ -19,9 +19,11 @@ The editor where users cut, speed up, and direct the video.
 - Selection is a hairline ring and a soft glow in the item's colour, never a thick white border.
 - A clip shows its recording: frames set into its blue body behind a 3 px rim, its waveform on the band below them, and its label in a chip over the frames at the left of its visible part.
   Frames are pinned to source time, a tile a power of two source seconds long, so zooming reuses the frames already decoded and a tile still decoding shows the one before it.
+  A tile that starts before the clip shows a frame from inside it, never from what was cut.
   They decode on their own decoder, never the preview's.
 - Dragging a clip moves it to a new place in the output order; a click still moves the playhead there, and with one clip a drag scrubs.
   The clip lifts and follows the pointer, a hollow slot shows where it lands, and the other clips glide aside to make room; its zooms, layouts, masks, and voiceovers ride along, being in source time.
+  What rides along draws over what glides aside, as the clip does, so a neighbour's grip never cuts its label.
   It passes a neighbour once it is over that neighbour's middle; Esc puts it back.
   ⌘K moves the selected clip a place earlier or later.
 - Keyboard-first: ⌘B (or C) cuts at the playhead, Q and W delete the clip under the playhead before or after it, X ripple-deletes, holding ⌥ arms the split tool, arrows step 0.5 s (1 s with Shift), 0-9 set zoom level, and ⌘K reaches every action.
