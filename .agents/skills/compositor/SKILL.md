@@ -14,6 +14,9 @@ GPU composition of each output frame.
 - Video stays undithered, but a ramp drawn over it, like the loupe's shadow, must raise the dither mark too, or flat UI under it bands into rings in the preview.
   The encoder strips that dither, so an export stays smooth only under a ramp that steps a level every few px: a faint one spread over hundreds of px bands into rings tens of px wide.
 - Rounded corners and shadows are antialiased on light and dark backgrounds at every scale.
+- The inset is a band between the frame's edge and the recording: the recording's own edge stretched out, or a color at an opacity.
+  The recording inside it keeps corners concentric with the frame's (`radius - inset`), the same corners ink clips to.
+  A see-through band shows the background and shadow under it, so only an opaque edge band counts as video for the dither mark.
 - Output aspect ratios: auto, 16:9, 9:16, 4:5, 1:1, and custom.
   Auto hugs the framed recording (inset, device) with the padding even on every side (`hugRatio`).
   An output shaped to the recording alone leaves the padding thicker at the sides and makes the rest framing zoom in over it.

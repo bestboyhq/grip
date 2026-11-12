@@ -25,7 +25,9 @@ export interface ScreenLayer {
   rect: Rect // where the whole recording sits; recording px map linearly onto it (past `visible` when cropped)
   visible: Rect // the part of rect that shows (project.crop); the frame's inset, corners, and shadow are around it
   cropped: boolean // visible is less than rect: the cursor, clicks, and drawings are clipped to the frame too
-  inset: number // px of frame around the recording on every side, filled with the recording's edge color
+  inset: number // px of band around the recording on every side
+  insetColor: [number, number, number] | null // sRGB 0..1; null = the recording's edge color
+  insetOpacity: number // 0..1
   radius: number // px, corners of the frame (rect grown by inset)
   shadow: number // 0..1
   device: Style['device']

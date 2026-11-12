@@ -11,12 +11,15 @@
 </script>
 
 <script lang="ts">
+  import { tooltip } from './tooltip.ts'
+
   let {
     label,
     value,
     swatches = [],
     disabled = false,
     active = true,
+    auto,
     onchange,
   }: {
     label: string
@@ -25,36 +28,41 @@
     disabled?: boolean
     /** false: `value` is only a starting point (the color is not in use yet), so no swatch is marked. */
     active?: boolean
+    /** A first swatch that stands for no color of its own (the recording's edge, say). */
+    auto?: { label: string; on: boolean; pick: () => void }
     onchange: (v: string, merge?: string) => void
   } = $props()
   const id = $props.id()
   let session = 0
   const hex = $derived(normalizeHex(value) ?? '#000000')
+  const shown = $derived(auto?.on ? '' : hex.slice(1)) // auto: no hex of its own to show
 </script>
 
 <div class="picker" class:disabled>
   <div class="row">
     <label for="{id}-hex">{label}</label>
-    <span class="well" style:background={hex}>
+    <span class="well" class:auto={auto?.on} style:background={auto?.on ? null : hex}>
       <input type="color" value={hex} {disabled} aria-label="{label}: open color panel" oninput={(e) => onchange(e.currentTarget.value, `${id}:${session}`)} onchange={() => session++} />
     </span>
-    <span class="hex"><span aria-hidden="true">#</span><input
+    <span class="hex">{#if !auto?.on}<span aria-hidden="true">#</span>{/if}<input
       id="{id}-hex"
       {disabled}
-      value={hex.slice(1)}
+      value={shown}
+      placeholder={auto?.on ? auto.label : null}
       maxlength="7"
       spellcheck="false"
       autocomplete="off"
       onchange={(e) => {
         const v = normalizeHex(e.currentTarget.value)
         if (v) onchange(v)
-        e.currentTarget.value = (v ?? hex).slice(1)
+        e.currentTarget.value = v?.slice(1) ?? shown
       }}
       onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
     /></span>
   </div>
-  {#if swatches.length}
+  {#if swatches.length || auto}
     <div class="swatches" role="radiogroup" aria-label="{label} presets">
+      {#if auto}<input type="radio" class="auto" name="{id}-swatch" {disabled} checked={auto.on} aria-label={auto.label} onchange={auto.pick} {@attach tooltip(auto.label)} />{/if}
       {#each swatches as c (c)}
         <input type="radio" name="{id}-swatch" {disabled} checked={active && c.toLowerCase() === hex} style:background={c} aria-label={c} onchange={() => onchange(c.toLowerCase())} />
       {/each}
@@ -74,6 +82,7 @@
   .hex:has(input:focus-visible) { outline: 2px solid var(--brand); outline-offset: -1px; }
   .hex input { flex: 1; min-width: 0; height: 100%; padding: 0 8px 0 2px; border: 0; background: none; color: var(--fg-default); font: inherit; text-transform: lowercase; }
   .hex input:focus-visible { outline: none; }
+  .hex input::placeholder { color: var(--fg-muted); font-family: var(--font); text-transform: none; }
   .swatches { display: flex; flex-wrap: wrap; gap: 7px; padding: 2px 0 4px calc(var(--label-w, 92px) + 6px); }
   /* Native radios: one tab stop, arrow keys move the choice. Keyboard focus rings the inside, selection
      the outside, so the two never merge. */
@@ -84,6 +93,7 @@
     transition: transform 120ms var(--ease-out), box-shadow 120ms;
   }
   .swatches input:hover { transform: scale(1.12); }
+  .well.auto, .swatches .auto { background: linear-gradient(135deg, var(--fg-muted) 50%, var(--surface-200) 50%); }
   .swatches input:checked { --selected: 0 0 0 2px var(--surface-root), 0 0 0 3.5px var(--fg-default); }
   .swatches input:focus-visible { outline: none; --focused: inset 0 0 0 2px var(--fg-default), inset 0 0 0 3.5px rgb(0 0 0 / 0.5); }
 </style>

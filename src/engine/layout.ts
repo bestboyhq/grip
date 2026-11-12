@@ -82,7 +82,7 @@ export function layoutAt(l: PreparedLayout, t: number, zoom = 0): { screen: Scre
   const s = stateAt(l, t, lastChange(l.changes, t))
   const c = screenCrop(project)
   const screen: ScreenLayer | null = project.sources.screen
-    ? { rect: s.screen, visible: s.visible, cropped: c.w < 1 || c.h < 1, inset: insetPx(st, l.unit), radius: s.screenRadius, shadow: st.shadow, device: st.device, viewport: s.viewport, viewportRadius: s.viewportRadius }
+    ? { rect: s.screen, visible: s.visible, cropped: c.w < 1 || c.h < 1, inset: insetPx(st, l.unit), insetColor: rgbOf(st.insetColor), insetOpacity: Math.min(Math.max(st.insetOpacity ?? 1, 0), 1), radius: s.screenRadius, shadow: st.shadow, device: st.device, viewport: s.viewport, viewportRadius: s.viewportRadius }
     : null
   const cs = project.sources.camera
   let camera: CameraLayer | null = null
@@ -126,6 +126,8 @@ function steppedBack(st: Style, s: State, zoom: number): { rect: Rect; k: number
 // ---- Layout targets: the settled state of each camera layout kind. ----
 
 const insetPx = (st: Style, unit: number) => Math.max(0, (st.inset ?? 0) * unit)
+/** '#rrggbb' as sRGB 0..1; anything else is null, the recording's edge. */
+const rgbOf = (hex?: string) => (/^#[0-9a-f]{6}$/i.test(hex ?? '') ? ([1, 3, 5].map((i) => parseInt(hex!.slice(i, i + 2), 16) / 255) as [number, number, number]) : null)
 
 function target(input: SceneInput, unit: number, kind: Kind): State {
   const { project, width: W, height: H } = input

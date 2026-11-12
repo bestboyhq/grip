@@ -34,6 +34,7 @@ struct Frame {
   loupes: array<vec4f, 8>, // lenses at t, two slots each: center x, y (unzoomed), radius (unzoomed px), magnification;
                            // opacity, samples in loupeS (1: still), stretch (along the motion, length = elongation). Radius 0: none
   loupeS: array<vec4f, 72>, // each lens across the shutter: LENS_SAMPLES samples of two slots, laid out like loupes
+  ins: vec4f,      // the inset band: rgb (r < 0: the recording's edge, stretched), opacity
 }
 
 @group(0) @binding(0) var<uniform> F: Frame;
@@ -245,6 +246,12 @@ fn frameCover(u: vec2f, aa: f32) -> f32 {
   return cover(sdBox(u - F.vis.xy - half, half + F.dev.w, vec4f(F.scr2.x)), aa);
 }
 
+// Coverage of the recording itself, inside the inset band, its corners concentric with the frame's.
+fn recCover(u: vec2f, aa: f32) -> f32 {
+  let half = F.vis.zw * 0.5;
+  return cover(sdBox(u - F.vis.xy - half, half, vec4f(max(F.scr2.x - F.dev.w, 0.0))), aa);
+}
+
 // The recording at unzoomed point u with its masks: rgb + dither mark.
 fn screenAt(u: vec2f, aa: f32) -> vec4f {
   let r = F.scr;
@@ -382,8 +389,12 @@ fn zoomed(u: vec2f, aa: f32) -> vec4f {
     if (fx == 1.0 || fx == 2.0) { k = crest(); v = ripples(u, k); }
     if (dot(v, v) > 1e-8) { s = rippled(u, v, k, aa); } else { s = screenAt(u, aa); }
     if (fx >= 3.0) { let m = clickMarks(s.rgb, u, aa); s = vec4f(m.rgb, max(s.a, m.a)); }
-    c = mix(c, s.rgb, cv);
-    mark = mix(1.0, s.a, cv);
+    // The band under the recording: its color, or the recording's edge (s, held there), at its opacity.
+    let edge = F.ins.x < 0.0;
+    let rc = recCover(u, aa);
+    c = mix(c, select(F.ins.rgb, s.rgb, edge), cv * F.ins.w);
+    c = mix(c, s.rgb, rc);
+    mark = mix(1.0, s.a, select(rc, cv, edge && F.ins.w >= 1.0)); // an opaque edge band is video too
   }
   for (var i = over; i < n; i++) { c = part(c, u, i, aa); }
   return vec4f(c, mark);

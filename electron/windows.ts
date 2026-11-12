@@ -95,15 +95,10 @@ export function reveal(win: BrowserWindow, focus = true) {
 
 // ---- Dock ----
 
-let recording = false
 let dialogs = 0
 
-export function setRecordingDock(on: boolean) {
-  recording = on
-  updateDock()
-}
-
-/** The dock icon goes through the activation policy, never app.dock.show(): with Grip active, that brings
+/** The dock icon shows while a normal window is open, recording or not: a window on screen with no icon
+ *  to switch back to it reads as Grip gone. The dock icon goes through the activation policy, never app.dock.show(): with Grip active, that brings
  *  the Dock forward first, which left its first icon, Finder, highlighted after a recording opened the
  *  editor. The policy turns regular before a normal window shows (dockFor): turned regular after the
  *  window activates Grip, macOS keeps the other app's menu bar. Setting the policy Grip has already does
@@ -111,10 +106,10 @@ export function setRecordingDock(on: boolean) {
 function dock(want: boolean) {
   if (app.dock) app.setActivationPolicy(want ? 'regular' : 'accessory')
 }
-const dockFor = (kind: string) => !hidden && !recording && NORMAL.has(kind) && dock(true)
+const dockFor = (kind: string) => !hidden && NORMAL.has(kind) && dock(true)
 
 export function updateDock() {
-  dock(!recording && (dialogs > 0 || BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w.isVisible() && NORMAL.has(kinds.get(w) ?? ''))))
+  dock(dialogs > 0 || BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w.isVisible() && NORMAL.has(kinds.get(w) ?? '')))
 }
 
 /** A dialog the user asked for keeps the dock icon, and with it the menu bar, from before Grip comes
