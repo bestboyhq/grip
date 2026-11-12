@@ -315,6 +315,30 @@ export function duplicateClips(clips: Clip[], ids: Set<string>): Clip[] {
   return [...clips.slice(0, last + 1), ...picked.map((c) => ({ ...c, id: uid() })), ...clips.slice(last + 1)]
 }
 
+/** Clip i moved to place k of the output order. Items stay in source time, so they go with it. */
+export function moveClip(clips: Clip[], i: number, k: number): Clip[] {
+  if (k === i) return clips
+  const next = clips.filter((_, j) => j !== i)
+  next.splice(k, 0, clips[i])
+  return next
+}
+
+/** Where clip i lands when dropped with its start at output time `at`: the place among the other clips
+ *  that starts nearest to it, so it passes a neighbour once it is over that neighbour's middle. */
+export function slotFor(clips: Clip[], i: number, at: number): number {
+  let best = 0
+  let gap = Math.abs(at) // place 0 starts at 0
+  let t = 0
+  let k = 0
+  clips.forEach((c, j) => {
+    if (j === i) return
+    t += (c.end - c.start) / c.speed
+    k++
+    if (Math.abs(at - t) < gap) [best, gap] = [k, Math.abs(at - t)]
+  })
+  return best
+}
+
 /** Where output time t of `before` is after an edit: the same source moment, or the next one that
  *  survives when it was cut out. Timing edits put the playhead there. */
 export const sameMoment = (before: TimeMap, after: TimeMap, t: number) => momentAt(after, toSource(before, t))

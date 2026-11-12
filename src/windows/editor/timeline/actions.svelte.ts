@@ -144,6 +144,18 @@ export const canMerge = (dir: 1 | -1) => {
   return M.mergeClips(project().clips, dir > 0 ? i : i - 1) !== project().clips
 }
 
+/** The one target clip's place when it can move a place earlier (-1) or later (1), else -1. */
+function movable(dir: 1 | -1) {
+  const t = targetClips()
+  const i = t.size === 1 ? project().clips.findIndex((c) => t.has(c.id)) : -1
+  return i >= 0 && i + dir >= 0 && i + dir < project().clips.length ? i : -1
+}
+/** Move the target clip a place earlier or later, as dragging it does; its items go with it. */
+export function moveClip(dir: 1 | -1) {
+  const i = movable(dir)
+  if (i >= 0) keepingPlayhead(() => set('clips', M.moveClip(project().clips, i, i + dir)))
+}
+
 export function restore(after: number) {
   keepingPlayhead(() => set('clips', M.restoreCut(project().clips, after, project().sources.duration)))
 }
@@ -334,6 +346,8 @@ export function timelineCommands(view: { zoom: (f: number) => void; fit: () => v
     c('muteVoiceover', 'Voiceover', 'Mute / unmute voiceover', toggleVoiceovers, () => open() && has('voiceovers'), ['M']),
     c('mergePrev', 'Clip', 'Merge with previous clip', () => merge(-1), () => open() && canMerge(-1)),
     c('mergeNext', 'Clip', 'Merge with next clip', () => merge(1), () => open() && canMerge(1)),
+    c('moveEarlier', 'Clip', 'Move clip earlier', () => moveClip(-1), () => open() && movable(-1) >= 0, [], { hint: 'or drag it' }),
+    c('moveLater', 'Clip', 'Move clip later', () => moveClip(1), () => open() && movable(1) >= 0, [], { hint: 'or drag it' }),
     c('resetTrim', 'Clip', 'Reset trim', resetTrim, canResetTrim, [], { hint: 'grows the clip over the source cut next to it' }),
     c('restoreCut', 'Clip', 'Restore the nearest cut', () => restore(nearestCut()!.after), () => open() && !!nearestCut(), [], { hint: 'brings back what was cut there' }),
     c('hideCursor', 'Clip', 'Hide / show cursor in clip', () => toggleClips('hideCursor'), () => clipTarget() && hasCursor() && project().style.cursor.visible),

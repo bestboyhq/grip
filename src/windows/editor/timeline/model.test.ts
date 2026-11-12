@@ -138,6 +138,19 @@ test('clip edits', () => {
   assert.equal(M.trimAt(one, 0, 1), one, 'never removes every clip')
 })
 
+test('a clip dragged to a new place passes a neighbour over its middle, and its zooms go with it', () => {
+  const clips = [clip(0, 10), clip(10, 12), clip(20, 30, 2)] // output 0..10, 10..12, 12..17
+  assert.equal(M.slotFor(clips, 0, 0.9), 0, 'not yet over the 2 s clip middle')
+  assert.equal(M.slotFor(clips, 0, 1.1), 1)
+  assert.equal(M.slotFor(clips, 0, 6.6), 2, 'past the sped-up clip middle: last')
+  assert.equal(M.slotFor(clips, 2, 3), 0, 'the last clip to the front')
+  assert.equal(M.moveClip(clips, 1, 1), clips, 'its own place: no edit')
+  const moved = M.moveClip(clips, 2, 0)
+  assert.deepEqual(moved.map((c) => c.id), ['c20', 'c0', 'c10'])
+  const m = M.buildModel(parts(moved, [zoom('z', 22, 24)]), [], [])
+  assert.deepEqual(m.zooms.blocks.map((b) => [b.a, b.b]), [[1, 2]], 'the zoom plays where its clip now plays')
+})
+
 test('the playhead keeps its source moment across edits, or moves to the next surviving one', () => {
   const whole = timeMap([clip(0, 30)])
   const cut = timeMap(removeOutputRange([clip(0, 30)], 10, 17))

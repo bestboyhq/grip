@@ -35,7 +35,7 @@
 
 <script lang="ts">
   import { onDestroy } from 'svelte'
-  import { openVideo, type FrameSource } from '../../../engine/media/index.ts'
+  import { Frames } from './frames.ts'
   import { formatTime } from '../helpers.ts'
 
   let { redraw }: { redraw: () => void } = $props()
@@ -56,73 +56,12 @@
   let x = 0 // where the lens sits, kept while the pointer is in it so it holds still under the hand
   let hatch: CanvasPattern | null = null
 
-  /** Thumbnails of one video at the lens's height, decoded on their own decoder so the preview's is
-   *  never disturbed, latest request first served, oldest evicted. */
-  class Frames {
-    readonly url: string
-    private src: Promise<FrameSource | null>
-    private cache = new Map<number, ImageBitmap>() // by source millisecond
-    private want: number[] = []
-    private busy = false
-    private closed = false
-
-    constructor(url: string) {
-      this.url = url
-      this.src = openVideo(url).catch((e) => {
-        console.warn('timeline: lens frames unavailable:', e)
-        return null
-      })
-    }
-
-    get = (t: number) => this.cache.get(Math.round(t * 1000)) ?? null
-
-    /** Decode these times, in order, dropping what an earlier call still wanted. */
-    request(ts: number[], w: number, h: number) {
-      this.want = ts.filter((t) => !this.cache.has(Math.round(t * 1000)))
-      if (this.want.length) void this.pump(w, h)
-    }
-
-    private async pump(w: number, h: number) {
-      if (this.busy) return
-      this.busy = true
-      const src = await this.src
-      while (src && !this.closed && this.want.length) {
-        const t = this.want.shift()!
-        const f = await src.frameAt(t).catch(() => null)
-        if (!f) continue
-        try {
-          const bmp = await createImageBitmap(f, { resizeWidth: w, resizeHeight: h, resizeQuality: 'medium' })
-          if (this.closed) bmp.close()
-          else this.cache.set(Math.round(t * 1000), bmp)
-        } finally {
-          f.close()
-        }
-        // ponytail: FIFO eviction; a lens shows ~8 thumbnails, so 160 covers dragging back and forth.
-        if (this.cache.size > 160) {
-          const [k, old] = this.cache.entries().next().value!
-          old.close()
-          this.cache.delete(k)
-        }
-        redraw()
-      }
-      this.busy = false
-    }
-
-    close() {
-      this.closed = true
-      this.want = []
-      void this.src.then((s) => s?.close())
-      for (const b of this.cache.values()) b.close()
-      this.cache.clear()
-    }
-  }
-
   function use(video: LensVideo | null) {
     if (frames && frames.url !== video?.url) {
       frames.close()
       frames = null
     }
-    if (video && !frames) frames = new Frames(video.url)
+    if (video && !frames) frames = new Frames(video.url, redraw, 160) // a lens shows ~8 thumbnails: 160 covers dragging back and forth
   }
 
   /** Open the video before the first trim, so its frames are there when the lens opens. */

@@ -17,6 +17,15 @@ The editor where users cut, speed up, and direct the video.
   A shorter zoom draws over a longer one, so one inside another always shows and takes the click.
   Layouts and masks never overlap.
 - Selection is a hairline ring and a soft glow in the item's colour, never a thick white border.
+- A clip shows its recording: frames set into its blue body behind a 3 px rim, its waveform on the band below them, and its label in a chip over the frames at the left of its visible part.
+  Frames are pinned to source time, a tile a power of two source seconds long, so zooming reuses the frames already decoded and a tile still decoding shows the one before it.
+  A tile that starts before the clip shows a frame from inside it, never from what was cut.
+  They decode on their own decoder, never the preview's.
+- Dragging a clip moves it to a new place in the output order; a click still moves the playhead there, and with one clip a drag scrubs.
+  The clip lifts and follows the pointer, a hollow slot shows where it lands, and the other clips glide aside to make room; its zooms, layouts, masks, and voiceovers ride along, being in source time.
+  What rides along draws over what glides aside, as the clip does, so a neighbour's grip never cuts its label.
+  It passes a neighbour once it is over that neighbour's middle; Esc puts it back.
+  ⌘K moves the selected clip a place earlier or later.
 - Keyboard-first: ⌘B (or C) cuts at the playhead, Q and W delete the clip under the playhead before or after it, X ripple-deletes, holding ⌥ arms the split tool, arrows step 0.5 s (1 s with Shift), 0-9 set zoom level, and ⌘K reaches every action.
   People bring these keys from other editors: the bar shows Cut with ⌘B, and ⌘K finds it by "split".
   ⌫ and ⌦ do what X does, as in any Mac app: either one doing nothing reads as an editor that ignores its own platform.
@@ -25,7 +34,7 @@ The editor where users cut, speed up, and direct the video.
   Undoing a ripple delete puts it back inside the clip that returns, not at the far end of it, so the view stays on what came back.
   While playing, undo and redo keep the playhead on the frame it plays instead: what is heard carries on rather than jump back.
   Timing edits keep the playhead on the source moment it shows.
-- Dragging and resizing leave the playhead in place, and a dragged edge tracks the pointer exactly, on sped-up clips too.
+- Dragging items and resizing leave the playhead in place, and a dragged edge tracks the pointer exactly, on sped-up clips too.
   Trimming a clip edge shows the frame at the edge in the preview as it moves, source being trimmed back in included, so no cut is blind.
   An edge dragged out into the source of the clip next to it in the output takes it over: that clip gives way, down to its shortest, and the split between them stays under the pointer at either clip's speed.
   An edge that stops there pins both parts of a fresh split, with nothing to trim.

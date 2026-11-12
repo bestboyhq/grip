@@ -17,8 +17,9 @@
   import * as A from './actions.svelte.ts'
   import { formatTime } from '../helpers.ts'
   import { tooltip } from '../../../ui/tooltip.ts'
-  import { still } from '../../../ui/motion.ts'
-  import { PAD, RULER, draw, hit, rows as layoutRows, thumb, timeOf, xOf, type Audio, type Hit, type Scene, type View } from './draw.ts'
+  import { easeOut, still } from '../../../ui/motion.ts'
+  import { PAD, RULER, draw, hit, rows as layoutRows, thumb, timeOf, xOf, type Audio, type Hit, type Scene, type Shift, type View } from './draw.ts'
+  import { Frames } from './frames.ts'
   import { Waveforms, type PeaksFn } from './waveform.ts'
   import Menu, { type Target } from './Menu.svelte'
   import Lens, { LENS, type LensVideo } from './Lens.svelte'
@@ -26,7 +27,7 @@
   let { peaks = enginePeaks }: { peaks?: PeaksFn } = $props()
 
   const MAX_PPS = 1000 // px per second: a 30 fps frame is 33 px wide
-  const SETTLE = 250 // ms: a released start edge closes its gap
+  const SETTLE = 250 // ms: a released start edge closes its gap; clips glide to a new order
   const SCISSORS = `url("data:image/svg+xml,${encodeURIComponent(
     `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><g fill='none' stroke-linecap='round'><g stroke='black' stroke-width='3.6'><path d='M7 3l10 13M17 3L7 16'/><circle cx='6.5' cy='18.5' r='3'/><circle cx='17.5' cy='18.5' r='3'/></g><g stroke='white' stroke-width='1.6'><path d='M7 3l10 13M17 3L7 16'/><circle cx='6.5' cy='18.5' r='3'/><circle cx='17.5' cy='18.5' r='3'/></g></g></svg>`,
   )}") 12 10, crosshair`
@@ -36,6 +37,7 @@
     | { kind: 'scroll'; x: number; x0: number }
     | { kind: 'trim'; i: number; side: 'start' | 'end'; lim: { lo: number; hi: number }; off: number; full: TimeMap; fine: { src: number; x: number } | null }
     | { kind: 'move'; track: M.ItemTrack; ids: Set<string>; grab: number }
+    | { kind: 'reorder'; id: string; from: number; to: number; grab: number; at: number } // clip `from` dragged to place `to`, its start at output `at`
     | { kind: 'resize'; track: M.ItemTrack; id: string; side: 'start' | 'end'; off: number }
     | { kind: 'create'; track: A.Made; t0: number }
     | { kind: 'marquee'; t: number; y: number; keep: string[] }
@@ -65,7 +67,11 @@
   let mic: Audio | null = null
   let system: Audio | null = null
   let voices: Scene['voices'] = new Map()
-  let video: LensVideo | null = null // the recording the trim lens shows
+  let video: LensVideo | null = null // the recording the trim lens and the clips' frames show
+  let film: Frames | null = null // the clips' frames
+  let glides = new Map<string, { from: number; t0: number }>() // clip id: output seconds it is drawn from its place, easing to 0
+  let lifted: string | null = null // the clip being dragged to a new place
+  let slot: [number, number] | null = null // where it lands, output seconds
   let lens: Lens | undefined
   let lensOn = false
   let shown = new Set<M.ItemTrack>() // item lanes shown so far, for the project in `lanesFor`
@@ -122,6 +128,10 @@
       )
       const v = p.sources.screen ?? p.sources.camera
       video = v && doc.path ? { url: fileUrl(`${doc.path}/${v.file}`), width: v.width, height: v.height, fps: v.fps } : null
+      if (film?.url !== video?.url) {
+        film?.close()
+        film = video ? new Frames(video.url, requestDraw, 400) : null // about 10 screens of frames
+      }
       rebuild()
     })
   })
@@ -296,10 +306,11 @@
     }
     if (closing) {
       const u = Math.min(1, (now - closing.t0) / SETTLE)
-      view.shift = u < 1 ? { at: closing.at, by: closing.by * (1 - u) ** 3 } : null
+      view.shift = u < 1 ? [{ a: closing.at, b: Infinity, by: closing.by * (1 - u) ** 3 }] : null
       if (u < 1) again = true
       else closing = null
     }
+    if (glides.size || lifted || drag?.kind === 'reorder') again = glide(now) || again
     if (drag?.moved && pointer && drag.kind !== 'scroll' && drag.kind !== 'cut' && !(drag.kind === 'trim' && drag.fine)) {
       // Dragging past an edge scrolls, faster the further out.
       const over = pointer.x < PAD + 24 ? pointer.x - PAD - 24 : pointer.x > view.W - PAD - 24 ? pointer.x - view.W + PAD + 24 : 0
@@ -317,7 +328,7 @@
     if (ctx && view.W) {
       if (model) {
         const live = take.phase === 'recording' || take.phase === 'saving' ? { from: take.from, n: take.n, ...heard } : null // grows until its items land
-        draw(ctx, { view, model, time: player.time, sel, hover, pointer: take.phase ? null : pointer, armed: armed(), dragging: !!drag, marquee: marqueeRect(), mic, system, voices, take: live, hidden: take.again, taking: !!take.phase, waves })
+        draw(ctx, { view, model, time: player.time, sel, hover, pointer: take.phase ? null : pointer, armed: armed(), dragging: !!drag, marquee: marqueeRect(), mic, system, voices, take: live, hidden: take.again, taking: !!take.phase, waves, film: film && video ? { frames: film, aspect: video.width / video.height } : null, lifted, slot })
       } else ctx.clearRect(0, 0, canvas!.width, canvas!.height)
     }
     if (drag?.kind === 'trim') showLens(drag)
@@ -353,6 +364,8 @@
     return () => {
       ro.disconnect()
       el.removeEventListener('wheel', onwheel)
+      film?.close()
+      film = null
       cancelAnimationFrame(raf)
       raf = 0
     }
@@ -399,8 +412,9 @@
   function onpointerdown(e: PointerEvent) {
     if (e.button !== 0 || !model || !base) return
     menu = null
-    if (closing) {
-      closing = null // a gap still closing closes now, so the press lands on what it shows
+    if (closing || glides.size) {
+      closing = null // a gap still closing closes now, and gliding clips land, so the press lands on what it shows
+      glides.clear()
       view.shift = null
     }
     if (e.altKey) syncAlt(true) // ⌥ pressed while another app had focus; release comes as keyup or blur
@@ -444,7 +458,8 @@
         if (add) selection.ids = selection.ids.includes(id) ? selection.ids.filter((x) => x !== id) : [...selection.ids, id]
         else if (!selection.ids.includes(id)) selection.ids = [id]
         else select = id // plain click inside a multi-selection narrows it on release; a drag moves them all
-        if (h.track === 'clips') {
+        if (h.track === 'clips' && !add && model.clips.items.length > 1) g = { kind: 'reorder', id, from: h.block.i, to: h.block.i, grab: t - h.block.a, at: h.block.a }
+        else if (h.track === 'clips') {
           seek(t)
           g = { kind: 'scrub' }
         } else if (selection.ids.includes(id)) {
@@ -491,7 +506,8 @@
     else click(d)
     draft = null
     // A start edge's gap closes in one glide rather than a jump; the timeline refits alongside (rebuild).
-    closing = d.kind === 'trim' && view.shift?.by ? { ...view.shift, t0: performance.now() } : null
+    const sh = d.kind === 'trim' ? view.shift?.[0] : null
+    closing = sh?.by ? { at: sh.a, by: sh.by, t0: performance.now() } : null
     if (!closing) view.shift = null
     rebuild()
     hovered()
@@ -526,8 +542,18 @@
       // The clip before gives way when a start edge takes it over, so the edge starts that much earlier.
       const prev = d.i ? clips[d.i - 1] : null
       const at = d.map.outStarts[d.i] - (prev ? (b.clips[d.i - 1].end - prev.end) / prev.speed : 0)
-      view.shift = d.side === 'start' ? { at, by: M.edgeOutput(d.map, d.i, clips[d.i].start, 'start') - at } : null
+      view.shift = d.side === 'start' ? [{ a: at, b: Infinity, by: M.edgeOutput(d.map, d.i, clips[d.i].start, 'start') - at }] : null
       trimPreview(d, clips)
+    } else if (d.kind === 'reorder') {
+      // The clip follows the pointer, staying on the timeline; the others make room where it would land.
+      const c = b.clips[d.from]
+      d.at = M.clamp(timeOf(view, p.x) - d.grab, 0, d.map.duration - (c.end - c.start) / c.speed)
+      const to = M.slotFor(b.clips, d.from, d.at)
+      if (to === d.to) return
+      d.to = to
+      const clips = M.moveClip(b.clips, d.from, to)
+      regroup(clips)
+      draft = { clips }
     } else if (d.kind === 'move') {
       draft = { [d.track]: M.moveItems(b[d.track] as M.Item[], d.ids, toSource(d.map, t) - d.grab, b.duration, M.overlaps(d.track)) }
     } else if (d.kind === 'resize') {
@@ -576,7 +602,61 @@
     lensOn = true
   }
 
+  /** Clips drawn away from their place this frame: the dragged one under the pointer with its items, the
+   *  others gliding to their place in the new order. False once all have landed. */
+  function glide(now: number): boolean {
+    const m = model?.map
+    const d = drag?.kind === 'reorder' && drag.moved ? drag : null
+    const spans: Shift[] = []
+    lifted = d?.id ?? null
+    slot = null
+    m?.clips.forEach((c, j) => {
+      const a = m.outStarts[j]
+      const b = a + (c.end - c.start) / c.speed
+      const by = offsetOf(c.id, now)
+      if (c.id === lifted) {
+        slot = [a + by, b + by]
+        spans.push({ a, b, by: d!.at - a })
+      } else if (by) spans.push({ a, b, by })
+    })
+    view.shift = spans.length ? spans : null
+    return glides.size > 0 || !!d
+  }
+
+  /** How far clip `id` is drawn from its place now, easing out to 0 over SETTLE. */
+  function offsetOf(id: string, now: number) {
+    const g = glides.get(id)
+    if (!g) return 0
+    const u = (now - g.t0) / SETTLE
+    if (u < 1) return g.from * (1 - easeOut(u))
+    glides.delete(id)
+    return 0
+  }
+
+  /** The order changes to `next` under the clips: each glides from where it is drawn now to its new
+   *  place; the dragged clip, `drop`ped, from under the pointer. Under reduced motion they jump. */
+  function regroup(next: Clip[], drop?: { id: string; at: number }) {
+    const now = performance.now()
+    const m = model?.map
+    const was = new Map(m?.clips.map((c, j) => [c.id, m.outStarts[j] + offsetOf(c.id, now)]))
+    if (drop) was.set(drop.id, drop.at)
+    const n = timeMap(next)
+    glides = new Map()
+    if (still()) return
+    next.forEach((c, j) => {
+      const from = (was.get(c.id) ?? n.outStarts[j]) - n.outStarts[j]
+      if (Math.abs(from) > 1e-9) glides.set(c.id, { from, t0: now })
+    })
+    requestDraw()
+  }
+
   function commit(d: Drag) {
+    if (d.kind === 'reorder') {
+      const next = M.moveClip(base!.clips, d.from, d.to)
+      regroup(next, { id: d.id, at: d.at })
+      if (next !== base!.clips) void A.keepingPlayhead(() => edit((p) => { p.clips = next })) // the playhead stays on the frame it shows
+      return
+    }
     const key = d.kind === 'trim' ? 'clips' : d.kind === 'move' || d.kind === 'resize' || d.kind === 'create' ? d.track : null
     if (!key || !draft?.[key] || JSON.stringify(draft[key]) === JSON.stringify(base![key])) return
     const next = draft[key]
@@ -591,11 +671,13 @@
     else if (d.kind === 'marquee') selection.ids = d.keep // a plain click on empty space deselects
     else if (d.select) selection.ids = [d.select]
     if (d.kind === 'create') seek(d.t0) // a click on an item lane or item moves the playhead; dragging makes a new item
-    else if (d.kind === 'move') seek(outTime(d.sx))
+    else if (d.kind === 'move' || d.kind === 'reorder') seek(outTime(d.sx))
   }
 
   function cancel() {
+    const d = drag
     drag = null
+    if (d?.kind === 'reorder' && d.moved && base) regroup(base.clips, { id: d.id, at: d.at }) // back to its place
     showEdge(null)
     draft = null
     view.shift = null
@@ -636,10 +718,10 @@
 
   function hoverCursor(h: Hit): string {
     if (armed() && (h.kind === 'block' || h.kind === 'lane') && h.track === 'clips') return SCISSORS
-    if (h.kind === 'block') return h.edge ? 'ew-resize' : isItem(h.track) ? 'grab' : 'default'
+    if (h.kind === 'block') return h.edge ? 'ew-resize' : isItem(h.track) || (h.track === 'clips' && model!.clips.items.length > 1) ? 'grab' : 'default'
     return h.kind === 'cut' || h.kind === 'ruler' ? 'pointer' : 'default'
   }
-  const dragCursor = (d: Drag) => (d.kind === 'move' ? 'grabbing' : d.kind === 'trim' || d.kind === 'resize' ? 'ew-resize' : cursor)
+  const dragCursor = (d: Drag) => (d.kind === 'move' || d.kind === 'reorder' ? 'grabbing' : d.kind === 'trim' || d.kind === 'resize' ? 'ew-resize' : cursor)
 
   function syncAlt(down: boolean) {
     if (down === alt) return
