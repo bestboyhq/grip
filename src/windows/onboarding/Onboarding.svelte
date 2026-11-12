@@ -46,6 +46,8 @@
   // The route is fixed for the window's life: read it once.
   const query = untrack(() => Object.fromEntries(params))
   let page = $state(query.page ?? 'welcome')
+  // Each onboarding page reached counts once (electron/usage.ts); Settings is no step.
+  $effect(() => void (page !== 'settings' && invoke('usage:setup', page)))
   const need = (query.need ?? null) as Permission | null
   // From the capture engine; rows it does not report are not shown.
   let status = $state<Partial<Record<Permission, PermissionStatus>> | null>(null)

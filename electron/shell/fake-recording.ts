@@ -27,6 +27,7 @@ import { capture, recordingEvents, recordingName } from '../recording.ts'
 import { createBundle, projectsDir, writeNewRecording } from '../projects.ts'
 import { takes } from '../voiceover.ts'
 import { settings } from './settings.ts'
+import { count } from '../usage.ts'
 
 export function registerFakeRecording(bundle: string) {
   let state = 'idle'
@@ -167,6 +168,8 @@ export function registerFakeRecording(bundle: string) {
     await cp(join(bundle, 'sources'), join(dir, 'sources'), { recursive: true, mode: constants.COPYFILE_FICLONE })
     if (ink.length && sources.events) await appendFile(join(dir, sources.events), ink.join('\n') + '\n')
     await writeNewRecording(dir, sources, { preset: settings().preset, autoZoom: settings().autoZoom, zoomLook: settings().zoomLook })
+    // Counted like a real take (electron/recording.ts), so a dev run shows the usage counts a recording sends.
+    count('recorded', { seconds: Math.round((Date.now() - t0) / 1000), mode: settings().mode ?? 'display', screen: !!sources.screen, camera: !!sources.camera, mic: !!sources.mic, system_audio: !!sources.system, stopped: 'user' })
     set('idle')
     sendAll('recording:finished', dir, { reason: 'user' })
     recordingEvents.emit('finished', dir, { reason: 'user' })

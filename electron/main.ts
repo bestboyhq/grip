@@ -27,7 +27,7 @@ import { restartedToUpdate, startUpdates } from './shell/update.ts'
 import { inTurn, parseLaunch, parseGripUrl } from './shell/url.ts'
 import { plainError } from './shell/errors.ts'
 import { registerFakeRecording } from './shell/fake-recording.ts'
-import { count } from './usage.ts'
+import { count, registerUsage } from './usage.ts'
 
 // Dev: per-worktree user data, so parallel checkouts do not share locks, settings, or projects.
 if (!app.isPackaged) app.setPath('userData', join(import.meta.dirname, '../.context/userdata'))
@@ -100,6 +100,7 @@ function launch(argv: string[], cwd = process.cwd()): boolean {
 app.prependOnceListener('will-finish-launching', setAppMenu)
 
 app.whenReady().then(() => {
+  registerUsage() // first: it tells a fresh install by its missing settings.json
   nativeTheme.themeSource = 'dark' // dark UI everywhere, native menus and dialogs included
   // First the camera, whose device discovery starts on a worker thread, and the toolbar, whose renderer
   // starts while the rest registers (its IPC too: this same turn ends before the page can ask anything).
