@@ -8,16 +8,22 @@ import { pieces, type Piece } from '../../../shared/voiceover.ts'
 import * as M from './model.ts'
 import { formatTime } from '../helpers.ts'
 import type { Waveforms } from './waveform.ts'
+import type { Frames } from './frames.ts'
 
 export const PAD = 16 // px before output time 0 and after the end
 export const RULER = 38 // playhead knob on top, labels, tick dots
 const TOP = RULER + 4
 const GAP = 6
 const BOTTOM = 16
-const HEIGHTS: Record<M.TrackId, number> = { clips: 40, voiceovers: 36, zooms: 36, layouts: 26, masks: 26, keys: 20, captions: 20 }
+const HEIGHTS: Record<M.TrackId, number> = { clips: 64, voiceovers: 36, zooms: 36, layouts: 26, masks: 26, keys: 20, captions: 20 }
 const BAND_INSET = 5 // px a band where zooms overlap sits in from the layer under it, top and bottom
 const MAX_STACK = 4 // the zoom track grows a step per zoom stacked at once, up to this many
 const EDGE = 12 // px of a block's end that grabs the edge
+// A clip is its frames set into its blue body, a rim around them, and its waveform on the band below.
+const RIM = 3
+const STRIP = 38 // px: the frames
+const BAND = HEIGHTS.clips - STRIP - 2 * RIM // px: the waveform
+const LIFT = 6 // px a clip rises while dragged to a new place
 
 export interface Row {
   id: M.TrackId
@@ -47,18 +53,34 @@ export interface View {
   x0: number // output seconds at x = PAD
   pps: number // px per output second
   duration: number // output seconds
-  shift: { at: number; by: number } | null // left-edge clip trim: times >= at drawn `by` seconds later
+  /** Output stretches [a, b), in order, drawn `by` seconds later: from a clip's start edge being trimmed
+   *  on (b = Infinity), or clips gliding to a new order and the one dragged there. */
+  shift: Shift[] | null
   rows: Row[]
 }
+export type Shift = { a: number; b: number; by: number }
 
-const shiftOf = (v: View, t: number) => (v.shift && t >= v.shift.at - 1e-9 ? v.shift.by : 0)
-export const xOf = (v: View, t: number) => PAD + (t + shiftOf(v, t) - v.x0) * v.pps
-export const timeOf = (v: View, x: number) => v.x0 + (x - PAD) / v.pps
-/** A block's screen span; one shift for the whole block (pieces never straddle the trim pivot). */
-export function xs(v: View, b: M.Block): [number, number] {
-  const off = shiftOf(v, b.a)
-  return [PAD + (b.a + off - v.x0) * v.pps, PAD + (b.b + off - v.x0) * v.pps]
+/** How far output time t is drawn from its place: by the stretch holding it, or the stretch it ends (`end`). */
+function shiftOf(v: View, t: number, end = false) {
+  const s = v.shift
+  if (!s) return 0
+  let lo = 0
+  let hi = s.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (end ? s[mid].a < t - 1e-9 : s[mid].a <= t + 1e-9) lo = mid + 1
+    else hi = mid
+  }
+  const p = s[lo - 1]
+  return p && (end ? t <= p.b + 1e-9 : t < p.b - 1e-9) ? p.by : 0
 }
+/** x of output time t in its place, ignoring every shift. */
+const xAt = (v: View, t: number) => PAD + (t - v.x0) * v.pps
+export const xOf = (v: View, t: number, end = false) => xAt(v, t + shiftOf(v, t, end))
+export const timeOf = (v: View, x: number) => v.x0 + (x - PAD) / v.pps
+/** A block's screen span. A block over clips drawn apart (an item over a split, while clips glide)
+ *  stretches between them. */
+export const xs = (v: View, b: M.Block): [number, number] => [xOf(v, b.a), xOf(v, b.b, true)]
 
 /** Scrollbar thumb, or null when everything fits. */
 export function thumb(v: View): { x: number; w: number } | null {
@@ -131,6 +153,9 @@ export interface Scene {
   hidden: string | null // the item a take records again, from its countdown on
   taking: boolean // a take counts down or records, so the empty voiceover lane drops its hint
   waves: Waveforms
+  film: { frames: Frames; aspect: number } | null // the recording's frames for the clips, and its width over height
+  lifted: string | null // the clip dragged to a new place: drawn raised over everything, following the pointer
+  slot: [number, number] | null // where it lands, output seconds
 }
 
 const FONT = '"Inter Variable", -apple-system, BlinkMacSystemFont, system-ui, sans-serif' // --font in theme.css
@@ -155,6 +180,13 @@ const C = {
   clipBottom: '#263d9c',
   clipGrid: 'rgba(220,228,255,0.08)',
   clipEdge: 'rgba(196,212,255,0.6)',
+  strip: '#111110', // --panel: the frames' well while they decode
+  tile: 'rgba(0,0,0,0.5)', // between frames
+  veil: 'rgba(24,24,23,0.82)', // --surface-root: the label's chip over the frames
+  veilEdge: 'rgba(255,255,255,0.1)', // --ring-faint
+  slot: 'rgba(255,255,255,0.03)', // where a dragged clip lands
+  slotEdge: 'rgba(255,255,255,0.22)',
+  lift: 'rgba(0,0,0,0.6)', // a dragged clip's shadow
   clipSel: 'rgba(205,216,255,0.95)', // selected: a hairline ring and a glow
   clipGlow: 'rgba(72,104,255,0.6)',
   clipCap: 'rgba(214,224,255,0.55)',
@@ -238,7 +270,8 @@ export function draw(ctx: CanvasRenderingContext2D, s: Scene) {
   const v = s.view
   ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0)
   ctx.clearRect(0, 0, v.W, v.H)
-  const slack = v.shift ? Math.abs(v.shift.by) : 0
+  const slack = v.shift ? Math.max(...v.shift.map((p) => Math.abs(p.by))) : 0
+  want = []
   const tA = timeOf(v, 0) - slack
   const tB = timeOf(v, v.W) + slack
   const last = v.rows[v.rows.length - 1]
@@ -251,7 +284,14 @@ export function draw(ctx: CanvasRenderingContext2D, s: Scene) {
     else itemLane(ctx, s, row, row.id, tA, tB)
   }
   cutMarks(ctx, s, tA, tB)
+  const row = s.lifted ? v.rows.find((r) => r.id === 'clips') : null
+  const i = row ? s.model.clips.items.findIndex((c) => c.id === s.lifted) : -1
+  if (row && i >= 0) {
+    const [xa, xb] = xs(v, s.model.clips.blocks[i])
+    clipBlock(ctx, s, { ...row, y: row.y - LIFT }, s.model.clips.items[i], s.model.clips.blocks[i], xa + 1, xb - 1, true)
+  }
   overlays(ctx, s, bottom)
+  if (s.film) s.film.frames.request(want, Math.round(STRIP * s.film.aspect * v.dpr), Math.round(STRIP * v.dpr))
 
   stats.ms[stats.n++ % stats.ms.length] = performance.now() - t0
 }
@@ -293,7 +333,7 @@ function clipLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, tA: number,
   const run = merger(ctx, C.clip, row)
   for (let k = from; k < to; k++) {
     const b = l.blocks[k]
-    if (b.b < tA) continue
+    if (b.b < tA || l.items[b.i].id === s.lifted) continue // the dragged clip draws last, raised (draw)
     const [ba, bb] = xs(v, b)
     const xa = ba + 1
     const xb = bb - 1 // 2 px gutter between abutting clips
@@ -304,22 +344,46 @@ function clipLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, tA: number,
     }
   }
   run.flush()
+  if (s.slot) {
+    // Where the dragged clip lands: a hollow outline the other clips make room for. Its glide is in `slot`;
+    // the dragged clip's own shift would draw it under the clip.
+    const xa = snap(v, xAt(v, s.slot[0]) + 1)
+    const w = snap(v, xAt(v, s.slot[1]) - 1) - xa
+    if (w > 2) {
+      ctx.beginPath()
+      ctx.roundRect(xa, row.y, w, row.h, Math.min(8, w / 2))
+      ctx.fillStyle = C.slot
+      ctx.fill()
+      ring1(ctx, xa, row.y, w, row.h, Array(4).fill(Math.min(8, w / 2)), C.slotEdge)
+    }
+  }
 }
 
-function clipBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, c: Clip, b: M.Block, xa: number, xb: number) {
+let want: number[] = [] // source times of the frames this draw showed, decoded next (Frames.request)
+
+function clipBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, c: Clip, b: M.Block, xa: number, xb: number, lifted = false) {
   const v = s.view
   const { y, h } = row
   xa = snap(v, xa)
   xb = snap(v, xb)
   const w = xb - xa
-  const sel = s.sel.has(c.id)
+  const r = Math.min(8, w / 2)
+  const sel = lifted || s.sel.has(c.id)
   ctx.beginPath()
-  ctx.roundRect(xa, y, w, h, Math.min(8, w / 2))
+  ctx.roundRect(xa, y, w, h, r)
   const fill = ctx.createLinearGradient(0, y, 0, y + h)
   fill.addColorStop(0, C.clipTop)
   fill.addColorStop(1, C.clipBottom)
   ctx.fillStyle = fill
   ctx.save()
+  if (lifted) {
+    // Raised: a long shadow under it, then the selection's glow.
+    ctx.shadowColor = C.lift
+    ctx.shadowBlur = 24
+    ctx.shadowOffsetY = 12 * v.dpr // shadow offsets ignore the transform
+    ctx.fill()
+    ctx.shadowOffsetY = 0
+  }
   if (sel) {
     ctx.shadowColor = C.clipGlow
     ctx.shadowBlur = 12
@@ -329,24 +393,23 @@ function clipBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, c: Clip, b
   if (w > 6) {
     ctx.save()
     ctx.clip()
-    // The ruler's major grid runs through the clip, so its seconds read against the waveform.
+    // The ruler's major grid runs through the band, so its seconds read against the waveform.
     const { major } = M.ticks(v.pps)
     ctx.fillStyle = C.clipGrid
-    for (let t = Math.ceil(Math.max(timeOf(v, Math.max(xa, 0)), 0) / major) * major; xOf(v, t) < Math.min(xb, v.W); t += major) {
-      const x = snap(v, xOf(v, t))
-      if (x > xa + 2 && x < xb - 2) ctx.fillRect(x, y, 1, h)
+    for (let t = Math.ceil(Math.max(timeOf(v, Math.max(xa, 0)), 0) / major) * major; PAD + (t - v.x0) * v.pps < Math.min(xb, v.W); t += major) {
+      const x = snap(v, PAD + (t - v.x0) * v.pps)
+      if (x > xa + 2 && x < xb - 2) ctx.fillRect(x, y + h - BAND, 1, BAND)
     }
-    if (s.mic || s.system) wave(ctx, s, c, b, xa, xb, y, h)
+    if (s.mic || s.system) wave(ctx, s, c, b, xa, xb, y + h - BAND, BAND)
     ctx.restore()
   }
+  if (w > 2 * RIM + 4) strip(ctx, s, c, b, xa + RIM, xb - RIM, y + RIM)
   const hv = s.hover?.kind === 'block' && s.hover.block === b && !s.armed ? s.hover.edge : null
   if (hv) cap(ctx, hv === 'start' ? xa : xb - 4, y + 6, 4, h - 12, C.clipCap)
-  topEdge(ctx, v, xa, y, w, h, Math.min(8, w / 2), C.clipEdge)
-  if (sel) ring1(ctx, xa, y, w, h, Array(4).fill(Math.min(8, w / 2)), C.clipSel)
+  topEdge(ctx, v, xa, y, w, h, r, C.clipEdge)
+  if (sel) ring1(ctx, xa, y, w, h, Array(4).fill(r), C.clipSel)
 
-  // Labels stay centered in the visible part of a long clip.
-  const cx = sticky(v, xa, xb)
-  const vw = Math.min(xb, v.W) - Math.max(xa, 0) // labels fit the visible part they are centered in
+  // The label: a chip over the frames at the left of the clip's visible part.
   const len = (c.end - c.start) / c.speed
   const meta: Seg[] = [{ text: M.span(len), font: F_META, color: C.clipMeta }]
   meta.push({ icon: gauge, text: `${c.speed}×`, font: F_META, color: c.speed === 1 ? C.clipMeta : C.clipText, pill: c.speed === 1 ? undefined : C.pill })
@@ -359,39 +422,65 @@ function clipBlock(ctx: CanvasRenderingContext2D, s: Scene, row: Row, c: Clip, b
   }
   if (c.rawCursor) meta.push({ icon: arrow, text: 'Raw', font: F_META, color: C.clipText, pill: C.pill })
   if (c.hideCursor) meta.push({ icon: noArrow, text: '', font: F_META, color: C.clipText, pill: C.pill })
-  if (w > 20) {
-    ctx.save()
-    ctx.beginPath()
-    ctx.rect(xa + 4, y, w - 8, h)
-    ctx.clip()
-    if (fitsRow(ctx, meta, vw - 16)) row1(ctx, meta, cx, y + 16)
-    else {
-      const compact = c.speed === 1 ? [meta[0]] : [meta[1]]
-      if (fitsRow(ctx, compact, vw - 8)) row1(ctx, compact, cx, y + 16)
-    }
-    ctx.restore()
-    if (w > 200) {
-      // Source in and out, above the waveform: only whole, and clear of the labels centered between them.
-      const a = formatTime(c.start, 0)
-      const b = formatTime(c.end, 0)
-      const half = rowWidth(ctx, meta) / 2 + 8
-      ctx.font = F_SMALL
-      ctx.fillStyle = C.clipMeta
-      ctx.textAlign = 'left'
-      if (xa + 9 >= 0 && xa + 9 + measure(ctx, F_SMALL, a) <= cx - half) ctx.fillText(a, xa + 9, y + 16)
-      ctx.textAlign = 'right'
-      if (xb - 9 <= v.W && xb - 9 - measure(ctx, F_SMALL, b) >= cx + half) ctx.fillText(b, xb - 9, y + 16)
-    }
-  }
+  const x = Math.max(xa, 0) + RIM + 5
+  const room = Math.min(xb, v.W) - RIM - 5 - x
+  const pick = [meta, c.speed === 1 ? [meta[0]] : [meta[1]]].find((segs) => rowWidth(ctx, segs) + 14 <= room)
+  if (!pick) return
+  const cw = rowWidth(ctx, pick) + 14
+  const cy = y + RIM + 5
+  ctx.beginPath()
+  ctx.roundRect(x, cy, cw, 18, 6)
+  ctx.fillStyle = C.veil
+  ctx.fill()
+  ring1(ctx, x, cy, cw, 18, [6, 6, 6, 6], C.veilEdge)
+  row1(ctx, pick, x + cw / 2, cy + 12.5)
 }
 
+/** The clip's frames between x0 and x1, from the top at y: one tile a power of two source seconds long,
+ *  pinned to the recording, so zooming reuses decoded frames and tiles ride with the clip as it moves.
+ *  A tile still decoding shows the one before it. */
+function strip(ctx: CanvasRenderingContext2D, s: Scene, c: Clip, b: M.Block, x0: number, x1: number, y: number) {
+  const v = s.view
+  ctx.save()
+  ctx.beginPath()
+  ctx.roundRect(x0, y, x1 - x0, STRIP, Math.min(5, (x1 - x0) / 2))
+  ctx.fillStyle = C.strip
+  ctx.fill()
+  ctx.clip()
+  const f = s.film
+  if (f) {
+    const tw = STRIP * f.aspect // px: a whole frame at the strip's height
+    const T = 2 ** Math.floor(Math.log2((tw / v.pps) * c.speed)) // source seconds per tile: tw / 2 to tw wide
+    const bx = xs(v, b)[0]
+    const X = (src: number) => bx + ((src - c.start) / c.speed) * v.pps
+    const left = c.start + ((Math.max(x0, 0) - bx) / v.pps) * c.speed // source at the strip's visible left
+    let prev: ImageBitmap | null = null
+    for (let n = Math.floor(Math.max(left, c.start) / T); n * T < c.end && X(n * T) < Math.min(x1, v.W); n++) {
+      const t = n * T
+      want.push(t)
+      const bmp: ImageBitmap | null = f.frames.get(t) ?? prev
+      const a = X(t)
+      const tp = X(t + T) - a
+      if (bmp) {
+        const sw = bmp.width * Math.min(1, tp / tw) // the middle of the frame, cropped to the tile
+        ctx.drawImage(bmp, (bmp.width - sw) / 2, 0, sw, bmp.height, a, y, tp, STRIP)
+      }
+      ctx.fillStyle = C.tile
+      ctx.fillRect(a + tp - 0.5, y, 0.5, STRIP)
+      prev = bmp
+    }
+  }
+  ctx.restore()
+}
+
+/** The clip's mic and system audio in its band, y to y + h. */
 function wave(ctx: CanvasRenderingContext2D, s: Scene, c: Clip, b: M.Block, xa: number, xb: number, y: number, h: number) {
   const v = s.view
   const off = shiftOf(v, b.a)
   const perPx = c.speed / v.pps // source seconds per px
   const level = s.waves.level(perPx)
   const base = y + h + 1 // silence sits just under the clip's edge, so its contour does not show
-  const max = h - 22 // peaks stay under the labels (baseline at y + 16)
+  const max = h - 3 // peaks stay clear of the frames
   const x0 = Math.max(Math.floor(xa), 0)
   const x1 = Math.min(Math.ceil(xb), v.W)
   const ducks = s.mic ? ducked(s, b.a, b.b) : []
@@ -501,8 +590,10 @@ function voiceWave(ctx: CanvasRenderingContext2D, s: Scene, it: Voiceover, b: M.
 function itemLane(ctx: CanvasRenderingContext2D, s: Scene, row: Row, track: M.ItemTrack, tA: number, tB: number) {
   const v = s.view
   const l = s.model[track]
-  const la = Math.max(xOf(v, 0), -8)
-  const lb = Math.min(xOf(v, s.model.map.duration), v.W + 8)
+  // The well holds the timeline and follows a clip's start edge trimmed out past either end.
+  const d = s.model.map.duration
+  const la = Math.max(Math.min(xOf(v, 0), xAt(v, 0)), -8)
+  const lb = Math.min(Math.max(xOf(v, d, true), xAt(v, d)), v.W + 8)
   if (lb > la) {
     ctx.beginPath()
     ctx.roundRect(la, row.y, lb - la, row.h, 7)
