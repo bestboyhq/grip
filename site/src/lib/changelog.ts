@@ -10,17 +10,30 @@ export type Release = Readonly<{
 	// `static/media/changelog-<version>.mp4`, its still beside it.
 	Readonly<{ version: Shown; clip: string } | { version: string; clip?: undefined }>;
 
-export type Shown = '0.32' | '0.29' | '0.22' | '0.11' | '0.3';
+export type Shown = '0.33' | '0.29' | '0.22' | '0.11' | '0.3';
 
 export const RELEASES: readonly Release[] = [
 	{
-		version: '0.32',
+		version: '0.33',
 		date: '2026-11-12',
 		title: 'See inside every clip, and drag it into place',
 		clip: 'Each clip in the timeline shows frames of its recording. A clip is dragged to the front: it lifts, a slot opens where it lands, the other clips slide aside, and its zoom goes with it.',
 		notes: [
 			['Frames in every clip.', 'See what a clip holds without playing it.'],
 			['Drag to reorder.', 'Drag a clip to a new place, and its zooms and captions go with it. `Esc` puts it back.'],
+		],
+	},
+	{
+		version: '0.31',
+		date: '2026-11-05',
+		title: 'Look at yourself, and you look into the lens',
+		notes: [
+			['Under your camera.', 'The camera bubble starts right below the lens, at the top of your screen.'],
+			['Out of your way.', 'It fades while you point at it and drags anywhere. Each display keeps your spot.'],
+			['Only for you.', 'Moving it no longer moves the camera in your video. Place that as you edit.'],
+			['A timeline that follows.', 'It glides along with the playhead, and pinch zooms around your pointer.'],
+			['Trim across a split.', 'Drag a clip’s edge into the clip next to it, and that clip gives way.'],
+			['Fixes:', 'Undo puts the playhead back, click effects play on past a cut, and the toolbar keeps its size.'],
 		],
 	},
 	{
