@@ -15,7 +15,7 @@ use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2_app_kit::{
     NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication, NSEvent, NSEventMask,
-    NSEventModifierFlags, NSView, NSWindowAnimationBehavior,
+    NSEventModifierFlags, NSView, NSWindow, NSWindowAnimationBehavior,
 };
 use objc2_foundation::NSArray;
 
@@ -32,15 +32,27 @@ pub fn menu_bar_dark() -> bool {
     appearance.bestMatchFromAppearancesWithNames(&NSArray::from_slice(&[light, dark])).is_some_and(|n| &*n == dark)
 }
 
+/// The window of `handle`: BrowserWindow.getNativeWindowHandle(), its content NSView.
+fn window_of(handle: &[u8]) -> Option<Retained<NSWindow>> {
+    let (Some(_mtm), Ok(bytes)) = (MainThreadMarker::new(), <[u8; 8]>::try_from(handle)) else { return None };
+    // SAFETY: Electron hands out the pointer of the window's live content NSView, on the main thread.
+    unsafe { (usize::from_ne_bytes(bytes) as *const NSView).as_ref() }?.window()
+}
+
 /// No zoom when the window shows: AppKit scales a window in over 150 ms, which would set the
-/// picker's frozen screen moving. `handle`: BrowserWindow.getNativeWindowHandle(), its NSView.
+/// picker's frozen screen moving.
 #[napi]
 pub fn disable_window_animation(handle: Buffer) {
-    let (Some(_mtm), Ok(bytes)) = (MainThreadMarker::new(), <[u8; 8]>::try_from(&handle[..])) else { return };
-    // SAFETY: Electron hands out the pointer of the window's live content NSView, on the main thread.
-    let Some(view) = (unsafe { (usize::from_ne_bytes(bytes) as *const NSView).as_ref() }) else { return };
-    if let Some(window) = view.window() {
+    if let Some(window) = window_of(&handle) {
         window.setAnimationBehavior(NSWindowAnimationBehavior::None);
+    }
+}
+
+/// The window stays on screen when the user hides Grip or hides other apps (⌥⌘H elsewhere).
+#[napi]
+pub fn keep_on_hide(handle: Buffer) {
+    if let Some(window) = window_of(&handle) {
+        window.setCanHide(false);
     }
 }
 
