@@ -36,6 +36,7 @@ export function openWindow(route: string, opts: BrowserWindowConstructorOptions 
   const display = opts.x === undefined || opts.y === undefined ? activeDisplay() : screen.getDisplayMatching({ x: opts.x, y: opts.y, ...size })
   const saved = REMEMBER.has(kind) ? settings().windows[`${kind}@${display.id}`] : undefined
   const bounds = saved && reachable(saved, workAreas()) ? saved : opts.x === undefined ? place(size, display.workArea) : {}
+  if (opts.show !== false) dockFor(kind) // it shows, and activates Grip, as it is made
   const win = new BrowserWindow({
     ...size,
     backgroundColor: '#00000000',
@@ -86,6 +87,7 @@ export function sendAll(channel: string, ...args: unknown[]) {
  *  at once, not once the work after it in this turn is done. */
 export function reveal(win: BrowserWindow, focus = true) {
   if (hidden) return
+  dockFor(kinds.get(win) ?? '')
   if (focus) win.show()
   else win.showInactive()
   native.commitWindows()
@@ -94,19 +96,38 @@ export function reveal(win: BrowserWindow, focus = true) {
 // ---- Dock ----
 
 let recording = false
-let docked: boolean | null = null
+let dialogs = 0
 
 export function setRecordingDock(on: boolean) {
   recording = on
   updateDock()
 }
 
+/** The dock icon goes through the activation policy, never app.dock.show(): with Grip active, that brings
+ *  the Dock forward first, which left its first icon, Finder, highlighted after a recording opened the
+ *  editor. The policy turns regular before a normal window shows (dockFor): turned regular after the
+ *  window activates Grip, macOS keeps the other app's menu bar. Setting the policy Grip has already does
+ *  nothing, so it is set each time, never cached: macOS can change it too (opening Grip from Finder). */
+function dock(want: boolean) {
+  if (app.dock) app.setActivationPolicy(want ? 'regular' : 'accessory')
+}
+const dockFor = (kind: string) => !hidden && !recording && NORMAL.has(kind) && dock(true)
+
 export function updateDock() {
-  const want = !recording && BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w.isVisible() && NORMAL.has(kinds.get(w) ?? ''))
-  if (!app.dock || want === docked) return
-  docked = want
-  if (want) app.dock.show()
-  else app.dock.hide()
+  dock(!recording && (dialogs > 0 || BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w.isVisible() && NORMAL.has(kinds.get(w) ?? ''))))
+}
+
+/** A dialog the user asked for keeps the dock icon, and with it the menu bar, from before Grip comes
+ *  forward to show it until `show` (which opens what the user picked) is done. */
+export async function withDock<T>(show: () => Promise<T>): Promise<T> {
+  dialogs++
+  updateDock()
+  try {
+    return await show()
+  } finally {
+    dialogs--
+    updateDock()
+  }
 }
 
 // ---- Displays ----
