@@ -104,7 +104,7 @@ async function lookOf(p: PresetFile, dir: string): Promise<Style> {
 }
 
 /** Write an asset into `root`/assets under its content-addressed name, unless it is there already. Returns that name. */
-async function writeAsset(root: string, key: string, data: Buffer): Promise<string> {
+export async function writeAsset(root: string, key: string, data: Buffer): Promise<string> {
   const rel = assetName(data, key)
   const file = join(root, rel)
   if (!(await stat(file).catch(() => null))) {
