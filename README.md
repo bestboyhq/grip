@@ -343,7 +343,7 @@ An agent that changed a web app can film the change with no one at the keyboard.
 `record_demo` opens the page where nobody sees it and clicks, hovers, types, presses keys, scrolls, and waits, with a pointer that moves like a hand.
 The result is a regular Grip project with auto zoom, a smooth cursor, and click effects, plus an MP4, a GIF, one frame per step, and a share link when asked.
 A step's `say` labels it and becomes a chapter of the link.
-Given the link of an earlier demo, the new video becomes its next take, so the pull request or chat that has the link shows the fix with no new post.
+Given the link of an earlier demo, the new video becomes its next version, so the pull request or chat that has the link shows the fix with no new post.
 It needs no Screen Recording permission, and a step that fails says which and why and keeps nothing.
 
 Every tool also runs from a shell, for scripts and agents without MCP:

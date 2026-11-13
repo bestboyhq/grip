@@ -1,20 +1,18 @@
 // Client side of the Bestboy platform's link API (bestboy.dev). Pure Node (fetch + fs): the main process runs it
 // (electron/share.ts, electron/account.ts), and electron/upload.test.ts drives it against a fake.
 //
-//   POST   /api/items {kind, title, private, size, name, duration?, width?, height?, terms?} -> item; counts one upload
+//   POST   /api/items {kind, title, private, size, name, duration?, width?, height?, terms?, versionOf?} -> item;
+//          counts one upload. versionOf: a ready video's id, which answers as its next version, uploading at offset 0,
+//          and plays it behind the same link from finalize on
 //   GET    /api/items/:id                       -> item: {id, state, offset, part, link, key, views, comments, …}
 //   PUT    /api/items/:id/data?offset=n <bytes> exactly min(part, size - n) bytes -> {offset}
 //   POST   /api/items/:id/finalize              -> item, state "ready"
 //   PUT    /api/items/:id/poster <jpeg>         PUT /api/items/:id/gif <gif>, before finalize
-//   POST   /api/items/:id/takes {the fields POST /api/items takes} -> item as its next take, uploading at offset 0:
-//          a new video behind a ready video's link, which plays it from finalize on; GET, data, poster, gif, and
-//          finalize then work on that take
 //   PATCH  /api/items/:id {private}             DELETE /api/items/:id
 //
 // Every mutating call names a Content-Type (the server refuses one without, as it would a cross-site form).
 // Errors are JSON {error, ...extra}. 409 {offset}: resume from there. 401: signed out. 402 {limit, resetsAt}: the
-// team's uploads for the month are used. 402 {limit} alone: the link holds no more takes. 408 (a part arrived
-// short), 425, 429, and 5xx pass; other 4xx are final.
+// team's uploads for the month are used. 408 (a part arrived short), 425, 429, and 5xx pass; other 4xx are final.
 //
 // An upload survives anything transient (network loss, server restart, app restart): every attempt asks the
 // server for its offset and continues from there. A part cut off midway is dropped whole by the server and sent
@@ -39,7 +37,7 @@ export interface RemoteItem {
   views: number
   comments: number
   duration?: number
-  take?: number // the take's number, from 1
+  version?: number // the version's number, from 1
   expiresAt: string | null
 }
 
@@ -53,8 +51,7 @@ export interface Upload {
   meta?: { duration: number; width: number; height: number } // a video's, for the link page's layout
   chapters?: Array<{ t: number; title: string }> // moments the link page lists, in seconds of the video
   terms?: string // the Terms date the Share button showed beside it: creating the item accepts them
-  takeOf?: string // a ready video's id: this upload is its next take, behind its link and with its privacy. When the
-  //                 link holds no more takes, it goes out as a new link as private, and remote.id differs.
+  versionOf?: string // a ready video's id: this upload is its next version, behind its link and with its privacy
   gif?: string // a GIF of the video, for places that show images but play no video (a pull request)
   remote?: RemoteItem // set once the server created the item; the link works from then on
   posterSent?: boolean
@@ -75,7 +72,6 @@ export interface Hooks {
 export class ShareError extends Error {
   status?: number
   opensAt?: string // 402: when uploads open again (ISO)
-  limit?: number // 402 at a take: the takes a link holds
   constructor(message: string, status?: number) {
     super(message)
     this.status = status
@@ -127,7 +123,6 @@ export async function api(server: string, token: string, method: string, path: s
   const data = r.status === 204 ? null : await r.json().catch(() => null)
   if (r.ok) return data
   if (r.status === 401) throw new ShareError('Sign in to share links.', 401)
-  if (r.status === 402 && data?.limit && !data.resetsAt) throw Object.assign(new ShareError(data.error ?? 'This link holds no more takes.', 402), { limit: data.limit })
   if (r.status === 402) throw usedUp(data?.resetsAt)
   if (r.status < 500 && ![408, 409, 425, 429].includes(r.status)) throw new ShareError(new RemoteError(r.status, data).message, r.status)
   throw new RemoteError(r.status, data)
@@ -139,7 +134,7 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     signal?.addEventListener('abort', () => (clearTimeout(t), reject(signal.reason)), { once: true })
   })
 
-/** Upload `job` to `server` until it is ready; returns the final item. Mutates job.remote, job.private (a take's is
+/** Upload `job` to `server` until it is ready; returns the final item. Mutates job.remote, job.private (a version's is
  *  its link's), job.posterSent, and job.gifSent. */
 export async function upload(server: string, token: string, job: Upload, hooks: Hooks): Promise<RemoteItem> {
   const { signal } = hooks
@@ -153,18 +148,12 @@ export async function upload(server: string, token: string, job: Upload, hooks: 
     const s = await stat(job.file).catch(() => null)
     if (!s) throw new ShareError('The file to share is gone. Share it again.')
     if (s.size !== job.size || s.mtimeMs !== job.mtimeMs) throw new ShareError('The file changed during the upload. Share it again.')
-    const fields = () => ({ kind: job.kind, title: job.title, private: job.private, size: job.size, name: basename(job.file), terms: job.terms, chapters: job.chapters, ...job.meta })
-    if (!job.remote && job.takeOf) {
-      // A take keeps its link's privacy. A link that holds no more takes sends this one out as a new link, as private.
-      const take: RemoteItem | null = await call('POST', `/api/items/${job.takeOf}/takes`, fields()).catch((e) => {
-        if (e instanceof ShareError && e.limit) return null
-        // No offset to resume from: the link expired (retrying would never end), or its first take still uploads.
-        throw e instanceof RemoteError && e.status === 409 ? new ShareError(e.message, 409) : e
-      })
-      job.private = (take ?? (await call('GET', `/api/items/${job.takeOf}`))).private
-      job.remote = take ?? undefined
+    if (!job.remote) {
+      const fields = { kind: job.kind, title: job.title, private: job.private, size: job.size, name: basename(job.file), terms: job.terms, chapters: job.chapters, versionOf: job.versionOf, ...job.meta }
+      // A 409 has no offset to resume from: the link's first version still uploads, and retrying would never end.
+      job.remote = await call('POST', '/api/items', fields).catch((e) => { throw e instanceof RemoteError && e.status === 409 ? new ShareError(e.message, 409) : e })
+      if (job.versionOf) job.private = job.remote!.private // a version keeps its link's privacy
     }
-    job.remote ??= await call('POST', '/api/items', fields())
     const id = job.remote!.id
     // Privacy changed while the item was being created (or offline): the server must agree before the link goes out.
     if (job.remote!.private !== job.private) job.remote = await call('PATCH', `/api/items/${id}`, { private: job.private })
@@ -179,8 +168,8 @@ export async function upload(server: string, token: string, job: Upload, hooks: 
       job.posterSent = true
     }
     let item: RemoteItem = await call('GET', `/api/items/${id}`)
-    // A take reads as another once it was dropped (a newer take started, or it waited a week): its bytes are unwanted.
-    if (job.takeOf && item.take !== job.remote!.take) throw new ShareError('This take was dropped before its upload finished. Share it again.')
+    // A version reads as another once it was dropped (a newer one started, or it waited a week): its bytes are unwanted.
+    if (job.versionOf && item.version !== job.remote!.version) throw new ShareError('This version was dropped before its upload finished. Share it again.')
     let offset = item.offset
     while (item.state === 'uploading' && offset < job.size) {
       report(offset, 'uploading')

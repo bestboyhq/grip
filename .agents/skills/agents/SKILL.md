@@ -42,7 +42,7 @@ Agent apps list, read, edit, export, and share projects through Grip's MCP serve
 - The review loop runs on a share link (`electron/feedback.ts`): get_feedback reads its comment threads, and reply_feedback answers them, as Grip's signed-in account, and resolves the ones that are done.
   A link is a share link, with or without `?k=`, or its bare 12-character id; the key rides along to the platform, and the link's team needs none.
   Threads come open first, each with its moment (seconds and m:ss), its spot on the frame when it points at one, writer, guest or not, text, when, and every reply in written order, however deep it answers; reactions are only counted.
-  When this Mac shared the take a thread was made on (`sharedFrom` in `electron/share.ts`), the open thread brings that project's frame at its time, rendered by get_frame, with its spot ringed: each take is its own recording.
+  When this Mac shared the version a thread was made on (`sharedFrom` in `electron/share.ts`), the open thread brings that project's frame at its time, rendered by get_frame, with its spot ringed: each version is its own recording.
   reply_feedback posts each reply in order, with the agent app's name from its initialize so the link page can tag it, and reports each result; a reply to a reply resolves the thread it is in.
 - An agent's frame opens the project's editor without focus (`openProject` with `focus: false`), and an agent's share leaves the clipboard alone: the user keeps typing and pasting where they are.
 - record_demo films a web page while Grip runs an agent's steps on it (`electron/demo.ts`, its pure half `src/shared/demo.ts`): click, hover, type, press, scroll, wait, each with an optional `say` that labels the step and becomes a chapter of its share link.
@@ -50,8 +50,7 @@ Agent apps list, read, edit, export, and share projects through Grip's MCP serve
   Its GPU textures reach a hidden encoder window (`#/demo`, `src/windows/demo/Demo.svelte`) as VideoFrames, each at the time it painted, and leave as the screen track of a fresh recording: no cursor in the pixels, input in events.jsonl in video px, so auto zoom, the smooth cursor, and click effects apply.
   Input is real (`sendInputEvent`), the pointer gliding to each target on the same eased arc as the README demos, after the target shows, comes into view (wheeled there), is uncovered, and holds still.
   Then it exports an MP4 and a GIF, renders one frame per step through get_frame, and shares the MP4 with the GIF when asked; past 45 s it answers with an id for export_status.
-  With `link` (a share link or its id, read by `parseLink`), the video becomes that link's next take, so every place the link was posted shows the fix; `link` implies share, a take keeps its link's privacy, and its title renames the link.
-  A link full of takes sends it out as a new link, and the answer says which it became (`take` in the data).
+  With `link` (a share link or its id, read by `parseLink`), the video becomes that link's next version (`version` in the data), so every place the link was posted shows the fix; `link` implies share, a version counts as an upload and keeps its link's privacy, and its title renames the link.
   A failed step answers with which step, why, and the page as it gave up, and leaves no project: the bundle holds only `.part` files until the last step.
 - Tool failures are results with `isError` and text that says what to fix; only protocol mistakes are JSON-RPC errors.
 - Settings (Agents) shows the Claude Code command, at user scope so the tools work in every folder, and the JSON other agent apps take, each with Copy.

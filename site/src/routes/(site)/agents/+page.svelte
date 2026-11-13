@@ -440,7 +440,7 @@
     <i>0:04</i>  guest     Can the row show the commit message?
 <b>●</b> Fixed 3 threads in app/deployments/list.tsx
 <b>●</b> record_demo  <em>✓ ✓ ✓ ✓</em>  4.6 s
-  <i>└</i> take 2 of <span class="u">bestboy.dev/v/x7Kq2mP9aB3c</span>
+  <i>└</i> version 2 of <span class="u">bestboy.dev/v/x7Kq2mP9aB3c</span>
 <b>●</b> reply_feedback  3 replies, 3 resolved</pre>
 	</div>
 </FeatureRow>

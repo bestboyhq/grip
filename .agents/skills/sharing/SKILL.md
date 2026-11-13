@@ -13,9 +13,8 @@ Its `docs/api.md` is the contract; a change to what Grip sends or reads changes 
   An agent's share (`exportWithoutAsking`, record_demo) leaves the clipboard alone: the user may have copied something since.
 - The link page streams with fast start in any browser and supports private links, timestamped comments, and view counts that exclude the team.
 - Share a whole editable project as a link.
-- A take puts a new video behind a ready video's link (`takeOf` in `electron/upload.ts`), so every place the link was posted shows it with no new post; record_demo's `link` uses it.
-  A take keeps its link's privacy and counts no upload.
-  A link holds 20 takes: the next is refused with 402 `{ limit }` and goes out as a new link, as private as that one.
+- A new version puts a new video behind a ready video's link (`versionOf` on `POST /api/items`, set from `electron/upload.ts`), so every place the link was posted shows it with no new post; record_demo's `link` uses it.
+  A version is an upload like any other and counts as one; it keeps its link's privacy, and the link page lists every version.
 - A video share sends its GIF, when it has one, for places that show images but play no video (a pull request's description).
   It goes after the video's bytes and before finalize; a refused GIF, too big or on a platform without GIFs, costs only the image, as a refused poster does.
 - Sharing needs an account: sign-in runs in the browser (Google or an email code) and hands Grip a token through `grip://auth` (`electron/account.ts`).
@@ -32,8 +31,7 @@ Its `docs/api.md` is the contract; a change to what Grip sends or reads changes 
 
 Gotchas:
 
-- 402 means two things: `{ limit, resetsAt }` is the team's month, used up; `{ limit }` alone is a link full of takes, which is no refusal to show.
-- A take still uploading is dropped when a newer one starts or after a week, and the link then reads as another take: a resumed upload checks the take number before it sends a byte.
-- A 409 when a take starts has no offset to resume from (the link expired, or its first take still uploads): it ends the share, where retrying would never end.
+- A version still uploading is dropped when a newer one starts or after a week, and the link then reads as another version: a resumed upload checks the version number before it sends a byte.
+- A 409 when a version starts has no offset to resume from (the link's first version still uploads): it ends the share, where retrying would never end.
 
 Done when a link starts playing in under 2 s in a phone browser on 4G, and a private link stays private.

@@ -25,11 +25,11 @@ export interface Comment {
   mine: boolean
   reaction: boolean
   resolved: boolean
-  take?: number // the take it was made on, from a platform with takes
+  version?: number // the version of the video it was made on
 }
 type Said = { author: string; guest: boolean; mine?: true; text: string; at: string }
 type Reply = { id: string; parent?: string } & Said
-export type Thread = { id: string; t: number; time: string; x?: number; y?: number; take?: number } & Said & { resolved: boolean; replies: Reply[]; frame?: number }
+export type Thread = { id: string; t: number; time: string; x?: number; y?: number; version?: number } & Said & { resolved: boolean; replies: Reply[]; frame?: number }
 type Image = { data: string; mimeType: string }
 type Args = Record<string, unknown>
 type Result = { text: string; data: Record<string, unknown>; images?: Image[]; failed?: boolean }
@@ -67,7 +67,7 @@ export function threads(comments: Comment[], from = 0) {
   const said = (c: Comment): Said => ({ author: c.name, guest: c.guest, ...(c.mine && { mine: true as const }), text: c.text, at: c.at })
   const all = new Map<string, Thread>()
   for (const c of comments) {
-    if (!c.parent && !c.reaction) all.set(c.id, { id: c.id, t: c.t, time: clock(c.t), ...(c.x !== null && c.y !== null && { x: c.x, y: c.y }), ...(c.take !== undefined && { take: c.take }), ...said(c), resolved: c.resolved, replies: [] })
+    if (!c.parent && !c.reaction) all.set(c.id, { id: c.id, t: c.t, time: clock(c.t), ...(c.x !== null && c.y !== null && { x: c.x, y: c.y }), ...(c.version !== undefined && { version: c.version }), ...said(c), resolved: c.resolved, replies: [] })
   }
   for (const c of [...comments].sort((a, b) => a.at.localeCompare(b.at))) {
     const thread = c.parent ? all.get(rootOf(byId, c)?.id ?? '') : undefined
@@ -100,15 +100,15 @@ async function call(method: string, path: string, key: string | undefined, body?
   }
 }
 
-/** get_feedback: the link's threads, and each open one's frame when this Mac shared its take from a project. */
+/** get_feedback: the link's threads, and each open one's frame when this Mac shared its version from a project. */
 export async function getFeedback(a: Args, frame: Frame): Promise<Result> {
   const { id, key } = parseLink(a.link)
   if (a.start !== undefined && (typeof a.start !== 'number' || !(a.start >= 0))) throw new Error('start must be a number of seconds, 0 or more.')
   const [item, comments] = await Promise.all([call('GET', `/api/items/${id}`, key), call('GET', `/api/items/${id}/comments`, key)])
   const page = threads(comments, (a.start as number | undefined) ?? 0)
-  // Each take of a link is its own recording: a thread's frame comes from the project its take was shared from.
+  // Each version of a link is its own recording: a thread's frame comes from the project its version was shared from.
   const open = page.threads.filter((x) => !x.resolved)
-  const projectOf = (th: Thread) => sharedFrom(id, th.take)
+  const projectOf = (th: Thread) => sharedFrom(id, th.version)
   const images: Image[] = []
   let missed = open.length && !open.some(projectOf) ? 'No frames: this Mac did not share this link, so Grip has no project to render them from.' : ''
   const until = Date.now() + FRAMES_MS
@@ -128,7 +128,7 @@ export async function getFeedback(a: Args, frame: Frame): Promise<Result> {
       missed ||= `No frame at ${th.time}: ${(e as Error).message}` // the project is gone, or shorter than the thread's time now
     }
   }
-  const frames = [images.length ? 'Frame n is the nth image: the project the thread’s take was shared from, at the thread’s time, as get_frame renders it, its spot ringed in magenta. It shows the project as it stands now, so an edit since the share that moved times moves what shows.' : '', missed].filter(Boolean).join(' ')
+  const frames = [images.length ? 'Frame n is the nth image: the project the thread’s version was shared from, at the thread’s time, as get_frame renders it, its spot ringed in magenta. It shows the project as it stands now, so an edit since the share that moved times moves what shows.' : '', missed].filter(Boolean).join(' ')
   // The platform hands the key only to the link's team, so a guest keeps the one they gave.
   const url = new URL(item.link ?? `${SERVER}/v/${id}`)
   if (key && !url.searchParams.has('k')) url.searchParams.set('k', key)
@@ -137,7 +137,7 @@ export async function getFeedback(a: Args, frame: Frame): Promise<Result> {
   const who = (s: Said) => `${s.author}${s.guest ? ' (guest)' : ''}${s.mine ? ' (this account)' : ''}, ${s.at.slice(0, 10)}`
   const lines = page.threads.flatMap((th, i) => [
     ...(th.resolved && !page.threads[i - 1]?.resolved ? ['Resolved:'] : []),
-    `- ${th.id} at ${th.time} (${th.t} s)${th.take && item.take > 1 ? ` of take ${th.take}` : ''}${th.x === undefined ? '' : `, on the spot ${th.x}, ${th.y}`}${th.frame ? `, frame ${th.frame}` : ''}. ${who(th)}: ${th.text.replaceAll('\n', '\n    ')}`,
+    `- ${th.id} at ${th.time} (${th.t} s)${th.version && item.version > 1 ? ` of version ${th.version}` : ''}${th.x === undefined ? '' : `, on the spot ${th.x}, ${th.y}`}${th.frame ? `, frame ${th.frame}` : ''}. ${who(th)}: ${th.text.replaceAll('\n', '\n    ')}`,
     ...th.replies.map((r) => `    - ${r.id}${r.parent ? ` (to ${r.parent})` : ''} ${who(r)}: ${r.text.replaceAll('\n', '\n      ')}`),
   ])
   const more = page.next === undefined ? '' : `More threads from ${clock(page.next)}: get_feedback with start ${page.next} lists them.`

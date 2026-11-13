@@ -75,14 +75,14 @@ let busy: Run | undefined
 /** record_demo: waits up to 45 s, then answers with the run's id for export_status. */
 export function recordDemo(a: Args, progress: Progress, frame: Frame): Promise<Result> {
   const demo = parseDemo(a)
-  // link: the video becomes the next take behind an earlier link, which shares it.
-  const takeOf = a.link === undefined ? undefined : parseLink(a.link).id
-  if (takeOf) demo.share = true
+  // link: the video becomes the next version behind an earlier link, which shares it.
+  const versionOf = a.link === undefined ? undefined : parseLink(a.link).id
+  if (versionOf) demo.share = true
   if (demo.share && !accountToken()) throw new Error(SIGNED_OUT)
   if (busy) throw new Error(`Grip records one demo at a time, and “${busy.name}” is still going: export_status with the id ${busy.id} waits for it.`)
   const name = demo.title ?? recordingName(new Date(), (n) => existsSync(join(projectsDir(), `${n}.grip`)), 'Demo')
   const run: Run = (busy = { id: randomUUID(), name, phase: 'Loading the page', percent: 0, tell: new Set() })
-  run.result = make(run, demo, frame, takeOf)
+  run.result = make(run, demo, frame, versionOf)
     .catch((e): Result => {
       const text = plainError(e).message
       return { text, data: { message: text, id: run.id, state: 'failed' }, failed: true }
@@ -136,7 +136,7 @@ function ended(id: string, progress: (p: number) => void): Promise<JobInfo> {
   )
 }
 
-async function make(run: Run, demo: Demo, frame: Frame, takeOf?: string): Promise<Result> {
+async function make(run: Run, demo: Demo, frame: Frame, versionOf?: string): Promise<Result> {
   const r = await record(run, demo)
   if (!('bundle' in r)) return r
   const { bundle, done } = r
@@ -169,15 +169,15 @@ async function make(run: Run, demo: Demo, frame: Frame, takeOf?: string): Promis
   const [mp4, gif] = await Promise.all(exports)
 
   let link: string | undefined
-  let take: number | undefined
+  let version: number | undefined
   let shared = ''
   if (demo.share && mp4.state === 'done') {
     stage(run, 'Uploading', 95)
     try {
-      const job = await shareFile(mp4.path, { title: demo.title ?? run.name, project: bundle, private: demo.private, chapters: marks, takeOf, ...(gif.state === 'done' && { gif: gif.path }), copy: false })
+      const job = await shareFile(mp4.path, { title: demo.title ?? run.name, project: bundle, private: demo.private, chapters: marks, versionOf, ...(gif.state === 'done' && { gif: gif.path }), copy: false })
       link = job?.link
-      take = takeOf && job?.remote?.id === takeOf ? job.remote.take : undefined
-      const as = take ? `, take ${take}: wherever the link was posted, it plays once uploaded` : takeOf ? ', a new link: the one given holds no more takes' : ''
+      version = versionOf ? job?.remote?.version : undefined
+      const as = version ? `, version ${version}: wherever the link was posted, it plays once uploaded` : ''
       shared = link ? `\nLink: ${link}${as} (the video keeps uploading in the background)` : '\nThe upload was canceled in Grip.'
     } catch (e) {
       shared = `\n${e instanceof ShareError && e.status === 402 ? e.message : `The video was saved, but the upload failed: ${plainError(e).message}`}`
@@ -204,7 +204,7 @@ async function make(run: Run, demo: Demo, frame: Frame, takeOf?: string): Promis
     ...(mp4.state === 'done' && { mp4: mp4.path }),
     ...(gif.state === 'done' && { gif: gif.path }),
     ...(link && { link }),
-    ...(take && { take }),
+    ...(version && { version }),
   }
   return { text, data, images, ...(failed && { failed: true }) }
 }

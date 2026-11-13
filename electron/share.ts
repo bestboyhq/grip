@@ -81,17 +81,17 @@ function find(id: string): Job {
 }
 
 /** The bundle the link with this item id was shared from on this Mac (electron/feedback.ts renders its frames):
- *  that of `take` when given, or of its newest take. A share from before takes counts as take 1.
+ *  that of `version` when given, or of its newest version. A share from before versions counts as version 1.
  *  ponytail: only the last 200 shares are kept; record the item id on the project if older links need frames. */
-export function sharedFrom(itemId: string, take?: number) {
+export function sharedFrom(itemId: string, version?: number) {
   const shares = state.jobs.filter((j) => j.server === SERVER && j.remote?.id === itemId)
-  return (take === undefined ? shares.at(-1) : shares.findLast((j) => (j.remote!.take ?? 1) === take))?.project
+  return (version === undefined ? shares.at(-1) : shares.findLast((j) => (j.remote!.version ?? 1) === version))?.project
 }
 
 /** Upload a video or .grip bundle in the background; resolves to the job once its link exists, or null when canceled
- *  before (also used by export). takeOf: the link's item id to add the video to as its next take (electron/upload.ts).
+ *  before (also used by export). versionOf: the link's item id to add the video to as its next version (electron/upload.ts).
  *  copy: false keeps the link off the clipboard, for an agent's share. */
-export async function shareFile(path: string, o: { title?: string; private?: boolean; project?: string; terms?: string; chapters?: Upload['chapters']; takeOf?: string; gif?: string; copy?: boolean } = {}): Promise<Job | null> {
+export async function shareFile(path: string, o: { title?: string; private?: boolean; project?: string; terms?: string; chapters?: Upload['chapters']; versionOf?: string; gif?: string; copy?: boolean } = {}): Promise<Job | null> {
   if (!accountToken()) throw new Error('Sign in to share links.')
   const s = await stat(path).catch(() => null)
   if (!s) throw new Error('The file to share is gone.')
@@ -106,7 +106,7 @@ export async function shareFile(path: string, o: { title?: string; private?: boo
     private: o.private === true,
     terms: o.terms,
     chapters: o.chapters,
-    takeOf: o.takeOf,
+    versionOf: o.versionOf,
     gif: o.gif,
     file: path,
     size: s.size,

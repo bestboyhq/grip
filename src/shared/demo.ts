@@ -187,10 +187,10 @@ export const DEMO_INPUT = {
     },
     width: { type: 'integer', minimum: SIZE.width[0], maximum: SIZE.width[1], description: `The page’s width in CSS px; the video has twice as many pixels, as a Retina screen. Default: ${SIZE.width[2]}.` },
     height: { type: 'integer', minimum: SIZE.height[0], maximum: SIZE.height[1], description: `The page’s height in CSS px. Default: ${SIZE.height[2]}.` },
-    title: { type: 'string', minLength: 1, maxLength: 200, description: 'The project’s name, and the link’s title (a take renames its link). Default: Demo and the date and time.' },
+    title: { type: 'string', minLength: 1, maxLength: 200, description: 'The project’s name, and the link’s title (a new version renames its link). Default: Demo and the date and time.' },
     share: { type: 'boolean', description: 'Also upload the MP4 and its GIF and answer with its share link on bestboy.dev, with a chapter at each step that has say. Needs Grip signed in to a Bestboy account. Default: false.' },
-    private: { type: 'boolean', description: 'With share: only the user’s team, and people sent this exact link, can watch. A take keeps its link’s privacy. Default: false.' },
-    link: { type: 'string', minLength: 1, description: 'The share link of an earlier demo, like https://bestboy.dev/v/x7Kq2mP9aB3c, or its 12-character id: the new video becomes its next take, so every place the link was posted (a pull request, a chat) shows the fix once it is up. Implies share. A link holds 20 takes; past that the video goes out as a new link, and the answer says which it became.' },
+    private: { type: 'boolean', description: 'With share: only the user’s team, and people sent this exact link, can watch. A new version keeps its link’s privacy. Default: false.' },
+    link: { type: 'string', minLength: 1, description: 'The share link of an earlier demo, like https://bestboy.dev/v/x7Kq2mP9aB3c, or its 12-character id: the new video becomes its next version, so every place the link was posted (a pull request, a chat) shows the fix once it is up. Implies share, and counts as an upload like any other.' },
   },
   required: ['url', 'steps'],
 }

@@ -30,7 +30,7 @@ test('a link, with or without its scheme or key, or a bare id, names the item', 
 
 test('comments become threads: open first, replies in written order however deep, reactions counted', () => {
   const page = threads([
-    c('late', { t: 30, x: 0.5, y: 0.25, at: '2026-11-01T09:00:00.000Z', take: 2 }),
+    c('late', { t: 30, x: 0.5, y: 0.25, at: '2026-11-01T09:00:00.000Z', version: 2 }),
     c('done', { t: 5, resolved: true }),
     c('early', { t: 12.5 }),
     c('r2', { parent: 'r1', at: '2026-11-01T12:00:00.000Z', guest: false, mine: true, name: 'Simon' }),
@@ -42,8 +42,8 @@ test('comments become threads: open first, replies in written order however deep
     ['early', 'late', 'done'],
   )
   const late = page.threads[1]
-  assert.deepEqual([late.time, late.x, late.y, late.take], ['0:30', 0.5, 0.25, 2])
-  assert.deepEqual([page.threads[0].x, page.threads[0].take], [undefined, undefined]) // a platform before takes sends none
+  assert.deepEqual([late.time, late.x, late.y, late.version], ['0:30', 0.5, 0.25, 2])
+  assert.deepEqual([page.threads[0].x, page.threads[0].version], [undefined, undefined]) // a platform before versions sends none
   assert.deepEqual(late.replies, [
     { id: 'r1', author: 'Zoë', guest: true, text: 'r1', at: '2026-11-01T11:00:00.000Z' },
     { id: 'r2', parent: 'r1', author: 'Simon', guest: false, mine: true, text: 'r2', at: '2026-11-01T12:00:00.000Z' },

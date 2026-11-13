@@ -112,14 +112,14 @@ Post the same link in the issue and the team's channel when the user asks: they 
 When the user asks you to work on the feedback, read it with `get_feedback({ "link": "<share link>" })`.
 Each thread has its moment in the video, the spot on the frame it points at, who wrote it, and its replies.
 Fix what the threads ask for.
-Record the demo again with `"link": "<share link>"` added: the new video becomes the link's next take, so every place the link was posted shows the fix.
+Record the demo again with `"link": "<share link>"` added: the new video becomes the link's next version, so every place the link was posted shows the fix.
 Then answer each thread with `reply_feedback`:
 
 ```json
 reply_feedback({
   "link": "https://bestboy.dev/v/x7Kq2mP9aB3c",
   "replies": [
-    { "comment": "<thread id>", "text": "Fixed: Deploy now locks while it runs. Take 2 shows it.", "resolve": true }
+    { "comment": "<thread id>", "text": "Fixed: Deploy now locks while it runs. Version 2 shows it.", "resolve": true }
   ]
 })
 ```
