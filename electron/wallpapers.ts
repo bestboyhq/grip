@@ -1,17 +1,23 @@
-// Owner: compositor. "wallpapers:*" IPC channels, the inspector's macOS collection:
+// Owner: compositor. "wallpapers:*" IPC channels, the inspector's macOS collection and Custom tab:
 //   wallpapers:macos() -> Array<{ name, file, thumb }>   installed system wallpapers; file is the
 //                                                        bundle path picking one imports to, thumb a JPEG data URL
 //   wallpapers:importMacos(bundle, name) -> "assets/macOS <name>.jpg"
+//   wallpapers:custom() -> Array<{ name, file, thumb }>  images the user added, newest first
+//   wallpapers:addCustom(file) -> { name, file, thumb }  file: an absolute path the user picked
+//   wallpapers:removeCustom(file)
+//   wallpapers:importCustom(bundle, file) -> file        "assets/<hash>/<name>", in the library and the bundle alike
 // We cannot ship Apple's artwork, so the collection is what this Mac has installed. Picking one converts
 // its primary image (the light one of a dynamic wallpaper) to a full-resolution JPEG in the bundle: an
 // ordinary image background, so the project stays portable and export matches preview.
 import electron from 'electron'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, rmdir, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join } from 'node:path'
-import { importAsset } from './editor.ts'
+import { checkFile, importAsset } from './editor.ts'
+import { writeAsset } from './presets.ts'
+import { bundleArg, locked } from './projects.ts'
 
 export const DESKTOP = '/System/Library/Desktop Pictures'
 /** Where System Settings puts wallpapers it downloads on demand (a .madesktop in DESKTOP is the stub). */
@@ -107,7 +113,59 @@ export async function importMacWallpaper(bundle: unknown, name: unknown, root?: 
   })
 }
 
+// ---- Custom: the images the user added, for every project. ----
+// Kept in <userData>/backgrounds under the content-addressed names presets give assets, so picking one
+// copies it into the bundle under that same path, and the inspector finds the project's tile by it.
+
+export const customDir = () => join(electron.app.getPath('userData'), 'backgrounds')
+const isCustom = (file: unknown): file is string => typeof file === 'string' && /^assets\/[0-9a-f]{16}\/[^/]+\.(?:png|jpe?g|webp)$/i.test(file)
+const custom = async (dir: string, file: string) => ({ file, name: basename(file, extname(file)), thumb: await thumbnail(join(dir, file)) })
+
+/** Newest first. An image whose preview fails is left out. */
+export async function listCustom(dir = customDir()) {
+  const files = (await readdir(join(dir, 'assets'), { recursive: true }).catch(() => [] as string[])).map((f) => `assets/${f}`).filter(isCustom)
+  const found = await Promise.allSettled(files.map(async (f) => ({ ...(await custom(dir, f)), at: (await stat(join(dir, f))).mtimeMs })))
+  return found.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : [])).sort((a, b) => b.at - a.at).map(({ at: _, ...c }) => c)
+}
+
+/** Copies a picked image into the library; adding it again keeps the one copy. */
+export async function addCustom(picked: unknown, dir = customDir()) {
+  const src = await checkFile(picked, 'image')
+  await mkdir(dir, { recursive: true })
+  const file = await writeAsset(dir, src, await readFile(src))
+  try {
+    return await custom(dir, file)
+  } catch {
+    await removeCustom(file, dir)
+    throw new Error(`“${basename(src)}” could not be read as an image.`)
+  }
+}
+
+/** Takes an image out of the library. Projects keep their own copies. */
+export async function removeCustom(file: unknown, dir = customDir()) {
+  if (!isCustom(file)) throw new Error('Unknown background.')
+  await rm(join(dir, file), { force: true })
+  await rmdir(dirname(join(dir, file))).catch(() => {}) // its folder, once no other name shares the content
+}
+
+/** Copies a library image into the bundle under the same path; picking it again reuses that copy. */
+export async function importCustom(bundle: unknown, file: unknown, dir = customDir()): Promise<string> {
+  const b = bundleArg(bundle)
+  if (!isCustom(file)) throw new Error('Unknown background.')
+  if (!(await isFile(join(b, 'project.json')))) throw new Error('This project is no longer on disk.')
+  if (await isFile(join(b, file))) return file
+  const data = await readFile(join(dir, file)).catch(() => {
+    throw new Error('This image is no longer in Custom.')
+  })
+  return locked(() => writeAsset(b, file, data))
+}
+
 export function registerWallpapers() {
-  electron.ipcMain.handle('wallpapers:macos', () => listMacWallpapers())
-  electron.ipcMain.handle('wallpapers:importMacos', (_e, bundle, name) => importMacWallpaper(bundle, name))
+  const { ipcMain } = electron
+  ipcMain.handle('wallpapers:macos', () => listMacWallpapers())
+  ipcMain.handle('wallpapers:importMacos', (_e, bundle, name) => importMacWallpaper(bundle, name))
+  ipcMain.handle('wallpapers:custom', () => listCustom())
+  ipcMain.handle('wallpapers:addCustom', (_e, file) => addCustom(file))
+  ipcMain.handle('wallpapers:removeCustom', (_e, file) => removeCustom(file))
+  ipcMain.handle('wallpapers:importCustom', (_e, bundle, file) => importCustom(bundle, file))
 }

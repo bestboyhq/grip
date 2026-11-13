@@ -1,4 +1,4 @@
-<!-- Background (wallpaper, gradient, color, image, blur), the screen's shape, and the device frame. -->
+<!-- Background (wallpaper, gradient, color, custom image, blur), the screen's shape, and the device frame. -->
 <script lang="ts" module>
   import { WALLPAPERS, wallpaper, type Wallpaper } from '../../../engine/backgrounds/index.ts'
   import { invoke } from '../../../lib/ipc.ts'
@@ -7,6 +7,7 @@
   const MACOS = 'macOS'
   const COLLECTIONS = [...new Set(WALLPAPERS.map((w) => w.collection))]
   const COLS = 7
+  const ROWS = 4 // the wallpaper tray's height, whatever the collection; most fit, larger ones scroll
   const FRAME = 80 // padding a picked background brings when none would show
   const GAP = 8 // --gutter
 
@@ -57,7 +58,8 @@
   import ColorPicker from '../../../ui/ColorPicker.svelte'
   import Icon from '../../../ui/Icon.svelte'
   import { tooltip } from '../../../ui/tooltip.ts'
-  import { importFile } from '../files.ts'
+  import { pickFile } from '../files.ts'
+  import { reason } from '../helpers.ts'
   import { wallpaperThumbnail } from '../../../engine/backgrounds/thumbnails.ts'
 
   const uid = $props.id()
@@ -73,9 +75,16 @@
   const pills = $derived(macs.length ? [MACOS, ...COLLECTIONS] : COLLECTIONS)
   let collection = $derived(mac ? MACOS : bg.kind === 'wallpaper' ? wallpaper(bg.id).collection : COLLECTIONS[0])
   let error = $state('')
-  let missing = $state('') // the image file that failed to load
-  let converting = $state('') // the macOS wallpaper being copied into the project
+  let converting = $state('') // the image being copied into the project
   let failed = $state(0) // remounts the tiles after a failed pick, so the checked radio matches the background again
+
+  // The Custom tab (electron/wallpapers.ts): images the user added, for every project. Listed each time
+  // the inspector shows, so a window sees what another one added.
+  type CustomImage = { name: string; file: string; thumb: string }
+  let customs = $state<CustomImage[]>([])
+  invoke('wallpapers:custom').then((c: CustomImage[]) => (customs = c), (e) => console.warn('Custom backgrounds:', e))
+  /** The project's own image when it is in neither the library nor the macOS collection: shown first, to keep. */
+  const own = $derived(bg.kind === 'image' && !mac && !customs.some((c) => c.file === bg.file) ? bg.file : undefined)
 
   // Compositor thumbnails of the shown collection only, at the tile's device pixel size.
   const thumbs = new SvelteMap<string, string>()
@@ -102,19 +111,59 @@
         })),
   )
 
-  async function pickMac(m: MacWallpaper) {
+  /** Copies an image into the project (main process) and makes it the background. */
+  async function pickImage(id: string, ...args: [channel: string, ...unknown[]]) {
     error = ''
-    converting = m.file
+    converting = id
     try {
-      const file: string = await invoke('wallpapers:importMacos', doc.path, m.name)
-      setBg({ kind: 'image', file })
+      setBg({ kind: 'image', file: await invoke(...args) })
     } catch (e) {
-      error = String((e as Error).message)
+      error = reason(e)
       failed++
     } finally {
       converting = ''
     }
   }
+  const pickMac = (m: MacWallpaper) => pickImage(m.file, 'wallpapers:importMacos', doc.path, m.name)
+  const pickCustom = (c: CustomImage) => pickImage(c.file, 'wallpapers:importCustom', doc.path, c.file)
+
+  /** Adds an image to the library and picks it: the one the user chose in the open panel, or the project's own. */
+  async function addCustom(path: string | null) {
+    if (!path) return
+    error = ''
+    try {
+      const c: CustomImage = await invoke('wallpapers:addCustom', path)
+      customs = [c, ...customs.filter((x) => x.file !== c.file)]
+      await pickCustom(c)
+      reveal(customTray)
+    } catch (e) {
+      error = reason(e)
+    }
+  }
+  async function removeCustom(c: CustomImage) {
+    error = ''
+    try {
+      await invoke('wallpapers:removeCustom', c.file)
+      customs = customs.filter((x) => x !== c)
+    } catch (e) {
+      error = reason(e)
+    }
+  }
+
+  // Trays scroll when they hold more tiles than they show: the chosen tile scrolls into view, the panel stays.
+  let wallTray = $state<HTMLElement>()
+  let customTray = $state<HTMLElement>()
+  function reveal(tray: HTMLElement | undefined) {
+    tick().then(() => {
+      if (!tray) return
+      tray.scrollTop = 0
+      tray.querySelector(':checked')?.scrollIntoView({ block: 'nearest', container: 'nearest' } as ScrollIntoViewOptions)
+    })
+  }
+  $effect(() => {
+    void collection
+    reveal(wallTray)
+  })
 
   // Collection pills scroll sideways; an edge fades where more pills hide.
   let pillRow = $state<HTMLElement>()
@@ -133,7 +182,7 @@
   $effect(() => {
     void pills
     const glide = shown?.[0] === pillRow && shown?.[1] !== collection
-    pillRow?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: glide ? 'smooth' : 'instant' })
+    pillRow?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest', container: 'nearest', behavior: glide ? 'smooth' : 'instant' } as ScrollIntoViewOptions)
     shown = [pillRow, collection]
   })
   // Tabs pattern: one tab stop, arrow keys and Home/End move between collections and show them.
@@ -157,16 +206,6 @@
   const angle = $derived(bg.kind === 'gradient' ? bg.angle : 135)
   const color = $derived(bg.kind === 'color' ? bg.color : '#1c1c1e')
 
-  async function pickImage() {
-    error = ''
-    try {
-      const file = await importFile('image', 'image/png,image/jpeg,image/webp')
-      if (file) setBg({ kind: 'image', file })
-    } catch (e) {
-      error = String((e as Error).message)
-    }
-  }
-
   function randomWallpaper() {
     const others = tiles.filter((t) => !t.on)
     others[Math.floor(Math.random() * others.length)]?.pick()
@@ -175,17 +214,19 @@
 
 <Section>
   <Segmented
+    ariaLabel="Background"
     value={kind}
-    onchange={(v) => (kind = v)}
+    onchange={(v) => ((kind = v), (error = ''))}
     options={[
       { value: 'wallpaper', label: 'Wallpaper' },
       { value: 'gradient', label: 'Gradient' },
       { value: 'color', label: 'Color' },
-      { value: 'image', label: 'Image' },
+      { value: 'image', label: 'Custom' },
     ]}
   />
+  <!-- Every tab's pane shares one cell, so the area is as tall as the tallest pane and the controls below stay put. -->
   <div class="kind">
-    {#if kind === 'wallpaper'}
+    <div class="pane" class:shown={kind === 'wallpaper'} inert={kind !== 'wallpaper'}>
       <div class="pills" class:fade-start={fade.start} class:fade-end={fade.end} role="tablist" aria-label="Wallpaper collections" bind:this={pillRow} onscroll={edges}>
         {#each pills as c, i (c)}
           <button role="tab" id="{uid}-tab-{i}" aria-selected={c === collection} aria-controls="{uid}-panel" tabindex={c === collection ? 0 : -1} onclick={() => (collection = c)} onkeydown={pillKeys}>{c}</button>
@@ -193,59 +234,116 @@
       </div>
       <div class="stack" role="tabpanel" id="{uid}-panel" aria-labelledby="{uid}-tab-{pills.indexOf(collection)}">
         <button class="btn wide" onclick={randomWallpaper}><Icon name="shuffle" size={15} />Pick random wallpaper</button>
-        {#key failed}
-          <div class="well"><div class="grid" style:--cols={COLS} role="radiogroup" aria-label="{collection} wallpapers" bind:clientWidth={gridWidth}>
-            {#each tiles as t (t.id)}
+        <div class="well">
+          <div class="tray" style:--cols={COLS} style:--rows={ROWS} bind:this={wallTray}>
+            {#key failed}
+              <div class="grid" role="radiogroup" aria-label="{collection} wallpapers" bind:clientWidth={gridWidth}>
+                {#each tiles as t (t.id)}
+                  <input
+                    class="tile"
+                    type="radio"
+                    name="{uid}-wallpaper"
+                    checked={t.on}
+                    aria-label={t.name}
+                    aria-busy={converting === t.id}
+                    style:background={t.look}
+                    onchange={t.pick}
+                    {@attach tooltip(t.name)}
+                  />
+                {/each}
+              </div>
+            {/key}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="pane" class:shown={kind === 'gradient'} inert={kind !== 'gradient'}>
+      <div class="well fill">
+        <div class="tray" style:--cols={COLS}>
+          <div class="grid" role="radiogroup" aria-label="Gradient presets">
+            {#each GRADIENTS as g (g.name)}
               <input
                 class="tile"
                 type="radio"
-                name="{uid}-wallpaper"
-                checked={t.on}
-                aria-label={t.name}
-                aria-busy={converting === t.id}
-                style:background={t.look}
-                onchange={t.pick}
-                {@attach tooltip(t.name)}
+                name="{uid}-gradient"
+                checked={bg.kind === 'gradient' && bg.stops.join() === g.stops.join()}
+                aria-label={g.name}
+                style:background={gradient(g.stops, g.angle)}
+                onchange={() => setBg({ kind: 'gradient', stops: [...g.stops], angle: g.angle })}
+                {@attach tooltip(g.name)}
               />
             {/each}
-          </div></div>
-        {/key}
-        {#if error}<p class="error" role="alert">{error}</p>{/if}
-      </div>
-    {:else if kind === 'gradient'}
-      <div class="well grid" role="radiogroup" aria-label="Gradient presets">
-        {#each GRADIENTS as g (g.name)}
-          <input
-            class="tile"
-            type="radio"
-            name="{uid}-gradient"
-            checked={bg.kind === 'gradient' && bg.stops.join() === g.stops.join()}
-            aria-label={g.name}
-            style:background={gradient(g.stops, g.angle)}
-            onchange={() => setBg({ kind: 'gradient', stops: [...g.stops], angle: g.angle })}
-            {@attach tooltip(g.name)}
-          />
-        {/each}
+          </div>
+        </div>
       </div>
       <ColorPicker label="From" value={stops[0]} onchange={(c, m) => setBg({ kind: 'gradient', stops: [c, ...stops.slice(1)], angle }, m)} />
       <ColorPicker label="To" value={stops.at(-1)!} onchange={(c, m) => setBg({ kind: 'gradient', stops: [...stops.slice(0, -1), c], angle }, m)} />
       <Slider label="Angle" value={angle} min={0} max={360} step={1} initial={135} format={(v) => `${Math.round(v)}°`} onchange={(a, m) => setBg({ kind: 'gradient', stops: [...stops], angle: a }, m)} />
-    {:else if kind === 'color'}
-      <ColorPicker label="Color" value={color} active={bg.kind === 'color'} swatches={COLORS} onchange={(c, m) => setBg({ kind: 'color', color: c }, m)} />
-    {:else}
-      {#if bg.kind === 'image'}
-        {#key bg.file}
-          {#if missing !== bg.file}
-            <img class="preview" src={fileUrl(`${doc.path}/${bg.file}`)} alt="Current background" onerror={() => (missing = bg.kind === 'image' ? bg.file : '')} />
-          {:else}
-            <p class="preview missing" role="alert">The background image is missing from this project, so the default background shows. Choose another image.</p>
-          {/if}
-        {/key}
-      {/if}
-      <button class="btn wide" onclick={pickImage}><Icon name="upload" size={15} />{bg.kind === 'image' ? 'Replace image…' : 'Choose image…'}</button>
-      {#if error}<p class="error" role="alert">{error}</p>{/if}
-    {/if}
+    </div>
+    <div class="pane" class:shown={kind === 'color'} inert={kind !== 'color'}>
+      <div class="well fill">
+        <div class="tray" style:--cols={COLS}>
+          <div class="grid" role="radiogroup" aria-label="Colors">
+            {#each COLORS as c (c)}
+              <input
+                class="tile"
+                type="radio"
+                name="{uid}-color"
+                checked={bg.kind === 'color' && bg.color.toLowerCase() === c}
+                aria-label={c}
+                style:background={c}
+                onchange={() => setBg({ kind: 'color', color: c })}
+                {@attach tooltip(c)}
+              />
+            {/each}
+          </div>
+        </div>
+      </div>
+      <ColorPicker label="Color" value={color} active={bg.kind === 'color'} onchange={(c, m) => setBg({ kind: 'color', color: c }, m)} />
+    </div>
+    <div class="pane" class:shown={kind === 'image'} inert={kind !== 'image'}>
+      <div class="well fill">
+        <div class="tray" style:--cols={COLS} bind:this={customTray}>
+          {#key failed}
+            <div class="grid" role="radiogroup" aria-label="Custom backgrounds">
+              <button class="add" aria-label="Add image…" onclick={() => pickFile('image/png,image/jpeg,image/webp').then(addCustom)} {@attach tooltip('Add image…')}>
+                <Icon name="plus" size={15} />
+              </button>
+              {#if own}
+                <div class="cell">
+                  <input class="tile" type="radio" name="{uid}-custom" checked aria-label="This project's image" style:background={cover(fileUrl(`${doc.path}/${own}`))} {@attach tooltip("This project's image")} />
+                  <button class="badge" aria-label="Keep in Custom for every project" onclick={() => addCustom(`${doc.path}/${own}`)} {@attach tooltip('Keep for every project')}>
+                    <Icon name="plus" size={10} />
+                  </button>
+                </div>
+              {/if}
+              {#each customs as c (c.file)}
+                {@const on = bg.kind === 'image' && bg.file === c.file}
+                <div class="cell">
+                  <input
+                    class="tile"
+                    type="radio"
+                    name="{uid}-custom"
+                    checked={on}
+                    aria-label={c.name}
+                    aria-busy={converting === c.file}
+                    style:background={cover(c.thumb)}
+                    onchange={() => pickCustom(c)}
+                    {@attach tooltip(c.name)}
+                  />
+                  <button class="badge" tabindex={on ? 0 : -1} aria-label="Remove {c.name} from Custom" onclick={() => removeCustom(c)} {@attach tooltip('Remove from Custom')}>
+                    <Icon name="close" size={10} />
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {/key}
+        </div>
+      </div>
+      <p class="note">Images you add stay here for every project.</p>
+    </div>
   </div>
+  {#if error}<p class="error" role="alert">{error}</p>{/if}
   <Slider label="Blur" value={st.backgroundBlur} initial={init.backgroundBlur} format={(v) => `${Math.round(v * 100)}%`} onchange={set('backgroundBlur')} />
 </Section>
 
@@ -283,11 +381,49 @@
 </Section>
 
 <style>
-  .kind { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 6px; }
+  .kind { display: grid; padding: 10px 0 6px; }
+  .pane { grid-area: 1 / 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .pane:not(.shown) { visibility: hidden; }
   .stack { display: flex; flex-direction: column; gap: 8px; }
   /* Tiles sit in a well; corners stay concentric (well radius - padding = tile radius). */
-  .well { padding: var(--gutter); border-radius: var(--radius-xl); background: var(--control-track); box-shadow: var(--hairline); }
+  .well { container-type: inline-size; padding: var(--gutter); border-radius: var(--radius-xl); background: var(--control-track); box-shadow: var(--hairline); }
   .grid { display: grid; grid-template-columns: repeat(var(--cols, 6), 1fr); gap: var(--gutter); }
+  /* A tray keeps its height as its tiles change and scrolls the rest, an edge fading where more hide.
+     It reaches into the well's padding by the selection ring, which overhangs the tile. The wallpaper
+     tray is --rows tiles tall and sets the panes' height; the others take what their pane leaves (size
+     containment keeps their tiles from growing it), so each tab's tiles sit where the last tab's did. */
+  .tray {
+    --ring: 4px;
+    margin: calc(-1 * var(--ring)); padding: var(--ring); scroll-padding: var(--ring); overflow-y: auto; scrollbar-width: none;
+    height: calc((100cqi - (var(--cols) - 1) * var(--gutter)) / var(--cols) * var(--rows) + (var(--rows) - 1) * var(--gutter) + 2 * var(--ring));
+    mask-image: linear-gradient(transparent, #000 var(--fade-top), #000 calc(100% - var(--fade-bottom)), transparent);
+    animation: tray-edges linear both;
+    animation-timeline: scroll(self);
+  }
+  @property --fade-top { syntax: '<length>'; inherits: false; initial-value: 0px; }
+  @property --fade-bottom { syntax: '<length>'; inherits: false; initial-value: 0px; }
+  @keyframes tray-edges {
+    from { --fade-top: 0px; --fade-bottom: 24px; }
+    10%, 90% { --fade-top: 24px; --fade-bottom: 24px; }
+    to { --fade-top: 24px; --fade-bottom: 0px; }
+  }
+  .fill { flex: 1 1 0; contain: size; display: flex; flex-direction: column; }
+  .fill .tray { flex: 1 1 0; height: auto; }
+  .cell { position: relative; display: grid; }
+  .add {
+    aspect-ratio: 1; margin: 0; padding: 0; border: 0; border-radius: var(--radius); display: grid; place-items: center;
+    background: var(--surface-150); box-shadow: var(--hairline); color: var(--fg-secondary);
+  }
+  .add:hover { background: var(--surface-hover); color: var(--fg-default); }
+  /* Remove (or keep) shows on the tile under the pointer, and on the chosen one for the keyboard. */
+  .badge {
+    position: absolute; top: calc(-1 * var(--ring)); right: calc(-1 * var(--ring)); width: 16px; height: 16px; padding: 0; border: 0; border-radius: 50%;
+    display: grid; place-items: center; background: var(--surface-150); color: var(--fg-default);
+    box-shadow: var(--hairline), 0 1px 2px rgb(0 0 0 / 0.4); visibility: hidden;
+  }
+  .cell:hover .badge, .badge:focus-visible { visibility: visible; }
+  .badge:hover { background: var(--surface-hover); }
+  .note { margin: 0; padding: 2px 0; font-size: 11.5px; line-height: 1.35; color: var(--fg-faint); }
   /* Collections: a row of pills that scrolls sideways without a scrollbar; an edge fades where more
      pills hide. The vertical padding keeps focus rings and shadows from being clipped; the scroll padding
      keeps the chosen pill clear of the fades when it scrolls into view. */
@@ -319,8 +455,6 @@
   .tile:checked { --selected: 0 0 0 2px var(--control-track), 0 0 0 4px var(--brand); }
   .tile:focus-visible { outline: none; --focused: inset 0 0 0 2px var(--fg-default), inset 0 0 0 3.5px rgb(0 0 0 / 0.5); }
   .wide { width: 100%; }
-  .preview { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: var(--radius); box-shadow: var(--hairline); background: var(--control-track); }
-  .missing { display: grid; place-items: center; margin: 0; padding: 16px; font-size: 12px; line-height: 1.45; text-align: center; color: var(--fg-secondary); }
   .error { margin: 0; padding: 4px 0; font-size: 12px; line-height: 1.45; color: var(--fg-faint); }
   .error { color: var(--error-content); }
 </style>
