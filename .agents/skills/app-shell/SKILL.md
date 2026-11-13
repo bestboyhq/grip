@@ -7,7 +7,8 @@ description: The native macOS app shell. Use when changing the launch, menu bar,
 
 The native macOS app around everything else.
 
-- Menu bar app; the dock icon hides during recording and shows whenever a window is open.
+- Menu bar app; the dock icon shows whenever a window is open, recording or not.
+  Hiding it for a recording left the editor on screen with no icon to switch back to it, which reads as Grip gone.
   The icon follows the activation policy (`updateDock`), never Electron's `app.dock.show()`: with Grip active, that brings the Dock forward first, and Finder stayed highlighted in it after every recording that ended in the editor.
   The policy turns regular before a normal window shows: once the window has activated Grip, macOS keeps the other app's menu bar.
   Floating panels skip Electron's dock change in `setVisibleOnAllWorkspaces` (`skipTransformProcessType`) and keep `canHide` off themselves, so hiding other apps never takes the recording controls.

@@ -61,8 +61,8 @@ export interface Motion {
 const A = 0, VIEWT = 1, SCR = 2, SCR2 = 3, SCR3 = 4, DEV = 5, SH = 6, VIEWS = 10, PARTS = 26, MASKS = 74
 const CUR = 106, CURIMG = 107, CURTEX = 108, CURBOX = 109, CURS = 110
 const CAM = 126, CAM1 = 127, CAM2 = 128, CAM3 = 129, CAM4 = 130, LUTMIN = 131, LUTMAX = 132, FIN = 133, VP = 134, VIS = 135
-const CLK = 136, LOUPES = 140, LOUPE_S = 148
-const FRAME_SLOTS = 220
+const CLK = 136, LOUPES = 140, LOUPE_S = 148, INS = 220
+const FRAME_SLOTS = 221
 const PASS_SLOTS = 27 // `struct Pass`
 const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12, MAX_CLICKS = 4, MAX_LOUPES = 4, LOUPE_SAMPLES = 9
 const MASK_KIND = { blur: 0, pixelate: 1, highlight: 2 } as const
@@ -416,6 +416,7 @@ export class Renderer {
         set(SH + i * 2 + 1, Math.min(c.radius, c.rect.w / 2, c.rect.h / 2))
       })
       set(DEV, parts.length, parts.filter((p) => !p.over).length, casters.length, inset)
+      set(INS, ...(s.insetColor ?? [-1, 0, 0]), inset > 0 ? s.insetOpacity : 0) // no band: none to bleed into the frame's antialiased edge
     }
 
     const c0 = scene.cursor

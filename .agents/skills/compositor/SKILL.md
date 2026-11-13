@@ -14,7 +14,18 @@ GPU composition of each output frame.
 - Video stays undithered, but a ramp drawn over it, like the loupe's shadow, must raise the dither mark too, or flat UI under it bands into rings in the preview.
   The encoder strips that dither, so an export stays smooth only under a ramp that steps a level every few px: a faint one spread over hundreds of px bands into rings tens of px wide.
 - Rounded corners and shadows are antialiased on light and dark backgrounds at every scale.
+- The inset is a band between the frame's edge and the recording: the recording's own edge stretched out, or a color at an opacity.
+  Roundness is the recording's own corners, and the frame's are Roundness plus the inset, so the band stays even all round.
+  Taking the inset off a fixed frame radius turned the recording square once the inset passed it.
+  Ink clips to the same corners as the recording (`radius - inset`).
+  The frame's shadow is masked by the frame's own coverage, as the camera's is: cut off a few px inside the edge instead, it showed through a see-through band as a hard dark rim.
+  A see-through band shows the background and shadow under it, so only an opaque edge band counts as video for the dither mark.
 - Output aspect ratios: auto, 16:9, 9:16, 4:5, 1:1, and custom.
+  Auto hugs the framed recording (inset, device) with the padding even on every side (`hugRatio`).
+  An output shaped to the recording alone leaves the padding thicker at the sides and makes the rest framing zoom in over it.
+- Crop with a shape offers Cover and Fit.
+  Cover cuts the recording to the shape that fills the output up to its padding (`coverRatio`), not to the bare shape.
+  Fit keeps the whole recording and sets the output aspect instead, so the background fills the rest.
 - Sensitive-data masks blur or pixelate and take their color from what they cover; highlight masks dim the rest.
   Masks stay locked to content through zooms.
 - The keystroke overlay draws each key as its own keycap with the macOS symbol and name.

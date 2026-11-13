@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createProject, type Project, type Rect } from '../shared/project.ts'
 import { mapRange, timeMap } from '../shared/timemap.ts'
 import { outputSize } from './scene.ts'
-import { prepareLayout, layoutAt, fitScreen, deviceGeometry, deviceBounds, cameraCrop, faceAt, silentRanges, voiceRanges } from './layout.ts'
+import { prepareLayout, layoutAt, fitScreen, deviceGeometry, deviceBounds, cameraCrop, faceAt, silentRanges, voiceRanges, coverRatio } from './layout.ts'
 
 const W = 1920, H = 1080
 const project = (edit: (p: Project) => void = () => {}) => {
@@ -44,7 +44,11 @@ test('inset: the recording keeps its aspect inside a frame grown by the inset, w
   const l = at(project((p) => Object.assign(p.style, { padding: 80, inset: 30, radius: 40 })), 1)
   assert.equal(l.screen!.inset, 30)
   assert.ok(Math.abs(l.screen!.rect.y - 30 - 80) < 1e-6, 'frame touches the padding')
-  assert.equal(l.screen!.radius, 40)
+  assert.equal(l.screen!.radius, 70, 'the frame grows the corners by the inset, so the recording keeps its 40')
+  assert.deepEqual([l.screen!.insetColor, l.screen!.insetOpacity], [null, 1], "absent: the recording's edge, opaque")
+  const band = (insetColor: string, insetOpacity: number) => at(project((p) => Object.assign(p.style, { inset: 30, insetColor, insetOpacity })), 1).screen!
+  assert.deepEqual([band('#FF8000', 0.25).insetColor, band('#FF8000', 0.25).insetOpacity], [[1, 128 / 255, 0], 0.25])
+  assert.deepEqual([band('red', 2).insetColor, band('red', 2).insetOpacity], [null, 1], 'a bad color is the edge; opacity clamps')
 })
 
 test('device mockups follow orientation: Dynamic Island on top in portrait, on the left in landscape', () => {
@@ -172,6 +176,26 @@ test('a crop fits only its part of the recording; recording px still map through
   close(l.masks[0].rect, s.visible, 1e-6) // a mask over the cropped part covers what shows
   const wide = project((p) => (p.crop = { x: 0, y: 0, w: 1, h: 0.05 }))
   assert.deepEqual(outputSize(wide, 1080), { width: 5400, height: 1080 }, 'auto stops at 5:1')
+})
+
+test('auto hugs the framed recording with even padding; a cover crop fills a fixed shape up to its padding', () => {
+  for (const device of ['none', 'macbook', 'iphone'] as const) {
+    const even = (p: Project, what: string) => {
+      const out = outputSize(p, 1080)
+      const s = at(p, 1, out.width, out.height).screen!
+      const b = deviceBounds(device, { x: s.visible.x - s.inset, y: s.visible.y - s.inset, w: s.visible.w + 2 * s.inset, h: s.visible.h + 2 * s.inset })
+      const pad = 80 * Math.min(out.width, out.height) / 1080
+      const gaps = [b.x, b.y, out.width - b.x - b.w, out.height - b.y - b.h]
+      assert.ok(gaps.every((g) => Math.abs(g - pad) < 1.5), `${device}, ${what}: gaps ${gaps.map(Math.round)} != ${pad}`)
+    }
+    const style = { padding: 80, inset: 30, device }
+    even(project((p) => Object.assign(p.style, style)), 'auto')
+    even(project((p) => Object.assign(p.style, style) && (p.crop = { x: 0.1, y: 0.2, w: 0.3, h: 0.7 })), 'auto, cropped')
+    for (const k of [16 / 9, 9 / 16, 1]) {
+      const r = coverRatio(style, k) / 1.6 // as a share of the 2880 x 1800 recording
+      even(project((p) => Object.assign(p.style, style, { aspect: { w: k, h: 1 } }) && (p.crop = r > 1 ? { x: 0, y: 0, w: 1, h: 1 / r } : { x: 0, y: 0, w: r, h: 1 })), `cover ${k.toFixed(2)}`)
+    }
+  }
 })
 
 test('masks around t are found by index: same layers, in project order, as a scan over every mask', () => {

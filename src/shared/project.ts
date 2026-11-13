@@ -153,10 +153,13 @@ export interface Style {
   background: Background
   backgroundBlur: number // 0..1
   padding: number // units around the screen
-  radius: number // units, screen corner radius
-  /** Units between the screen frame's edge and the recording inside it, filled with the recording's
-   *  edge color, so content clears the rounded corners. Absent = 0. */
+  radius: number // units, the recording's corner radius; the inset frame's corners are this plus the inset
+  /** Units of band between the screen frame's edge and the recording inside it, so content clears the
+   *  rounded corners. Absent = 0. */
   inset?: number
+  /** The band's color, #rrggbb. Absent = the recording's own edge, stretched out to the frame. */
+  insetColor?: string
+  insetOpacity?: number // 0..1, how much of the background the band covers; absent = 1
   shadow: number // 0..1
   device: 'none' | 'macbook' | 'iphone' | 'ipad'
   /** How the zoom camera moves: focused settles fast so content is readable sooner, smooth glides. */

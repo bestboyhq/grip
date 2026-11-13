@@ -61,7 +61,7 @@ import { importVideo, recentProjects, recoveredAtLaunch } from '../projects.ts'
 import { capture, recordingEvents, recordingName } from '../recording.ts'
 import { native } from '../native.ts'
 import { DRAW_FADE, DRAW_HOLD } from '../../src/engine/overlays/drawings.ts'
-import { activeDisplay, hidden, openWindow, reveal, sendAll, setRecordingDock, windowsOf, withDock } from '../windows.ts'
+import { activeDisplay, hidden, openWindow, reveal, sendAll, windowsOf, withDock } from '../windows.ts'
 import { arrangement, place, reachable, underCamera } from './bounds.ts'
 import { withScale } from './png.ts'
 import { plainError, type Permission } from './errors.ts'
@@ -667,7 +667,6 @@ function setStatus(next: Status) {
   clock = { elapsed: fresh ? 0 : sofar, at: next === 'recording' ? now : 0 }
   status = next
   const active = next !== 'idle'
-  setRecordingDock(active)
   if (next !== 'recording' && drawing) {
     // Paused or ending: the engine takes no strokes now.
     drawing = false

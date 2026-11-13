@@ -254,6 +254,17 @@
   <!-- A device frame brings its own screen corners. -->
   <Slider label="Roundness" value={st.radius} min={0} max={80} step={1} initial={init.radius} disabled={st.device !== 'none'} onchange={set('radius')} />
   <Slider label="Inset" value={st.inset ?? 0} min={0} max={120} step={1} initial={0} onchange={set('inset')} />
+  <!-- The band the inset puts around the recording: the recording's own edge, stretched, or a color. -->
+  <ColorPicker
+    label="Inset color"
+    value={st.insetColor ?? '#000000'}
+    active={!!st.insetColor}
+    disabled={!st.inset}
+    swatches={COLORS.slice(0, 5)}
+    auto={{ label: 'Recording edge', on: !st.insetColor, pick: () => edit((p) => { delete p.style.insetColor }) }}
+    onchange={set('insetColor')}
+  />
+  <Slider label="Inset opacity" value={st.insetOpacity ?? 1} initial={1} disabled={!st.inset} format={(v) => `${Math.round(v * 100)}%`} onchange={set('insetOpacity')} />
   <Slider label="Shadow" value={st.shadow} initial={init.shadow} format={(v) => `${Math.round(v * 100)}%`} onchange={set('shadow')} />
 </Section>
 
