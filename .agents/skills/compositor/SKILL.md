@@ -17,6 +17,8 @@ GPU composition of each output frame.
   Images dropped on the Custom tray join the library there and stop at the tray: the window opens dropped files as projects and rejects images.
 - The Background tabs share one height, and each tray keeps its own as collections change, scrolling what does not fit.
   Panes of their own heights moved Blur, Shape, and every control under them on each tab switch.
+  Tabs and collections slide as the family's menus switch, and one ring per tray glides to the chosen tile.
+  The ring takes its tile's grid cell: placed by arithmetic, it landed a fraction of a pixel off the tile.
 - Video stays undithered, but a ramp drawn over it, like the loupe's shadow, must raise the dither mark too, or flat UI under it bands into rings in the preview.
   The encoder strips that dither, so an export stays smooth only under a ramp that steps a level every few px: a faint one spread over hundreds of px bands into rings tens of px wide.
 - Rounded corners and shadows are antialiased on light and dark backgrounds at every scale.

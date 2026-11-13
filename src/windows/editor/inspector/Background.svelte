@@ -48,7 +48,9 @@
 
 <script lang="ts">
   import { tick } from 'svelte'
+  import { flip } from 'svelte/animate'
   import { SvelteMap } from 'svelte/reactivity'
+  import { come, EASE_GLIDE, easeGlide, GLIDE_MS, slide, still } from '../../../ui/motion.ts'
   import { doc, edit } from '../../../lib/doc.svelte.ts'
   import { defaultStyle, type Background, type Style } from '../../../shared/project.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
@@ -131,6 +133,7 @@
    *  the ones dropped on the tray, or the project's own. One that fails leaves the others added. */
   async function addCustom(paths: string[]) {
     error = ''
+    adding = true
     let first: CustomImage | undefined
     let failure = ''
     // Last first: the library lists newest first, so the tray shows them in the order given, as after a restart.
@@ -147,8 +150,11 @@
       await pickCustom(first)
       reveal(customTray)
     }
+    adding = false
     error ||= failure
   }
+  // Tiles the user adds come in; the library listed when the panel opens shows at once.
+  let adding = $state(false)
 
   // Image files dragged over the Custom tray light it up; dropping adds them as + does.
   let dropping = $state(false)
@@ -200,12 +206,17 @@
     edges()
   })
   // The chosen pill stays clear of the fades: in view the moment the row shows, and again when the
-  // macOS pill arrives in front and pushes it right. Switching collections glides to it.
+  // macOS pill arrives in front and pushes it right. Switching collections glides to it, and one highlight glides
+  // under it as the Segmented thumb does; it moves with its pill at once when pills arrive.
   let shown: [HTMLElement | undefined, string] | undefined
+  let pillThumb = $state<{ x: number; w: number; glide: boolean }>()
   $effect(() => {
     void pills
     const glide = shown?.[0] === pillRow && shown?.[1] !== collection
-    pillRow?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest', container: 'nearest', behavior: glide ? 'smooth' : 'instant' } as ScrollIntoViewOptions)
+    const on = pillRow?.querySelector<HTMLElement>('[aria-selected="true"]')
+    on?.scrollIntoView({ block: 'nearest', inline: 'nearest', container: 'nearest', behavior: glide ? 'smooth' : 'instant' } as ScrollIntoViewOptions)
+    const box = (el: Element) => el.getBoundingClientRect() // fractional, as the pill is laid out: offsets round
+    pillThumb = on && pillRow ? { x: box(on).x - box(pillRow).x + pillRow.scrollLeft, w: box(on).width, glide } : undefined
     shown = [pillRow, collection]
   })
   // Tabs pattern: one tab stop, arrow keys and Home/End move between collections and show them.
@@ -214,9 +225,77 @@
     const j = ({ ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: pills.length - 1 } as Record<string, number>)[e.key]
     if (j === undefined) return
     e.preventDefault()
-    collection = pills[(j + pills.length) % pills.length]
+    showCollection(pills[(j + pills.length) % pills.length])
     tick().then(() => pillRow?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus())
   }
+
+  // Switching collections slides the next one's tiles in from the side of its pill. The leaving tiles go in a copy
+  // of the tray that keeps their scroll and edge fades, from wherever a switch before left them; its radios leave
+  // the group, so the choice stays where it is. The copy shares the tray's cell in the well, so it covers the tray
+  // exactly; the well holds no Svelte block, so Svelte never reconciles its children around the copy.
+  function showCollection(c: string) {
+    const grid = wallTray?.querySelector<HTMLElement>('.grid')
+    if (c === collection || !wallTray || !grid || still()) return void (collection = c)
+    const dir = Math.sign(pills.indexOf(c) - pills.indexOf(collection))
+    const ghost = wallTray.cloneNode(true) as HTMLElement
+    for (const input of ghost.querySelectorAll('input')) input.removeAttribute('name')
+    const { opacity, translate, filter } = getComputedStyle(grid)
+    Object.assign(ghost.querySelector<HTMLElement>('.grid')!.style, { opacity, translate, filter })
+    ghost.inert = true
+    wallTray.after(ghost)
+    ghost.scrollTop = wallTray.scrollTop
+    for (const a of grid.getAnimations()) a.cancel() // the next collection's tiles come from the side, not from where these were
+    collection = c
+    const gone = () => ghost.remove()
+    tick().then(() => slide(ghost.querySelector('.grid'), grid, dir)?.finished.then(gone, gone) ?? gone())
+  }
+
+  // Switching tabs slides the next pane in from the side of its tab, as the family's menus switch.
+  const KINDS: Array<{ value: Background['kind']; label: string }> = [
+    { value: 'wallpaper', label: 'Wallpaper' },
+    { value: 'gradient', label: 'Gradient' },
+    { value: 'color', label: 'Color' },
+    { value: 'image', label: 'Custom' },
+  ]
+  let kindEl = $state<HTMLElement>()
+  function showKind(v: Background['kind']) {
+    const at = (k: Background['kind']) => KINDS.findIndex((o) => o.value === k)
+    const panes = kindEl?.children
+    if (panes && v !== kind) slide(panes[at(kind)], panes[at(v)], Math.sign(at(v) - at(kind)))
+    kind = v
+    error = ''
+  }
+
+  // One ring per tray marks the chosen tile and glides to the next choice, as the Segmented thumb glides to its
+  // option: at the click, before an image is copied into the project. It appears in place when its tray first shows
+  // a choice. It takes the tile's own grid cell, so it sits exactly on the tile at any width and ignores a tile going
+  // out; a ring placed by arithmetic landed a fraction of a pixel off the tile.
+  const centre = (el: Element) => {
+    const b = el.getBoundingClientRect()
+    return [b.x + b.width / 2, b.y + b.height / 2]
+  }
+  function placeRings() {
+    for (const ring of kindEl?.querySelectorAll<HTMLElement>('.ring') ?? []) {
+      const tile = ring.parentElement?.querySelector<HTMLElement>('.tile:checked')
+      const at = tile?.closest<HTMLElement>('.cell') ?? tile
+      const shown = ring.classList.contains('on')
+      ring.classList.toggle('on', !!at)
+      if (!at) continue
+      const step = at.offsetWidth + GAP
+      const area = `${Math.round(at.offsetTop / step) + 1} / ${Math.round(at.offsetLeft / step) + 1} / span 1 / span 1`
+      if (area === ring.dataset.area) continue // a glide under way keeps going
+      const [x, y] = centre(ring)
+      for (const a of ring.getAnimations()) if (!(a instanceof CSSTransition)) a.cancel()
+      ring.style.gridArea = ring.dataset.area = area
+      if (!shown || still()) continue
+      const [x1, y1] = centre(ring)
+      ring.animate({ translate: [`${x - x1}px ${y - y1}px`, '0px 0px'] }, { duration: GLIDE_MS, easing: EASE_GLIDE })
+    }
+  }
+  $effect(() => {
+    void [bg, tiles, customs, own, failed]
+    placeRings()
+  })
 
   // A background picked while the screen fills the output edge to edge would not show: frame it.
   const setBg = (b: Background, merge?: string) => edit((p) => {
@@ -239,23 +318,15 @@
 <svelte:window onpointermove={() => (dropping = false)} />
 
 <Section>
-  <Segmented
-    ariaLabel="Background"
-    value={kind}
-    onchange={(v) => ((kind = v), (error = ''))}
-    options={[
-      { value: 'wallpaper', label: 'Wallpaper' },
-      { value: 'gradient', label: 'Gradient' },
-      { value: 'color', label: 'Color' },
-      { value: 'image', label: 'Custom' },
-    ]}
-  />
-  <!-- Every tab's pane shares one cell, so the area is as tall as the tallest pane and the controls below stay put. -->
-  <div class="kind">
+  <Segmented ariaLabel="Background" value={kind} onchange={showKind} options={KINDS} />
+  <!-- Every tab's pane shares one cell, so the area is as tall as the tallest pane and the controls below stay put.
+       A pick anywhere moves its tray's ring at once. -->
+  <div class="kind" bind:this={kindEl} onchange={placeRings}>
     <div class="pane" class:shown={kind === 'wallpaper'} inert={kind !== 'wallpaper'}>
       <div class="pills" class:fade-start={fade.start} class:fade-end={fade.end} role="tablist" aria-label="Wallpaper collections" bind:this={pillRow} onscroll={edges}>
+        {#if pillThumb}<span class="thumb" class:glide={pillThumb.glide} style:translate="{pillThumb.x}px 0" style:width="{pillThumb.w}px" aria-hidden="true"></span>{/if}
         {#each pills as c, i (c)}
-          <button role="tab" id="{uid}-tab-{i}" aria-selected={c === collection} aria-controls="{uid}-panel" tabindex={c === collection ? 0 : -1} onclick={() => (collection = c)} onkeydown={pillKeys}>{c}</button>
+          <button role="tab" id="{uid}-tab-{i}" aria-selected={c === collection} aria-controls="{uid}-panel" tabindex={c === collection ? 0 : -1} onclick={() => showCollection(c)} onkeydown={pillKeys}>{c}</button>
         {/each}
       </div>
       <div class="stack" role="tabpanel" id="{uid}-panel" aria-labelledby="{uid}-tab-{pills.indexOf(collection)}">
@@ -277,6 +348,7 @@
                     {@attach tooltip(t.name)}
                   />
                 {/each}
+                <span class="ring" aria-hidden="true"></span>
               </div>
             {/key}
           </div>
@@ -299,6 +371,7 @@
                 {@attach tooltip(g.name)}
               />
             {/each}
+            <span class="ring" aria-hidden="true"></span>
           </div>
         </div>
       </div>
@@ -322,6 +395,7 @@
                 {@attach tooltip(c)}
               />
             {/each}
+            <span class="ring" aria-hidden="true"></span>
           </div>
         </div>
       </div>
@@ -350,9 +424,10 @@
                   </button>
                 </div>
               {/if}
+              <!-- An added tile comes in and a removed one goes, while the others glide to their new places. -->
               {#each customs as c (c.file)}
                 {@const on = bg.kind === 'image' && bg.file === c.file}
-                <div class="cell">
+                <div class="cell" in:come={adding} out:come animate:flip={{ duration: still() ? 0 : GLIDE_MS, easing: easeGlide }}>
                   <input
                     class="tile"
                     type="radio"
@@ -369,6 +444,7 @@
                   </button>
                 </div>
               {/each}
+              <span class="ring" aria-hidden="true"></span>
             </div>
           {/key}
         </div>
@@ -415,19 +491,29 @@
 </Section>
 
 <style>
-  .kind { display: grid; padding: 10px 0 6px; }
+  /* Panes slide across inside the area they share, as menus switch inside their panel; focus rings still show. */
+  .kind { display: grid; padding: 10px 0 6px; overflow: clip; overflow-clip-margin: 4px; }
   .pane { grid-area: 1 / 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .pane:not(.shown) { visibility: hidden; }
   .stack { display: flex; flex-direction: column; gap: 8px; }
   /* Tiles sit in a well; corners stay concentric (well radius - padding = tile radius). */
-  .well { container-type: inline-size; padding: var(--gutter); border-radius: var(--radius-xl); background: var(--control-track); box-shadow: var(--hairline); }
-  .grid { display: grid; grid-template-columns: repeat(var(--cols, 6), 1fr); gap: var(--gutter); }
+  .well { position: relative; display: grid; container-type: inline-size; padding: var(--gutter); border-radius: var(--radius-xl); background: var(--control-track); box-shadow: var(--hairline); }
+  .grid { position: relative; display: grid; grid-template-columns: repeat(var(--cols, 6), 1fr); gap: var(--gutter); }
+  /* The chosen tile's ring, in the tile's grid cell that script sets. It grows with its tile under the pointer. */
+  .ring {
+    position: absolute; inset: 0; border-radius: var(--radius); pointer-events: none; opacity: 0;
+    box-shadow: 0 0 0 2px var(--control-track), 0 0 0 4px var(--brand);
+    transition: scale 140ms var(--ease-out);
+  }
+  .ring:global(.on) { opacity: 1; }
+  .grid:has(.tile:checked:hover) > .ring { scale: 1.06; }
   /* A tray keeps its height as its tiles change and scrolls the rest, an edge fading where more hide.
      It reaches into the well's padding by the selection ring, which overhangs the tile. The wallpaper
      tray is --rows tiles tall and sets the panes' height; the others take what their pane leaves (size
      containment keeps their tiles from growing it), so each tab's tiles sit where the last tab's did. */
   .tray {
     --ring: 4px;
+    grid-area: 1 / 1;
     margin: calc(-1 * var(--ring)); padding: var(--ring); scroll-padding: var(--ring); overflow-y: auto; scrollbar-width: none;
     height: calc((100cqi - (var(--cols) - 1) * var(--gutter)) / var(--cols) * var(--rows) + (var(--rows) - 1) * var(--gutter) + 2 * var(--ring));
     mask-image: linear-gradient(transparent, #000 var(--fade-top), #000 calc(100% - var(--fade-bottom)), transparent);
@@ -451,9 +537,9 @@
     background: var(--surface-150); box-shadow: var(--hairline); color: var(--fg-secondary);
   }
   .add:hover { background: var(--surface-hover); color: var(--fg-default); }
-  /* Remove (or keep) shows on the tile under the pointer, and on the chosen one for the keyboard. */
+  /* Remove (or keep) shows on the tile under the pointer, and on the chosen one for the keyboard, over its ring. */
   .badge {
-    position: absolute; top: calc(-1 * var(--ring)); right: calc(-1 * var(--ring)); width: 16px; height: 16px; padding: 0; border: 0; border-radius: 50%;
+    position: absolute; z-index: 1; top: calc(-1 * var(--ring)); right: calc(-1 * var(--ring)); width: 16px; height: 16px; padding: 0; border: 0; border-radius: 50%;
     display: grid; place-items: center; background: var(--surface-150); color: var(--fg-default);
     box-shadow: var(--hairline), 0 1px 2px rgb(0 0 0 / 0.4); visibility: hidden;
   }
@@ -465,6 +551,7 @@
      keeps the chosen pill clear of the fades when it scrolls into view. */
   .pills {
     --start: 0px; --end: 0px;
+    position: relative; isolation: isolate;
     display: flex; gap: 4px; margin: -2px 0; padding: 2px 0; overflow-x: auto; scrollbar-width: none; scroll-padding-inline: 40px;
     mask-image: linear-gradient(to right, transparent, #000 var(--start), #000 calc(100% - var(--end)), transparent);
   }
@@ -475,20 +562,25 @@
     background: none; color: var(--fg-secondary); font-size: 12px; font-weight: 500;
   }
   .pills button:hover { background: var(--surface-hover); color: var(--fg-default); }
-  .pills button[aria-selected='true'] { background: var(--surface-150); color: var(--fg-default); box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), var(--hairline); }
+  /* The chosen pill rises on a highlight that glides from pill to pill, so it shows no hover of its own. */
+  .pills button[aria-selected='true'] { background: none; color: var(--fg-default); }
+  .thumb {
+    position: absolute; left: 0; top: 2px; z-index: -1; height: 24px; border-radius: var(--radius-sm); pointer-events: none;
+    background: var(--surface-150); box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), var(--hairline);
+  }
+  .thumb.glide { transition: translate 250ms var(--ease-glide), width 250ms var(--ease-glide); }
   .pills button:focus-visible { outline-offset: -2px; }
-  /* Native radios: the group is one tab stop and arrow keys move the choice. Selection rings the tile;
-     keyboard focus rings its inside (light over dark, visible on any wallpaper), so the two never merge. */
+  /* Native radios: the group is one tab stop and arrow keys move the choice. The tray's ring marks the selection;
+     keyboard focus rings the tile's inside (light over dark, visible on any wallpaper), so the two never merge. */
   .tile {
-    --selected: 0 0 transparent; --focused: 0 0 transparent;
+    --focused: 0 0 transparent;
     appearance: none; aspect-ratio: 1; margin: 0; border-radius: var(--radius);
-    box-shadow: var(--focused), var(--hairline), var(--selected);
+    box-shadow: var(--focused), var(--hairline);
     transition: transform 140ms var(--ease-out), box-shadow 140ms;
   }
   .tile:hover { transform: scale(1.06); }
   .tile[aria-busy='true'] { animation: converting 700ms ease-in-out infinite alternate; }
   @keyframes converting { to { opacity: 0.5; } }
-  .tile:checked { --selected: 0 0 0 2px var(--control-track), 0 0 0 4px var(--brand); }
   .tile:focus-visible { outline: none; --focused: inset 0 0 0 2px var(--fg-default), inset 0 0 0 3.5px rgb(0 0 0 / 0.5); }
   .wide { width: 100%; }
   .error { margin: 0; padding: 4px 0; font-size: 12px; line-height: 1.45; color: var(--error-content); }
