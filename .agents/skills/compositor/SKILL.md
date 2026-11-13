@@ -14,6 +14,7 @@ GPU composition of each output frame.
 - Images the user adds go to a library every project shows, the Custom tab (`electron/wallpapers.ts`).
   An image kept only in the project it was picked in looked lost to its owner in the next recording.
   Picking one copies it into the bundle under its content-addressed path, so the project stays portable and the library path finds its tile.
+  Images dropped on the Custom tray join the library there and stop at the tray: the window opens dropped files as projects and rejects images.
 - The Background tabs share one height, and each tray keeps its own as collections change, scrolling what does not fit.
   Panes of their own heights moved Blur, Shape, and every control under them on each tab switch.
 - Video stays undithered, but a ramp drawn over it, like the loupe's shadow, must raise the dither mark too, or flat UI under it bands into rings in the preview.

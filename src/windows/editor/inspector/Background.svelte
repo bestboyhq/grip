@@ -127,18 +127,41 @@
   const pickMac = (m: MacWallpaper) => pickImage(m.file, 'wallpapers:importMacos', doc.path, m.name)
   const pickCustom = (c: CustomImage) => pickImage(c.file, 'wallpapers:importCustom', doc.path, c.file)
 
-  /** Adds an image to the library and picks it: the one the user chose in the open panel, or the project's own. */
-  async function addCustom(path: string | null) {
-    if (!path) return
+  /** Adds images to the library and picks the first that could be added: the one chosen in the open panel,
+   *  the ones dropped on the tray, or the project's own. One that fails leaves the others added. */
+  async function addCustom(paths: string[]) {
     error = ''
-    try {
-      const c: CustomImage = await invoke('wallpapers:addCustom', path)
-      customs = [c, ...customs.filter((x) => x.file !== c.file)]
-      await pickCustom(c)
-      reveal(customTray)
-    } catch (e) {
-      error = reason(e)
+    let first: CustomImage | undefined
+    let failure = ''
+    // Last first: the library lists newest first, so the tray shows them in the order given, as after a restart.
+    for (const path of paths.toReversed()) {
+      try {
+        const c: CustomImage = await invoke('wallpapers:addCustom', path)
+        customs = [c, ...customs.filter((x) => x.file !== c.file)]
+        first = c
+      } catch (e) {
+        failure = reason(e)
+      }
     }
+    if (first) {
+      await pickCustom(first)
+      reveal(customTray)
+    }
+    error ||= failure
+  }
+
+  // Image files dragged over the Custom tray light it up; dropping adds them as + does.
+  let dropping = $state(false)
+  const holdsFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files')
+  function dragLeave(e: DragEvent & { currentTarget: HTMLElement }) {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) dropping = false
+  }
+  function dropImages(e: DragEvent) {
+    e.preventDefault()
+    e.stopPropagation() // the window opens dropped files as projects
+    dropping = false
+    const paths = [...(e.dataTransfer?.files ?? [])].map((f) => window.studio.pathForFile(f)).filter(Boolean)
+    if (paths.length) addCustom(paths)
   }
   async function removeCustom(c: CustomImage) {
     error = ''
@@ -211,6 +234,9 @@
     others[Math.floor(Math.random() * others.length)]?.pick()
   }
 </script>
+
+<!-- A drag cancelled over the tray can end without a dragleave; pointer events resume only once a drag is over. -->
+<svelte:window onpointermove={() => (dropping = false)} />
 
 <Section>
   <Segmented
@@ -302,17 +328,24 @@
       <ColorPicker label="Color" value={color} active={bg.kind === 'color'} onchange={(c, m) => setBg({ kind: 'color', color: c }, m)} />
     </div>
     <div class="pane" class:shown={kind === 'image'} inert={kind !== 'image'}>
-      <div class="well fill">
+      <div
+        class="well fill"
+        class:dropping
+        role="group"
+        ondragenter={(e) => (dropping = holdsFiles(e))}
+        ondragleave={dragLeave}
+        ondrop={dropImages}
+      >
         <div class="tray" style:--cols={COLS} bind:this={customTray}>
           {#key failed}
             <div class="grid" role="radiogroup" aria-label="Custom backgrounds">
-              <button class="add" aria-label="Add image…" onclick={() => pickFile('image/png,image/jpeg,image/webp').then(addCustom)} {@attach tooltip('Add image…')}>
+              <button class="add" aria-label="Add image…" onclick={() => pickFile('image/png,image/jpeg,image/webp').then((p) => { if (p) addCustom([p]) })} {@attach tooltip('Add image…')}>
                 <Icon name="plus" size={15} />
               </button>
               {#if own}
                 <div class="cell">
                   <input class="tile" type="radio" name="{uid}-custom" checked aria-label="This project's image" style:background={cover(fileUrl(`${doc.path}/${own}`))} {@attach tooltip("This project's image")} />
-                  <button class="badge" aria-label="Keep in Custom for every project" onclick={() => addCustom(`${doc.path}/${own}`)} {@attach tooltip('Keep for every project')}>
+                  <button class="badge" aria-label="Keep in Custom for every project" onclick={() => addCustom([`${doc.path}/${own}`])} {@attach tooltip('Keep for every project')}>
                     <Icon name="plus" size={10} />
                   </button>
                 </div>
@@ -340,10 +373,11 @@
           {/key}
         </div>
       </div>
-      <p class="note">Images you add stay here for every project.</p>
+      <!-- What adding or dropping images failed on takes the note's place, so the tray shrinks and nothing below moves. -->
+      <p class="note" class:error={!!error} role="alert">{error || 'Images you add stay here for every project.'}</p>
     </div>
   </div>
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if error && kind !== 'image'}<p class="error" role="alert">{error}</p>{/if}
   <Slider label="Blur" value={st.backgroundBlur} initial={init.backgroundBlur} format={(v) => `${Math.round(v * 100)}%`} onchange={set('backgroundBlur')} />
 </Section>
 
@@ -409,6 +443,8 @@
   }
   .fill { flex: 1 1 0; contain: size; display: flex; flex-direction: column; }
   .fill .tray { flex: 1 1 0; height: auto; }
+  /* Files over the Custom tray: it rings in the selection blue at once, as a hover does. */
+  .well.dropping { box-shadow: inset 0 0 0 2px var(--brand); }
   .cell { position: relative; display: grid; }
   .add {
     aspect-ratio: 1; margin: 0; padding: 0; border: 0; border-radius: var(--radius); display: grid; place-items: center;
@@ -455,6 +491,6 @@
   .tile:checked { --selected: 0 0 0 2px var(--control-track), 0 0 0 4px var(--brand); }
   .tile:focus-visible { outline: none; --focused: inset 0 0 0 2px var(--fg-default), inset 0 0 0 3.5px rgb(0 0 0 / 0.5); }
   .wide { width: 100%; }
-  .error { margin: 0; padding: 4px 0; font-size: 12px; line-height: 1.45; color: var(--fg-faint); }
-  .error { color: var(--error-content); }
+  .error { margin: 0; padding: 4px 0; font-size: 12px; line-height: 1.45; color: var(--error-content); }
+  .note.error { padding: 2px 0; font-size: 11.5px; line-height: 1.35; }
 </style>
