@@ -18,6 +18,7 @@ GPU composition of each output frame.
   Roundness is the recording's own corners, and the frame's are Roundness plus the inset, so the band stays even all round.
   Taking the inset off a fixed frame radius turned the recording square once the inset passed it.
   Ink clips to the same corners as the recording (`radius - inset`).
+  The frame's shadow is masked by the frame's own coverage, as the camera's is: cut off a few px inside the edge instead, it showed through a see-through band as a hard dark rim.
   A see-through band shows the background and shadow under it, so only an opaque edge band counts as video for the dither mark.
 - Output aspect ratios: auto, 16:9, 9:16, 4:5, 1:1, and custom.
   Auto hugs the framed recording (inset, device) with the padding even on every side (`hugRatio`).

@@ -375,12 +375,14 @@ fn clickMarks(c: vec3f, u: vec2f, aa: f32) -> vec4f {
 fn zoomed(u: vec2f, aa: f32) -> vec4f {
   var c = background(u);
   if (F.scr2.y < 0.5) { return vec4f(c, 1.0); }
-  if (F.scr2.w > 0.0) { c *= 1.0 - shadowAlpha(u); }
+  let cv = frameCover(u, aa);
+  // The shadow falls outside the frame only, as the camera's does: a see-through band shows the background
+  // clean, where a shadow cut off inside the frame's edge showed as a hard dark rim.
+  if (F.scr2.w > 0.0) { c *= 1.0 - shadowAlpha(u) * (1.0 - cv); }
   let n = i32(F.dev.x);
   let over = i32(F.dev.y);
   for (var i = 0; i < over; i++) { c = part(c, u, i, aa); }
   var mark = 1.0;
-  let cv = frameCover(u, aa);
   if (cv > 0.0) {
     let fx = F.fin.y;
     var s: vec4f;
