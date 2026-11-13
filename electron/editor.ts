@@ -16,17 +16,23 @@ const KINDS: Record<string, { ext: string[]; max: number; what: string }> = {
   audio: { ext: ['.m4a', '.mp3', '.aac', '.wav'], max: 4e9, what: 'an M4A, MP3, AAC, or WAV file' },
 }
 
-export async function importAsset(bundle: unknown, file: unknown, kind: unknown): Promise<string> {
+/** Checks a user-picked file against `kind`: an absolute path to a file of its type and size. Returns the path. */
+export async function checkFile(file: unknown, kind: unknown): Promise<string> {
   const k = typeof kind === 'string' ? KINDS[kind] : undefined
-  if (!k || typeof bundle !== 'string' || typeof file !== 'string' || !isAbsolute(bundle) || !isAbsolute(file)) {
-    throw new Error('Invalid import request.')
-  }
+  if (!k || typeof file !== 'string' || !isAbsolute(file)) throw new Error('Invalid import request.')
   const name = basename(file)
   if (!k.ext.includes(extname(file).toLowerCase())) throw new Error(`“${name}” is not ${k.what}.`)
-  if (!(await stat(join(bundle, 'project.json')).catch(() => null))) throw new Error('This project is no longer on disk.')
   const info = await stat(file).catch(() => null)
   if (!info?.isFile()) throw new Error(`“${name}” could not be found.`)
   if (info.size > k.max) throw new Error(`“${name}” is too large.`)
+  return file
+}
+
+export async function importAsset(bundle: unknown, picked: unknown, kind: unknown): Promise<string> {
+  if (typeof bundle !== 'string' || !isAbsolute(bundle)) throw new Error('Invalid import request.')
+  const file = await checkFile(picked, kind)
+  const name = basename(file)
+  if (!(await stat(join(bundle, 'project.json')).catch(() => null))) throw new Error('This project is no longer on disk.')
 
   // Already inside this bundle (re-picking an imported asset): reference it in place.
   const rel = relative(bundle, file)

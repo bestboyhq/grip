@@ -1,12 +1,13 @@
 // macOS wallpaper discovery and import on a fake Desktop Pictures folder with hostile names: only
 // wallpapers whose image is on disk, System Settings order, previews, one full-resolution copy per bundle.
+// The Custom library on a temporary folder: one copy per image, newest first, safe paths only.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, readdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { findMacWallpapers, importMacWallpaper, listMacWallpapers } from './wallpapers.ts'
+import { addCustom, findMacWallpapers, importCustom, importMacWallpaper, listCustom, listMacWallpapers, removeCustom } from './wallpapers.ts'
 
 test('macOS wallpapers: discovery, order, previews, import', async () => {
   const root = await mkdtemp(join(tmpdir(), 'Desktop #1 ✨ café '))
@@ -46,4 +47,42 @@ test('macOS wallpapers: discovery, order, previews, import', async () => {
   assert.deepEqual(await readdir(join(bundle, 'assets')), ['macOS Café #1 ✨.jpg'])
   await assert.rejects(importMacWallpaper(bundle, '../../etc/passwd', pics, assets), /no longer installed/)
   await assert.rejects(importMacWallpaper('relative', 'Big Sur', pics, assets), /Invalid/)
+})
+
+test('custom backgrounds: add, list newest first, import, remove', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'Custom #1 ✨ café '))
+  const lib = join(root, 'Library #2 é')
+  const png = (out: string, size: number) => execFileSync('/usr/bin/sips', ['-s', 'format', 'png', '-z', String(size), String(size), '/System/Library/Desktop Pictures/Solid Colors/Black.png', '--out', out], { stdio: 'ignore' })
+  png(join(root, 'My bg #2 ✨.png'), 64)
+  png(join(root, 'Sea é.png'), 32)
+  await writeFile(join(root, 'Broken.png'), 'not an image')
+
+  const a = await addCustom(join(root, 'My bg #2 ✨.png'), lib)
+  assert.match(a.file, /^assets\/[0-9a-f]{16}\/My bg #2 ✨\.png$/)
+  assert.equal(a.name, 'My bg #2 ✨')
+  assert.ok(a.thumb.startsWith('data:image/jpeg;base64,'))
+  assert.deepEqual(await addCustom(join(root, 'My bg #2 ✨.png'), lib), a, 'added again: the one copy')
+  await utimes(join(lib, a.file), 1, 1)
+  const b = await addCustom(join(root, 'Sea é.png'), lib)
+  assert.deepEqual((await listCustom(lib)).map((c) => c.file), [b.file, a.file], 'newest first')
+
+  await assert.rejects(addCustom(join(root, 'Broken.png'), lib), /could not be read as an image/)
+  assert.equal((await listCustom(lib)).length, 2, 'a broken image leaves nothing behind')
+  await assert.rejects(addCustom(join(root, 'Sea.gif'), lib), /not a PNG, JPEG, or WebP/)
+  await assert.rejects(addCustom('Sea é.png', lib), /Invalid/)
+
+  const bundle = join(root, 'Demo #1 ✨ café.grip')
+  await mkdir(bundle)
+  await writeFile(join(bundle, 'project.json'), '{}')
+  assert.equal(await importCustom(bundle, a.file, lib), a.file, 'the same path in the bundle')
+  assert.deepEqual(await readFile(join(bundle, a.file)), await readFile(join(root, 'My bg #2 ✨.png')))
+  assert.equal(await importCustom(bundle, a.file, lib), a.file, 'picked again: the same copy')
+  await assert.rejects(importCustom(bundle, 'assets/../../project.json', lib), /Unknown/)
+  await assert.rejects(removeCustom('assets/0123456789abcdef/../../x.png', lib), /Unknown/)
+
+  await removeCustom(a.file, lib)
+  assert.deepEqual((await listCustom(lib)).map((c) => c.file), [b.file])
+  assert.deepEqual(await readdir(join(lib, 'assets')), [b.file.split('/')[1]], 'its folder goes too')
+  assert.ok((await stat(join(bundle, a.file))).isFile(), 'the project keeps its copy')
+  await assert.rejects(importCustom(bundle.replace('Demo', 'Other'), b.file, lib), /no longer on disk/)
 })
