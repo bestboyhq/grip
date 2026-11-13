@@ -46,8 +46,10 @@ export interface Job extends Upload {
 const state = { jobs: [] as Job[] }
 let stateFile = ''
 const running = new Map<string, AbortController>()
-const waiters = new Map<string, { resolve(link: string | null): void; reject(e: Error): void }>()
-const startedNow = new Set<string>() // jobs the user started in this run: their link goes to the clipboard
+const waiters = new Map<string, { resolve(job: Job | null): void; reject(e: Error): void }>()
+// Jobs started in this run, each with whether its link goes to the clipboard: the user's does, an agent's
+// never takes over what the user copied.
+const startedNow = new Map<string, boolean>()
 const lastEmit = new Map<string, number>()
 
 let saving = Promise.resolve()
@@ -78,8 +80,18 @@ function find(id: string): Job {
   return job
 }
 
-/** Upload a video or .grip bundle in the background; resolves to the link (also used by export). */
-export async function shareFile(path: string, o: { title?: string; private?: boolean; project?: string; terms?: string } = {}): Promise<string | null> {
+/** The bundle the link with this item id was shared from on this Mac (electron/feedback.ts renders its frames):
+ *  that of `take` when given, or of its newest take. A share from before takes counts as take 1.
+ *  ponytail: only the last 200 shares are kept; record the item id on the project if older links need frames. */
+export function sharedFrom(itemId: string, take?: number) {
+  const shares = state.jobs.filter((j) => j.server === SERVER && j.remote?.id === itemId)
+  return (take === undefined ? shares.at(-1) : shares.findLast((j) => (j.remote!.take ?? 1) === take))?.project
+}
+
+/** Upload a video or .grip bundle in the background; resolves to the job once its link exists, or null when canceled
+ *  before (also used by export). takeOf: the link's item id to add the video to as its next take (electron/upload.ts).
+ *  copy: false keeps the link off the clipboard, for an agent's share. */
+export async function shareFile(path: string, o: { title?: string; private?: boolean; project?: string; terms?: string; chapters?: Upload['chapters']; takeOf?: string; gif?: string; copy?: boolean } = {}): Promise<Job | null> {
   if (!accountToken()) throw new Error('Sign in to share links.')
   const s = await stat(path).catch(() => null)
   if (!s) throw new Error('The file to share is gone.')
@@ -93,6 +105,9 @@ export async function shareFile(path: string, o: { title?: string; private?: boo
     title: o.title?.trim() || basename(path).replace(/\.[^.]+$/, ''),
     private: o.private === true,
     terms: o.terms,
+    chapters: o.chapters,
+    takeOf: o.takeOf,
+    gif: o.gif,
     file: path,
     size: s.size,
     mtimeMs: s.mtimeMs,
@@ -101,12 +116,12 @@ export async function shareFile(path: string, o: { title?: string; private?: boo
     createdAt: Date.now(),
   }
   state.jobs = [...state.jobs.slice(-199), job]
-  startedNow.add(job.id)
+  startedNow.set(job.id, o.copy !== false)
   persist()
   emit(job)
-  const link = new Promise<string | null>((resolve, reject) => waiters.set(job.id, { resolve, reject }))
+  const created = new Promise<Job | null>((resolve, reject) => waiters.set(job.id, { resolve, reject }))
   drive(job)
-  return link
+  return created
 }
 
 async function drive(job: Job) {
@@ -144,12 +159,13 @@ async function drive(job: Job) {
         job.link = job.remote!.link
         persist()
         emit(job)
+        const copy = startedNow.get(job.id)
         if (startedNow.delete(job.id)) {
-          clipboard.writeText(job.link)
+          if (copy) clipboard.writeText(job.link)
           count('shared', { kind: job.kind })
         }
         if (job.terms) void refresh() // accepted: the Share button's Terms line goes away
-        waiters.get(job.id)?.resolve(job.link)
+        waiters.get(job.id)?.resolve(job)
         waiters.delete(job.id)
       },
       poster: job.kind === 'video' ? () => poster(job.path) : undefined,
@@ -291,7 +307,7 @@ export function registerShare() {
   // Uploads to another server (an earlier one, or a local one in development) are not resumed here.
   for (const job of state.jobs) if (job.server === SERVER && !['done', 'failed', 'canceled'].includes(job.state)) drive(job)
 
-  ipcMain.handle('share:upload', (_e, path: string, o?: { title?: string; private?: boolean; project?: string; terms?: string }) => shareFile(path, o))
+  ipcMain.handle('share:upload', (_e, path: string, o?: { title?: string; private?: boolean; project?: string; terms?: string }) => shareFile(path, o).then((j) => j && j.link))
   ipcMain.handle('share:jobs', () => state.jobs)
   ipcMain.handle('share:status', async (_e, id: string) => {
     const job = find(id)

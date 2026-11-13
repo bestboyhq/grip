@@ -10,8 +10,8 @@
 
 	let { children }: { children: Snippet } = $props();
 
-	// Only the landing page ends on the sitemap; a missing page hydrates with no route at all, so it is matched by name.
-	const product = $derived(page.route.id === '/(site)');
+	// Only the landing pages end on the sitemap; a missing page hydrates with no route at all, so it is matched by name.
+	const product = $derived(page.route.id === '/(site)' || page.route.id === '/(site)/agents');
 
 	// Each page counts its parts and depth afresh, so the count starts over when the path changes, not the hash. The
 	// landing page hydrates as `/grip/` and turns `/grip` on its first hash link, so the trailing slash is dropped.
