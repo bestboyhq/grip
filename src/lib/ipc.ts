@@ -7,6 +7,8 @@ declare global {
       on(channel: string, cb: (...args: any[]) => void): () => void
       /** Absolute path of a dropped File. */
       pathForFile(file: File): string
+      /** GPU frames main sends (sharedTexture.sendSharedTexture), each with what main sent beside it. Close each. */
+      onFrame(cb: (frame: VideoFrame, ...args: any[]) => Promise<void>): void
     }
   }
 }

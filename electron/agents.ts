@@ -1,12 +1,15 @@
 // Owner: agents. Grip's tools for AI agents, as an MCP server: JSON-RPC 2.0, one message per line, on a
 // Unix socket only this user can open, one session per connection. An agent app runs grip-mcp
 // (build/grip-mcp; Contents/Resources/grip-mcp in Grip.app), which pipes its stdin and stdout to the
-// socket, and first starts Grip in the menu bar (--background) when nothing listens there.
+// socket, and first starts Grip in the menu bar (--background) when nothing listens there. A shell runs
+// grip (build/grip; Contents/Resources/grip), which makes one tool call on the socket the same way.
 //
 //   Socket: Grip.sock in the user's temporary folder; a dev checkout's is Grip-<md5 of its path, 12 hex>.sock,
 //   well under the 104 bytes a socket path may take. grip-mcp works out the same path.
 //   Tools (TOOLS below): list_projects, get_project, get_transcript, transcribe_project, edit_project,
-//   get_frame, export_project, share_project, export_status, open_project. Every time is in output
+//   get_frame, export_project, share_project, export_status, open_project, get_feedback, reply_feedback
+//   (electron/feedback.ts: a share link's comment threads, and replies to them), record_demo (electron/demo.ts:
+//   a web page recorded while an agent's steps run on it, then exported and shared). Every time is in output
 //   seconds: the edited video. Grip does the craft, so any model gets the same video: cut_fillers and
 //   shorten_pauses cut what the Transcript tab cuts, a cut never clips a word, match_captions turns a
 //   script into caption fixes, and every project answer lists its problems (zoomProblems) with the
@@ -32,6 +35,9 @@ import { editorFor, openProject } from './shell/recorder.ts'
 import { settings } from './shell/settings.ts'
 import { plainError } from './shell/errors.ts'
 import { hidden } from './windows.ts'
+import { getFeedback, LINK, MAX_REPLIES, replyFeedback, THREADS } from './feedback.ts'
+import { demoStatus, recordDemo } from './demo.ts'
+import { DEMO_INPUT } from '../src/shared/demo.ts'
 import { applyEdits, LIMITS, parseEdits, type Edit } from '../src/shared/edits.ts'
 import { CAPTION_FONTS, type Project, type Transcript } from '../src/shared/project.ts'
 import { parseEvents, type InputEvent } from '../src/shared/events.ts'
@@ -61,10 +67,12 @@ const INSTRUCTIONS = `Grip records the screen and turns recordings into polished
 - Zoom on what the narration talks about while it does: get_project lists each click's time and x, y for add_zoom.
 - get_project and every edit_project answer list the video's problems (a zoom too short to read, or one the camera glides to and leaves before it holds still, the camera moving while a cut jumps the picture, the video ending mid zoom-out), each with the exact call that fixes it. Fix them all before export_project.
 - get_frame shows a frame as the export renders it, to check a zoom's framing or the captions.
-- export_project and share_project wait up to 45 s. A longer export returns its id, and export_status waits for it again.`
+- record_demo films a web page while it runs your steps on it (click, hover, type, press, scroll, wait), with no person in the loop: to show a UI change, it makes a new project, as polished as a recording, exported as an MP4 and a GIF, and shared when asked.
+- export_project, share_project, and record_demo wait up to 45 s. A longer one returns its id, and export_status waits for it again.
+- Review loop on a share link: get_feedback reads what teammates said, each thread at a moment and spot of the video; fix what they asked, record or share again (record_demo with link puts the new video behind the same link), then reply_feedback answers each thread with what changed and resolves it.`
 
 type Args = Record<string, unknown>
-type Result = { text: string; data: Record<string, unknown>; image?: { data: string; mimeType: string }; failed?: boolean }
+type Result = { text: string; data: Record<string, unknown>; image?: { data: string; mimeType: string }; images?: Array<{ data: string; mimeType: string }>; failed?: boolean }
 type Progress = (percent: number, message: string) => void
 type Reply = { project?: Project; frame?: Uint8Array; error?: string }
 type Request = { edits?: Edit[]; time?: number; frame?: { t: number; height: number } }
@@ -167,7 +175,8 @@ interface Tool {
   description: string
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] }
   annotations: Record<string, boolean>
-  run(a: Args, progress: Progress): Promise<Result>
+  /** `client`: the agent app calling, as its initialize named it. */
+  run(a: Args, progress: Progress, client?: string): Promise<Result>
 }
 const WRITES = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
 
@@ -246,7 +255,7 @@ const TOOLS: Tool[] = [
   {
     name: 'share_project',
     title: 'Share project',
-    description: 'Upload a project as a video and return its share link on bestboy.dev, which is also copied to the clipboard. Needs Grip signed in to a Bestboy account. Waits up to 45 s; a longer export returns its id for export_status.',
+    description: 'Upload a project as a video and return its share link on bestboy.dev; the user’s clipboard stays as it is. Needs Grip signed in to a Bestboy account. Waits up to 45 s; a longer export returns its id for export_status.',
     inputSchema: { type: 'object', properties: { project: PROJECT, private: { type: 'boolean', description: 'Only the user’s team, and people sent this exact link, can watch. Default: false.' } }, required: ['project'] },
     annotations: { ...WRITES, openWorldHint: true },
     run: shareProject,
@@ -254,10 +263,10 @@ const TOOLS: Tool[] = [
   {
     name: 'export_status',
     title: 'Export status',
-    description: 'How an export or a share from export_project or share_project stands. Waits up to 45 s for it to finish, then returns its state, progress, and file or link.',
-    inputSchema: { type: 'object', properties: { id: { type: 'string', minLength: 1, description: 'The id export_project or share_project returned.' } }, required: ['id'] },
+    description: 'How an export or a share from export_project or share_project, or a demo from record_demo, stands. Waits up to 45 s for it to finish, then returns its state, progress, and file or link; a finished demo answers as record_demo does.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string', minLength: 1, description: 'The id export_project, share_project, or record_demo returned.' } }, required: ['id'] },
     annotations: { readOnlyHint: true },
-    run: exportStatus,
+    run: (a, progress) => demoStatus(a.id, progress) ?? exportStatus(a, progress),
   },
   {
     name: 'open_project',
@@ -266,6 +275,53 @@ const TOOLS: Tool[] = [
     inputSchema: { type: 'object', properties: { project: PROJECT, time: AT('Where the playhead goes') }, required: ['project'] },
     annotations: { ...WRITES, idempotentHint: true },
     run: openInEditor,
+  },
+  {
+    name: 'get_feedback',
+    title: 'Get feedback',
+    description: `What teammates said on a share link: its comment threads, open ones first, then resolved. Each has its id, its moment of the video (t in seconds, and time as m:ss), the spot on the frame it points at when it does (x, y from 0 to 1 from the left and top), its writer (author; guest when they had no account), text, when it was written (at), and its replies in order, each with the reply it answers when not the thread itself. Reactions are only counted. When this Mac shared the link from a project, each open thread comes with an image: that project's frame at the thread's time, as get_frame renders it (the editor opens for it), with the spot ringed. At most ${THREADS} threads a call: next, when there, is the start to ask again with. reply_feedback answers threads by their ids.`,
+    inputSchema: { type: 'object', properties: { link: LINK, start: { type: 'number', minimum: 0, description: 'Where the page starts, in seconds of the shared video: next from the last answer.' } }, required: ['link'] },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+    run: (a) => getFeedback(a, getFrame),
+  },
+  {
+    name: 'reply_feedback',
+    title: 'Reply to feedback',
+    description: 'Reply on a share link’s comment threads as the Bestboy account Grip is signed in to, and resolve the threads that are done: say what changed, or why not. Each reply goes under the comment or reply it names by get_feedback’s id; resolve: true then resolves its thread. Grip posts them in order, applies what it can, and says how each went. Needs Grip signed in.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        link: LINK,
+        replies: {
+          type: 'array',
+          minItems: 1,
+          maxItems: MAX_REPLIES,
+          description: 'The replies, posted in order.',
+          items: {
+            type: 'object',
+            properties: {
+              comment: { type: 'string', minLength: 1, description: 'The id of the thread, or of the reply in it, to answer, as get_feedback lists it.' },
+              text: { type: 'string', minLength: 1, maxLength: 2000, description: 'What to say.' },
+              resolve: { type: 'boolean', description: 'Also resolve the thread. Default: false.' },
+            },
+            required: ['comment', 'text'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['link', 'replies'],
+    },
+    annotations: { ...WRITES, openWorldHint: true },
+    run: (a, _, client) => replyFeedback(a, client),
+  },
+  {
+    name: 'record_demo',
+    title: 'Record demo',
+    description:
+      'Film a web page while Grip runs steps on it, to show a UI change with no person in the loop. Grip opens the page where nobody sees it (no Screen Recording permission), moves the pointer to each target as a hand would, clicks, types, presses keys, and scrolls with real input (the page’s alerts and confirms never show, and a confirm answers no), and keeps it as a new project made like a recording: auto zooms on the clicks and typing, the smooth cursor, and click effects. Then it exports an MP4 and a GIF into the folder export_project uses, and with share uploads them for a link; with link, the video becomes the next version behind an earlier demo’s link, so the places it was posted show the fix. It answers with the project, the files, the link and its version, the length, and each step: its label, whether it worked, and its output time, with an image of each step as it ended, as get_frame renders it. A step whose element does not show within 10 s, or a page that fails to load, stops the demo: the answer names the step and why, with an image of the page, and keeps no project. Waits up to 45 s; a longer one returns its id for export_status.',
+    inputSchema: DEMO_INPUT,
+    annotations: { ...WRITES, openWorldHint: true },
+    run: (a, progress) => recordDemo(a, progress, getFrame),
   },
 ]
 
@@ -393,7 +449,7 @@ async function getFrame(a: Args): Promise<Result> {
   const at = time(a.time, 'time')!
   const height = a.size ?? 720
   if (!FRAME_SIZES.includes(height as number)) throw new Error(`size must be one of ${FRAME_SIZES.join(', ')}.`)
-  if (!editorFor(path)) openProject(path)
+  if (!editorFor(path)) openProject(path, { focus: false }) // the user keeps typing where they are
   const win = editorFor(path)
   if (!win) throw new Error(`Grip could not open ${quoted(path)}.`)
   const { frame } = await ask(win, { frame: { t: at, height: height as number } })
@@ -675,7 +731,7 @@ function report(j: JobInfo): Result {
   const text =
     j.state === 'done'
       ? j.url
-        ? `The link to “${j.name}” works now, and is on the clipboard: ${j.url}\nThe video keeps uploading in the background.`
+        ? `The link to “${j.name}” works now: ${j.url}\nThe video keeps uploading in the background.`
         : `Exported “${j.name}”: ${j.path}${j.bytes ? ` (${formatBytes(j.bytes)})` : ''}.`
       : j.state === 'failed'
         ? `The export of “${j.name}” failed. ${j.error ?? ''}`.trim()
@@ -731,6 +787,9 @@ function ready(wc: WebContents) {
 
 // ---- Protocol ----
 
+/** Each session's agent app, by the send of its socket, as its initialize names it (up to 40 characters). */
+const clients = new WeakMap<(m: unknown) => void, string>()
+
 async function call(params: Args, send: (m: unknown) => void): Promise<unknown> {
   const tool = TOOLS.find((t) => t.name === params.name)
   if (!tool) throw new RpcError(-32602, `Unknown tool: ${String(params.name)}. tools/list lists Grip’s tools.`)
@@ -748,8 +807,8 @@ async function call(params: Args, send: (m: unknown) => void): Promise<unknown> 
     const names = Object.keys(tool.inputSchema.properties)
     for (const k of Object.keys(a)) if (!names.includes(k)) throw new Error(`${tool.name} has no argument “${k}”. It takes ${names.join(', ') || 'none'}.`)
     for (const k of tool.inputSchema.required ?? []) if ((a as Args)[k] === undefined) throw new Error(`${tool.name} needs ${k}.`)
-    const r = await tool.run(a as Args, progress)
-    return { content: [{ type: 'text', text: r.text }, ...(r.image ? [{ type: 'image', ...r.image }] : [])], structuredContent: r.data, ...(r.failed && { isError: true }) }
+    const r = await tool.run(a as Args, progress, clients.get(send))
+    return { content: [{ type: 'text', text: r.text }, ...[r.image, ...(r.images ?? [])].flatMap((i) => (i ? [{ type: 'image', ...i }] : []))], structuredContent: r.data, ...(r.failed && { isError: true }) }
   } catch (e) {
     if (!(e instanceof Error) || e.constructor !== Error) console.error(`[agents] ${tool.name}:`, e) // a bug, not a bad request
     return { content: [{ type: 'text', text: plainError(e).message }], isError: true }
@@ -758,6 +817,9 @@ async function call(params: Args, send: (m: unknown) => void): Promise<unknown> 
 
 async function handle(method: string, params: Args, send: (m: unknown) => void): Promise<unknown> {
   if (method === 'initialize') {
+    const info = (params.clientInfo ?? {}) as { name?: unknown; title?: unknown }
+    const client = [info.title, info.name].find((s): s is string => typeof s === 'string' && !!s.trim())
+    if (client) clients.set(send, client.trim().slice(0, 40))
     const v = params.protocolVersion
     return {
       protocolVersion: VERSIONS.includes(v as string) ? v : VERSIONS[0],

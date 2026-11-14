@@ -1,0 +1,57 @@
+#!/bin/sh
+# Grip's tools from a shell (electron/agents.ts). `grip <tool> [json]` makes one tool call, its arguments
+# as JSON or, without them, JSON on stdin, and prints the answer's text, its data as JSON, and the path of
+# each image it holds, saved to a new temporary folder. `grip` alone lists the tools. It talks MCP through
+# grip-mcp beside it, which starts Grip in the menu bar when nothing listens. Grip.app ships it as
+# Contents/Resources/grip. Exit status: 0 done, 1 the call failed, 2 its arguments are not JSON.
+self=$(/usr/bin/readlink -f "$0") # a link to it on the PATH still finds grip-mcp
+here=$(/usr/bin/dirname "$self")
+
+# JSON goes through JavaScript for Automation, which every Mac has: a shell cannot run Grip's own Node.
+js='ObjC.import("stdlib")
+const print = (s, err) => (err ? $.NSFileHandle.fileHandleWithStandardError : $.NSFileHandle.fileHandleWithStandardOutput).writeData($(s + "\n").dataUsingEncoding($.NSUTF8StringEncoding))
+const quit = (s, code) => (print(s, true), $.exit(code))
+function run([mode, tool, json]) {
+  if (mode === "ask") {
+    let args
+    try {
+      args = json.trim() ? JSON.parse(json) : {}
+    } catch (e) {
+      quit(`grip: the arguments are not JSON: ${e.message}`, 2)
+    }
+    const init = { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "grip", title: "Grip CLI", version: "1" } }
+    const ask = tool ? { method: "tools/call", params: { name: tool, arguments: args } } : { method: "tools/list" }
+    for (const m of [{ id: 1, method: "initialize", params: init }, { method: "notifications/initialized" }, { id: 2, ...ask }]) print(JSON.stringify({ jsonrpc: "2.0", ...m }))
+    return
+  }
+  const text = $.NSString.alloc.initWithDataEncoding($.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile, $.NSUTF8StringEncoding).js
+  const r = text.split("\n").flatMap((l) => { try { const m = JSON.parse(l); return m.id === 2 || (m.id === null && m.error) ? [m] : [] } catch { return [] } })[0]
+  if (!r) quit("grip: Grip gave no answer.", 1)
+  if (r.error) quit(`grip: ${r.error.message}`, 1)
+  if (!tool) {
+    const w = Math.max(...r.result.tools.map((t) => t.name.length))
+    print("Usage: grip <tool> [json], or the JSON on stdin. Tools:")
+    for (const t of r.result.tools) print(`  ${t.name.padEnd(w)}  ${t.description.split(/(?<=\.)\s/)[0]}`)
+    return
+  }
+  const dir = json // the folder images go to
+  let n = 0
+  for (const c of r.result.content) {
+    if (c.type === "text") print(c.text)
+    if (c.type !== "image") continue
+    const path = `${dir}/${tool}-${++n}.${c.mimeType === "image/jpeg" ? "jpg" : c.mimeType.split("/")[1]}`
+    $.NSData.alloc.initWithBase64EncodedStringOptions(c.data, 0).writeToFileAtomically(path, true)
+    print(`Image ${n}: ${path}`)
+  }
+  if (r.result.structuredContent) print(`\n${JSON.stringify(r.result.structuredContent, null, 2)}`)
+  $.exit(r.result.isError ? 1 : 0)
+}'
+
+tool=${1-}
+if [ $# -ge 2 ]; then json=$2; elif [ $# -eq 1 ] && [ ! -t 0 ]; then json=$(/bin/cat); else json='{}'; fi
+ask=$(/usr/bin/osascript -l JavaScript -e "$js" ask "$tool" "$json") || exit 2
+dir=$(/usr/bin/mktemp -d -t grip) || exit 1
+printf '%s\n' "$ask" | "$here/grip-mcp" | /usr/bin/osascript -l JavaScript -e "$js" answer "$tool" "$dir"
+code=$?
+/bin/rmdir "$dir" 2>/dev/null # kept only when it holds images
+exit $code

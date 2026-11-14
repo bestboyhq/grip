@@ -1,20 +1,23 @@
 // Client side of the Bestboy platform's link API (bestboy.dev). Pure Node (fetch + fs): the main process runs it
 // (electron/share.ts, electron/account.ts), and electron/upload.test.ts drives it against a fake.
 //
-//   POST   /api/items {kind, title, private, size, name, duration?, width?, height?, terms?} -> item; counts one upload
+//   POST   /api/items {kind, title, private, size, name, duration?, width?, height?, terms?, versionOf?} -> item;
+//          counts one upload. versionOf: a ready video's id, which answers as its next version, uploading at offset 0,
+//          and plays it behind the same link from finalize on
 //   GET    /api/items/:id                       -> item: {id, state, offset, part, link, key, views, comments, …}
 //   PUT    /api/items/:id/data?offset=n <bytes> exactly min(part, size - n) bytes -> {offset}
 //   POST   /api/items/:id/finalize              -> item, state "ready"
-//   PUT    /api/items/:id/poster <jpeg>         PATCH /api/items/:id {private}   DELETE /api/items/:id
+//   PUT    /api/items/:id/poster <jpeg>         PUT /api/items/:id/gif <gif>, before finalize
+//   PATCH  /api/items/:id {private}             DELETE /api/items/:id
 //
 // Every mutating call names a Content-Type (the server refuses one without, as it would a cross-site form).
-// Errors are JSON {error, ...extra}. 409 {offset}: resume from there. 401: signed out. 402 {resetsAt}: the team's
-// uploads for the month are used. 408 (a part arrived short), 425, 429, and 5xx pass; other 4xx are final.
+// Errors are JSON {error, ...extra}. 409 {offset}: resume from there. 401: signed out. 402 {limit, resetsAt}: the
+// team's uploads for the month are used. 408 (a part arrived short), 425, 429, and 5xx pass; other 4xx are final.
 //
 // An upload survives anything transient (network loss, server restart, app restart): every attempt asks the
 // server for its offset and continues from there. A part cut off midway is dropped whole by the server and sent
 // again. Only answers that retrying cannot fix end it.
-import { createReadStream } from 'node:fs'
+import { createReadStream, openAsBlob } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { Readable, Transform } from 'node:stream'
@@ -34,6 +37,7 @@ export interface RemoteItem {
   views: number
   comments: number
   duration?: number
+  version?: number // the version's number, from 1
   expiresAt: string | null
 }
 
@@ -45,9 +49,13 @@ export interface Upload {
   size: number // recorded when the share started: the file must not change underneath a resumed upload
   mtimeMs: number
   meta?: { duration: number; width: number; height: number } // a video's, for the link page's layout
+  chapters?: Array<{ t: number; title: string }> // moments the link page lists, in seconds of the video
   terms?: string // the Terms date the Share button showed beside it: creating the item accepts them
+  versionOf?: string // a ready video's id: this upload is its next version, behind its link and with its privacy
+  gif?: string // a GIF of the video, for places that show images but play no video (a pull request)
   remote?: RemoteItem // set once the server created the item; the link works from then on
   posterSent?: boolean
+  gifSent?: boolean
 }
 
 export interface Hooks {
@@ -94,7 +102,7 @@ export class RemoteError extends Error {
  *  leaves out of its counts. */
 export const client = { userAgent: '' }
 
-/** One API call. JSON in and out; a Readable is sent as bytes, a Buffer as a JPEG. */
+/** One API call. JSON in and out; a Readable is sent as bytes, a Buffer as a JPEG, a Blob as its type. */
 export async function api(server: string, token: string, method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<any> {
   const headers: Record<string, string> = client.userAgent ? { 'user-agent': client.userAgent } : {}
   if (token) headers.authorization = `Bearer ${token}`
@@ -106,6 +114,9 @@ export async function api(server: string, token: string, method: string, path: s
   } else if (Buffer.isBuffer(body)) {
     init.body = new Uint8Array(body)
     headers['content-type'] = 'image/jpeg'
+  } else if (body instanceof Blob) {
+    init.body = body
+    headers['content-type'] = body.type
   } else if (body !== undefined) init.body = JSON.stringify(body)
   if (method !== 'GET') headers['content-type'] ??= 'application/json'
   const r = await fetch(server.replace(/\/+$/, '') + path, init)
@@ -123,7 +134,8 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     signal?.addEventListener('abort', () => (clearTimeout(t), reject(signal.reason)), { once: true })
   })
 
-/** Upload `job` to `server` until it is ready; returns the final item. Mutates job.remote / job.posterSent. */
+/** Upload `job` to `server` until it is ready; returns the final item. Mutates job.remote, job.private (a version's is
+ *  its link's), job.posterSent, and job.gifSent. */
 export async function upload(server: string, token: string, job: Upload, hooks: Hooks): Promise<RemoteItem> {
   const { signal } = hooks
   const call = (method: string, path: string, body?: unknown) => api(server, token, method, path, body, signal)
@@ -136,7 +148,12 @@ export async function upload(server: string, token: string, job: Upload, hooks: 
     const s = await stat(job.file).catch(() => null)
     if (!s) throw new ShareError('The file to share is gone. Share it again.')
     if (s.size !== job.size || s.mtimeMs !== job.mtimeMs) throw new ShareError('The file changed during the upload. Share it again.')
-    job.remote ??= await call('POST', '/api/items', { kind: job.kind, title: job.title, private: job.private, size: job.size, name: basename(job.file), terms: job.terms, ...job.meta })
+    if (!job.remote) {
+      const fields = { kind: job.kind, title: job.title, private: job.private, size: job.size, name: basename(job.file), terms: job.terms, chapters: job.chapters, versionOf: job.versionOf, ...job.meta }
+      // A 409 has no offset to resume from: the link's first version still uploads, and retrying would never end.
+      job.remote = await call('POST', '/api/items', fields).catch((e) => { throw e instanceof RemoteError && e.status === 409 ? new ShareError(e.message, 409) : e })
+      if (job.versionOf) job.private = job.remote!.private // a version keeps its link's privacy
+    }
     const id = job.remote!.id
     // Privacy changed while the item was being created (or offline): the server must agree before the link goes out.
     if (job.remote!.private !== job.private) job.remote = await call('PATCH', `/api/items/${id}`, { private: job.private })
@@ -151,6 +168,8 @@ export async function upload(server: string, token: string, job: Upload, hooks: 
       job.posterSent = true
     }
     let item: RemoteItem = await call('GET', `/api/items/${id}`)
+    // A version reads as another once it was dropped (a newer one started, or it waited a week): its bytes are unwanted.
+    if (job.versionOf && item.version !== job.remote!.version) throw new ShareError('This version was dropped before its upload finished. Share it again.')
     let offset = item.offset
     while (item.state === 'uploading' && offset < job.size) {
       report(offset, 'uploading')
@@ -172,6 +191,13 @@ export async function upload(server: string, token: string, job: Upload, hooks: 
       }
     }
     report(job.size, 'processing')
+    if (job.gif && !job.gifSent) {
+      // After the video, which matters more. A rejected GIF (over the limit, or a platform without GIFs) or one
+      // deleted since only costs the image, as a poster does.
+      const gif = await openAsBlob(job.gif, { type: 'image/gif' }).catch(() => null)
+      if (gif) await call('PUT', `/api/items/${id}/gif`, gif).catch((e) => { if (!(e instanceof ShareError)) throw e })
+      job.gifSent = true
+    }
     item = await call('POST', `/api/items/${id}/finalize`)
     job.remote = item
     return item

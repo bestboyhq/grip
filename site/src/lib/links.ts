@@ -15,6 +15,7 @@ const README_MD = 'https://raw.githubusercontent.com/bestboyhq/grip/main/README.
 
 export const HOME = resolve('/(site)').replace(/\/$/u, '');
 export const CHANGELOG = resolve('/(site)/changelog');
+export const AGENTS = resolve('/(site)/agents');
 
 export type Link = Readonly<{
 	title: string;
@@ -114,7 +115,7 @@ export const MENUS: readonly Menu[] = [
 			{
 				label: 'For agents',
 				links: [
-					{ title: 'Agent tools', href: docHref('agents'), line: 'Let any agent cut, zoom, and caption' },
+					{ title: 'Grip for agents', href: AGENTS, line: 'A video of every change your agent ships' },
 					{ ...LLMS, line: 'Every app’s docs, as markdown' },
 					{ title: 'Grip in one file', href: README_MD, line: 'All its docs at once, for an agent’s context' },
 				],
@@ -155,7 +156,7 @@ export const SITEMAP: readonly Readonly<{ label: string; links: readonly Link[] 
 	},
 	{
 		label: 'For agents',
-		links: [LLMS, { title: 'Docs as markdown', href: README_MD }],
+		links: [{ title: 'Grip for agents', href: AGENTS }, LLMS, { title: 'Docs as markdown', href: README_MD }],
 	},
 	{
 		label: 'Project',

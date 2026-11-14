@@ -59,6 +59,7 @@ Every domain obeys these invariants:
 - `src/windows/<name>/`: one Svelte component per window route.
 - `electron/`: main process; each `<domain>.ts` registers its `<domain>:*` IPC channels.
   `agents.ts` is the MCP server agent apps reach through `build/grip-mcp` (`Contents/Resources/grip-mcp` in Grip.app), which pipes stdio to its Unix socket and starts Grip in the menu bar when nothing listens.
+  `build/grip <tool> [json]` (`Contents/Resources/grip`) makes one tool call from a shell through it.
 - `native/`: Rust addon, one module per domain; `clock.rs` is the master clock.
 - `site/`: the landing page at bestboy.dev/grip, its own npm package: SvelteKit prerendered behind a Cloudflare worker (`site/worker/index.ts`) on the `bestboy.dev/grip*` route.
   Its look is the Bestboy family's, from the platform's `docs/design.md`, and its claims and numbers come from the README.

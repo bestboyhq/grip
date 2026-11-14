@@ -1,25 +1,12 @@
 // Scripted input for README demos: a hand-like pointer, clicks, typing, shortcuts, and ink, written
 // as the recorder writes them (seconds, video px). Scenes and paths use CSS px; SCALE converts.
 import type { InputEvent, Modifier } from '../../src/shared/events.ts'
+import { typedAt, type Pt } from '../../src/shared/demo.ts'
+
+export { glide, typedAt, type Pt } from '../../src/shared/demo.ts' // the pointer and the typing record_demo uses too
 
 export const SCALE = 2
-export type Pt = [number, number]
 type Kind = 'arrow' | 'pointer' | 'ibeam'
-
-const smooth = (p: number) => p * p * p * (p * (6 * p - 15) + 10)
-
-/** The pointer at t along [t, x, y] waypoints (CSS px): eased between them, on a slight arc like a hand. */
-export function glide(path: Array<[number, number, number]>) {
-  return (t: number): Pt => {
-    let i = 0
-    while (i + 2 < path.length && path[i + 1][0] <= t) i++
-    const [t0, x0, y0] = path[i]
-    const [t1, x1, y1] = path[i + 1] ?? path[i]
-    const p = t1 > t0 ? smooth(Math.min(1, Math.max(0, (t - t0) / (t1 - t0)))) : 1
-    const bow = Math.sin(Math.PI * p) * 0.05
-    return [x0 + (x1 - x0) * p - (y1 - y0) * bow, y0 + (y1 - y0) * p + (x1 - x0) * bow]
-  }
-}
 
 /** Moves at 120 Hz over [0, duration], and the cursor image `kind` shows at each point. */
 export function pointer(at: (t: number) => Pt, duration: number, kind: (p: Pt, t: number) => Kind = () => 'arrow'): InputEvent[] {
@@ -53,11 +40,8 @@ export function press(t: number, key: string, mods: Modifier[] = []): InputEvent
 
 /** `text` typed from t0 at `cps` characters a second, with a little human unevenness. */
 export function type(t0: number, text: string, cps = 10): InputEvent[] {
-  return [...text].flatMap((ch, i) => press(t0 + (i + 0.35 * Math.sin(i * 2.7)) / cps, ch === ' ' ? 'Space' : ch, /[A-Z]/.test(ch) ? ['⇧'] : []))
+  return [...text].flatMap((ch, i) => press(typedAt(t0, i, cps), ch === ' ' ? 'Space' : ch, /[A-Z]/.test(ch) ? ['⇧'] : []))
 }
-
-/** When character i of `text` typed from t0 lands (matches type()). */
-export const typedAt = (t0: number, i: number, cps = 10) => t0 + (i + 0.35 * Math.sin(i * 2.7)) / cps
 
 /** An ink stroke from t0 to t1 through `points` (CSS px), and the pointer that draws it. */
 export function stroke(t0: number, t1: number, points: Pt[], color = '#ff3b30', width = 6): InputEvent[] {
