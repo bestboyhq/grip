@@ -18,8 +18,9 @@ The native macOS app around everything else.
 - One click on the menu bar icon (or the user's record shortcut) opens the area picker at once (the freeze lands under it, see capture), and while recording finishes; the menu is on right-click.
   It opens in the mode picked last, and in area before the first pick: an area's card offers Screenshot and Record both, so nobody chooses one before they see the other.
   Esc closes the whole picker, toolbar included.
-  Opening Grip (a launch, the Dock icon, opening it again from Finder or Spotlight, the end of onboarding) shows the toolbar alone, with nothing frozen.
+  Opening Grip (a launch, the Dock icon, opening it again from Finder or Spotlight) shows the toolbar alone, with nothing frozen.
   A frozen screen nobody asked for reads as a hung Mac to a new user.
+  The end of onboarding opens the picker like the shortcut does: Continue asked for it, and a new user facing the toolbar alone does not know what comes next.
   A recording or screenshot ends in a small result card (copy as a video under 20 MB, GIF, link, edit), not in the editor.
   Its copy, GIF, and link use the project's style, which starts plain (see compositor).
   Recent Captures (menu bar menu and the toolbar's gear) reopens the last five cards, across restarts; their screenshots stay in Grip's own folder, since `$TMPDIR` gets purged.

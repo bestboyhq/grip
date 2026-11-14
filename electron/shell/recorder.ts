@@ -46,7 +46,7 @@
 //   shell:open-project(path?)     open a bundle in the editor (no path: Open dialog)
 //   shell:open-files(paths)       dropped files: bundles open, videos import first; rejects with a reason
 //   shell:open-settings           the settings window (onboarding route, settings page)
-//   shell:finish-onboarding(atLogin)   onboarding is done: the login item as its switch says, then the toolbar
+//   shell:finish-onboarding(atLogin)   onboarding is done: the login item as its switch says, then the picker
 //   shell:login-item(on?) -> on   Grip opens at login (macOS's login item; never in dev or hidden runs)
 //   shell:relaunch                macOS applies a new Screen Recording grant only after a relaunch
 //   notes:prompter                main -> speaker notes window: start or stop the prompter (⌥⌘.)
@@ -913,7 +913,7 @@ export function registerRecorder() {
     setSettings({ onboarded: true })
     count('onboarded', { at_login: atLogin === true })
     for (const w of windowsOf('onboarding')) w.destroy()
-    showPicker(null)
+    showPicker() // in area for a new user: Continue asked for it, and the toolbar alone leaves them guessing what comes next
   })
   ipcMain.handle('shell:countdown', (_e, on: boolean) => {
     counting = !!on
