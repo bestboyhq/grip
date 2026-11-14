@@ -321,7 +321,7 @@ export async function cancelRecording() {
     .showMessageBox({
       type: 'warning',
       message: 'Delete this recording?',
-      detail: 'Everything recorded so far will be deleted.',
+      detail: 'You will lose everything you recorded so far.',
       buttons: ['Keep Recording', 'Delete'],
       defaultId: 0,
       cancelId: 0,
@@ -828,7 +828,7 @@ async function unsaved(win: BrowserWindow, error: string): Promise<Choice> {
   }
   const { response } = await dialog.showMessageBox(win, {
     type: 'warning',
-    message: `Your latest edits to “${win.getTitle()}” aren’t saved.`,
+    message: 'Grip couldn’t save your edits.', // a sheet on the project's own window: its title bar has the name
     detail: error,
     buttons: ['Save Again', 'Cancel', 'Discard Edits'],
     defaultId: 0,
@@ -1037,7 +1037,7 @@ export function registerRecorder() {
     if (quitting) return
     showResult(`bundle=${encodeURIComponent(bundle)}`, homeDisplay)
     // It stopped on its own (disk full, display unplugged, a write failed): say why.
-    if (end?.reason && end.reason !== 'user') void alert('Grip stopped recording.', end.message ?? 'The recording was saved.')
+    if (end?.reason && end.reason !== 'user') void alert('Grip had to stop recording.', end.message ?? 'Your recording is safe up to that point.')
   })
   // Recordings cut off by a crash or power loss, made whole at launch (capture repairs its own
   // files, projects rebuilds the rest): each opens in the editor, which says it was recovered.

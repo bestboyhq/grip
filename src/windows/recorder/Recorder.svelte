@@ -259,8 +259,8 @@
     const items: MenuItem[] = lists.devices.length
       ? lists.devices.map((d) => ({ id: d.id, label: d.name }))
       : [
-          { label: 'No iPhone or iPad connected', enabled: false },
-          { label: 'Connect one with a cable and unlock it', enabled: false },
+          { label: 'No iPhone or iPad yet', enabled: false },
+          { label: 'Plug one in with a cable, then unlock it', enabled: false },
         ]
     const id = await popup(items, el)
     const device = lists.devices.find((d) => d.id === id)
