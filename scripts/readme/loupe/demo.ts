@@ -62,7 +62,7 @@ export default {
   ],
   // The GIF's edits: a glass loupe that follows the cursor from the chart to the export.
   edit(p) {
-    Object.assign(p.style, { background: { kind: 'wallpaper', id: 'aurora' }, padding: 64, radius: 18, shadow: 0.4 })
+    Object.assign(p.style, { background: { kind: 'wallpaper', id: 'neon-phosphor' }, padding: 64, radius: 18, shadow: 0.4 })
     Object.assign(p.style.cursor, { size: 1.6, loop: true })
     p.zooms = [{ id: 'loupe', start: 0.8, end: 8.65, level: 2, target: { kind: 'cursor' }, enabled: true, mode: 'loupe', size: 280 }]
     p.autoZoomed = true

@@ -11,6 +11,8 @@ GPU composition of each output frame.
 - New projects start plain: the recording edge to edge, with no background, padding, corners, or shadow.
   Picking a background while none would show adds padding so it does.
 - Backgrounds: wallpapers, gradients, colors, images, blur, with gradients dithered so they show no banding.
+- A built-in wallpaper is a picture (`src/engine/backgrounds/picture.ts`): a sky of four colors, and dunes, a glow, streaks, or a ring in front of it, one style file each.
+  In dev each style file compiles alone with `shaders.wgsl`, so what two styles share lives in `shaders.wgsl`.
 - Images the user adds go to a library every project shows, the Custom tab (`electron/wallpapers.ts`).
   An image kept only in the project it was picked in looked lost to its owner in the next recording.
   Picking one copies it into the bundle under its content-addressed path, so the project stays portable and the library path finds its tile.
@@ -19,6 +21,9 @@ GPU composition of each output frame.
   Panes of their own heights moved Blur, Shape, and every control under them on each tab switch.
   Tabs and collections slide as the family's menus switch, and one ring per tray glides to the chosen tile.
   The ring takes its tile's grid cell: placed by arithmetic, it landed a fraction of a pixel off the tile.
+- The tile under the pointer previews in the player (`showLook`), and only a click edits the project.
+  The gap between two tiles keeps the last preview, and leaving the grid ends it: ended in the gap, the picture jumped back and forth as the pointer crossed the tray.
+  Wallpaper, gradient, and color tiles preview; an image tile waits for its pick, which copies the image into the project.
 - Video stays undithered, but a ramp drawn over it, like the loupe's shadow, must raise the dither mark too, or flat UI under it bands into rings in the preview.
   The encoder strips that dither, so an export stays smooth only under a ramp that steps a level every few px: a faint one spread over hundreds of px bands into rings tens of px wide.
 - Rounded corners and shadows are antialiased on light and dark backgrounds at every scale.

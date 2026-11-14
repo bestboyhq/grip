@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { defaultStyle, lookOn, sameLook } from './project.ts'
 
 test('sameLook: a preset applied stays the same look until the style changes, whatever its key order or camera corner', () => {
-  const look = { ...defaultStyle(), padding: 120, background: { kind: 'wallpaper' as const, id: 'ocean' } }
+  const look = { ...defaultStyle(), padding: 120, background: { kind: 'wallpaper' as const, id: 'spring-meadow' } }
   const style = { ...defaultStyle(), camera: { ...defaultStyle().camera, position: 'top-left' as const } }
   const applied = lookOn(look, style)
   assert.equal(applied.camera.position, 'top-left') // the recording's corner wins
