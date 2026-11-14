@@ -379,7 +379,7 @@
 	body="Pick a wallpaper, a device frame, and a camera style once the recording is done. Save the whole look as a preset, and every new take can wear it."
 	href={docHref('make-it-yours')}
 	linkLabel="Every look Grip has"
-	checks={['185 wallpapers, drawn live on the GPU', 'MacBook, iPhone, and iPad frames']}
+	checks={['165 wallpapers, drawn live on the GPU', 'MacBook, iPhone, and iPad frames']}
 >
 	<Media
 		clip={clip('macbook')}

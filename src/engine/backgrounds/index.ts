@@ -1,9 +1,9 @@
 // Owner: compositor. Built-in wallpapers: our own procedural artwork, rendered by the GPU
 // compositor (shaders.wgsl fs_bg dispatches to src/engine/gpu/wallpapers/<style>.wgsl). Being
 // procedural, each renders sharp at any output size and keeps its composition at 16:9, 9:16, and
-// 1:1. Each collection lives in its own file; a wallpaper is a style plus a palette and parameters.
+// 1:1. Each collection lives in its own file; a wallpaper is a style plus a palette and parameters,
+// written down as a picture (picture.ts): a sky of four colors and what lies in front of it.
 
-import { SOFT } from './soft.ts'
 import { SPRING } from './spring.ts'
 import { SUNSET } from './sunset.ts'
 import { RADIANT } from './radiant.ts'
@@ -19,17 +19,18 @@ export interface Wallpaper {
   collection: string
   /** Shader src/engine/gpu/wallpapers/<style>.wgsl, entry fn wp_<style>(uv, wh) -> encoded sRGB. */
   style: string
-  /** sRGB hex palette, at most 12. The shader reads them as OKLab in P.cols, count in P.a.y. */
+  /** sRGB hex palette, at most 20. The shader reads them as OKLab in P.cols, count in P.a.y. */
   colors: string[]
-  /** Style parameters, at most 48 numbers. The shader reads them as P.pts (12 vec4f). */
+  /** Style parameters, at most 112 numbers. The shader reads them as P.pts (28 vec4f). */
   params: number[]
 }
 
-export const DEFAULT_WALLPAPER = 'dusk'
+export const DEFAULT_WALLPAPER = 'spring-meadow'
 
-export const WALLPAPERS: Wallpaper[] = [...SOFT, ...SPRING, ...SUNSET, ...RADIANT, ...ENERGY, ...IRIDESCENT, ...MIDNIGHT, ...NEON]
+export const WALLPAPERS: Wallpaper[] = [...SPRING, ...SUNSET, ...RADIANT, ...ENERGY, ...IRIDESCENT, ...MIDNIGHT, ...NEON]
 
-/** The wallpaper for an id, or the default for unknown ids (projects from newer versions). */
+/** The wallpaper for an id, or the default for unknown ids (projects from newer versions, and from
+ *  older ones that chose a wallpaper since removed). */
 export function wallpaper(id: string): Wallpaper {
   return WALLPAPERS.find((w) => w.id === id) ?? WALLPAPERS[0]
 }

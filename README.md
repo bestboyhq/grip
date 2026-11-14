@@ -221,10 +221,10 @@ Drag the preview straight into another app to drop the file.
 </p>
 
 <p align="center">
-  <img src=".github/readme/wallpapers.webp" width="100%" alt="A grid of 28 Grip wallpapers: soft gradients, a synthwave sun, neon tunnels, sunset dunes, iridescent foil, aurora, bokeh, and a prism.">
+  <img src=".github/readme/wallpapers.webp" width="100%" alt="A grid of 28 Grip wallpapers: bright spring dunes, warm sunset dunes, pink and violet folds, hot colors on navy, pearl folds, gray silk on black, and neon glows, streaks, and rings.">
 </p>
 
-- **185 wallpapers** in 8 collections: Soft, Spring, Sunset, Radiant, Energy, Iridescent, Midnight, and Neon.
+- **165 wallpapers** in 7 collections: Spring, Sunset, Radiant, Energy, Iridescent, Midnight, and Neon.
   Each one is drawn live on the GPU, so it stays sharp at any size and in any format.
   Or use your macOS wallpapers, a gradient, a color, or any image, with optional blur.
 - **Device frames** for MacBook, iPhone, and iPad.

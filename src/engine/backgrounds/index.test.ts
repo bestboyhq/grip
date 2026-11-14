@@ -5,13 +5,14 @@ import { WALLPAPERS, DEFAULT_WALLPAPER, wallpaper, parseColor, oklab } from './i
 
 test('wallpapers: unique ids, valid styles and palettes, the default exists, unknown ids fall back', () => {
   assert.equal(new Set(WALLPAPERS.map((w) => w.id)).size, WALLPAPERS.length)
-  assert.equal(wallpaper(DEFAULT_WALLPAPER).id, 'dusk')
+  assert.equal(wallpaper(DEFAULT_WALLPAPER).id, DEFAULT_WALLPAPER)
   assert.equal(wallpaper('from-the-future').id, DEFAULT_WALLPAPER)
+  assert.equal(wallpaper('dusk').id, DEFAULT_WALLPAPER) // a wallpaper of the removed Soft collection
   for (const w of WALLPAPERS) {
     assert.ok(existsSync(new URL(`../gpu/wallpapers/${w.style}.wgsl`, import.meta.url)), `${w.id}: no style ${w.style}`)
     assert.ok(w.name && w.collection, w.id)
-    assert.ok(w.colors.length >= 1 && w.colors.length <= 12 && w.colors.every((c) => parseColor(c)), w.id)
-    assert.ok(w.params.length <= 48 && w.params.every(Number.isFinite), w.id)
+    assert.ok(w.colors.length >= 4 && w.colors.length <= 20 && w.colors.every((c) => parseColor(c)), w.id)
+    assert.ok(w.params.length >= 16 && w.params.length <= 112 && w.params.every(Number.isFinite), w.id) // a sky of four points, then at most four dunes
   }
 })
 
