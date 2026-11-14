@@ -37,6 +37,7 @@ The native macOS app around everything else.
   Many users want Grip on macOS's own screenshot keys (⇧⌘5), and macOS takes those before any app sees them.
   The record shortcut has no default: people reach for different keys.
   Onboarding ends waiting for the user's own, with Continue once they press them and Skip leaving none; Settings sets, changes, or removes it (⌫).
+  Onboarding goes past permissions only with Screen Recording on, since Grip can do nothing without it; the shortcut is the user's to skip.
   Any key with ⌘ or ⌃ makes one, and so does an F key: ⌘4 is what people try first.
   One modifier takes those keys from every other app, so the field saves it and says what it costs; keys that type text (⌥A, ⇧A, a bare key) are refused.
   The field shows each key as it goes down, refused ones too: a field that stays empty while keys are held reads as broken.

@@ -232,7 +232,8 @@
       {@render permissionList()}
     </section>
     <footer>
-      <span>{#if !screenOk}<button class="link" onclick={toShortcut}>Skip for now</button>{/if}</span>
+      <!-- No way past without Screen Recording: Grip can do nothing without it. -->
+      <span class="reason">{#if !screenOk}Allow Screen Recording to continue.{/if}</span>
       <button class="button primary" disabled={!screenOk} onclick={toShortcut}>Continue</button>
     </footer>
   {:else if page === 'shortcut'}
