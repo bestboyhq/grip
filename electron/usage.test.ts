@@ -1,7 +1,7 @@
-import { afterEach, mock, test } from 'node:test'
+import { afterEach, mock, test, type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import { register } from 'node:module'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -44,10 +44,16 @@ async function launch(at: string) {
   await settle()
   return usage
 }
+/** A user data folder the test removes when it ends. */
+function scratch(t: TestContext) {
+  const dir = mkdtempSync(join(tmpdir(), 'grip-usage-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  return dir
+}
 const named = (name: string) => sent.filter((e) => e.name === `grip_${name}`).map((e) => e.props)
 
-test('journey markers go once, after delivery, with cohort and days; days count week and month', async () => {
-  g.userData = mkdtempSync(join(tmpdir(), 'grip-usage-'))
+test('journey markers go once, after delivery, with cohort and days; days count week and month', async (t) => {
+  g.userData = scratch(t)
   g.settings = { usageCounts: true, onboarded: false }
   mock.timers.enable({ apis: ['Date'] })
 
@@ -87,8 +93,8 @@ test('journey markers go once, after delivery, with cohort and days; days count 
   assert.equal(named('month').length, 0)
 })
 
-test('signed out, every count but the last carries one install ID until stats turn off', async () => {
-  g.userData = mkdtempSync(join(tmpdir(), 'grip-usage-'))
+test('signed out, every count but the last carries one install ID until stats turn off', async (t) => {
+  g.userData = scratch(t)
   g.settings = { usageCounts: true, onboarded: true }
   mock.timers.enable({ apis: ['Date'] })
   await launch('2026-11-12T09:00')
@@ -130,8 +136,8 @@ test('signed out, every count but the last carries one install ID until stats tu
   assert.ok([...fresh][0])
 })
 
-test('an install older than the journey has none', async () => {
-  g.userData = mkdtempSync(join(tmpdir(), 'grip-usage-'))
+test('an install older than the journey has none', async (t) => {
+  g.userData = scratch(t)
   writeFileSync(join(g.userData, 'settings.json'), '{}')
   g.settings = { usageCounts: true, onboarded: true }
   mock.timers.enable({ apis: ['Date'] })

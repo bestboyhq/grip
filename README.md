@@ -317,6 +317,8 @@ open "grip://open?url=https://bestboy.dev/v/x7Kq2mP9aB3c"   # a shared project
 
 Grip is an MCP server: agent apps can list, cut, speed up, zoom, caption, export, and share your projects with its tools.
 Edits to a project open in the editor land there as you watch, as one step you can undo.
+An agent also reads the comments teammates leave on a share link, each at its moment and spot of the video, with the frame there.
+It fixes what they asked, then replies on each thread and resolves it.
 No tool deletes anything, exports never replace a file, and an agent that needs Grip starts it in the menu bar.
 
 Add Grip to Claude Code:
@@ -336,6 +338,27 @@ For Claude Desktop, add it to `~/Library/Application Support/Claude/claude_deskt
 ```
 
 Settings shows both under Agents, with Copy buttons.
+
+An agent that changed a web app can film the change with no one at the keyboard.
+`record_demo` opens the page where nobody sees it and clicks, hovers, types, presses keys, scrolls, and waits, with a pointer that moves like a hand.
+The result is a regular Grip project with auto zoom, a smooth cursor, and click effects, plus an MP4, a GIF, one frame per step, and a share link when asked.
+A step's `say` labels it and becomes a chapter of the link.
+Given the link of an earlier demo, the new video becomes its next version, so the pull request or chat that has the link shows the fix with no new post.
+It needs no Screen Recording permission, and a step that fails says which and why and keeps nothing.
+
+Every tool also runs from a shell, for scripts and agents without MCP:
+
+```sh
+grip=/Applications/Grip.app/Contents/Resources/grip
+$grip                                  # list the tools
+$grip list_projects
+$grip record_demo '{"url": "http://localhost:5173", "steps": [
+  {"type": "Ship it", "into": "#task", "say": "Add a task"},
+  {"click": "text=Add task"},
+  {"wait": "text=\"Ship it\""}]}'
+```
+
+It prints the answer and its data as JSON, saves images to a temporary folder and prints their paths, and exits non-zero when the call fails.
 
 ## Under the hood
 

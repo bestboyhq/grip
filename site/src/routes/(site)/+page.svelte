@@ -4,16 +4,20 @@
 <script lang="ts">
 	import capture from '../../../../.github/readme/capture.webp';
 	import editor from '../../../../.github/readme/editor.webp';
+	import Arrow from '#lib/Arrow.svelte';
 	import BeatLabel, { type Beat } from '#lib/BeatLabel.svelte';
+	import Cells from '#lib/Cells.svelte';
+	import Closing from '#lib/Closing.svelte';
+	import Faq from '#lib/Faq.svelte';
 	import FeatureRow from '#lib/FeatureRow.svelte';
 	import GitHubIcon from '#lib/GitHubIcon.svelte';
-	import Glow, { within, type Box, type Layer } from '#lib/Glow.svelte';
 	import Head from '#lib/Head.svelte';
 	import Hero from '#lib/Hero.svelte';
 	import Media, { clip } from '#lib/Media.svelte';
 	import Quotes, { type Quote } from '#lib/Quotes.svelte';
+	import { reveal } from '#lib/reveal.ts';
 	import SectionHeading from '#lib/SectionHeading.svelte';
-	import { docHref, DOWNLOAD_URL, GITHUB_URL, SITE_DESCRIPTION } from '#lib/links.ts';
+	import { AGENTS, docHref, DOWNLOAD_URL, GITHUB_URL, SITE_DESCRIPTION } from '#lib/links.ts';
 
 	// Each quote is the person's own, published with their permission.
 	const quotes: readonly Quote[] = [
@@ -49,6 +53,7 @@
 		'editor',
 		'look',
 		'export',
+		'agents',
 		'bugs',
 		'open',
 		'faq',
@@ -61,45 +66,7 @@
 		...(kicker ? { kicker } : {}),
 	});
 
-	const pad = (value: number): string => String(value).padStart(2, '0');
-
-	// The closing's light, drawn by WebGL with grain over its CSS version (`.glow`) in the same geometry: three colors
-	// in the glow's box. The canvas reaches a fifth of that box past it on every side (`.close .gl`), so the light
-	// fades out before the canvas ends. Once it draws, the CSS version goes: Safari repaints its 48px blur in software
-	// as the page scrolls past, and drops frames doing it.
-	const GLOW: Box = [1 / 7, 1 / 7, 5 / 7, 5 / 7];
-	const CLOSING: readonly Layer[] = [
-		{ box: within([0, 0.06, 0.55, 0.8], GLOW), color: '#1957fa', peak: [1, 1] },
-		{ box: within([0.25, 0.18, 0.5, 0.7], GLOW), color: '#d94f46', peak: [1, 1] },
-		{ box: within([0.55, 0.12, 0.45, 0.7], GLOW), color: '#fb8600', peak: [1, 1] },
-	];
-	let lit = $state(false);
-
-	$effect(() => {
-		const io = new IntersectionObserver(
-			(entries) => {
-				let wave = 0;
-				for (const { isIntersecting, target } of entries) {
-					if (!isIntersecting || !(target instanceof HTMLElement)) continue;
-					target.style.setProperty('--i', String(Math.min(wave++, 3)));
-					target.dataset.reveal = 'go';
-					io.unobserve(target);
-				}
-			},
-			{ rootMargin: `${document.documentElement.scrollHeight}px 0px -10% 0px` },
-		);
-		const waiting = [...document.querySelectorAll<HTMLElement>('.beat, .rise, .sitemap')].filter(
-			(element) => element.getBoundingClientRect().top > innerHeight,
-		);
-		for (const element of waiting) {
-			element.dataset.reveal = 'wait';
-			io.observe(element);
-		}
-		return () => {
-			io.disconnect();
-			for (const element of waiting) delete element.dataset.reveal;
-		};
-	});
+	$effect(reveal);
 
 	const steps = [
 		{
@@ -135,38 +102,53 @@
 		},
 	];
 
+	const agents = [
+		{
+			title: 'Records in a hidden window',
+			body: 'Your agent hands Grip the steps to show its change. Grip plays them at a human pace, off screen, while you keep working.',
+		},
+		{
+			title: 'Polished like your own takes',
+			body: 'It zooms where each click lands and glides the cursor, then saves an MP4, a GIF, and a link for the pull request.',
+		},
+		{
+			title: 'Reads your team’s comments',
+			body: 'Teammates comment on the exact frame. Your agent reads each thread, fixes the code, and replies.',
+		},
+	];
+
 	const bugs = [
 		{
-			bug: 'Subtitles drift or ignore your cuts',
-			fix: 'Captions, zooms, keystrokes, and audio stay in sync through every cut and speed change.',
+			title: 'Subtitles drift or ignore your cuts',
+			body: 'Captions, zooms, keystrokes, and audio stay in sync through every cut and speed change.',
 		},
 		{
-			bug: 'Zooms shift when you trim the clip before them',
-			fix: 'Every zoom, caption, and keystroke stays on its moment, however you cut around it.',
+			title: 'Zooms shift when you trim the clip before them',
+			body: 'Every zoom, caption, and keystroke stays on its moment, however you cut around it.',
 		},
 		{
-			bug: 'The cursor is baked into the video',
-			fix: 'Grip records the screen without the cursor and draws it back in, so you can smooth, resize, or hide it later.',
+			title: 'The cursor is baked into the video',
+			body: 'Grip records the screen without the cursor and draws it back in, so you can smooth, resize, or hide it later.',
 		},
 		{
-			bug: 'The export doesn’t match the preview',
-			fix: 'One renderer draws both, so the export matches the preview frame for frame.',
+			title: 'The export doesn’t match the preview',
+			body: 'One renderer draws both, so the export matches the preview frame for frame.',
 		},
 		{
-			bug: 'A crash or power loss eats the take',
-			fix: 'Grip writes the take to disk as it records and rebuilds an interrupted one at the next launch.',
+			title: 'A crash or power loss eats the take',
+			body: 'Grip writes the take to disk as it records and rebuilds an interrupted one at the next launch.',
 		},
 		{
-			bug: 'A full disk corrupts the recording',
-			fix: 'Grip won’t start with under 1 GB free, warns when space runs low, and keeps what it wrote.',
+			title: 'A full disk corrupts the recording',
+			body: 'Grip won’t start with under 1 GB free, warns when space runs low, and keeps what it wrote.',
 		},
 		{
-			bug: 'A # or emoji in a project name breaks a feature',
-			fix: 'Names like “Demo #1 ✨ café” are in the test suite and the demo project.',
+			title: 'A # or emoji in a project name breaks a feature',
+			body: 'Names like “Demo #1 ✨ café” are in the test suite and the demo project.',
 		},
 		{
-			bug: 'Long projects make the editor crawl',
-			fix: 'The timeline is checked against a 2-hour project with 500 cuts, 300 zooms, and 20,000 caption words.',
+			title: 'Long projects make the editor crawl',
+			body: 'The timeline is checked against a 2-hour project with 500 cuts, 300 zooms, and 20,000 caption words.',
 		},
 	];
 
@@ -289,15 +271,7 @@
 	description="Raw recordings are hard to watch: a tiny cursor on a huge screen, nothing in focus, and a lot of “um”. Grip polishes the take for you, and keeps every edit a choice you can change."
 >
 	{#snippet after()}
-		<ol class="cells">
-			{#each steps as step, index (step.title)}
-				<li class="rise">
-					<span class="idx" aria-hidden="true">{pad(index + 1)}</span>
-					<h3>{step.title}</h3>
-					<p>{step.body}</p>
-				</li>
-			{/each}
-		</ol>
+		<Cells items={steps} ordered />
 	{/snippet}
 </SectionHeading>
 
@@ -337,16 +311,7 @@
 				</p>
 			</div>
 		</div>
-		<ul class="cells">
-			{#each speed as item, index (item.title)}
-				<li class="rise">
-					<span class="idx" aria-hidden="true">{pad(index + 1)}</span>
-					<span class="stat">{item.stat}</span>
-					<h3>{item.title}</h3>
-					<p>{item.body}</p>
-				</li>
-			{/each}
-		</ul>
+		<Cells items={speed} />
 	</div>
 </section>
 
@@ -447,6 +412,23 @@
 </SectionHeading>
 
 <SectionHeading
+	id="agents"
+	beat={beat('agents', 'For coding agents')}
+	split
+	title="Your agent records the demo."
+	quiet="Every change ships with its video."
+	description="Add Grip to Claude Code, Codex, Cursor, or any other MCP client. Your agent records each UI change it makes, and your team watches it instead of reading screenshots."
+>
+	<a class="arrow-link more" href={AGENTS}>
+		Grip for agents
+		<Arrow class="ahead" />
+	</a>
+	{#snippet after()}
+		<Cells items={agents} />
+	{/snippet}
+</SectionHeading>
+
+<SectionHeading
 	id="bugs"
 	beat={beat('bugs', 'Under the hood')}
 	split
@@ -455,15 +437,7 @@
 	description="Each one shipped in a real screen recorder. Grip designs them out from the first commit instead of patching them later."
 >
 	{#snippet after()}
-		<ol class="cells bugs">
-			{#each bugs as item, index (item.bug)}
-				<li class="rise">
-					<span class="idx" aria-hidden="true">{pad(index + 1)}</span>
-					<h3>{item.bug}</h3>
-					<p>{item.fix}</p>
-				</li>
-			{/each}
-		</ol>
+		<Cells items={bugs} ordered four />
 	{/snippet}
 </SectionHeading>
 
@@ -481,75 +455,28 @@
 		<a class="button secondary small" href="{GITHUB_URL}/blob/main/AGENTS.md">Read the rules</a>
 	</div>
 	{#snippet after()}
-		<ul class="cells">
-			{#each trust as item, index (item.title)}
-				<li class="rise">
-					<span class="idx" aria-hidden="true">{pad(index + 1)}</span>
-					<h3>{item.title}</h3>
-					<p>{item.body}</p>
-				</li>
-			{/each}
-		</ul>
+		<Cells items={trust} />
 	{/snippet}
 </SectionHeading>
 
-<section id="faq" class="beat" aria-labelledby="faq-title">
-	<div class="wrap">
-		<BeatLabel {...beat('faq')} />
-		<div class="faq">
-			<div class="faq-intro rise">
-				<h2 id="faq-title">Questions</h2>
-				<p>
-					Another question? <a href="{GITHUB_URL}/issues">Ask on GitHub</a>
-				</p>
-			</div>
-			<div class="answers rise">
-				{#each faqs as faq, index (faq.question)}
-					<details>
-						<summary>
-							<span class="idx" aria-hidden="true">{pad(index + 1)}</span>
-							<span class="q">{faq.question}</span>
-							<span class="plus" aria-hidden="true"></span>
-						</summary>
-						<p>{faq.answer}</p>
-					</details>
-				{/each}
-			</div>
-		</div>
-	</div>
-</section>
+<Faq beat={beat('faq')} {faqs} />
 
-<section id="start" class="beat closing" aria-labelledby="start-title" data-place="closing">
-	<div class="wrap">
-		<div class="close">
-			{#if !lit}
-				<div class="glow" aria-hidden="true"></div>
-			{/if}
-			<div class="gl" aria-hidden="true">
-				<Glow layers={CLOSING} opacity={0.14} soft={0.25} weighted bind:lit />
-			</div>
-			<BeatLabel {...beat('start')} />
-			<div class="end">
-				<div class="rise">
-					<h2 id="start-title">Record the demo you keep putting off.</h2>
-					<p class="sub">
-						Download Grip, press your shortcut, and have a link to share before the moment passes.
-					</p>
-				</div>
-				<div class="close-actions rise">
-					<div class="actions">
-						<a class="button primary" href={DOWNLOAD_URL}>
-							{@render apple()}
-							Download for macOS
-						</a>
-						<a class="button secondary" href={docHref()}>Read the docs</a>
-					</div>
-					<p class="fine"><span>Free and open source</span> <span>AGPL-3.0</span></p>
-				</div>
-			</div>
+<Closing
+	beat={beat('start')}
+	title="Record the demo you keep putting off."
+	sub="Download Grip, press your shortcut, and have a link to share before the moment passes."
+>
+	<div class="close-actions rise">
+		<div class="actions">
+			<a class="button primary" href={DOWNLOAD_URL}>
+				{@render apple()}
+				Download for macOS
+			</a>
+			<a class="button secondary" href={docHref()}>Read the docs</a>
 		</div>
+		<p class="fine"><span>Free and open source</span> <span>AGPL-3.0</span></p>
 	</div>
-</section>
+</Closing>
 
 {#snippet apple()}
 	<svg
@@ -620,63 +547,16 @@
 		width: 0.6em;
 	}
 
-	.cells {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		margin: 72px calc(-1 * max(var(--pad), env(safe-area-inset-left))) 0;
-		list-style: none;
-	}
-
-	.cells li {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		padding: 40px var(--pad);
-		border-top: 1px solid var(--frame);
-	}
-
-	.cells li + li {
-		border-left: 1px solid var(--frame);
-	}
-
-	.idx {
-		color: var(--fg-faint);
-		font-family: var(--mono);
-		font-size: 12px;
-		line-height: 24px;
-		font-variant-numeric: tabular-nums;
-	}
-
-	.cells .idx {
-		margin-bottom: 4px;
-	}
-
-	.cells li > :global(svg) {
-		margin: 4px 0 8px;
-		color: var(--fg-muted);
-	}
-
-	.cells h3 {
-		font-size: 17px;
-		font-weight: 550;
-		line-height: 1.4;
-		letter-spacing: -0.01em;
-		text-wrap: balance;
-	}
-
-	.cells p {
-		color: var(--fg-muted);
-		font-size: 15px;
-		line-height: 1.6;
-		text-wrap: pretty;
-	}
-
 	.buttons {
 		display: flex;
 		flex-wrap: wrap;
 		justify-content: center;
 		gap: 12px;
 		margin-top: 12px;
+	}
+
+	.more {
+		margin-top: 20px;
 	}
 
 	.flush {
@@ -730,31 +610,23 @@
 
 	.speed h2 {
 		font-size: clamp(34px, 4.6vw, 52px);
+		font-weight: 550;
 		line-height: 1.06;
 		letter-spacing: -0.035em;
+		text-wrap: balance;
 	}
 
 	.speed h2 span {
 		display: block;
 	}
 
-	.speed .sub {
+	.sub {
+		max-width: 560px;
 		margin-top: 20px;
-	}
-
-	.stat {
-		font-size: 28px;
-		font-weight: 550;
-		line-height: 1.2;
-		letter-spacing: -0.03em;
-	}
-
-	.bugs {
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-	}
-
-	.bugs li:nth-child(4n + 1) {
-		border-left: 0;
+		color: var(--fg-muted);
+		font-size: 18px;
+		line-height: 1.55;
+		text-wrap: pretty;
 	}
 
 	.formats {
@@ -764,217 +636,11 @@
 		background: var(--panel);
 	}
 
-	.faq {
-		display: grid;
-		grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
-		gap: 24px 64px;
-		align-items: start;
-	}
-
-	.faq-intro {
-		position: sticky;
-		top: calc(var(--bar-h) + 32px);
-		display: flex;
-		flex-direction: column;
-		gap: 20px;
-	}
-
-	h2 {
-		font-size: clamp(30px, 3.4vw, 40px);
-		font-weight: 550;
-		line-height: 1.1;
-		letter-spacing: -0.03em;
-		text-wrap: balance;
-	}
-
-	.faq-intro p,
-	.sub {
-		max-width: 560px;
-		color: var(--fg-muted);
-		font-size: 18px;
-		line-height: 1.55;
-		text-wrap: pretty;
-	}
-
-	.faq-intro a {
-		color: var(--fg-default);
-		font-weight: 500;
-		text-decoration: underline;
-		text-decoration-color: var(--border-strong);
-		text-decoration-thickness: 1.5px;
-		text-underline-offset: 3px;
-		white-space: nowrap;
-	}
-
-	details + details {
-		border-top: 1px solid var(--border-default);
-	}
-
-	summary {
-		display: grid;
-		grid-template-columns: 24px minmax(0, 1fr) 16px;
-		gap: 16px;
-		align-items: center;
-		min-height: 64px;
-		padding: 16px 0;
-		list-style: none;
-		cursor: pointer;
-		-webkit-user-select: none;
-		user-select: none;
-	}
-
-	summary::-webkit-details-marker {
-		display: none;
-	}
-
-	.q {
-		font-size: 16px;
-		font-weight: 500;
-		line-height: 24px;
-		text-wrap: pretty;
-	}
-
-	.plus {
-		position: relative;
-		justify-self: end;
-		width: 12px;
-		height: 12px;
-	}
-
-	.plus::before,
-	.plus::after {
-		content: '';
-		position: absolute;
-		top: 50%;
-		left: 0;
-		width: 12px;
-		height: 1.5px;
-		margin-top: -0.75px;
-		border-radius: 1px;
-		background: var(--fg-muted);
-		transition: rotate 200ms var(--ease);
-	}
-
-	.plus::after {
-		rotate: 90deg;
-	}
-
-	details[open] .plus::after {
-		rotate: 0deg;
-	}
-
-	summary:active .q {
-		color: var(--fg-secondary);
-	}
-
-	details p {
-		max-width: 600px;
-		padding: 0 32px 22px 40px;
-		color: var(--fg-muted);
-		font-size: 16px;
-		line-height: 24px;
-		text-wrap: pretty;
-	}
-
-	details::details-content {
-		height: 0;
-		overflow: clip;
-	}
-
-	details[open]::details-content {
-		height: auto;
-	}
-
-	@media (prefers-reduced-motion: no-preference) {
-		details::details-content {
-			interpolate-size: allow-keywords;
-			transition:
-				height 200ms var(--ease),
-				content-visibility 200ms allow-discrete;
-		}
-	}
-
-	.close {
-		position: relative;
-		padding: 56px 64px 64px;
-	}
-
-	.glow {
-		position: absolute;
-		z-index: -1;
-		inset: 10% 20% 0 10%;
-		background:
-			radial-gradient(closest-side, #1957fa, transparent) 0 30% / 55% 80% no-repeat,
-			radial-gradient(closest-side, #d94f46, transparent) 50% 60% / 50% 70% no-repeat,
-			radial-gradient(closest-side, #fb8600, transparent) 100% 40% / 45% 70% no-repeat;
-		filter: blur(48px);
-		opacity: 0.14;
-		pointer-events: none;
-	}
-
-	/* The WebGL light over its CSS version. It paints its own background, the `color` here. */
-	.gl {
-		position: absolute;
-		z-index: -1;
-		inset: -8% 6% -18% -4%;
-		color: var(--surface-root);
-		pointer-events: none;
-	}
-
-	.end {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: flex-end;
-		justify-content: space-between;
-		gap: 32px 48px;
-	}
-
-	.end > div:first-child {
-		flex: 1 1 520px;
-		max-width: 780px;
-	}
-
-	.end .sub {
-		margin-top: 20px;
-	}
-
 	.close-actions .actions {
 		margin-top: 0;
 	}
 
-	@media (hover: hover) and (pointer: fine) {
-		summary:hover .plus::before,
-		summary:hover .plus::after {
-			background: var(--fg-default);
-		}
-
-		.faq-intro a:hover {
-			text-decoration-color: var(--fg-default);
-		}
-	}
-
 	@media (max-width: 1023px) {
-		.cells {
-			grid-template-columns: minmax(0, 1fr);
-			margin-top: 48px;
-		}
-
-		.cells li {
-			padding-block: 32px;
-		}
-
-		.cells li + li {
-			border-left: 0;
-		}
-
-		.bugs {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-
-		.bugs li:nth-child(even) {
-			border-left: 1px solid var(--frame);
-		}
-
 		.formats {
 			margin-top: 48px;
 			padding-block: 40px;
@@ -983,58 +649,19 @@
 
 	@media (max-width: 859px) {
 		.lede,
-		.faq-intro p,
 		.sub {
 			font-size: 17px;
 		}
 
-		.speed,
-		.faq {
+		.speed {
 			grid-template-columns: minmax(0, 1fr);
 			gap: 32px;
-		}
-
-		.faq-intro {
-			position: static;
-		}
-
-		.close {
-			padding: 44px 28px 48px;
-		}
-
-		.end > div:first-child {
-			flex-basis: auto;
 		}
 	}
 
 	@media (max-width: 559px) {
-		.bugs {
-			grid-template-columns: minmax(0, 1fr);
-		}
-
-		.bugs li:nth-child(even) {
-			border-left: 0;
-		}
-
 		.formats {
 			padding: 32px 12px;
-		}
-
-		summary {
-			grid-template-columns: minmax(0, 1fr) 16px;
-		}
-
-		summary .idx {
-			display: none;
-		}
-
-		details p {
-			padding: 0 24px 20px 0;
-		}
-
-		.close {
-			margin-inline: -12px;
-			padding: 40px 12px 44px;
 		}
 	}
 </style>

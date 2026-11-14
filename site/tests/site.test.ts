@@ -13,6 +13,7 @@ const build = join(import.meta.dirname, '..', 'build', 'grip');
 const page = readFileSync(join(build, 'index.html'), 'utf8');
 const card = readFileSync(join(build, 'og.html'), 'utf8');
 const changelog = readFileSync(join(build, 'changelog.html'), 'utf8');
+const agents = readFileSync(join(build, 'agents.html'), 'utf8');
 // The Open Graph image, named by a hash of its content.
 const SHARED =
 	/<meta property="og:image" content="https:\/\/bestboy\.dev\/grip\/(_app\/immutable\/assets\/og\.[\w-]+\.jpg)"/u;
@@ -40,7 +41,7 @@ test('every page that shares the image names it by its content, with its size an
 		.replace(/\s+/gu, ' ')
 		.trim();
 	assert.ok(headline);
-	for (const file of ['index.html', '404.html', 'changelog.html']) {
+	for (const file of ['index.html', '404.html', 'changelog.html', 'agents.html']) {
 		const html = readFileSync(join(build, file), 'utf8');
 		const image = SHARED.exec(html)?.[1];
 		assert.ok(image, `${file} shares no content-named image`);
@@ -105,6 +106,23 @@ test('the changelog runs newest first, each clip silent and its still beside it'
 	}
 });
 
+test('the agents page hands agents its playbook, and every way in starts the same server', () => {
+	assert.match(agents, new RegExp(`<link rel="canonical" href="${SITE}/agents"`, 'u'));
+	const playbook = readFileSync(join(build, 'agents.md'), 'utf8');
+	assert.match(agents, new RegExp(`Read ${SITE}/agents\\.md and record a demo`, 'u'));
+	const server = '/Applications/Grip.app/Contents/Resources/grip-mcp';
+	const paths = (text: string): string[] => [...new Set(text.match(/\/Applications\/Grip\.app\/[\w/.-]+/gu))];
+	assert.deepEqual(
+		paths(playbook).filter((path) => path.endsWith('mcp')),
+		[server],
+	);
+	assert.deepEqual(paths(playbook), [server, '/Applications/Grip.app/Contents/Resources/grip']);
+	assert.ok(agents.replace(/<!--[\s\S]*?-->|<wbr[^>]*>/gu, '').includes(server), 'the page shows no install command');
+	const stills = [...agents.matchAll(/url\(\/grip\/(media\/agents-[\w-]+)\.webp\)/gu)].map((match) => match[1]);
+	assert.equal(stills.length, 4);
+	for (const name of stills) assert.ok(existsSync(join(build, `${name}.webp`)), name);
+});
+
 test('the page loads Logdash from the Grip site and reports to it', () => {
 	assert.match(page, /<script defer="" src="\/grip\/_ld\/script\.js"/u);
 	assert.match(page, new RegExp(`data-site="${LOGDASH_SITE}"`, 'u'));
@@ -112,10 +130,12 @@ test('the page loads Logdash from the Grip site and reports to it', () => {
 });
 
 test('every section and button has a name to report its views and presses by (src/lib/track.ts)', () => {
-	for (const [section] of page.matchAll(/<section\b[^>]*>/gu))
-		assert.match(section, /\s(?:id|data-place)="[^"]+"/u, section);
-	for (const [button, attributes = '', inner = ''] of page.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gu))
-		assert.ok(/aria-label="[^"]+"/u.test(attributes) || inner.replace(/<[^>]+>/gu, '').trim(), button);
+	for (const html of [page, agents]) {
+		for (const [section] of html.matchAll(/<section\b[^>]*>/gu))
+			assert.match(section, /\s(?:id|data-place)="[^"]+"/u, section);
+		for (const [button, attributes = '', inner = ''] of html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gu))
+			assert.ok(/aria-label="[^"]+"/u.test(attributes) || inner.replace(/<[^>]+>/gu, '').trim(), button);
+	}
 });
 
 const assets: Env = {
@@ -214,7 +234,7 @@ const bezier =
 	};
 
 test('the blur of every entrance follows --enter-ease until it is a fraction of a pixel, then stops', () => {
-	const source = ['src/app.css', 'src/lib/Hero.svelte']
+	const source = ['src/app.css', 'src/lib/Hero.svelte', 'src/routes/(site)/agents/+page.svelte']
 		.map((file) => readFileSync(join(import.meta.dirname, '..', file), 'utf8'))
 		.join('\n');
 	const curve = (name: string): number[] =>
@@ -223,7 +243,7 @@ test('the blur of every entrance follows --enter-ease until it is a fraction of 
 	const unblur = bezier(curve('unblur-ease'));
 	const left = Number(/@keyframes unblur[\s\S]*?blur\(calc\(var\(--blur\) \* ([\d.]+)\)\)/u.exec(source)?.[1]);
 	const cut = [...source.matchAll(/unblur calc\(var\(--duration\) \* var\(--pace\) \* ([\d.]+)\)/gu)].map((match) => Number(match[1]));
-	assert.equal(cut.length, 2, 'the hero and .rise both run unblur');
+	assert.equal(cut.length, 3, 'the two heroes and .rise all run unblur');
 	assert.ok(cut.every((value) => value === cut[0]), `unblur stops at ${cut.join(' and ')} of the time`);
 	assert.ok(left <= 0.03, `unblur stops at ${left} of its blur, a third of a pixel at 12px at most`);
 	for (let step = 0; step <= 100; step++) {

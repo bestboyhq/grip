@@ -724,19 +724,22 @@ export function editorFor(path: string): BrowserWindow | undefined {
 }
 
 /** Open a bundle in the editor, or bring its editor forward. `recovered`: the editor says so.
- *  Like every window and dialog the user asks for, it closes the picker first, which floats above them. */
-export function openProject(path: string, recovered = false) {
-  closePicker()
+ *  Like every window and dialog the user asks for, it closes the picker first, which floats above them.
+ *  `focus: false` is for what nobody asked to see, such as an agent's frame: the frontmost app keeps the
+ *  keyboard, and the picker stays. */
+export function openProject(path: string, { recovered = false, focus = true } = {}) {
+  if (focus) closePicker()
   path = resolve(path).replace(/\/+$/, '')
   if (!path.endsWith('.grip') || !existsSync(path) || !statSync(path).isDirectory()) {
     alert(`“${basename(path)}” can’t be opened.`, 'It is not a Grip project, or it was moved or deleted.')
     return
   }
   const open = editorFor(path)
-  if (open) return reveal(open)
+  if (open) return reveal(open, focus)
   app.addRecentDocument(path)
   const route = `editor?project=${encodeURIComponent(path)}${recovered ? '&recovered' : ''}`
-  const win = openWindow(route)
+  const win = openWindow(route, { show: focus })
+  if (!focus) reveal(win, false)
   routes.set(win, `#/${route}`)
   closeGracefully(win)
   count('project_opened', { recovered })
@@ -1037,8 +1040,8 @@ export function registerRecorder() {
   })
   // Recordings cut off by a crash or power loss, made whole at launch (capture repairs its own
   // files, projects rebuilds the rest): each opens in the editor, which says it was recovered.
-  recordingEvents.on('recovered', (bundle: string) => openProject(bundle, true))
-  recoveredAtLaunch.then((list) => list.forEach((r) => openProject(r.path, true)))
+  recordingEvents.on('recovered', (bundle: string) => openProject(bundle, { recovered: true }))
+  recoveredAtLaunch.then((list) => list.forEach((r) => openProject(r.path, { recovered: true })))
   setRecordShortcut(settings().recordShortcut)
   app.on('will-quit', () => borrowShortcuts([])) // quitting Grip gives macOS its shortcut back
   covered = displays()

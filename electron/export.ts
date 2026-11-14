@@ -39,6 +39,7 @@ interface Job extends JobInfo {
   writes: Promise<unknown>
   owner?: BrowserWindow // a quiet job's asking window: it shows the outcome, so no notification while it is open
   private?: boolean // share: a private link
+  agent?: boolean // an agent asked (exportWithoutAsking): its link stays off the clipboard
 }
 
 const jobs = new Map<string, Job>()
@@ -259,12 +260,12 @@ function prepare(reqs: ExportRequest[]) {
 }
 
 /** Queue prepared jobs whose destinations are all known. */
-function queue(items: Awaited<ReturnType<typeof prepare>>, parent: BrowserWindow | null): JobInfo[] {
+function queue(items: Awaited<ReturnType<typeof prepare>>, parent: BrowserWindow | null, agent = false): JobInfo[] {
   const out = items.map((it) => {
     const id = crypto.randomUUID()
     // Clipboard, share, and temp exports land in a per-job temp folder, so the file keeps the project's name.
     const path = it.path ?? join(tmpRoot(), id, `${safeFileName(it.name)}.${it.ext}`)
-    const j: Job = { id, name: it.name, bundle: it.bundle, options: it.options, dest: it.dest, path, project: it.project, state: 'queued', progress: 0, phase: 'Waiting', writes: Promise.resolve(), owner: (it.quiet && parent) || undefined, private: it.private }
+    const j: Job = { id, name: it.name, bundle: it.bundle, options: it.options, dest: it.dest, path, project: it.project, state: 'queued', progress: 0, phase: 'Waiting', writes: Promise.resolve(), owner: (it.quiet && parent) || undefined, private: it.private, agent }
     jobs.set(id, j)
     broadcast(j)
     return info(j)
@@ -285,18 +286,20 @@ async function enqueue(parent: BrowserWindow | null, reqs: ExportRequest[]): Pro
   return queue(items, parent)
 }
 
+export const SIGNED_OUT = 'Grip is signed out, and share links need a Bestboy account. Sign in from Grip (Share in the editor, or Sign In to Share Links in the menu bar menu), then share again.'
+
 /** Queue one export for a caller that can answer no dialog (electron/agents.ts). A file goes to
  *  `path`, or into the export folder under the project's name, numbered past any file already there,
  *  so it never replaces one; a link needs an account already signed in. */
 export async function exportWithoutAsking(r: ExportRequest): Promise<JobInfo> {
   const [it] = await prepare([r])
-  if (it.dest === 'share' && !accountToken()) throw new Error('Grip is signed out, and share links need a Bestboy account. Sign in from Grip (Share in the editor, or Sign In to Share Links in the menu bar menu), then share again.')
+  if (it.dest === 'share' && !accountToken()) throw new Error(SIGNED_OUT)
   if (it.dest === 'file') {
     const dir = it.path ? dirname(it.path) : exportFolder()
     if (!existsSync(dir)) throw new Error(`The folder “${dir}” does not exist.`)
     it.path = freePath(dir, it.path ? basename(it.path, extname(it.path)) : it.name, it.ext)
   }
-  return queue([it], null)[0]
+  return queue([it], null, true)[0]
 }
 
 /** The partial file of the running export, so the next launch deletes it if Grip dies mid-export
@@ -420,7 +423,7 @@ export function registerExport() {
     Object.assign(j, { state: 'uploading', phase: 'Uploading', progress: 1 })
     release(j)
     broadcast(j)
-    shareFile(j.path, { title: j.name, project: j.bundle, private: j.private }).then(
+    shareFile(j.path, { title: j.name, project: j.bundle, private: j.private, copy: !j.agent }).then((s) => s && s.link).then(
       (url: unknown) => {
         if (typeof url === 'string' && /^https?:\/\//.test(url)) return finish(Object.assign(j, { url }), 'done')
         return url === null ? finish(j, 'canceled') : finish(j, 'failed', 'The upload finished without a link.')

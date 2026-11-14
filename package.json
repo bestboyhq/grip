@@ -53,6 +53,10 @@
         "to": "grip-mcp"
       },
       {
+        "from": "build/grip",
+        "to": "grip"
+      },
+      {
         "from": "node_modules/electron/dist/LICENSES.chromium.html",
         "to": "LICENSES.chromium.html"
       }
