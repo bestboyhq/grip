@@ -11,22 +11,22 @@
   import Icon, { type IconName } from '../recorder/Icon.svelte'
   import { ensurePermission, setSettings, shell, type Permission, type PermissionStatus, type Settings } from '../recorder/shell.svelte.ts'
   import appIcon from '../../../build/icon.png'
-  import { acceleratorOf, modifiersOf, symbols, type Press } from '../../shared/shortcut.ts'
+  import { acceleratorOf, modifiersOf, pressed, symbols, takesAppKeys, type Press } from '../../shared/shortcut.ts'
   import SettingPreview from './SettingPreview.svelte'
 
   let { params }: { params: URLSearchParams } = $props()
 
   const ROWS: Array<{ id: Permission; title: string; reason: string; icon: IconName; required?: boolean }> = [
-    { id: 'screen', title: 'Screen Recording', reason: 'Records your screen and the sound your Mac plays.', icon: 'screen', required: true },
+    { id: 'screen', title: 'Screen Recording', reason: 'So Grip can record your screen, with the sound your Mac plays.', icon: 'screen', required: true },
     { id: 'accessibility', title: 'Accessibility', reason: 'Shows your keystrokes, and fits the window you record to size.', icon: 'accessibility' },
     { id: 'microphone', title: 'Microphone', reason: 'Records your voice.', icon: 'mic' },
     { id: 'camera', title: 'Camera', reason: 'Records you in a bubble next to your screen.', icon: 'camera' },
   ]
   const NEED: Record<Permission, string> = {
-    screen: 'Screen recording is turned off for Grip, so it can’t record. Turn it back on below.',
-    accessibility: 'Accessibility is turned off for Grip, so your keystrokes won’t show. Turn it back on below.',
-    microphone: 'The microphone is turned off for Grip. Turn it back on below.',
-    camera: 'The camera is turned off for Grip. Turn it back on below.',
+    screen: 'Screen Recording is off for Grip, so it can’t record. Turn it back on below, and you can go on.',
+    accessibility: 'Accessibility is off for Grip, so your keystrokes won’t show. Turn it back on below.',
+    microphone: 'The microphone is off for Grip. Turn it back on below.',
+    camera: 'The camera is off for Grip. Turn it back on below.',
   }
   const TOGGLES: Array<[keyof Settings, string, string]> = [
     ['countdown', 'Countdown', '3, 2, 1 before the recording starts.'],
@@ -98,7 +98,8 @@
   // old one, ⌫ removes it).
   let typingKeys = $state(false)
   let keysNote = $state('') // why the last one typed can't be used
-  let held = $state('') // the modifiers down while listening, shown as they go down
+  let held = $state('') // the keys down while listening, shown as they go down
+  const caps = (keys: string) => keys.match(/[⌃⌥⇧⌘]|.+/gu) ?? [] // one cap a key
   const recordKeys = $derived(symbols(shell.settings?.recordShortcut ?? '') ?? '')
 
   function listen() {
@@ -120,9 +121,9 @@
     if (!recordKeys) listen()
   }
   function stepKeys(e: KeyboardEvent) {
-    if (page !== 'shortcut' || !typingKeys) return
-    held = modifiersOf(e)
-    if (e.type === 'keydown') typeKeys(e)
+    if (!typingKeys) return
+    if (e.type === 'keyup') held = modifiersOf(e)
+    else if (page === 'shortcut') typeKeys(e) // Settings' field takes its own
   }
   function typeKeys(e: KeyboardEvent) {
     if (!typingKeys || (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey)) return // Tab moves on
@@ -135,11 +136,11 @@
   onMount(() => on('shell:typed', typed))
   async function typed(press: Press) {
     if (!typingKeys) return
+    held = pressed(press) // each key as it goes down, the ones that make no shortcut too
     const keys = acceleratorOf(press)
-    if (keys === '') return // only modifiers so far
-    if (!keys) return void (keysNote = 'Use ⌘ or ⌃ with another modifier, like ⌥⌘ or ⇧⌘.')
+    keysNote = keys === null ? `Add ⌘ or ⌃: ${held} alone types text.` : ''
+    if (!keys) return // only modifiers so far, or keys that type text
     typingKeys = false
-    held = ''
     use(keys)
   }
   // macOS's own screenshot and recording keys, one switch away: most people already reach for them.
@@ -147,7 +148,13 @@
   const MACOS_KEYS = 'Shift+Command+5'
   async function use(keys: string) {
     const ok = await invoke('shell:shortcut', keys)
-    keysNote = !ok ? `Another app uses ${symbols(keys)}. Try another.` : ok === 'macos' ? `Grip takes ${symbols(keys)} over from macOS until you quit Grip.` : ''
+    keysNote = !ok
+      ? `Another app uses ${symbols(keys)}. Try another.`
+      : ok === 'macos'
+        ? `Grip takes ${symbols(keys)} over from macOS until you quit Grip.`
+        : takesAppKeys(keys)
+          ? `Saved. Other apps lose ${symbols(keys)} while Grip runs.`
+          : ''
   }
 </script>
 
@@ -214,43 +221,44 @@
     <section class="welcome">
       <img src={appIcon} alt="" width="128" height="128" />
       <h1>Welcome to Grip</h1>
-      <p>Record your screen and get a polished video, with zooms, a smooth cursor, and captions done for you.</p>
+      <p>Record your screen once. Grip adds the zooms, the smooth cursor, and the captions for you.</p>
       <button class="button primary" onclick={() => ((page = 'permissions'), setSettings({ welcomed: true }))}>Get Started</button>
     </section>
   {:else if page === 'permissions'}
     <section class="body">
-      <h2>Allow access</h2>
-      <p class="lead">Grip needs to see your screen to record it. The rest is up to you.</p>
+      <h2>Let Grip see your screen</h2>
+      <p class="lead">That is the one thing it needs. The rest is up to you.</p>
       {@render needBanner()}
       {@render permissionList()}
     </section>
     <footer>
-      <span>{#if !screenOk}<button class="link" onclick={toShortcut}>Skip for now</button>{/if}</span>
+      <!-- No way past without Screen Recording: Grip can do nothing without it. -->
+      <span class="reason">{#if !screenOk}Turn on Screen Recording, and you are ready.{/if}</span>
       <button class="button primary" disabled={!screenOk} onclick={toShortcut}>Continue</button>
     </footer>
   {:else if page === 'shortcut'}
     <!-- People reach for different keys, macOS's screenshot ones among them: Grip presets none and
          waits for theirs. While it listens, the field reads as an input waiting for them: a caret,
-         and each modifier as it goes down. -->
+         and each key as it goes down. -->
     <section class="welcome">
       <button class="caps" aria-label={typingKeys ? 'Recording shortcut: press your keys' : `Recording shortcut: ${recordKeys || 'none'}. Change`} onclick={listen}>
         {#if typingKeys}
-          {#each [...held] as key (key)}<kbd>{key}</kbd>{/each}
+          {#each caps(held) as key (key)}<kbd>{key}</kbd>{/each}
           <span class="slot"><span class="caret"></span>{#if !held}Press your shortcut{/if}</span>
         {:else if recordKeys}
-          {#each recordKeys.match(/[⌃⌥⇧⌘]|.+/gu) ?? [] as key, i (i)}<kbd>{key}</kbd>{/each}
+          {#each caps(recordKeys) as key (key)}<kbd>{key}</kbd>{/each}
         {:else}
           <kbd class="empty">Set a shortcut</kbd>
         {/if}
       </button>
-      <h1>Use your favorite shortcut</h1>
+      <h1>Pick your shortcut</h1>
       <p>
-        Press the keys that should open Grip from any app, ready to record. macOS’s screenshot keys work too. Grip shares
+        Press the keys you like to reach for. They open Grip from any app. macOS’s screenshot keys work too. Grip shares
         usage stats, never what you record. Turn it off in Settings.
       </p>
       <p class="after" role="status">
         {#if keysNote}{keysNote}
-        {:else if !typingKeys && recordKeys}Saved. Click the keys to change them.
+        {:else if !typingKeys && recordKeys}Saved. {recordKeys} is yours. Click the keys to change them.
         {:else if status?.accessibility && status.accessibility !== 'granted'}macOS’s own keys reach Grip with
           <button class="link" onclick={() => request('accessibility')}>Accessibility</button> on.
         {:else if typingKeys && recordKeys}Press the new keys, or Esc to keep {recordKeys}.{/if}
@@ -298,8 +306,8 @@
                   (status?.accessibility === 'granted' ? 'macOS’s screenshot keys work too.' : 'To use macOS’s own, allow Accessibility below.'))}
             </div>
           </div>
-          <button class="keys" class:typing={typingKeys} class:empty={!recordKeys} aria-label="New recording shortcut: {recordKeys || 'none'}. Change" title="Click to change" onclick={listen} onkeydown={typeKeys} onblur={stopListening}
-            >{typingKeys ? 'Type a shortcut' : recordKeys || 'Set a shortcut'}</button
+          <button class="keys" class:typing={typingKeys} class:empty={!(typingKeys ? held : recordKeys)} aria-label="New recording shortcut: {recordKeys || 'none'}. Change" title="Click to change" onclick={listen} onkeydown={typeKeys} onblur={stopListening}
+            >{typingKeys ? held || 'Type a shortcut' : recordKeys || 'Set a shortcut'}</button
           >
         </li>
         <li>
@@ -809,7 +817,6 @@
   .keys:hover {
     background: var(--surface-hover);
   }
-  .keys.typing,
   .keys.empty {
     color: var(--fg-secondary);
     letter-spacing: 0;

@@ -83,7 +83,7 @@
       <div class="text" bind:this={content} style:transform="translateY({-pos}px)">{notes}</div>
     </div>
   {:else}
-    <textarea aria-label="Speaker notes" placeholder="What you want to say. Only you see this; it stays out of the recording." value={notes} oninput={(e) => edit(e.currentTarget.value)}
+    <textarea aria-label="Speaker notes" placeholder="Write what you want to say. Only you see these notes. They stay out of the recording." value={notes} oninput={(e) => edit(e.currentTarget.value)}
     ></textarea>
   {/if}
 </main>

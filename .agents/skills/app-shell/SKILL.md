@@ -16,9 +16,11 @@ The native macOS app around everything else.
   A launch at login stays in the menu bar; macOS marks it with the launched-as-login-item Apple Event (`wasOpenedAtLogin`).
   Dev and hidden runs never add a login item: the bare dev Electron would open at login instead.
 - One click on the menu bar icon (or the user's record shortcut) opens the area picker at once (the freeze lands under it, see capture), and while recording finishes; the menu is on right-click.
+  It opens in the mode picked last, and in area before the first pick: an area's card offers Screenshot and Record both, so nobody chooses one before they see the other.
   Esc closes the whole picker, toolbar included.
-  Opening Grip (a launch, the Dock icon, opening it again from Finder or Spotlight, the end of onboarding) shows the toolbar alone, with nothing frozen.
+  Opening Grip (a launch, the Dock icon, opening it again from Finder or Spotlight) shows the toolbar alone, with nothing frozen.
   A frozen screen nobody asked for reads as a hung Mac to a new user.
+  The end of onboarding opens the picker like the shortcut does: Continue asked for it, and a new user facing the toolbar alone does not know what comes next.
   A recording or screenshot ends in a small result card (copy as a video under 20 MB, GIF, link, edit), not in the editor.
   Its copy, GIF, and link use the project's style, which starts plain (see compositor).
   Recent Captures (menu bar menu and the toolbar's gear) reopens the last five cards, across restarts; their screenshots stay in Grip's own folder, since `$TMPDIR` gets purged.
@@ -36,6 +38,10 @@ The native macOS app around everything else.
   Many users want Grip on macOS's own screenshot keys (⇧⌘5), and macOS takes those before any app sees them.
   The record shortcut has no default: people reach for different keys.
   Onboarding ends waiting for the user's own, with Continue once they press them and Skip leaving none; Settings sets, changes, or removes it (⌫).
+  Onboarding goes past permissions only with Screen Recording on, since Grip can do nothing without it; the shortcut is the user's to skip.
+  Any key with ⌘ or ⌃ makes one, and so does an F key: ⌘4 is what people try first.
+  One modifier takes those keys from every other app, so the field saves it and says what it costs; keys that type text (⌥A, ⇧A, a bare key) are refused.
+  The field shows each key as it goes down, refused ones too: a field that stays empty while keys are held reads as broken.
   A switch in Settings hands ⇧⌘5 to Grip (off leaves none); while the user types a shortcut, macOS's shortcuts reach the field, and the macOS one on the keys picked stays off while Grip runs: back on when the user picks other keys or quits Grip.
   macOS lets its shortcuts through only to the active app with Accessibility on, and Chromium still drops every key macOS reserves before the page sees it, so the field takes its keys from AppKit.
   Only real key presses prove this works: a page-level key event skips both layers.

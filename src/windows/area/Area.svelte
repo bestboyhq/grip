@@ -487,7 +487,7 @@
           {@render actions(startDisplay)}
         </div>
       {:else}
-        <div class="hint">Move the pointer onto a display to record it · Esc to cancel</div>
+        <div class="hint">Move the pointer onto a display to capture it · Esc to cancel</div>
       {/if}
     </div>
   {:else if shell.mode === 'window'}
@@ -515,7 +515,7 @@
         {@render actions(startWindow)}
       </div>
     {:else}
-      <div class="hint">Move the pointer over a window to record it · Esc to cancel</div>
+      <div class="hint">Move the pointer over a window to capture it · Esc to cancel</div>
     {/if}
   {:else if shell.mode === 'area'}
     {#if sel}
@@ -621,7 +621,7 @@
         {@const [x0, y0, x1, y1] = [last.x, last.y, last.x + last.width, last.y + last.height].map((v) => px(v) / scale)}
         <div class="last" style:left="{x0}px" style:top="{y0}px" style:width="{x1 - x0}px" style:height="{y1 - y0}px"><span class="tag">Last area</span></div>
       {/if}
-      <div class="hint">Drag to select an area · Esc to cancel</div>
+      <div class="hint">Drag over what you want to capture · Esc to cancel</div>
     {/if}
   {/if}
   <!-- Outside the branches above, so it bursts away even as the recording's backdrop replaces them. -->

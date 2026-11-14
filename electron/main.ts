@@ -165,8 +165,8 @@ app.on('before-quit', async (e) => {
         ? Promise.resolve({ response: 1 })
         : dialog.showMessageBox({
             type: 'warning',
-            message: recording ? 'A recording is in progress.' : exports === 1 ? 'An export is in progress.' : `${exports} exports are in progress.`,
-            detail: recording ? 'Grip can save it and then quit.' : 'Quitting now stops it. Your project is safe.',
+            message: recording ? 'You are still recording.' : exports === 1 ? 'An export is in progress.' : `${exports} exports are in progress.`,
+            detail: recording ? 'Grip can save your recording first, then quit.' : 'Quitting now stops it. Your project is safe.',
             buttons: ['Cancel', recording ? 'Save Recording and Quit' : 'Stop and Quit'],
             defaultId: 0,
             cancelId: 0,

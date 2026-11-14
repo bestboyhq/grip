@@ -130,8 +130,8 @@ export async function startUpdates(log: (err: unknown) => void) {
   // Squirrel cannot replace an app running from the disk image or from Downloads (App Translocation).
   if (!app.isInApplicationsFolder() && !hidden) {
     const response = dialog.showMessageBoxSync({
-      message: 'Move Grip to your Applications folder?',
-      detail: 'Grip can only update itself from there.',
+      message: 'Move Grip to Applications?',
+      detail: 'From there, Grip keeps itself up to date for you.',
       buttons: ['Move to Applications', 'Not Now'],
       defaultId: 0,
       cancelId: 1,
@@ -163,7 +163,7 @@ export async function startUpdates(log: (err: unknown) => void) {
     if (!asked || hidden) return
     asked = false
     void dialog
-      .showMessageBox({ message: `Grip ${version} is ready to install.`, detail: 'Restart now, or it installs the next time you quit Grip.', buttons: ['Restart to Update', 'Later'], defaultId: 0, cancelId: 1 })
+      .showMessageBox({ message: 'A new Grip is ready.', detail: `Restart now to get Grip ${version}, or Grip installs it the next time you quit.`, buttons: ['Restart to Update', 'Later'], defaultId: 0, cancelId: 1 })
       .then(({ response }) => response === 0 && restartToUpdate())
   })
   // Each quit decides afresh whether it restarts, so one cancelled from a prompt never relaunches a

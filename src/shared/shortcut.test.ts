@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { acceleratorOf, symbols } from './shortcut.ts'
+import { acceleratorOf, pressed, symbols, takesAppKeys } from './shortcut.ts'
 
 const press = (code: string, mods = '') => ({ code, metaKey: mods.includes('⌘'), altKey: mods.includes('⌥'), shiftKey: mods.includes('⇧'), ctrlKey: mods.includes('⌃') })
 
@@ -10,16 +10,25 @@ test('a key press becomes a global shortcut, by the key’s place, in macOS nota
   assert.equal(acceleratorOf(press('KeyA', '⌃⌥⇧⌘')), 'Control+Alt+Shift+Command+A') // ⌥ types "ą": the place counts
   assert.equal(acceleratorOf(press('F5')), 'F5')
   assert.equal(acceleratorOf(press('ShiftLeft', '⇧')), '') // still holding modifiers
-  assert.equal(acceleratorOf(press('KeyC', '⌘')), null) // every app's Copy
+  assert.equal(acceleratorOf(press('Digit4', '⌘')), 'Command+4') // one modifier is enough with ⌘ or ⌃
+  assert.equal(acceleratorOf(press('KeyC', '⌃')), 'Control+C')
   assert.equal(acceleratorOf(press('KeyA', '⌥')), null) // types "ą"
   assert.equal(acceleratorOf(press('KeyA', '⇧⌥')), null)
-  assert.equal(acceleratorOf(press('KeyC', '⌃')), null)
-  for (const [code, mods, shown] of [['Enter', '⌥⌘', '⌥⌘↩'], ['Digit4', '⇧⌘', '⇧⌘4'], ['Backspace', '⌃⌥', '⌃⌥⌫'], ['Slash', '⇧⌘', '⇧⌘/'], ['F12', '', 'F12']]) {
+  assert.equal(acceleratorOf(press('KeyA')), null)
+  for (const [code, mods, shown] of [['Enter', '⌥⌘', '⌥⌘↩'], ['Digit4', '⌘', '⌘4'], ['Digit4', '⇧⌘', '⇧⌘4'], ['Backspace', '⌃⌥', '⌃⌥⌫'], ['Slash', '⇧⌘', '⇧⌘/'], ['F12', '', 'F12']]) {
     assert.equal(symbols(acceleratorOf(press(code, mods))!), shown)
   }
 })
 
 test('only accelerators Grip makes pass', () => {
   assert.equal(symbols('Command+Alt+Return'), '⌥⌘↩') // any order, shown in macOS order
-  for (const bad of ['Command+C', 'Alt+A', 'Command+Command+K', 'Super+Alt+K', 'Alt+Command+', 'Alt+Command+Enter', 'Alt+Command+ą', '']) assert.equal(symbols(bad), null, bad)
+  for (const bad of ['Shift+A', 'Alt+A', 'Command+Command+K', 'Super+Alt+K', 'Alt+Command+', 'Alt+Command+Enter', 'Alt+Command+ą', '']) assert.equal(symbols(bad), null, bad)
+})
+
+test('every key shows as it goes down, and a shortcut on other apps’ keys is told apart', () => {
+  assert.equal(pressed(press('MetaLeft', '⌘')), '⌘')
+  assert.equal(pressed(press('Digit4', '⇧⌘')), '⇧⌘4')
+  assert.equal(pressed(press('KeyA', '⌥')), '⌥A') // refused, shown all the same
+  assert.equal(pressed(press('Space', '⌃')), '⌃Space')
+  assert.deepEqual(['Command+4', 'Control+C', 'Shift+Command+4', 'F5', 'Shift+F5'].map(takesAppKeys), [true, true, false, false, false])
 })

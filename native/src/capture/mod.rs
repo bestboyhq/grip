@@ -466,7 +466,7 @@ impl Recording {
                 let end = if free.is_some_and(|f| f < STOP_FREE) {
                     Some(("disk-full", "The disk is almost full, so the recording was stopped and saved.".to_string()))
                 } else if let Some(why) = tracks.lost.lock().unwrap().clone() {
-                    Some(("source-lost", format!("{why} The recording was saved.")))
+                    Some(("source-lost", format!("{why} Your recording is safe up to that point.")))
                 } else {
                     write_error.map(|e| ("error", format!("Writing the recording failed: {e}")))
                 };

@@ -46,7 +46,7 @@
 //   shell:open-project(path?)     open a bundle in the editor (no path: Open dialog)
 //   shell:open-files(paths)       dropped files: bundles open, videos import first; rejects with a reason
 //   shell:open-settings           the settings window (onboarding route, settings page)
-//   shell:finish-onboarding(atLogin)   onboarding is done: the login item as its switch says, then the toolbar
+//   shell:finish-onboarding(atLogin)   onboarding is done: the login item as its switch says, then the picker
 //   shell:login-item(on?) -> on   Grip opens at login (macOS's login item; never in dev or hidden runs)
 //   shell:relaunch                macOS applies a new Screen Recording grant only after a relaunch
 //   notes:prompter                main -> speaker notes window: start or stop the prompter (⌥⌘.)
@@ -245,11 +245,12 @@ function controller(): BrowserWindow {
   return (toolbar = win)
 }
 
-/** Open the picker on the display under the mouse, in the last mode unless told otherwise: the screen
- *  freezes, and in area mode the last area shows as an outline, a click away from recording (↩) or
- *  copying (⌘C) it again. Mode null is the toolbar alone, nothing frozen: before the first pick, and whenever
- *  Grip is opened rather than asked to record. While recording, bring back the controls. */
-export function showPicker(m: Mode | null = settings().mode) {
+/** Open the picker on the display under the mouse, in the last mode unless told otherwise (area before
+ *  the first pick: its card offers a screenshot and a recording both): the screen freezes, and in area
+ *  mode the last area shows as an outline, a click away from recording (↩) or copying (⌘C) it again.
+ *  Mode null is the toolbar alone, nothing frozen: whenever Grip is opened rather than asked to record.
+ *  While recording, bring back the controls. */
+export function showPicker(m: Mode | null = settings().mode ?? 'area') {
   if (status !== 'idle') return showWidget()
   const win = controller()
   win.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))
@@ -320,7 +321,7 @@ export async function cancelRecording() {
     .showMessageBox({
       type: 'warning',
       message: 'Delete this recording?',
-      detail: 'Everything recorded so far will be deleted.',
+      detail: 'You will lose everything you recorded so far.',
       buttons: ['Keep Recording', 'Delete'],
       defaultId: 0,
       cancelId: 0,
@@ -827,7 +828,7 @@ async function unsaved(win: BrowserWindow, error: string): Promise<Choice> {
   }
   const { response } = await dialog.showMessageBox(win, {
     type: 'warning',
-    message: `Your latest edits to “${win.getTitle()}” aren’t saved.`,
+    message: 'Grip couldn’t save your edits.', // a sheet on the project's own window: its title bar has the name
     detail: error,
     buttons: ['Save Again', 'Cancel', 'Discard Edits'],
     defaultId: 0,
@@ -912,7 +913,7 @@ export function registerRecorder() {
     setSettings({ onboarded: true })
     count('onboarded', { at_login: atLogin === true })
     for (const w of windowsOf('onboarding')) w.destroy()
-    showPicker(null)
+    showPicker() // in area for a new user: Continue asked for it, and the toolbar alone leaves them guessing what comes next
   })
   ipcMain.handle('shell:countdown', (_e, on: boolean) => {
     counting = !!on
@@ -1036,7 +1037,7 @@ export function registerRecorder() {
     if (quitting) return
     showResult(`bundle=${encodeURIComponent(bundle)}`, homeDisplay)
     // It stopped on its own (disk full, display unplugged, a write failed): say why.
-    if (end?.reason && end.reason !== 'user') void alert('Grip stopped recording.', end.message ?? 'The recording was saved.')
+    if (end?.reason && end.reason !== 'user') void alert('Grip had to stop recording.', end.message ?? 'Your recording is safe up to that point.')
   })
   // Recordings cut off by a crash or power loss, made whole at launch (capture repairs its own
   // files, projects rebuilds the rest): each opens in the editor, which says it was recovered.

@@ -14,7 +14,7 @@ export interface PlainError {
 
 const FULL = 'Your disk is full. Free up some space, then try again.'
 const DENIED = 'Grip is not allowed to use this file or folder. Check its permissions in Finder.'
-const SCREEN = 'Screen recording is turned off for Grip. Turn it on in System Settings to record.'
+const SCREEN = 'Screen Recording is off for Grip. Turn it on in System Settings to record.'
 const HTTP = { message: 'The server didn’t answer as expected. Try again later.' }
 
 // errno names (Node), POSIX codes inside NSError, and macOS OSStatus / framework codes.
@@ -55,9 +55,9 @@ const PHRASES: Array<[RegExp, PlainError]> = [
   [/read-only file system/i, CODES.EROFS],
   // "The user declined TCCs for application, window, display capture" is ScreenCaptureKit's -3801 text.
   [/declined TCC|screen ?(capture|recording)[^.]*(denied|not (allowed|authori[sz]ed|permitted)|permission)/i, { message: SCREEN, permission: 'screen' }],
-  [/microphone[^.]*(denied|not (allowed|authori[sz]ed)|permission)/i, { message: 'Microphone access is turned off for Grip. Turn it on in System Settings.', permission: 'microphone' }],
-  [/camera[^.]*(denied|not (allowed|authori[sz]ed)|permission)/i, { message: 'Camera access is turned off for Grip. Turn it on in System Settings.', permission: 'camera' }],
-  [/accessibility[^.]*(denied|not (allowed|trusted|authori[sz]ed)|permission)/i, { message: 'Accessibility is turned off for Grip. Turn it on in System Settings.', permission: 'accessibility' }],
+  [/microphone[^.]*(denied|not (allowed|authori[sz]ed)|permission)/i, { message: 'The microphone is off for Grip. Turn it on in System Settings.', permission: 'microphone' }],
+  [/camera[^.]*(denied|not (allowed|authori[sz]ed)|permission)/i, { message: 'The camera is off for Grip. Turn it on in System Settings.', permission: 'camera' }],
+  [/accessibility[^.]*(denied|not (allowed|trusted|authori[sz]ed)|permission)/i, { message: 'Accessibility is off for Grip. Turn it on in System Settings.', permission: 'accessibility' }],
   [/operation not permitted|permission denied/i, { message: DENIED }],
   [/no such file or directory/i, CODES.ENOENT],
   // Chromium's network errors (Electron's net module) and HTTP failures (updates, sharing).
