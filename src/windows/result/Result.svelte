@@ -114,7 +114,7 @@
     const what = j.options?.format === 'gif' ? 'GIF' : j.dest === 'share' ? 'link' : 'video'
     if (j.state === 'failed') return j.error ?? 'The export failed.'
     if (j.state === 'canceled') return 'Canceled'
-    if (j.state === 'done') return j.dest === 'share' ? 'Link copied' : `${what === 'GIF' ? 'GIF' : 'Video'} copied · ${formatBytes(j.bytes ?? 0)}`
+    if (j.state === 'done') return j.dest === 'share' ? 'Link copied' : `${what === 'GIF' ? 'GIF' : 'Video'} copied · ${formatBytes(j.bytes ?? 0)}. Paste it anywhere.`
     if (j.state === 'uploading') return 'Uploading…'
     if (j.state === 'queued') return 'Waiting…'
     return `${j.phase?.startsWith('Fitting') ? j.phase : `Making the ${what}`} · ${Math.floor(j.progress * 100)}%`

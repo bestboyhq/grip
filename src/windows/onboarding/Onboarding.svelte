@@ -17,16 +17,16 @@
   let { params }: { params: URLSearchParams } = $props()
 
   const ROWS: Array<{ id: Permission; title: string; reason: string; icon: IconName; required?: boolean }> = [
-    { id: 'screen', title: 'Screen Recording', reason: 'Records your screen and the sound your Mac plays.', icon: 'screen', required: true },
+    { id: 'screen', title: 'Screen Recording', reason: 'So Grip can record your screen, with the sound your Mac plays.', icon: 'screen', required: true },
     { id: 'accessibility', title: 'Accessibility', reason: 'Shows your keystrokes, and fits the window you record to size.', icon: 'accessibility' },
     { id: 'microphone', title: 'Microphone', reason: 'Records your voice.', icon: 'mic' },
     { id: 'camera', title: 'Camera', reason: 'Records you in a bubble next to your screen.', icon: 'camera' },
   ]
   const NEED: Record<Permission, string> = {
-    screen: 'Screen recording is turned off for Grip, so it can’t record. Turn it back on below.',
-    accessibility: 'Accessibility is turned off for Grip, so your keystrokes won’t show. Turn it back on below.',
-    microphone: 'The microphone is turned off for Grip. Turn it back on below.',
-    camera: 'The camera is turned off for Grip. Turn it back on below.',
+    screen: 'Screen Recording is off for Grip, so it can’t record. Turn it back on below, and you can go on.',
+    accessibility: 'Accessibility is off for Grip, so your keystrokes won’t show. Turn it back on below.',
+    microphone: 'The microphone is off for Grip. Turn it back on below.',
+    camera: 'The camera is off for Grip. Turn it back on below.',
   }
   const TOGGLES: Array<[keyof Settings, string, string]> = [
     ['countdown', 'Countdown', '3, 2, 1 before the recording starts.'],
@@ -221,19 +221,19 @@
     <section class="welcome">
       <img src={appIcon} alt="" width="128" height="128" />
       <h1>Welcome to Grip</h1>
-      <p>Record your screen and get a polished video, with zooms, a smooth cursor, and captions done for you.</p>
+      <p>Record your screen once. Grip adds the zooms, the smooth cursor, and the captions for you.</p>
       <button class="button primary" onclick={() => ((page = 'permissions'), setSettings({ welcomed: true }))}>Get Started</button>
     </section>
   {:else if page === 'permissions'}
     <section class="body">
-      <h2>Allow access</h2>
-      <p class="lead">Grip needs to see your screen to record it. The rest is up to you.</p>
+      <h2>Let Grip see your screen</h2>
+      <p class="lead">That is the one thing it needs. The rest is up to you.</p>
       {@render needBanner()}
       {@render permissionList()}
     </section>
     <footer>
       <!-- No way past without Screen Recording: Grip can do nothing without it. -->
-      <span class="reason">{#if !screenOk}Allow Screen Recording to continue.{/if}</span>
+      <span class="reason">{#if !screenOk}Turn on Screen Recording, and you are ready.{/if}</span>
       <button class="button primary" disabled={!screenOk} onclick={toShortcut}>Continue</button>
     </footer>
   {:else if page === 'shortcut'}
@@ -251,14 +251,14 @@
           <kbd class="empty">Set a shortcut</kbd>
         {/if}
       </button>
-      <h1>Use your favorite shortcut</h1>
+      <h1>Pick your shortcut</h1>
       <p>
-        Press the keys that should open Grip from any app, ready to record. macOS’s screenshot keys work too. Grip shares
+        Press the keys you like to reach for. They open Grip from any app. macOS’s screenshot keys work too. Grip shares
         usage stats, never what you record. Turn it off in Settings.
       </p>
       <p class="after" role="status">
         {#if keysNote}{keysNote}
-        {:else if !typingKeys && recordKeys}Saved. Click the keys to change them.
+        {:else if !typingKeys && recordKeys}Saved. {recordKeys} is yours. Click the keys to change them.
         {:else if status?.accessibility && status.accessibility !== 'granted'}macOS’s own keys reach Grip with
           <button class="link" onclick={() => request('accessibility')}>Accessibility</button> on.
         {:else if typingKeys && recordKeys}Press the new keys, or Esc to keep {recordKeys}.{/if}
