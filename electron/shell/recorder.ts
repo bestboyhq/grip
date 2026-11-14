@@ -245,11 +245,12 @@ function controller(): BrowserWindow {
   return (toolbar = win)
 }
 
-/** Open the picker on the display under the mouse, in the last mode unless told otherwise: the screen
- *  freezes, and in area mode the last area shows as an outline, a click away from recording (↩) or
- *  copying (⌘C) it again. Mode null is the toolbar alone, nothing frozen: before the first pick, and whenever
- *  Grip is opened rather than asked to record. While recording, bring back the controls. */
-export function showPicker(m: Mode | null = settings().mode) {
+/** Open the picker on the display under the mouse, in the last mode unless told otherwise (area before
+ *  the first pick: its card offers a screenshot and a recording both): the screen freezes, and in area
+ *  mode the last area shows as an outline, a click away from recording (↩) or copying (⌘C) it again.
+ *  Mode null is the toolbar alone, nothing frozen: whenever Grip is opened rather than asked to record.
+ *  While recording, bring back the controls. */
+export function showPicker(m: Mode | null = settings().mode ?? 'area') {
   if (status !== 'idle') return showWidget()
   const win = controller()
   win.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))

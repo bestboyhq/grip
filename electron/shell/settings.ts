@@ -26,7 +26,7 @@ export interface Settings {
   notes: string
   /** Prompter scroll speed in lines per minute, and text size in points. */
   prompter: { speed: number; size: number }
-  /** The picker mode last chosen; the picker opens in it (null: none yet, the toolbar alone). */
+  /** The picker mode last chosen; the picker opens in it (null: none yet, it opens in area). */
   mode: 'display' | 'window' | 'area' | null
   /** The last area picked: display id and rect in points relative to that display. The next pick
    *  outlines it, and a click picks it again. */
