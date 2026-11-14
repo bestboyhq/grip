@@ -1,103 +1,84 @@
 import type { Wallpaper } from './index.ts'
-import { dunes, relief, type DuneLayer, type DuneLook, type ReliefLook } from './spring.ts'
+import { dune, picture, veil, type Picture } from './picture.ts'
 
-const sand = (id: string, name: string, colors: string[], look: ReliefLook) => relief('Sunset', `sunset-${id}`, name, colors, look)
-const sunset = (id: string, name: string, colors: string[], look: DuneLook, layers: DuneLayer[]) => dunes('Sunset', `sunset-${id}`, name, colors, { turn: 0.15, ...look }, layers)
+const sunset = (id: string, name: string, p: Picture) => picture('Sunset', `sunset-${id}`, name, p)
 
-// Warm desert light: crests lean (skew) toward a steep lee side, light comes low from the side, and
-// shadows run long and deep red rather than grey.
+// Sunset: warm dunes that fall to one side, a cream light on each crest and a deep red below it.
 export const SUNSET: Wallpaper[] = [
-  // Dunes: layered dune horizons.
-  sunset('sahara', 'Sahara', ['#f7a58f', '#ffd9a0', '#ffc28a', '#f08a5a', '#d9533f', '#8a2a3a', '#ffe0a8'], { angle: 0.05, light: -0.6, skew: 0.45, sheen: 0.6, shadow: 0.6 }, [
-    [0.0, 0.04, 4.0, 1, 6, 2, 0.3],
-    [0.05, 0.05, 3.4, 120, 2, 3, 0.3],
-    [0.11, 0.06, 2.8, 2, 3, 4, -0.3],
-    [0.2, 0.26, 0.9, 3, 6, 4, 0.5],
-    [0.36, 0.12, 1.6, 121, 4, 5, -0.3],
-  ]),
-  sunset('mirage', 'Mirage', ['#f2a08f', '#fbd2b0', '#f7b89a', '#ee8f78', '#d8606a', '#b04060'], { angle: 0.32, light: 0.5, skew: 0.3, haze: 0.6, shadow: 0.45 }, [
-    [-0.06, 0.05, 3.4, 124, 2, 3, 0.2],
-    [0.0, 0.07, 2.6, 7, 2, 3, 0.3],
-    [0.09, 0.08, 3.0, 125, 3, 4, -0.2],
-    [0.17, 0.09, 2.2, 8, 3, 4, -0.3],
-    [0.28, 0.14, 1.5, 9, 4, 5, 0.3],
-  ]),
-  sunset('erg', 'Erg', ['#7a2a4a', '#e8704a', '#c8483f', '#9a2a3a', '#6a1a34', '#4a1028', '#ff9a5a'], { light: -0.7, skew: 0.6, sheen: 0.8, shadow: 0.6, haze: 0.35, glow: 0.6, glowX: -0.3, glowColor: 6 }, [
-    [-0.24, 0.04, 4.4, 127, 2, 3, 0.2],
-    [-0.14, 0.06, 3.4, 14, 2, 3, 0.3],
-    [-0.02, 0.08, 2.8, 15, 3, 4, -0.3],
-    [0.12, 0.09, 2.3, 16, 4, 5, 0.3],
-    [0.28, 0.16, 1.4, 128, 4, 5, -0.2],
-  ]),
-  sunset('harmattan', 'Harmattan', ['#f4c0a8', '#fff0dc', '#f6c4a8', '#eea08a', '#dc7c74', '#c05e66'], { light: 0.4, skew: 0.3, haze: 0.7, shadow: 0.4, dof: 0.008, glow: 0.7, glowX: 0.2 }, [
-    [0.22, 0.03, 4.0, 60, 2, 3, 0.2],
-    [0.27, 0.04, 3.2, 61, 3, 4, -0.2],
-    [0.33, 0.06, 2.4, 62, 4, 5, 0.2],
-  ]),
-  // Sun: a low sun disc with the dunes in near silhouette.
-  sunset('solstice', 'Solstice', ['#ff7a6a', '#ffcf80', '#e0586a', '#b02a50', '#801a44', '#561030', '#fff2b8'], { light: 0.2, haze: 0.3, sheen: 0.8, shadow: 0.4, sunX: 0.12, sunY: 0.05, sunR: 0.12, sunColor: 6, glow: 0.5, glowX: 0.12 }, [
-    [0.1, 0.05, 3.2, 1, 2, 3, 0.2],
-    [0.18, 0.07, 2.6, 2, 3, 4, -0.2],
-    [0.29, 0.1, 1.9, 3, 4, 5, 0.2],
-  ]),
-  sunset('afterglow', 'Afterglow', ['#5a3a8a', '#ff9a80', '#c8607a', '#9a3a6a', '#6a2050', '#40143a', '#ffd8a8'], { light: -0.2, haze: 0.3, sheen: 0.7, shadow: 0.4, sunX: -0.2, sunY: 0.14, sunR: 0.22, sunColor: 6, glow: 0.4, glowX: -0.2 }, [
-    [0.15, 0.04, 2.8, 54, 2, 3, 0.2],
-    [0.24, 0.06, 2.2, 55, 3, 4, -0.2],
-    [0.34, 0.08, 1.6, 56, 4, 5, 0.2],
-  ]),
-  sunset('cinnabar', 'Cinnabar', ['#a83a5a', '#ff8a60', '#ff9a6a', '#e85a4a', '#b8304a', '#6a1a40', '#ffeab8'], { light: 0.5, skew: 0.5, sheen: 0.7, shadow: 0.6, sunX: -0.38, sunY: -0.16, sunR: 0.05, sunColor: 6, glow: 0.5, glowX: -0.38 }, [
-    [0.04, 0.1, 2.6, 51, 2, 3, 0.3],
-    [0.18, 0.12, 2.2, 52, 3, 4, -0.3],
-    [0.32, 0.12, 1.6, 53, 4, 5, 0.2],
-  ]),
-  // Aerial: wind-cut dune ridges seen from above, sharp crests and long shadows.
-  sand('sirocco', 'Sirocco', ['#ffd8a0', '#ffd8a0', '#c84a3a', '#f08050', '#ffb070', '#ffd8a0'], { mode: 'ridges', freq: 3.5, angle: 0.5, sunAz: -2.6, sunEl: 0.32, lean: 0.8, detail: 0, warp: 1.1, swell: 0.3 }),
-  sand('paprika', 'Paprika', ['#ffc090', '#ffc090', '#b8303c', '#e8583f', '#ff8a58', '#ffc498'], { mode: 'ridges', freq: 2.3, angle: -0.35, seed: 3, sunAz: -0.4, sunEl: 0.42, lean: 0.9, detail: 0, warp: 0.9, swell: 0.25 }),
-  sand('saffron', 'Saffron', ['#ffe8a8', '#ffe8a8', '#e0603a', '#f5983f', '#ffc860', '#ffeab0'], { mode: 'ridges', freq: 5.5, angle: 1.25, seed: 5, sunAz: -2.0, sunEl: 0.42, lean: 0.5, detail: 0, warp: 1.3, swell: 0.2 }),
-  // Ripples: sand ripples running to the horizon, seen low and close.
-  sand('mojave', 'Mojave', ['#b86a9a', '#ffb07a', '#c0503f', '#f08a5a', '#ffc890'], { mode: 'ridges', freq: 14, horizon: -0.15, sunAz: -2.0, sunEl: 0.35, lean: 0.6, detail: 0, haze: 0.25 }),
-  sand('apricot', 'Apricot', ['#ffc0a8', '#fff0d8', '#e88a6a', '#ffb088', '#ffe2c4'], { mode: 'ridges', freq: 9, angle: 0.35, horizon: -0.26, sunAz: -0.9, sunEl: 0.4, lean: 0.3, detail: 0, haze: 0.35, swell: 0.3 }),
-  // Swell: one huge dune crossing the frame.
-  sunset('amberlight', 'Amberlight', ['#ff9a5a', '#ffd27a', '#ffc060', '#ff8a3f', '#e0502f', '#a02a2a'], { angle: -0.3, light: 0.6, skew: 0.35, sheen: 0.7, glow: 0.6, glowX: -0.3 }, [
-    [-0.02, 0.04, 2.4, 17, 2, 3, 0.4],
-    [0.14, 0.32, 0.75, 18, 3, 5, -0.4],
-  ]),
-  sunset('tangerine', 'Tangerine', ['#ffb070', '#ffd8a0', '#ffa04a', '#ff7a3a', '#f0503a', '#c8303f'], { angle: 1.15, light: -0.6, skew: 0.5, sheen: 0.6, shadow: 0.55 }, [
-    [-0.36, 0.05, 2.0, 44, 2, 3, 0.4],
-    [0.05, 0.3, 0.7, 45, 3, 5, -0.4],
-  ]),
-  // Mesas: flat-topped buttes and steep cliffs.
-  sunset('canyon', 'Canyon', ['#ffa880', '#ffe4c0', '#f0906a', '#d8604a', '#b03a40', '#7a2238', '#ffc090'], { light: 0.7, mesa: 0.5, sheen: 0.5, shadow: 0.6, haze: 0.45 }, [
-    [-0.02, 0.18, 4.0, 29, 6, 2, 0.2],
-    [0.1, 0.24, 3.2, 30, 2, 3, -0.2],
-    [0.24, 0.28, 2.6, 31, 3, 4, 0.2],
-    [0.38, 0.2, 2.2, 32, 4, 5, -0.2],
-  ]),
-  sunset('terracotta', 'Terracotta', ['#e07a6a', '#ffc8a0', '#f09a78', '#c84a40', '#962f3a', '#64192e', '#fff0c0'], { light: -0.6, mesa: 0.55, sheen: 0.6, shadow: 0.6, haze: 0.5, sunX: 0.3, sunY: -0.02, sunR: 0.09, sunColor: 6, glow: 0.5, glowX: 0.3 }, [
-    [0.1, 0.12, 2.2, 22, 2, 3, 0.2],
-    [0.24, 0.42, 1.1, 24, 3, 5, 0.2],
-  ]),
-  // Curl: sweeping folds bent around an off-frame center.
-  sunset('marrakesh', 'Marrakesh', ['#fff0d8', '#ffb08a', '#ffb08a', '#f0704f', '#d0404a', '#8a1f48', '#ffd09a'], { curl: true, cx: -1.0, cy: -0.6, light: -0.5, sheen: 0.6, shadow: 0.6 }, [
-    [-0.3, 0.03, 2.6, 26, 6, 2, 0.2],
-    [-0.12, 0.04, 2.2, 27, 2, 3, -0.2],
-    [0.06, 0.05, 2.8, 28, 3, 4, 0.2],
-    [0.26, 0.05, 2.2, 29, 4, 5, 0.2],
-  ]),
-  sunset('copperline', 'Copperline', ['#ffe8d0', '#ffd4a8', '#ffc890', '#f8a060', '#e06a40', '#a83a30', '#fff0d0'], { curl: true, cx: 0.85, cy: 1.05, light: 0.5, sheen: 0.8, shadow: 0.55 }, [
-    [-0.42, 0.025, 3.4, 35, 6, 2, 0.2],
-    [-0.26, 0.03, 3.0, 36, 2, 3, 0.2],
-    [-0.1, 0.035, 2.6, 37, 3, 4, -0.2],
-    [0.06, 0.04, 3.0, 38, 3, 4, 0.2],
-    [0.24, 0.045, 2.4, 39, 4, 5, -0.2],
-  ]),
-  sunset('ochre', 'Ochre', ['#fff4d8', '#ffd890', '#f8c070', '#e09040', '#c06a30', '#984030', '#7a2a2c'], { curl: true, cx: 0.0, cy: 1.25, light: 0.6, sheen: 0.6, shadow: 0.65 }, [
-    [-0.4, 0.04, 2.2, 64, 2, 3, 0.2],
-    [-0.22, 0.05, 2.6, 65, 3, 4, -0.2],
-    [-0.04, 0.05, 2.0, 66, 4, 5, 0.2],
-    [0.14, 0.06, 2.4, 67, 5, 6, -0.2],
-  ]),
-  // Strata: banded sandstone stepped like contour lines, seen from above.
-  sand('kiln', 'Kiln', ['#ff9a6a', '#ff9a6a', '#a8283a', '#d8503f', '#f58a50', '#ffc080', '#ffe4b8'], { mode: 'terraces', freq: 4.2, lean: 14, seed: 4, sunAz: -2.6, sunEl: 0.55, shadow: 0.6, warp: 1.0, swell: 0.1 }),
-  sand('oasis', 'Sandstone', ['#ffe0c0', '#ffe0c0', '#e0705a', '#ffa880', '#ffd6b0', '#fff2e2', '#f59070'], { mode: 'terraces', freq: 2.6, lean: 18, seed: 11, sunAz: -0.6, sunEl: 0.6, shadow: 0.5, warp: 1.4, swell: 0.2, gloss: 0.25 }),
+  sunset('sahara', 'Sahara', { sky: [[-0.7, -0.5, '#f4a8b0'], [0.6, -0.5, '#fbc8b0'], [0.6, 0, '#ffd8b0'], [-0.6, 0, '#f8b0a0']], dunes: [
+    dune('#ffe8b8', '#ffd08a', '#f4946c', 0.4, -0.12, 0.06, 2.2, 0.6, { depth: 0.2 }),
+    dune('#ffc890', '#ff9a5a', '#ee6a50', 0.42, 0.08, 0.07, 2.4, 2.4, { depth: 0.22 }),
+    dune('#f88a60', '#e85a50', '#b03a50', 0.36, 0.3, 0.06, 2.6, 4.2)] }),
+  sunset('mirage', 'Mirage', { sky: [[-0.7, -0.5, '#f08060'], [0.6, -0.5, '#fba070'], [0.6, 0, '#ffc080'], [-0.6, 0, '#f48a60']], dunes: [
+    dune('#f8946c', '#fbb080', '#e06a5a', 0.3, -0.05, 0.08, 2.4, 1.0, { depth: 0.3 }),
+    dune('#e8604a', '#d04848', ['#7a2238', '#a03048'], 0.38, 0.14, 0.09, 2.2, 2.8, { depth: 0.3 }),
+    dune('#a83848', '#c04858', '#4a1028', 0.3, 0.38, 0.05, 2.6, 4.8)] }),
+  sunset('erg', 'Erg', { sky: [[-0.7, -0.5, '#5a1838'], [0.6, -0.5, '#9a2a48'], [0.6, 0, '#e8704a'], [-0.6, 0, '#7a2a4a']], dunes: [
+    dune('#ff9a5a', '#e8704a', '#9a2a3a', 0.15, 0.02, 0.1, 2.6, 0.4, { depth: 0.22 }),
+    dune('#c8483f', '#9a2a3a', '#4a1028', 0.22, 0.2, 0.08, 2.4, 2.6),
+    dune('#6a1a34', '#4a1028', '#200814', 0.12, 0.4, 0.05, 2.8, 4.6)] }),
+  sunset('harmattan', 'Harmattan', { sky: [[-0.6, -0.5, '#f8c0a0'], [0.6, -0.5, '#fde4d0'], [0.6, 0, '#fff0dc'], [-0.6, 0, '#fbc8a8']], dunes: [
+    veil('#fff8ec', 0.4, -0.25, 0.06, 1.8, 0.8),
+    dune('#fdd8b8', '#f8b890', '#f09070', 0.35, 0, 0.07, 2.2, 2.0, { depth: 0.3, shade: 0.06 }),
+    dune('#f8a078', '#f08868', '#d05a5a', 0.3, 0.28, 0.07, 2.4, 3.8, { shade: 0.08 })] }),
+  sunset('solstice', 'Solstice', { sky: [[-0.7, -0.5, '#ff7a6a'], [0.6, -0.5, '#ff9a70'], [0.6, 0, '#ffcf80'], [-0.6, 0, '#f8685a']], dunes: [
+    dune('#fff2b8', '#ffcf80', '#ff8a5a', 0.3, -0.15, 0.07, 2.4, 0.2, { depth: 0.18 }),
+    dune('#ff8a60', '#e0586a', '#b02a50', 0.25, 0.1, 0.09, 2.2, 2.2),
+    dune('#b02a50', '#801a44', '#561030', 0.3, 0.34, 0.06, 2.6, 4.0)] }),
+  sunset('afterglow', 'Afterglow', { sky: [[-0.7, -0.5, '#7a4a9a'], [0.5, -0.5, '#e8809a'], [0.6, 0, '#ffb080'], [-0.6, 0, '#c8607a']], dunes: [
+    dune('#ffb890', '#ffd8a8', '#f08878', -0.35, 0.08, 0.08, 2.0, 0.8, { depth: 0.3 }),
+    dune('#c8607a', '#f09080', ['#6a2050', '#9a3a6a'], -0.3, 0.32, 0.07, 2.2, 2.6)] }),
+  sunset('cinnabar', 'Cinnabar', { sky: [[-0.7, -0.3, '#ff9a60'], [-0.2, 0.3, '#ffb870'], [0.6, -0.5, '#f07a58'], [0.7, 0.2, '#ff8a58']], dunes: [
+    dune('#e04858', '#c0304a', '#7a1a40', -0.7, -0.02, 0.12, 2.2, 0.4, { depth: 0.35 }),
+    dune('#ffb060', '#ff8a50', '#e85a4a', 0.1, 0.36, 0.05, 2.4, 3.0)] }),
+  sunset('sirocco', 'Sirocco', { sky: [[-0.7, -0.5, '#f88a50'], [0.6, -0.5, '#fba060'], [0.6, 0, '#ffc878'], [-0.6, 0, '#f47a48']], dunes: [
+    dune('#ffb868', '#f89048', '#ec6a38', 0.3, -0.08, 0.06, 2.2, 1.4, { depth: 0.3, shade: 0.08 }),
+    dune('#f47a40', '#e8603a', '#d04a38', 0.34, 0.12, 0.06, 2.4, 3.0, { shade: 0.1 }),
+    dune('#d85038', '#b83a34', '#8a2434', 0.3, 0.33, 0.05, 2.6, 5.0)] }),
+  sunset('paprika', 'Paprika', { sky: [[-0.7, -0.5, '#f06a48'], [0.6, -0.5, '#f07a90'], [0.6, 0, '#f8905a'], [-0.6, 0, '#e8503f']], dunes: [
+    dune('#ff9a58', '#ffb870', '#f0603f', 0.5, -0.1, 0.08, 2.0, 0.5, { depth: 0.3 }),
+    dune('#e8583f', '#d8403c', '#a02838', 0.45, 0.2, 0.08, 2.2, 2.4)] }),
+  sunset('saffron', 'Saffron', { sky: [[-0.7, -0.5, '#ffc860'], [0.6, -0.5, '#ffe8a8'], [0.6, 0, '#ffd880'], [-0.6, 0, '#ffb850']], dunes: [
+    dune('#fff0b8', '#ffd870', '#f8a848', 0.2, -0.05, 0.08, 2.4, 0.8, { depth: 0.25 }),
+    dune('#f8a040', '#f08838', '#e0603a', 0.26, 0.18, 0.08, 2.6, 2.8),
+    dune('#e0603a', '#c8483a', '#98303a', 0.2, 0.38, 0.05, 2.8, 4.6)] }),
+  sunset('mojave', 'Mojave', { sky: [[-0.7, -0.55, '#b86a9a'], [0.6, -0.55, '#d87a90'], [0.5, 0, '#ffc890'], [-0.6, 0, '#f8a888']], dunes: [
+    dune('#ffb07a', '#f08a5a', '#c0503f', -0.25, 0.22, 0.07, 2.2, 1.0, { depth: 0.3 }),
+    dune('#d86048', '#c0503f', '#8a2a40', -0.15, 0.42, 0.04, 2.6, 3.0)] }),
+  sunset('apricot', 'Apricot', { sky: [[-0.6, -0.5, '#ffb888'], [0.6, -0.5, '#ffd8a8'], [0.6, 0, '#ffc898'], [-0.6, 0, '#ffa878']], dunes: [
+    dune('#ffb080', '#ff9060', '#f06a48', 0.12, 0.12, 0.08, 2.6, 5.2, { depth: 0.3, shade: 0.06 }),
+    dune('#f07050', '#e85848', '#c03a4a', 0.2, 0.33, 0.06, 2.4, 1.6, { shade: 0.08 })] }),
+  sunset('amberlight', 'Amberlight', { sky: [[-0.7, -0.5, '#ff9a5a'], [0.6, -0.5, '#ffb060'], [0.6, 0, '#ffd27a'], [-0.6, 0, '#ff8a3f']], dunes: [
+    dune('#ffe090', '#ffc860', '#ff9a48', -0.2, -0.1, 0.07, 2.4, 3.0, { depth: 0.2 }),
+    dune('#ff8a3f', '#f06a38', '#c8402f', -0.12, 0.14, 0.09, 2.2, 0.9),
+    dune('#c03a30', '#a02a2a', '#601820', -0.2, 0.38, 0.05, 2.6, 2.8)] }),
+  sunset('tangerine', 'Tangerine', { sky: [[-0.7, -0.5, '#ff8a40'], [0.6, -0.5, '#f8703a'], [0.6, 0, '#ff9a50'], [-0.6, 0, '#ffa858']], dunes: [
+    dune('#ffa04a', '#ff8a40', '#f8683a', 0.08, 0.05, 0.06, 2.2, 1.0, { depth: 0.35, shade: 0.08 }),
+    dune('#f8603a', '#f0503a', '#d8384a', -0.06, 0.26, 0.06, 2.4, 3.2, { shade: 0.1 })] }),
+  sunset('canyon', 'Canyon', { sky: [[-0.7, -0.5, '#f09070'], [0.6, -0.5, '#ffa880'], [0.6, 0, '#ffc090'], [-0.6, 0, '#e87860']], dunes: [
+    veil('#ffe4c0', 0.45, -0.22, 0.06, 1.8, 0.4, { top: 0.5 }),
+    dune('#ffc898', '#f8a070', '#e86a50', 0.4, 0, 0.07, 2.2, 2.0, { depth: 0.22 }),
+    dune('#b03a40', '#d8604a', '#7a2238', 0.5, 0.3, 0.07, 2.0, 3.6)] }),
+  sunset('terracotta', 'Terracotta', { sky: [[-0.7, -0.5, '#f8a080'], [0.6, -0.5, '#ffc090'], [0.6, 0, '#fbb488'], [-0.6, 0, '#f08a70']], dunes: [
+    dune('#f8946c', '#fbb080', '#e87060', 0.2, 0, 0.06, 2.4, 1.0, { depth: 0.35, shade: 0.08 }),
+    dune('#962f3a', '#c84a40', '#64192e', 0.55, 0.12, 0.08, 1.8, 2.6)] }),
+  sunset('marrakesh', 'Marrakesh', { sky: [[-0.6, -0.5, '#ffd8b8'], [0.6, -0.5, '#fff0d8'], [0.6, 0, '#ffc8a0'], [-0.6, 0, '#ffb890']], dunes: [
+    dune('#ffd09a', '#ffb070', '#f0704f', -0.1, 0.02, 0.09, 2.6, 1.6, { depth: 0.22 }),
+    dune('#f0704f', '#e85a4a', '#d0404a', 0.1, 0.2, 0.06, 2.4, 3.4),
+    dune('#a02848', '#8a1f48', '#501030', 0, 0.38, 0.09, 3.0, 4.71)] }),
+  sunset('copperline', 'Copperline', { sky: [[-0.6, -0.5, '#ffe8d0'], [0.6, -0.5, '#fff0d0'], [0.6, 0, '#ffd4a8'], [-0.6, 0, '#ffdcb8']], dunes: [
+    dune('#ffc890', '#f8a060', '#e87a48', -0.28, 0.06, 0.08, 2.2, 0.8, { depth: 0.25, shade: 0.08 }),
+    dune('#e06a40', '#c85038', '#a83a30', -0.2, 0.28, 0.06, 2.4, 2.8),
+    dune('#a83a30', '#8a2a30', '#5a1a28', -0.1, 0.42, 0.04, 2.8, 4.8)] }),
+  sunset('ochre', 'Ochre', { sky: [[-0.6, -0.5, '#f8c090'], [0.6, -0.5, '#fff4d8'], [0.6, 0, '#ffd890'], [-0.6, 0, '#f4b07a']], dunes: [
+    dune('#ffe098', '#f8c070', '#e09040', 0.3, 0.1, 0.07, 2.4, 0.8, { depth: 0.2 }),
+    dune('#e09040', '#c06a30', ['#984030', '#7a2a2c'], 0.24, 0.3, 0.06, 2.6, 2.8)] }),
+  sunset('kiln', 'Kiln', { sky: [[-0.7, -0.5, '#f58a50'], [0.6, -0.5, '#ff9a6a'], [0.6, 0, '#ffc080'], [-0.6, 0, '#f07848']], dunes: [
+    dune('#f58a50', '#e86a44', '#d8503f', 0.1, 0.02, 0.05, 2.4, 2.0, { depth: 0.3, shade: 0.08 }),
+    dune('#d8503f', '#c03c3c', '#a8283a', 0.18, 0.2, 0.07, 2.4, 3.8),
+    dune('#a8283a', '#8a2038', '#501028', 0.1, 0.4, 0.04, 2.8, 5.6)] }),
+  sunset('oasis', 'Sandstone', { sky: [[-0.6, -0.5, '#f8b4a0'], [0.6, -0.5, '#ffe0c0'], [0.6, 0, '#fff2e2'], [-0.6, 0, '#f8a488']], dunes: [
+    dune('#fff2e2', '#ffd6b0', '#ffa070', 0.45, -0.15, 0.06, 2.0, 0.4, { depth: 0.18 }),
+    dune('#ffa070', '#f88860', '#e0604a', 0.5, 0.08, 0.07, 2.2, 2.2, { depth: 0.25 }),
+    dune('#d04a50', '#e0684e', '#902a48', 0.45, 0.32, 0.06, 2.4, 4.0)] }),
 ]

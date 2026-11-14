@@ -1,160 +1,96 @@
 import type { Wallpaper } from './index.ts'
-import { waves, type Waves, type Layer } from './radiant.ts'
+import { dune, picture, type Picture } from './picture.ts'
 
-const e = (id: string, name: string, colors: string[], w: Waves, layers: Layer[]) => waves('Energy', id, name, colors, w, layers)
+const energy = (id: string, name: string, p: Picture) => picture('Energy', `energy-${id}`, name, p)
 
-// Punchy magenta, orange, blue, and cyan with dark accents, in seven motifs: ribbons, rising
-// flames, shock rings, a liquid crown, a spiral curl, folded sheets, and fiber strands.
+// Energy: hot pink, orange and cyan dunes on navy.
 export const ENERGY: Wallpaper[] = [
-  // Ribbons
-  e('energy-surge', 'Surge', ['#12062e', '#3a0a4a', '#ff2a7a', '#2a0f6e', '#ff2fa0', '#ff7a3d', '#ffc14d'], { flow: -35, seed: 2, freq: 0.6, gloss: 1.2, shadow: 0.8, twist: 0.7, glow: [0.85, 0.85, 0.3] }, [
-    [-0.3, 0.09, 1, 0.05],
-    [-0.08, 0.08, 0.18, 0.35],
-    [0.1, 0.1, 1, 0.65],
-    [0.32, 0.08, 1, 0.95],
-  ]),
-  e('energy-blaze', 'Blaze', ['#2a0610', '#6a0f1e', '#ff8a3d', '#d81f4f', '#ff3d5e', '#ff7a2e', '#ffc04a', '#fff0b0'], { flow: 30, seed: 6, freq: 0.55, gloss: 1.3, curl: 0.6, shadow: 0.85, twist: 0.9, glow: [0.1, 0.9, 0.4] }, [
-    [-0.36, 0.07, 0.2, 0.0],
-    [-0.12, 0.09, 0.18, 0.3],
-    [0.1, 0.09, 0.2, 0.6],
-    [0.34, 0.07, 0.22, 0.9],
-  ]),
-  e('energy-voltage', 'Voltage', ['#020818', '#071a3e', '#1ad8ff', '#0b2f9a', '#1f6bff', '#18c8ff', '#7af0ff', '#ffffff'], { flow: -48, seed: 8, freq: 0.5, gloss: 1.6, curl: 0.8, shadow: 0.9, twist: 0.9, glow: [0.15, 0.15, 0.35] }, [
-    [-0.4, 0.06, -0.0016, 0.9],
-    [-0.26, 0.07, 0.16, 0.1],
-    [-0.04, 0.08, 0.14, 0.45],
-    [0.04, 0.08, -0.0012, 1],
-    [0.2, 0.08, 0.18, 0.7],
-    [0.42, 0.06, 0.2, 0.3],
-  ]),
-  e('energy-velocity', 'Velocity', ['#04030c', '#140820', '#ff2f6a', '#ff2f6a', '#ff6a3d', '#ffc04a', '#2ad8ff'], { flow: -30, seed: 26, freq: 0.4, gloss: 1.6, curl: 0.7, shadow: 0.9, twist: 0.5, glow: [0.9, 0.2, 0.3] }, [
-    [-0.32, 0.05, -0.0014, 0.4],
-    [-0.24, 0.06, -0.002, 0.7],
-    [-0.04, 0.08, 0.12, 0.0],
-    [0.08, 0.08, 0.1, 0.35],
-    [0.2, 0.07, 0.1, 0.65],
-    [0.3, 0.07, -0.0016, 1],
-  ]),
-  e('energy-overdrive', 'Overdrive', ['#0a0414', '#1a0a3a', '#ff2fa0', '#3a0ab8', '#ff1f8a', '#ff6a2a', '#2ad8ff'], { flow: 68, seed: 38, freq: 0.5, gloss: 1.6, curl: 0.8, shadow: 0.95, twist: 1.2, glow: [0.5, 0.5, 0.5], haze: 0.1 }, [
-    [-0.18, 0.1, 0.3, 0.2],
-    [0.02, 0.08, -0.0018, 1],
-    [0.18, 0.1, 0.3, 0.7],
-  ]),
-
-  // Burst: twisted satin rays and light threads fanning out from an edge.
-  e('energy-ignite', 'Ignite', ['#0a0410', '#2a0818', '#ff4f2a', '#4a0a3a', '#c8104a', '#ff3d2a', '#ff8a1f', '#ffd04a'], { mode: 'rays', center: [0.5, 1.08], flow: -90, seed: 16, freq: 0.6, scale: 9, twist: 1.4, gloss: 1.5, curl: 0.7, shadow: 0.85, blur: 0.002, glow: [0.5, 1, 0.5] }, [
-    [-0.06, 0.02, 0.1, 0.2],
-    [0.07, 0.02, 0.08, 0.6],
-    [0.0, 0.01, -0.0018, 1],
-  ]),
-  e('energy-afterburn', 'Afterburn', ['#02030c', '#0a0a2a', '#2a8aff', '#2a1ab8', '#4a3aff', '#2a9aff', '#5ae0ff', '#ffffff'], { mode: 'rays', center: [-0.06, 0.5], flow: 0, seed: 44, freq: 0.5, scale: 16, strands: 3, glow: [0, 0.5, 0.45], blur: 0.001 }, [
-    [-0.04, 0.02, -0.12, 0.4],
-    [0.05, 0.02, -0.1, 0.9],
-  ]),
-  e('energy-fever', 'Fever', ['#1a0228', '#4a0848', '#ff3d6a', '#8a0a8a', '#ff1f6a', '#ff6a2a', '#ffb02a', '#ffe0a0'], { mode: 'rays', center: [1.05, -0.05], flow: 135, seed: 36, freq: 0.7, scale: 12, twist: 1.6, gloss: 1.5, curl: 0.8, shadow: 0.9, blur: 0.002, glow: [1, 0, 0.5] }, [
-    [-0.08, 0.02, 0.12, 0.1],
-    [0.0, 0.015, -0.0016, 0.9],
-    [0.06, 0.02, 0.1, 0.55],
-  ]),
-  e('energy-cinder', 'Cinder', ['#ffe6d6', '#ffc2d0', '#ffffff', '#2a1ab8', '#7a2ae0', '#d02ae0', '#ff2f8a', '#ff7a3d'], { mode: 'rays', center: [-0.04, 1.04], flow: -45, seed: 66, freq: 0.5, scale: 20, twist: 1.2, gloss: 1.3, curl: 0.6, shadow: 0.6, blur: 0.002, drift: 0.6, glow: [0, 1, 0.5] }, [
-    [-0.04, 0.015, 0.07, 0.15],
-    [0.04, 0.015, 0.06, 0.65],
-  ]),
-
-  // Rings: shock rings bursting from a corner.
-  e('energy-pulse', 'Pulse', ['#0e0326', '#2a0848', '#ff2fb0', '#4a12c8', '#a020f0', '#ff2fa8', '#ff8a5a', '#ffd06a'], { mode: 'rings', center: [0, 0], flow: 45, seed: 112, freq: 0.9, gloss: 1.5, curl: 0.8, shadow: 0.9, twist: 1.2, blur: 0.001, light: -45, glow: [0, 0, 0.5] }, [
-    [0.45, 0.012, 0.08, 0.0],
-    [0.6, 0.015, 0.09, 0.3],
-    [0.69, 0.01, -0.0016, 1],
-    [0.78, 0.018, 0.1, 0.6],
-    [0.97, 0.02, 0.11, 0.9],
-  ]),
-  e('energy-shockwave', 'Shockwave', ['#02040e', '#0a1030', '#2a8aff', '#0a2a9a', '#2a6aff', '#2ad8ff', '#ff3da0', '#ffffff'], { mode: 'rings', center: [0.85, 0.75], flow: -150, seed: 62, freq: 1.4, scale: 0.3, gloss: 1.6, curl: 0.8, shadow: 0.9, twist: 1, glow: [0.85, 0.75, 0.3] }, [
-    [0.12, 0.01, -0.002, 1],
-    [0.24, 0.015, 0.06, 0.2],
-    [0.38, 0.02, -0.0014, 0.85],
-    [0.52, 0.025, 0.08, 0.5],
-    [0.7, 0.02, -0.0018, 0.95],
-    [0.86, 0.03, 0.1, 0.7],
-  ]),
-  e('energy-dynamo', 'Dynamo', ['#0a2a6a', '#2a0a5a', '#2affd0', '#1a5aff', '#2ad0ff', '#2affb0', '#ffd04a', '#ff5a8a'], { mode: 'rings', center: [1.0, 1.0], flow: -135, seed: 54, freq: 3, gloss: 1.3, curl: 0.6, shadow: 0.75, twist: 1, drift: 0.6, glow: [0.1, 0.1, 0.5] }, [
-    [0.3, 0.015, 0.1, 0.0],
-    [0.48, 0.02, 0.12, 0.3],
-    [0.66, 0.02, 0.12, 0.6],
-    [0.84, 0.025, 0.14, 0.95],
-  ]),
-
-  // Domes: concentric glossy swells rising from an edge like a sunrise.
-  e('energy-fuse', 'Fuse', ['#1a0628', '#4a0a3a', '#ff8a3d', '#ffb04a', '#ff6a3a', '#ff2f6a', '#c81a8a', '#4a1ab8'], { mode: 'dome', center: [0.5, 1.15], flow: -90, seed: 52, freq: 0.8, scale: 0.6, gloss: 1.3, curl: 0.3, shadow: 0.9, twist: 0.6, blur: 0.0008, glow: [0.5, 1, 0.6] }, [
-    [-0.86, 0.01, 1, 0.9],
-    [-0.7, 0.01, 1, 0.65],
-    [-0.55, 0.008, 1, 0.4],
-    [-0.41, 0.006, 1, 0.15],
-    [-0.28, 0.004, 1, 0.0],
-  ]),
-  e('energy-spark', 'Spark', ['#06122a', '#0a2a5a', '#2ad8ff', '#1a2ab8', '#2a6aff', '#2ad8ff', '#ff4fa0', '#ffe07a'], { mode: 'dome', center: [1.1, 0.5], flow: 180, seed: 28, freq: 0.9, scale: 0.4, gloss: 1.5, curl: 0.3, shadow: 0.9, twist: 0.6, blur: 0.0008, glow: [1, 0.5, 0.45] }, [
-    [-0.95, 0.01, 1, 0.0],
-    [-0.8, 0.008, -0.0016, 0.95],
-    [-0.74, 0.01, 1, 0.35],
-    [-0.54, 0.008, 1, 0.65],
-    [-0.36, 0.006, 1, 1],
-  ]),
-  e('energy-rush', 'Rush', ['#0a0a3a', '#1a1a6a', '#ff5aa0', '#7a2ae0', '#ff2f7a', '#ff5f5f', '#ff9a3d', '#ffd36a'], { mode: 'dome', center: [-0.1, -0.1], flow: 45, seed: 14, freq: 1.0, scale: 0.5, gloss: 1.4, curl: 0.3, shadow: 0.9, twist: 0.6, drift: 0.4, blur: 0.0008, glow: [0.0, 0.0, 0.3] }, [
-    [-1.15, 0.012, 1, 0.0],
-    [-0.95, 0.01, 1, 0.3],
-    [-0.78, 0.008, -0.0018, 0.95],
-    [-0.74, 0.01, 1, 0.6],
-    [-0.52, 0.008, 1, 0.9],
-  ]),
-
-  // Curl: one huge twisted ribbon spiraling in from the edge.
-  e('energy-torque', 'Torque', ['#100828', '#2a0a3a', '#ff6a2a', '#3a1aa8', '#7a2ae0', '#ff2f8a', '#ff7a2a', '#ffc04a'], { mode: 'spiral', center: [1.0, 0.95], flow: -150, seed: 22, freq: 0.5, scale: 0.5, twist: 1.6, gloss: 1.5, curl: 0.7, shadow: 0.85, glow: [1, 1, 0.5] }, [
-    [0.3, 0.02, 0.28, 0.2],
-    [0.56, 0.015, -0.0018, 1],
-    [0.7, 0.02, 0.18, 0.7],
-  ]),
-  e('energy-turbo', 'Turbo', ['#1a0228', '#4a0848', '#ff3d6a', '#8a0a8a', '#ff1f6a', '#ff6a2a', '#ffb02a'], { mode: 'spiral', center: [-0.2, 0.15], flow: 20, seed: 58, freq: 0.6, scale: 0.7, twist: 1.6, gloss: 1.5, curl: 0.7, shadow: 0.9, blur: 0.0015, glow: [0, 0, 0.5] }, [
-    [0.4, 0.02, 0.3, 0.3],
-    [0.78, 0.02, 0.22, 0.85],
-  ]),
-  e('energy-momentum', 'Momentum', ['#ffd0a0', '#ff8a6a', '#fff0e0', '#2a1ab8', '#7a2ae0', '#ff3d8a', '#ff8a3d', '#ffd06a'], { mode: 'spiral', center: [0.5, 1.05], flow: -90, seed: 146, freq: 0.5, scale: 0.4, twist: 1.4, gloss: 1.3, curl: 0.6, shadow: 0.7, glow: [0.5, 0.0, 0.6] }, [
-    [0.22, 0.015, 0.16, 0.1],
-    [0.42, 0.02, 0.22, 0.5],
-    [0.68, 0.02, 0.16, 0.9],
-  ]),
-
-  // Folds: creased sheets with sharp lit facets.
-  e('energy-kinetic', 'Kinetic', ['#0c2a8a', '#ff3d8a', '#ffb0d0', '#1a3adf', '#3a7aff', '#a03aff', '#ff3d9a', '#ff8a4a'], { flow: -55, seed: 24, freq: 1.2, shape: -1, gloss: 1.2, curl: 0.2, shadow: 0.7, twist: 0, bgAngle: -40, blur: 0.002 }, [
-    [-0.36, 0.08, 1, 0.0],
-    [-0.16, 0.09, 1, 0.3],
-    [0.04, 0.09, 1, 0.6],
-    [0.24, 0.08, 1, 0.9],
-  ]),
-  e('energy-rally', 'Rally', ['#140820', '#2a0a3a', '#ff2f7a', '#ff2f6a', '#ff7a3d', '#ff3db0', '#7a3aff', '#2a7aff'], { flow: 20, seed: 134, freq: 0.7, shape: -1, gloss: 1.4, curl: 0.2, shadow: 0.85, twist: 0, drift: 0.6, blur: 0.002 }, [
-    [-0.2, 0.1, 0.12, 0.0],
-    [-0.04, 0.12, 0.16, 0.35],
-    [0.12, 0.1, 0.12, 0.7],
-    [0.26, 0.08, 0.1, 1],
-  ]),
-  e('energy-thrust', 'Thrust', ['#03122a', '#0a2a5a', '#1affe0', '#0a4ab8', '#1a8aff', '#1ad8e0', '#8affc8'], { flow: 65, seed: 32, freq: 0.8, shape: -0.9, gloss: 0.6, curl: 0.1, shadow: 0.85, twist: 0, light: -150, glow: [0.1, 0.1, 0.3], blur: 0.0008 }, [
-    [-0.12, 0.12, 1, 0.0],
-    [0.08, 0.13, 1, 0.45],
-    [0.28, 0.11, 1, 0.9],
-  ]),
-
-  // Strands: fiber bundles, glowing or glossy.
-  e('energy-flux', 'Flux', ['#020818', '#0a1a4a', '#2ae0ff', '#1a3ad8', '#2a8aff', '#2ae0ff', '#ff3da0', '#ff9a4a'], { flow: -35, seed: 18, freq: 0.5, strands: 20, glow: [0.15, 0.85, 0.5], blur: 0.001 }, [
-    [-0.08, 0.12, -0.26, 0.2],
-    [0.1, 0.1, -0.16, 0.85],
-  ]),
-  e('energy-charge', 'Charge', ['#06021a', '#12063a', '#7a3aff', '#2a1ad8', '#6a2aff', '#d02ae0', '#ff3da0', '#ff9a3d'], { flow: 80, seed: 48, freq: 0.9, strands: 10, glow: [0.5, 0.5, 0.5], blur: 0.001 }, [
-    [-0.38, 0.05, -0.1, 0.3],
-    [-0.12, 0.06, -0.12, 0.6],
-    [0.12, 0.06, -0.12, 0.8],
-    [0.38, 0.05, -0.1, 0.95],
-  ]),
-  e('energy-riptide', 'Riptide', ['#021028', '#04304a', '#3affff', '#0a3a8a', '#0a7ac8', '#1ad8f0', '#ff4fa0', '#ffc04a'], { flow: -15, seed: 142, freq: 0.6, strands: 14, curl: 1, gloss: 1.5, shadow: 0.8, glow: [0.85, 0.1, 0.4] }, [
-    [-0.12, 0.1, 0.3, 0.3],
-    [0.14, 0.12, 0.3, 0.8],
-  ]),
+  energy('surge', 'Surge', { sky: [[-0.6, -0.5, '#f02a78'], [0.6, -0.5, '#f04a5a'], [0.6, 0, '#f8508a'], [-0.6, 0, '#e02098']], dunes: [
+    dune('#ffb050', '#ff8a48', ['#f04a70', '#f0308a'], -0.3, -0.02, 0.09, 2.2, 0.8, { depth: 0.2, threads: 40, thread: 0.2 }),
+    dune('#40d0f0', '#f05a90', ['#2a60d8', '#d0308a'], -0.2, 0.26, 0.07, 2.4, 2.8, { depth: 0.2 })] }),
+  energy('blaze', 'Blaze', { sky: [[0, -0.6, '#0a1040'], [-0.5, -0.1, '#102858'], [0.5, -0.1, '#0c2050'], [0, 0.05, '#1a5870']], dunes: [
+    dune('#ff9a40', '#ff6a50', ['#f02a80', '#e02090'], 0, 0.02, 0.035, 6.0, 0.8, { depth: 0.1, rim: 0.8 }),
+    dune('#f02a88', '#d020a0', '#7a20b8', 0.05, 0.14, 0.04, 4.0, 2.6, { depth: 0.2, threads: 40, thread: 0.25 }),
+    dune('#7a28c8', '#5a30d0', '#2a2aa0', -0.05, 0.36, 0.04, 3.0, 4.4, { threads: 40, thread: 0.2 })] }),
+  energy('voltage', 'Voltage', { sky: [[-0.6, -0.5, '#f0d8c8'], [0.6, -0.5, '#70d8d0'], [0.5, 0, '#a0e0d8'], [-0.6, 0, '#b0a0e8']], dunes: [
+    dune('#4a98a8', '#60b0b8', '#2a6088', 0, -0.02, 0.1, 2.8, 1.57, { depth: 0.3 }),
+    dune('#a070e0', '#8a58d8', ['#5a30b0', '#4a3aa8'], 0.25, 0.12, 0.08, 2.4, 0.6, { depth: 0.25, threads: 40, thread: 0.2 }),
+    dune('#e040c8', '#c040d8', '#8a28c0', 0.15, 0.36, 0.05, 2.6, 2.8)] }),
+  energy('velocity', 'Velocity', { sky: [[-0.6, -0.5, '#c030d8'], [0.6, -0.5, '#a028d0'], [0.6, 0, '#d040c0'], [-0.6, 0, '#e038b0']], dunes: [
+    dune('#f8607a', '#ff9a70', ['#b02a90', '#e04a80'], 0.45, -0.1, 0.09, 2.0, 0.6, { depth: 0.2, threads: 44, thread: 0.25 }),
+    dune('#40b8a0', '#60d0a0', '#1a6a80', 0.3, 0.2, 0.07, 2.2, 2.6, { depth: 0.25, threads: 40, thread: 0.2 }),
+    dune('#1a3a80', '#1a5088', '#0a1848', 0.15, 0.4, 0.04, 2.6, 4.4)] }),
+  energy('overdrive', 'Overdrive', { sky: [[-0.6, -0.5, '#f08a50'], [0.6, -0.5, '#f0507a'], [0.6, 0, '#f86a70'], [-0.6, 0, '#f0704a']], dunes: [
+    dune('#ffd060', '#ffb050', '#f8704a', 3.74, 0.25, 0.08, 2.0, 0.6, { depth: 0.2 }),
+    dune('#f06a50', '#f04a80', '#d0308a', 0.3, 0.1, 0.07, 2.2, 2.4, { depth: 0.3, shade: 0.08 }),
+    dune('#40c0f0', '#3a80e0', '#1a40a8', 0.6, 0.34, 0.06, 2.0, 4.0, { threads: 44, thread: 0.3 })] }),
+  energy('ignite', 'Ignite', { sky: [[-0.6, -0.5, '#e02080'], [0.6, -0.5, '#7a1060'], [0.6, 0, '#30c8d8'], [-0.6, 0, '#b01868']], dunes: [
+    dune('#ffc860', '#70e8d0', ['#f06a50', '#30b0c0'], 0, 0.02, 0.1, 2.6, 1.57, { depth: 0.1, deep: 0.15, shade: 0.1 }),
+    dune('#f04a70', '#f03a80', '#d02078', 0, 0.2, 0.09, 2.6, 1.57, { depth: 0.3 })] }),
+  energy('afterburn', 'Afterburn', { sky: [[-0.6, -0.5, '#f8a070'], [0.6, -0.5, '#1a2070'], [0.6, 0, '#e040a0'], [-0.6, 0, '#f07060']], dunes: [
+    dune('#f06a80', '#f890a0', ['#c02888', '#e040a0'], 0.5, -0.12, 0.07, 1.8, 0.6, { depth: 0.2 }),
+    dune('#a020a0', '#f078b0', ['#5a1080', '#8a2098'], 0.5, 0.1, 0.07, 1.8, 2.2, { depth: 0.2, rim: 0.9 }),
+    dune('#4a1888', '#2a40c0', '#200a58', 0.4, 0.34, 0.06, 2.0, 4.0)] }),
+  energy('fever', 'Fever', { sky: [[-0.6, -0.5, '#f070a8'], [0.6, -0.5, '#d070f0'], [0.6, 0, '#b080f0'], [-0.6, 0, '#f08a90']], dunes: [
+    dune('#5a60d8', '#4a70e0', '#8a50d0', 0.3, -0.12, 0.06, 2.2, 0.6, { depth: 0.1, deep: 0.3, shade: 0.06 }),
+    dune('#f8907a', '#f07070', '#e84a70', 0.35, 0.04, 0.07, 2.2, 2.2, { depth: 0.3 }),
+    dune('#f05a60', '#f06a50', '#c83078', 0.25, 0.32, 0.06, 2.4, 4.0)] }),
+  energy('cinder', 'Cinder', { sky: [[-0.6, -0.5, '#ffa860'], [0.6, -0.5, '#ffb870'], [0, -0.15, '#ffd8b0'], [-0.6, 0.1, '#ff9060']], dunes: [
+    dune('#f8608a', '#f04a90', '#d030a0', 0, 0.0, 0.09, 2.6, 1.57, { depth: 0.2, shade: 0.06 }),
+    dune('#a040d8', '#8a50e0', '#5a40d0', 0.1, 0.22, 0.06, 2.4, 3.2, { blur: 0.03 }),
+    dune('#40b0f0', '#50d0f0', '#3080e0', -0.1, 0.4, 0.04, 2.8, 5.0, { blur: 0.02 })] }),
+  energy('pulse', 'Pulse', { sky: [[-0.6, -0.5, '#6a20b0'], [0.6, -0.5, '#3a40d0'], [0.6, 0, '#5a48d8'], [-0.6, 0, '#a028b0']], dunes: [
+    dune('#f8805a', '#ff9a60', ['#f04a80', '#f0704a'], 0.2, -0.05, 0.09, 2.2, 5.2, { depth: 0.35 }),
+    dune('#f06a50', '#f8905a', '#d03a90', 0.3, 0.3, 0.06, 2.4, 1.8, { shade: 0.08 })] }),
+  energy('shockwave', 'Shockwave', { sky: [[-0.6, -0.5, '#2a50c8'], [0.6, -0.5, '#1a2a90'], [0.6, 0, '#2a40b0'], [-0.6, 0, '#3a70d8']], dunes: [
+    dune('#3a28a0', '#5a20a0', '#1a1060', -0.5, 0.1, 0.09, 2.0, 0.8, { depth: 0.25, rim: 0.8 }),
+    dune('#f06a60', '#f04a80', '#c82a80', 0.15, 0.22, 0.06, 2.6, 2.8),
+    dune('#ff9a5a', '#f8706a', '#e84a70', -0.1, 0.38, 0.05, 2.8, 4.8)] }),
+  energy('dynamo', 'Dynamo', { sky: [[-0.6, -0.5, '#f04a88'], [0.6, -0.5, '#f8904a'], [0.6, 0, '#f07050'], [-0.6, 0, '#f06a60']], dunes: [
+    dune('#ffa860', '#f07058', '#e04a70', -0.2, -0.06, 0.07, 2.2, 0.8, { depth: 0.3, shade: 0.06, threads: 50, thread: 0.3 }),
+    dune('#a03088', '#7a2890', ['#3a1870', '#2a2080'], -0.25, 0.22, 0.07, 2.4, 2.8, { threads: 40, thread: 0.2 })] }),
+  energy('fuse', 'Fuse', { sky: [[0, -0.6, '#50d0f0'], [0, -0.3, '#60a8f0'], [0.4, -0.02, '#a050e0'], [-0.4, -0.02, '#c050d8']], dunes: [
+    dune('#f8705a', '#ff8a60', '#f04a70', 0, 0.02, 0.035, 6.5, 0.4, { depth: 0.2 }),
+    dune('#f04a60', '#f03a70', '#d82a80', 0.05, 0.12, 0.035, 5.0, 2.4, { depth: 0.2 }),
+    dune('#1a2a78', '#2a2080', '#0c1048', -0.1, 0.24, 0.07, 2.8, 4.2, { rim: 0.8 })] }),
+  energy('spark', 'Spark', { sky: [[-0.6, -0.5, '#f04a90'], [0.6, -0.5, '#f8804a'], [0.6, 0, '#f06050'], [-0.6, 0, '#e83a70']], dunes: [
+    dune('#f05a50', '#f8704a', '#d03a70', 3.6, 0.2, 0.08, 2.0, 0.8, { depth: 0.2, shade: 0.08 }),
+    dune('#7a1a98', '#30b0c8', ['#2a1068', '#1a4088'], 0.1, 0.16, 0.09, 2.4, 1.57, { depth: 0.2, blur: 0.03 })] }),
+  energy('rush', 'Rush', { sky: [[-0.7, -0.4, '#f8905a'], [0.6, -0.5, '#30b0a8'], [0.6, 0.1, '#50d0b0'], [-0.2, -0.3, '#60d0a0']], dunes: [
+    dune('#40b8a0', '#30a098', '#208088', -0.4, 0.2, 0.08, 2.0, 0.6, { depth: 0.3, shade: 0.08 }),
+    dune('#8a40c8', '#e050a0', ['#4a2aa0', '#b03098'], 0.5, 0.26, 0.07, 2.0, 2.4, { depth: 0.2 })] }),
+  energy('torque', 'Torque', { sky: [[-0.6, -0.5, '#f03a90'], [0.6, -0.5, '#f04a80'], [0.5, 0, '#f8704a'], [-0.6, 0, '#f8905a']], dunes: [
+    dune('#f04a80', '#f8609a', ['#4a1888', '#2a1870'], -0.3, 0.14, 0.08, 2.2, 0.8, { depth: 0.12, rim: 0.9 }),
+    dune('#3a80e0', '#40b8f0', '#1a2a90', 0.1, 0.4, 0.05, 2.6, 2.8)] }),
+  energy('turbo', 'Turbo', { sky: [[-0.6, -0.5, '#f08a50'], [0.6, -0.5, '#e04a60'], [0.6, 0, '#f06a5a'], [-0.6, 0, '#f8a060']], dunes: [
+    dune('#f05a80', '#d040a0', '#8a30c0', 0.3, 0.0, 0.09, 2.4, 0.8, { depth: 0.2, blur: 0.02 }),
+    dune('#3a50d8', '#4a30c0', '#1a1a80', 0.25, 0.2, 0.08, 2.4, 2.6, { depth: 0.3 }),
+    dune('#1a1a80', '#2a2890', '#0a0c48', 0.15, 0.4, 0.04, 2.8, 4.4)] }),
+  energy('momentum', 'Momentum', { sky: [[-0.6, -0.5, '#3a2ab0'], [0.6, -0.5, '#a030c8'], [0.6, 0, '#7a30d0'], [-0.6, 0, '#1a2a90']], dunes: [
+    dune('#60e0f0', '#40c0e8', '#80f0f0', 2.54, 0.15, 0.1, 1.6, 4.0, { depth: 0.3, shade: 0.1 }),
+    dune('#f04a90', '#f8706a', ['#d02a90', '#f05a70'], -0.3, 0.2, 0.05, 2.0, 0.6, { depth: 0.3, rim: 0.9 }),
+    dune('#f8806a', '#ffb070', '#f05a80', -0.25, 0.36, 0.05, 2.2, 2.4, { rim: 0.9 })] }),
+  energy('kinetic', 'Kinetic', { sky: [[0, -0.6, '#40c0f0'], [0, -0.25, '#70e0f0'], [0.5, 0, '#a0e8e8'], [-0.5, 0, '#60c8f0']], dunes: [
+    dune('#ffc890', '#ffa860', ['#f8805a', '#f06a50'], 0.05, -0.02, 0.04, 5.0, 0.6, { depth: 0.2, shade: 0.06 }),
+    dune('#f8704a', '#f04a70', '#d02a90', -0.1, 0.14, 0.06, 2.8, 2.6, { depth: 0.2, blur: 0.02 }),
+    dune('#5a2098', '#2a2888', '#101850', 0.1, 0.34, 0.05, 2.6, 4.4, { blur: 0.03 })] }),
+  energy('rally', 'Rally', { sky: [[-0.6, -0.5, '#ffc060'], [0.6, -0.5, '#ffd870'], [0.6, 0, '#ffe080'], [-0.6, 0, '#ffa860']], dunes: [
+    dune('#ffe078', '#ffc860', '#ff9a50', -0.4, 0.0, 0.08, 2.0, 0.6, { depth: 0.3, shade: 0.06 }),
+    dune('#f8705a', '#f05a80', '#e03a90', 0.1, 0.26, 0.05, 2.6, 2.6, { blur: 0.02 }),
+    dune('#f04a90', '#3a60d8', ['#c02a98', '#1a2a90'], -0.1, 0.4, 0.04, 2.4, 4.6, { blur: 0.03 })] }),
+  energy('thrust', 'Thrust', { sky: [[-0.6, -0.5, '#a0e0d0'], [0.6, -0.5, '#f8807a'], [0.6, 0, '#f86a80'], [-0.6, 0, '#c0d8c8']], dunes: [
+    dune('#f8a090', '#f07080', '#f05a90', 3.5, 0.1, 0.1, 1.8, 1.0, { depth: 0.3, shade: 0.06, blur: 0.02 }),
+    dune('#1a3a88', '#2a2a80', '#0c1450', 0.3, 0.14, 0.09, 2.2, 0.4, { depth: 0.3, rim: 0.8 }),
+    dune('#d040a0', '#f05a90', '#8a2aa0', 0.1, 0.4, 0.04, 2.6, 2.8, { blur: 0.03 })] }),
+  energy('flux', 'Flux', { sky: [[0, -0.6, '#50e0f0'], [0, -0.25, '#80e8f0'], [0.5, 0, '#ffd070'], [-0.5, 0, '#a0e0e0']], dunes: [
+    dune('#ffb860', '#ff9a50', '#f8605a', -0.15, 0.06, 0.06, 2.6, 0.6, { depth: 0.2, blur: 0.02 }),
+    dune('#f04a80', '#f03a90', '#b02a98', 0.1, 0.24, 0.05, 2.4, 2.4, { blur: 0.03 }),
+    dune('#1a3a70', '#2a2a80', '#0c1848', 0.3, 0.36, 0.05, 2.2, 4.4, { rim: 0.8 })] }),
+  energy('charge', 'Charge', { sky: [[-0.6, -0.5, '#f8704a'], [0.6, -0.5, '#f05a40'], [0.6, 0, '#f8905a'], [-0.6, 0, '#f06a50']], dunes: [
+    dune('#f04a70', '#f8706a', '#f03a80', 0.4, -0.1, 0.07, 2.0, 0.6, { depth: 0.2, shade: 0.06 }),
+    dune('#f03a70', '#f85a60', '#e02a88', 0.35, 0.14, 0.07, 2.2, 2.4)] }),
+  energy('riptide', 'Riptide', { sky: [[-0.6, -0.5, '#20a8b8'], [0.6, -0.5, '#50e0d8'], [0.6, 0, '#40c8d0'], [-0.6, 0, '#2080b0']], dunes: [
+    dune('#f04a90', '#f8706a', ['#3a2ab0', '#8a2aa8'], -0.3, 0.06, 0.08, 2.2, 0.8, { depth: 0.1, rim: 0.9 }),
+    dune('#2a40c0', '#3a30b0', '#141a70', -0.2, 0.26, 0.06, 2.4, 2.8, { threads: 40, thread: 0.2 }),
+    dune('#141a70', '#1a2080', '#0a0c40', -0.1, 0.42, 0.04, 2.8, 4.8)] }),
 ]

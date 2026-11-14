@@ -52,6 +52,7 @@
   import { SvelteMap } from 'svelte/reactivity'
   import { come, EASE_GLIDE, easeGlide, GLIDE_MS, slide, still } from '../../../ui/motion.ts'
   import { doc, edit } from '../../../lib/doc.svelte.ts'
+  import { showLook } from '../../../lib/player.svelte.ts'
   import { defaultStyle, type Background, type Style } from '../../../shared/project.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
   import Section from '../../../ui/Section.svelte'
@@ -99,7 +100,8 @@
     }
   })
 
-  type Tile = { id: string; name: string; look: string; on: boolean; pick: () => void }
+  /** `bg`: the background the tile previews under the pointer. An image has none: it is first copied into the project. */
+  type Tile = { id: string; name: string; look: string; on: boolean; pick: () => void; bg?: Background }
   const cover = (url: string) => `center / cover url("${url}")`
   const tiles: Tile[] = $derived(
     collection === MACOS
@@ -108,8 +110,9 @@
           id: w.id,
           name: w.name,
           look: thumbs.has(w.id) ? cover(thumbs.get(w.id)!) : sketch(w),
-          on: bg.kind === 'wallpaper' && bg.id === w.id,
+          on: bg.kind === 'wallpaper' && wallpaper(bg.id) === w, // a wallpaper since removed shows as the default one
           pick: () => setBg({ kind: 'wallpaper', id: w.id }),
+          bg: { kind: 'wallpaper', id: w.id },
         })),
   )
 
@@ -192,6 +195,7 @@
   $effect(() => {
     void collection
     reveal(wallTray)
+    showLook(null) // the tile that was previewed is gone
   })
 
   // Collection pills scroll sideways; an edge fades where more pills hide.
@@ -298,10 +302,25 @@
   })
 
   // A background picked while the screen fills the output edge to edge would not show: frame it.
-  const setBg = (b: Background, merge?: string) => edit((p) => {
-    p.style.background = b
-    if (p.style.padding === 0 && p.style.aspect === 'auto') p.style.padding = FRAME
-  }, merge)
+  const framed = (s: Style) => (s.padding === 0 && s.aspect === 'auto' ? FRAME : s.padding)
+  const setBg = (b: Background, merge?: string) => {
+    showLook(null) // the pick is what shows now
+    edit((p) => {
+      p.style.background = b
+      p.style.padding = framed(p.style)
+    }, merge)
+  }
+  // The tile under the pointer shows in the player, and nothing is edited until a click. The gap between two
+  // tiles keeps the last preview, so the picture does not jump back and forth while the pointer crosses the
+  // tray: only leaving the grid, a pick, or the chosen tile ends it.
+  const preview = (name: string, b: Background | undefined, on: boolean) => {
+    if (b) showLook(on ? null : { name, style: { ...st, background: b, padding: framed(st) } })
+  }
+  function leftGrid(e: PointerEvent) {
+    const grid = (e.target as Element).closest('.grid')
+    if (grid && !grid.contains(e.relatedTarget as Node | null)) showLook(null)
+  }
+  $effect(() => () => showLook(null)) // leaving the tab ends a preview
   const set = <K extends keyof Style>(k: K) => (v: Style[K], merge?: string) => edit((p) => { p.style[k] = v }, merge)
 
   const stops = $derived(bg.kind === 'gradient' ? bg.stops : (GRADIENTS[0].stops))
@@ -320,8 +339,8 @@
 <Section>
   <Segmented ariaLabel="Background" value={kind} onchange={showKind} options={KINDS} />
   <!-- Every tab's pane shares one cell, so the area is as tall as the tallest pane and the controls below stay put.
-       A pick anywhere moves its tray's ring at once. -->
-  <div class="kind" bind:this={kindEl} onchange={placeRings}>
+       A pick anywhere moves its tray's ring at once, and the pointer leaving any tray's grid ends its preview. -->
+  <div class="kind" role="presentation" bind:this={kindEl} onchange={placeRings} onpointerout={leftGrid}>
     <div class="pane" class:shown={kind === 'wallpaper'} inert={kind !== 'wallpaper'}>
       <div class="pills" class:fade-start={fade.start} class:fade-end={fade.end} role="tablist" aria-label="Wallpaper collections" bind:this={pillRow} onscroll={edges}>
         {#if pillThumb}<span class="thumb" class:glide={pillThumb.glide} style:translate="{pillThumb.x}px 0" style:width="{pillThumb.w}px" aria-hidden="true"></span>{/if}
@@ -345,6 +364,7 @@
                     aria-busy={converting === t.id}
                     style:background={t.look}
                     onchange={t.pick}
+                    onpointerenter={() => preview(t.name, t.bg, t.on)}
                     {@attach tooltip(t.name)}
                   />
                 {/each}
@@ -360,14 +380,16 @@
         <div class="tray" style:--cols={COLS}>
           <div class="grid" role="radiogroup" aria-label="Gradient presets">
             {#each GRADIENTS as g (g.name)}
+              {@const on = bg.kind === 'gradient' && bg.stops.join() === g.stops.join()}
               <input
                 class="tile"
                 type="radio"
                 name="{uid}-gradient"
-                checked={bg.kind === 'gradient' && bg.stops.join() === g.stops.join()}
+                checked={on}
                 aria-label={g.name}
                 style:background={gradient(g.stops, g.angle)}
                 onchange={() => setBg({ kind: 'gradient', stops: [...g.stops], angle: g.angle })}
+                onpointerenter={() => preview(g.name, { kind: 'gradient', stops: [...g.stops], angle: g.angle }, on)}
                 {@attach tooltip(g.name)}
               />
             {/each}
@@ -384,14 +406,16 @@
         <div class="tray" style:--cols={COLS}>
           <div class="grid" role="radiogroup" aria-label="Colors">
             {#each COLORS as c (c)}
+              {@const on = bg.kind === 'color' && bg.color.toLowerCase() === c}
               <input
                 class="tile"
                 type="radio"
                 name="{uid}-color"
-                checked={bg.kind === 'color' && bg.color.toLowerCase() === c}
+                checked={on}
                 aria-label={c}
                 style:background={c}
                 onchange={() => setBg({ kind: 'color', color: c })}
+                onpointerenter={() => preview(c, { kind: 'color', color: c }, on)}
                 {@attach tooltip(c)}
               />
             {/each}

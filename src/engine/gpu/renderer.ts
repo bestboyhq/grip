@@ -63,7 +63,7 @@ const CUR = 106, CURIMG = 107, CURTEX = 108, CURBOX = 109, CURS = 110
 const CAM = 126, CAM1 = 127, CAM2 = 128, CAM3 = 129, CAM4 = 130, LUTMIN = 131, LUTMAX = 132, FIN = 133, VP = 134, VIS = 135
 const CLK = 136, LOUPES = 140, LOUPE_S = 148, INS = 220
 const FRAME_SLOTS = 221
-const PASS_SLOTS = 27 // `struct Pass`
+const PASS_SLOTS = 51 // `struct Pass`
 const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12, MAX_CLICKS = 4, MAX_LOUPES = 4, LOUPE_SAMPLES = 9
 const MASK_KIND = { blur: 0, pixelate: 1, highlight: 2 } as const
 const CLICK_KIND = { swell: 1, wave: 2, circle: 3, focus: 4 } as const // fin.y in shaders.wgsl
@@ -587,7 +587,7 @@ export class Renderer {
     const base = this.texture(W, H, HDR, sigma > 0.5 ? lod + 1 : 1)
     const p = new Float32Array(PASS_SLOTS * 4)
     const lab = (slot: number, c: readonly number[]) => p.set([...oklab(c), 1], slot * 4)
-    const COLS = 15
+    const COLS = 31
     let bg = scene.background
     if (bg.kind === 'image' && !image) bg = defaultStyle().background
     let img: GPUTexture | null = null
@@ -606,8 +606,8 @@ export class Renderer {
       let w = wallpaper(bg.id)
       if (!STYLES.includes(w.style)) w = wallpaper(DEFAULT_WALLPAPER)
       p.set([2, w.colors.length, STYLES.indexOf(w.style)], 0)
-      p.set(w.params.slice(0, 48), 3 * 4)
-      w.colors.slice(0, 12).forEach((c, i) => lab(COLS + i, parseColor(c) ?? [0, 0, 0]))
+      p.set(w.params.slice(0, 112), 3 * 4)
+      w.colors.slice(0, 20).forEach((c, i) => lab(COLS + i, parseColor(c) ?? [0, 0, 0]))
     } else if (image) {
       img = this.texture(image.width, image.height, LDR, mipCount(image.width, image.height))
       d.queue.copyExternalImageToTexture({ source: image }, { texture: img, premultipliedAlpha: true }, [image.width, image.height])

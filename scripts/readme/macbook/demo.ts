@@ -62,9 +62,9 @@ export default {
     ...click(SCRIPT.color, at(SCRIPT.color)),
     ...click(SCRIPT.save, at(SCRIPT.save)),
   ],
-  // The GIF's edits: a MacBook on the Haze wallpaper, one push in onto the event editing, pulled back for the week.
+  // The GIF's edits: a MacBook on the Harmattan wallpaper, one push in onto the event editing, pulled back for the week.
   edit(p) {
-    Object.assign(p.style, { aspect: '16:9', background: { kind: 'wallpaper', id: 'sand' }, device: 'macbook', padding: 110 })
+    Object.assign(p.style, { aspect: '16:9', background: { kind: 'wallpaper', id: 'sunset-harmattan' }, device: 'macbook', padding: 110 })
     Object.assign(p.style.cursor, { size: 1.6, loop: true })
     p.zooms = [{ id: 'event', start: 0.95, end: 8.05, level: 2.5, target: { kind: 'point', x: 0.484, y: 0.49 }, enabled: true }]
     p.autoZoomed = true
