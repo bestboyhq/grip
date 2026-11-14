@@ -1,4 +1,4 @@
-import { mock, test, type TestContext } from 'node:test'
+import { afterEach, mock, test, type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import { register } from 'node:module'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -11,7 +11,7 @@ const stub = (code: string) => `data:text/javascript,${encodeURIComponent(code)}
 const modules = {
   electron: stub(`export const app = { getPath: () => globalThis.userData, isPackaged: true, getVersion: () => '1.0.0' }
     export const ipcMain = { handle: (channel, fn) => (globalThis.ipc[channel] = fn) }`),
-  './account.ts': stub(`export const SERVER = 'https://platform', USER_AGENT = 'Grip', accountToken = () => ''`),
+  './account.ts': stub(`export const SERVER = 'https://platform', USER_AGENT = 'Grip', accountToken = () => globalThis.token ?? ''`),
   './shell/settings.ts': stub(`export const settings = () => globalThis.settings, settingsListeners = []`),
 }
 register(
@@ -22,15 +22,22 @@ register(
 )
 
 let up = true // whether the platform takes events
-let sent: Array<{ name: string; props?: Record<string, unknown> }> = []
-g.fetch = async (_url: string, init: { body: string }) => (up && sent.push(...JSON.parse(init.body).events), { ok: up })
+let sent: Array<{ name: string; props?: Record<string, unknown>; install?: string; signed: boolean }> = []
+g.fetch = async (_url: string, init: { body: string; headers: Record<string, string> }) => {
+  const { install, events } = JSON.parse(init.body)
+  if (up) for (const e of events) sent.push({ ...e, install, signed: 'authorization' in init.headers })
+  return { ok: up }
+}
 const settle = () => new Promise((r) => setImmediate(r))
+afterEach(() => mock.timers.reset())
+const { settingsListeners } = await import('./shell/settings.ts')
 let launches = 0
 /** A launch: a fresh module that reads usage.json, then the `launched` count main.ts makes. */
 async function launch(at: string) {
   mock.timers.setTime(new Date(at).getTime())
   sent = []
   g.ipc = {}
+  settingsListeners.length = 0 // only this launch's module hears a settings change
   const usage = await import(`./usage.ts?launch=${++launches}`)
   usage.registerUsage()
   usage.count('launched')
@@ -81,10 +88,52 @@ test('journey markers go once, after delivery, with cohort and days; days count 
   assert.equal(named('returned_week_1').length, 0)
 
   await launch('2026-12-01T09:00')
-  assert.deepEqual(named('month'), [{ month: '2026-11', active_days: 3 }])
   assert.deepEqual(named('day'), [{ week_first: 'yes', month_first: 'yes', age: 'month_1' }])
   assert.deepEqual(named('returned_month_1'), [{ cohort: '2026-11-09', days: 22 }])
-  mock.timers.reset()
+  assert.equal(named('month').length, 0)
+})
+
+test('signed out, every count but the last carries one install ID until stats turn off', async (t) => {
+  g.userData = scratch(t)
+  g.settings = { usageCounts: true, onboarded: true }
+  mock.timers.enable({ apis: ['Date'] })
+  await launch('2026-11-12T09:00')
+  const [id] = new Set(sent.map((e) => e.install))
+  assert.match(id!, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+  assert.equal(sent.length, 3) // launched, first_open, day
+
+  let usage = await launch('2026-11-13T09:00')
+  assert.deepEqual([...new Set(sent.map((e) => e.install))], [id])
+
+  sent = []
+  g.token = 'account'
+  usage.count('recorded')
+  await settle()
+  assert.deepEqual(
+    sent.map((e) => [e.name, e.install, e.signed]),
+    [['grip_recorded', undefined, true], ['grip_first_recording', undefined, true]],
+  ) // the account, never both
+  g.token = ''
+
+  sent = []
+  const off = { ...g.settings, usageCounts: false }
+  for (const l of settingsListeners) l(off, g.settings)
+  g.settings = off
+  usage.count('recorded')
+  await settle()
+  assert.deepEqual(sent, [{ name: 'grip_stats_off', install: undefined, signed: false }])
+
+  usage = await launch('2026-11-14T09:00') // off: nothing goes, and nothing makes an ID
+  assert.equal(sent.length, 0)
+  const on = { ...g.settings, usageCounts: true }
+  for (const l of settingsListeners) l(on, g.settings)
+  g.settings = on
+  usage.count('recorded')
+  await settle()
+  const fresh = new Set(sent.map((e) => e.install))
+  assert.equal(fresh.size, 1)
+  assert.notEqual([...fresh][0], id)
+  assert.ok([...fresh][0])
 })
 
 test('an install older than the journey has none', async (t) => {
@@ -99,5 +148,4 @@ test('an install older than the journey has none', async (t) => {
     sent.map((e) => e.name),
     ['grip_launched', 'grip_day', 'grip_recorded'],
   )
-  mock.timers.reset()
 })

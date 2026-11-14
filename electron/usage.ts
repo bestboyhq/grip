@@ -1,15 +1,17 @@
 // Usage counts: what happened (a recording finished, an export, a share), never what it shows.
 // Each count goes to the platform's POST /api/events (bestboy.dev docs/api.md, "Usage counts"), which relays it to
 // Logdash. Signed in, it carries the account's token, so the count joins that account's days (Logdash keeps a hash);
-// signed out, it adds to a daily count of people that follows no one. No names, no paths, no content.
+// signed out, it carries `install`, a random ID made for this install and never sent with a token, so Logdash can
+// count the days one install is used (its L30). No names, no paths, no content.
 // On until it is turned off in Settings; onboarding's shortcut step says so in its description. Turning it off sends
-// one last count, with no account, so the numbers know how many people they leave out. DO_NOT_TRACK sends nothing.
+// one last count, with no account and no install ID, so the numbers know how many people they leave out, and forgets
+// the install ID, so turning it back on starts a new one. DO_NOT_TRACK sends nothing.
 // Dev runs send only to a local platform (STUDIO_SHARE_URL).
 //
 // The journey (first open, each onboarding step, first recording, first export, coming back) is one marker each,
 // sent once: a marker waits in <userData>/usage.json until the platform takes it, and is retried at each launch.
 // Every marker carries `cohort` (the local day of the first open) and `days` since it, so only a fresh install has
-// a journey. `grip_day` counts each active local day, and `grip_month` sums the last month's active days.
+// a journey. `grip_day` counts each active local day.
 import { app, ipcMain } from 'electron'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -31,11 +33,10 @@ interface State {
   /** Journey markers waiting for the platform, with their props as of when they happened. */
   due: Record<string, Props>
   sent: string[]
-  /** The last day and month the platform took `grip_day` and `grip_month` for. */
+  /** The last day the platform took `grip_day` for. */
   day: string | null
-  month: string | null
-  /** Local days with activity, from the last unreported month on. */
-  days: string[]
+  /** Random UUID sent as `install` while signed out; null until the first such count, and after stats turn off. */
+  install?: string | null
 }
 
 let state: State | null = null
@@ -68,7 +69,7 @@ function load(): State {
     state = JSON.parse(readFileSync(file(), 'utf8')) as State
   } catch {
     const fresh = !existsSync(join(app.getPath('userData'), 'settings.json'))
-    state = { first: fresh ? today() : null, setupAt: null, due: {}, sent: [], day: null, month: null, days: [] }
+    state = { first: fresh ? today() : null, setupAt: null, due: {}, sent: [], day: null }
     if (fresh) state.due.first_open = { cohort: state.first!, days: 0 }
     save()
   }
@@ -83,7 +84,11 @@ export function count(name: string, props?: Props) {
 }
 
 settingsListeners.push((s, prev) => {
-  if (s.usageCounts === false && prev.usageCounts !== false) void send('stats_off')
+  if (s.usageCounts === false && prev.usageCounts !== false) {
+    void send('stats_off')
+    load().install = null
+    save()
+  }
   if (s.usageCounts !== false && prev.usageCounts === false) daily()
 })
 
@@ -109,11 +114,10 @@ function once(key: string, name: string, props: Props, done: () => void) {
     .finally(() => sending.delete(key))
 }
 
-/** The day's and month's counts, the return markers, and every journey marker still due. */
+/** The day's count, the return markers, and every journey marker still due. */
 function daily() {
   const s = load()
   const day = today()
-  if (!s.days.includes(day)) (s.days.push(day), save())
   if (s.first) {
     const d = daysBetween(s.first, day)
     if (d >= 1 && d <= 7) journey('returned_week_1')
@@ -121,17 +125,10 @@ function daily() {
   }
   if (!on()) return
   for (const [marker, props] of Object.entries(s.due)) once(marker, marker, props, () => (delete s.due[marker], s.sent.push(marker)))
-  const current = day.slice(0, 7)
-  const earlier = s.days.filter((d) => d.slice(0, 7) < current).sort()
-  const month = earlier.at(-1)?.slice(0, 7)
-  if (month && s.month !== month) {
-    const active = earlier.filter((d) => d.startsWith(month)).length
-    once('month', 'month', { month, active_days: active }, () => ((s.month = month), (s.days = s.days.filter((d) => d.slice(0, 7) >= current))))
-  }
   if (s.day !== day) {
     const props = {
       week_first: !s.day || weekStart(s.day) !== weekStart(day) ? 'yes' : 'no',
-      month_first: !s.day || s.day.slice(0, 7) !== current ? 'yes' : 'no',
+      month_first: !s.day || s.day.slice(0, 7) !== day.slice(0, 7) ? 'yes' : 'no',
       // ponytail: an install older than the journey has no first open and reads as later.
       age: s.first ? age(daysBetween(s.first, day)) : 'later',
     }
@@ -154,11 +151,15 @@ function weekStart(day: string) {
 async function send(name: string, props?: Props, token = ''): Promise<boolean> {
   if (process.env.DO_NOT_TRACK && process.env.DO_NOT_TRACK !== '0') return false
   if (!app.isPackaged && !process.env.STUDIO_SHARE_URL) return false
-  // ponytail: a plain count made offline is dropped; only journey, day, and month counts wait for the next launch.
+  // The account or this install, never both; the last count before stats turn off carries neither.
+  const s = load()
+  if (!token && name !== 'stats_off' && !s.install) ((s.install = crypto.randomUUID()), save())
+  const install = token || name === 'stats_off' ? undefined : s.install
+  // ponytail: a plain count made offline is dropped; only journey and day counts wait for the next launch.
   return fetch(`${SERVER}/api/events`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'user-agent': USER_AGENT, ...(token && { authorization: `Bearer ${token}` }) },
-    body: JSON.stringify({ app: 'grip', version: app.getVersion(), events: [{ name: `grip_${name}`, props }] }),
+    body: JSON.stringify({ app: 'grip', version: app.getVersion(), install, events: [{ name: `grip_${name}`, props }] }),
     signal: AbortSignal.timeout(10e3),
   }).then(
     (r) => r.ok,
