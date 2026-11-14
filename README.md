@@ -106,7 +106,7 @@ That is 12 times faster than the quickest blink (about 100 ms), 2 times faster t
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: light)" srcset=".github/readme/ink-light.gif">
-    <img src=".github/readme/ink.gif" width="100%" alt="A landing page draft on a green wallpaper: after ⌥⇧⌘D appears as keycaps, red ink circles the headline 'Get paid in days, not weeks.', an arrow sweeps down to the Start free trial button, and a line underlines the $24 price. The view zooms out to the whole page and the ink fades away.">
+    <img src=".github/readme/ink.gif" width="100%" alt="A landing page draft on a wallpaper of green, yellow, and pink dunes: after ⌥⇧⌘D appears as keycaps, red ink circles the headline 'Get paid in days, not weeks.', an arrow sweeps down to the Start free trial button, and a line underlines the $24 price. The view zooms out to the whole page and the ink fades away.">
   </picture>
 </p>
 
@@ -143,7 +143,7 @@ Drag the preview straight into another app to drop the file.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: light)" srcset=".github/readme/loupe-light.gif">
-    <img src=".github/readme/loupe.gif" width="100%" alt="A revenue dashboard on a dark wallpaper with a teal glow: a glass loupe follows the cursor along the MRR growth chart, magnifying each day's tooltip, glides up to the Net new MRR and MRR figures, then magnifies the Export CSV button as it turns to Exported.">
+    <img src=".github/readme/loupe.gif" width="100%" alt="A revenue dashboard on a wallpaper that runs from deep blue to teal: a glass loupe follows the cursor along the MRR growth chart, magnifying each day's tooltip, glides up to the Net new MRR and MRR figures, then magnifies the Export CSV button as it turns to Exported.">
   </picture>
 </p>
 
@@ -212,7 +212,7 @@ Drag the preview straight into another app to drop the file.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: light)" srcset=".github/readme/macbook-light.gif">
-    <img src=".github/readme/macbook.gif" width="100%" alt="A calendar app inside a MacBook frame on a warm hazy wallpaper: the view pushes in as the user drags out a new event, types 'Design review', adds Maya Chen as a guest, picks a sage color, and saves, then pulls back to the whole laptop with the new event in the week.">
+    <img src=".github/readme/macbook.gif" width="100%" alt="A calendar app inside a MacBook frame on a wallpaper of pale, warm dunes: the view pushes in as the user drags out a new event, types 'Design review', adds Maya Chen as a guest, picks a sage color, and saves, then pulls back to the whole laptop with the new event in the week.">
   </picture>
 </p>
 
