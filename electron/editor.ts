@@ -2,10 +2,11 @@
 //   editor:importAsset(bundle, file, kind) -> "assets/<name>"
 //   editor:closed()  the window finished saving after "editor:close" (electron/shell/recorder.ts)
 //   editor:nativeEdit(action)  an Edit menu item the page left to the text field: undo, redo, cut, copy, paste, selectAll
+//   editor:playing(on)  the preview started or stopped playing
 // Main -> page: "editor:edit"(action), an Edit menu item for the focused editor (electron/shell/menu.ts).
 // Copies a user-picked file (background image, LUT, music) into the bundle, so projects stay portable
 // and sources stay immutable. The renderer is untrusted: both paths and the kind are validated here.
-import electron from 'electron'
+import electron, { type WebContents } from 'electron'
 import { constants } from 'node:fs'
 import { copyFile, mkdir, stat } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join, relative } from 'node:path'
@@ -57,7 +58,30 @@ export async function importAsset(bundle: unknown, picked: unknown, kind: unknow
 
 const EDITS = ['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll'] as const
 
+/** Editors whose preview plays (a voiceover take plays it too): the display stays awake, as it does
+ *  for any video, and an update waiting to install waits for them (shell/update.ts). */
+const playing = new Set<WebContents>()
+const watched = new WeakSet<WebContents>()
+let awake = -1
+export const previewing = () => playing.size > 0
+
+function setPlaying(wc: WebContents, on: boolean) {
+  if (on) playing.add(wc)
+  else playing.delete(wc)
+  if (playing.size && awake < 0) awake = electron.powerSaveBlocker.start('prevent-display-sleep')
+  else if (!playing.size && awake >= 0) (electron.powerSaveBlocker.stop(awake), (awake = -1))
+}
+
 export function registerEditor() {
   electron.ipcMain.handle('editor:importAsset', (_e, bundle, file, kind) => importAsset(bundle, file, kind))
   electron.ipcMain.handle('editor:nativeEdit', (e, action: (typeof EDITS)[number]) => EDITS.includes(action) && e.sender[action]())
+  electron.ipcMain.handle('editor:playing', (e, on: unknown) => {
+    const wc = e.sender
+    if (!watched.has(wc)) {
+      watched.add(wc)
+      wc.on('destroyed', () => setPlaying(wc, false))
+      wc.on('render-process-gone', () => setPlaying(wc, false))
+    }
+    setPlaying(wc, on === true)
+  })
 }

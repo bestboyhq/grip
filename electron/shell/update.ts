@@ -6,21 +6,25 @@
 // on the recording toolbar (shell:state `update`, electron/shell/recorder.ts) and as a blue dot on the menu
 // bar icon (electron/shell/tray.ts), outlined while a check or download runs (updateActivity).
 // A menu bar app is rarely quit, so a waiting update also installs while the user is away (screen
-// locked, or no input for a while), when that loses and hides nothing: no recording or export, and no
-// window open. After either restart the new version starts in the menu bar only (restartedToUpdate, at
-// launch): an update is no reason to open the picker.
+// locked, or no input for a while), when that loses and hides nothing: no recording, export,
+// transcription, or playing preview, and no window open but editors. Editors save as any quit has
+// them do, and come back where they were (restartedToUpdate, at launch); otherwise the new version
+// starts in the menu bar only, since an update is no reason to open the picker.
 //
 // IPC: update:restart   the toolbar's Restart to Update
 //      update:later     the toolbar's Later: off the toolbar for a day
-import { app, BrowserWindow, autoUpdater as squirrel, dialog, ipcMain, powerMonitor, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, autoUpdater as squirrel, dialog, ipcMain, powerMonitor, screen, type MenuItemConstructorOptions, type Rectangle } from 'electron'
 import type { AppUpdater } from 'electron-updater'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { hidden, kindOf } from '../windows.ts'
+import { hidden, kindOf, windowsOf } from '../windows.ts'
 import { activeExports } from '../export.ts'
-import { isQuitting, recordingStatus } from './recorder.ts'
+import { previewing } from '../editor.ts'
+import { transcribing } from '../transcript.ts'
+import { isQuitting, openProject, projectOf, recordingStatus } from './recorder.ts'
 import { setAppMenu } from './menu.ts'
 import { plainError } from './errors.ts'
+import { reachable } from './bounds.ts'
 
 /** Loaded by startUpdates: its ~20 ms of modules stay out of the launch. */
 let autoUpdater: AppUpdater
@@ -39,6 +43,9 @@ let restarting = false // the quit in progress ends in installing and relaunchin
 let later = 0 // the toolbar's Later keeps the update off it until then
 let away = false // the restart in progress installs while the user is away
 let failed = false // one did and came back as this version: no second try this run
+/** An editor open when a restart began, which the new version reopens as it was. */
+type Editor = { project: string; bounds: Rectangle; minimized: boolean; fullscreen: boolean }
+let editors: Editor[] = []
 /** Main-process reactions to a state change (the recording toolbar's shell:state). */
 export const updateListeners: Array<() => void> = []
 
@@ -93,28 +100,47 @@ export function restartToUpdate() {
   app.quit()
 }
 
-/** The relaunched app's cue, holding the version it should come back as. The name predates
- *  restarts the user asked for, and stays so an update from a version before them finds it. */
+/** The relaunched app's cue: JSON with the version it should come back as and the editors to reopen.
+ *  The name predates restarts the user asked for, and stays so an update from a version before them
+ *  finds it; those versions wrote the bare version. */
 const marker = () => join(app.getPath('userData'), 'updated-while-away')
 
 function restartWhileAway() {
   if (state !== 'ready' || failed || isQuitting() || !['idle', 'locked'].includes(powerMonitor.getSystemIdleState(AWAY))) return
-  // Only Grip's own helpers, hidden (the recording controller and the picker's overlays, loaded
-  // ahead): no window of the user's goes away, not even a hidden one.
-  if (recordingStatus() !== 'idle' || activeExports() || !BrowserWindow.getAllWindows().every((w) => HELPERS.includes(kindOf(w)!) && !w.isVisible())) return
+  // Nothing under way that a restart cuts short. A preview can play for a long time with no input.
+  if (recordingStatus() !== 'idle' || activeExports() || transcribing() || previewing()) return
+  // Editors, which come back as they were, and Grip's own helpers, hidden (the recording controller
+  // and the picker's overlays, loaded ahead): no other window of the user's goes away, not even a hidden one.
+  if (!BrowserWindow.getAllWindows().every((w) => kindOf(w) === 'editor' || (HELPERS.includes(kindOf(w)!) && !w.isVisible()))) return
   away = true
   restartToUpdate()
 }
 
-/** At launch: whether a restart into an update started this run, which then opens nothing. */
+/** At launch: whether a restart into an update started this run. It reopens the editors that were
+ *  open and nothing else. */
 export function restartedToUpdate(): boolean {
+  let cue: { version?: unknown; editors?: Editor[] }
   try {
-    failed = readFileSync(marker(), 'utf8') !== app.getVersion()
+    const text = readFileSync(marker(), 'utf8')
     rmSync(marker())
-    return true
+    try {
+      cue = JSON.parse(text)
+    } catch {
+      cue = { version: text }
+    }
   } catch {
     return false
   }
+  failed = cue?.version !== app.getVersion()
+  const areas = screen.getAllDisplays().map((d) => d.workArea)
+  for (const e of Array.isArray(cue?.editors) ? cue.editors : []) {
+    if (typeof e?.project !== 'string') continue
+    // Where it was, unless that display is gone: then where editors last were.
+    const win = openProject(e.project, { focus: false, at: e.bounds && reachable(e.bounds, areas) ? e.bounds : undefined })
+    if (e.fullscreen) win?.setFullScreen(true)
+    else if (e.minimized) win?.minimize()
+  }
+  return true
 }
 
 export function updateMenuItems(): MenuItemConstructorOptions[] {
@@ -172,6 +198,11 @@ export async function startUpdates(log: (err: unknown) => void) {
     if (isQuitting()) return
     restarting = requested
     requested = false
+    // Before they save and close: by will-quit they are gone.
+    editors = !restarting ? [] : windowsOf('editor').flatMap((w) => {
+      const project = projectOf(w)
+      return project ? [{ project, bounds: w.getNormalBounds(), minimized: w.isMinimized(), fullscreen: w.isFullScreen() }] : []
+    })
   })
   // Every window is closed and every prompt answered: install now instead of exiting.
   app.on('will-quit', (e) => {
@@ -179,8 +210,8 @@ export async function startUpdates(log: (err: unknown) => void) {
     restarting = false
     e.preventDefault()
     try {
-      writeFileSync(marker(), version)
-    } catch {} // without it, the new version opens the picker as if the user had launched it
+      writeFileSync(marker(), JSON.stringify({ version, editors }))
+    } catch {} // without it, the new version opens the picker as if the user had launched it, and no editor
     // Squirrel refused: still quit, it was asked for, and the next launch is the user's own; unasked,
     // come back as this version (the marker says so).
     autoUpdater.once('error', () => {
@@ -198,5 +229,6 @@ export async function startUpdates(log: (err: unknown) => void) {
   void check()
   setInterval(check, EVERY)
   setInterval(restartWhileAway, Math.min(EVERY, 60_000))
+  powerMonitor.on('lock-screen', restartWhileAway) // a laptop closed right after it locks sleeps before the interval comes round
   powerMonitor.on('resume', check) // the interval stops while the Mac sleeps: a laptop opened each morning checks then
 }

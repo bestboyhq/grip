@@ -132,6 +132,9 @@
     document.title = doc.project?.name || 'Grip'
   })
 
+  // Main keeps the display awake while the preview plays, and an update waits for it (electron/editor.ts).
+  $effect(() => void invoke('editor:playing', player.playing))
+
   $effect(() =>
     registerCommands([
       { id: 'project.reveal', group: 'Project', title: 'Show in Finder', run: reveal, enabled: () => !!doc.project },

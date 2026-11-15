@@ -47,6 +47,8 @@ The native macOS app around everything else.
   Only real key presses prove this works: a page-level key event skips both layers.
 - Ask before quitting during a recording or export, and Cancel on any prompt really cancels.
 - Universal binary, in-app auto-update, crash reports with diagnostics, and plain-language messages for system error codes (disk full, permission denied).
-  A restart into an update, asked for or not, comes back to the menu bar only: updating is no reason to open the picker.
+  A restart into an update, asked for or not, comes back to the menu bar and to the editors that were open, each where it was: updating is no reason to open the picker.
+  An open editor never holds an update back, since it saves and comes back; only work a restart cuts short does (a recording, an export, a transcription, a playing preview).
+  An editor left open for days held back every update until its next quit, and a preview can play for long with no input, which reads as the user being away.
 
 Done when a new user goes from install, through permissions, to a first exported video without reading docs.

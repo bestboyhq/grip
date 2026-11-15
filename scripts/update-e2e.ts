@@ -1,8 +1,9 @@
 // `node scripts/update-e2e.ts`: in-app updates end to end, the way a user gets them. A signed build
 // of 0.0.1 finds 0.0.2 on a local feed and downloads it; 0.0.3 ships while 0.0.2 waits and replaces
 // it, and "Restart to Update" (clicked in the app menu) relaunches it as 0.0.3, the latest, in one
-// restart. Then 0.0.4 ships and installs by itself while the user is away. Both restarts come back to
-// the menu bar only: no window, no dock icon, never the picker. Run it before publishing a release.
+// restart, back in the menu bar only: no window, no dock icon, never the picker. Then 0.0.4 ships and
+// installs by itself while the user is away with a project open, which comes back in its editor and
+// opens nothing else. Run it before publishing a release.
 // Needs the Developer ID identity (Squirrel installs only signed updates) and Accessibility for the
 // terminal (it clicks the menu). It builds under its own name and app id, so an installed Grip, its
 // settings, and its update cache stay untouched.
@@ -18,6 +19,8 @@ const ID = 'com.bestboyhq.grip.updatetest'
 const PORT = 8765
 const dir = join(import.meta.dirname, '../.context/update-e2e')
 const app = join(dir, 'Applications', `${NAME}.app`) // in an Applications folder, so it never offers to move itself
+const title = 'Demo #1 ✨ café' // a hostile name, from the marker file through to the editor's title
+const project = join(dir, `${title}.grip`)
 const sh = (cmd: string, args: string[]) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 const run = (cmd: string, args: string[]) => execFileSync(cmd, args, { stdio: 'inherit' })
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -77,6 +80,7 @@ async function cleanup() {
 const base = JSON.parse(readFileSync(join(import.meta.dirname, '../package.json'), 'utf8')).build
 const { CFBundleDocumentTypes, UTExportedTypeDeclarations, ...info } = base.mac.extendInfo
 run('npm', ['run', 'build'])
+if (!existsSync(project)) run('npx', ['electron', 'scripts/fixture/make.ts', project])
 for (const v of ['0.0.1', '0.0.2', '0.0.3', '0.0.4']) {
   const config = {
     ...base,
@@ -121,15 +125,17 @@ try {
   await menuBarOnly('0.0.3')
   console.log(`ok: 0.0.1 updated itself to ${version()} and relaunched to the menu bar only`)
 
-  // Away: no window open (grip://stop finds nothing to stop, so neither picker nor onboarding opens),
-  // and a second without input counts as away.
+  // Away with a project open in the editor, which saves and comes back: no other window opens, and a
+  // second without input counts as away.
   await stop()
   latest = '0.0.4'
-  launch({ STUDIO_HIDDEN: '1', STUDIO_UPDATE_EVERY: '5000', STUDIO_UPDATE_AWAY: '1' }, ['grip://stop'])
+  launch({ STUDIO_HIDDEN: '1', STUDIO_UPDATE_EVERY: '5000', STUDIO_UPDATE_AWAY: '1' }, [project])
   await until('0.0.4 to be installed while away', () => version() === '0.0.4')
   await until('0.0.4 to relaunch', () => running() && policy() !== '')
-  await menuBarOnly('0.0.4')
-  console.log(`ok: 0.0.3 updated itself to ${version()} while away and came back to the menu bar only`)
+  await sleep(5000) // a launch that opens onboarding or the picker has it on screen by now
+  const back = sh('osascript', ['-e', `tell application "System Events" to get name of windows of process "${NAME}"`])
+  if (back !== title) throw new Error(`0.0.4 came back with windows “${back}”, not the editor of “${title}” alone`)
+  console.log(`ok: 0.0.3 updated itself to ${version()} while away and came back to its editor only`)
 } catch (e) {
   // Why it did not install or relaunch, before cleanup deletes the evidence.
   for (const p of [`Library/Caches/${ID}.ShipIt/ShipIt_stderr.log`, `Library/Caches/${ID}.ShipIt/ShipIt_stdout.log`, `Library/Logs/${NAME}/main.log`])
