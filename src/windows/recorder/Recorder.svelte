@@ -104,6 +104,8 @@
   // Every button's box is 52 px tall, 6 px inside the bar. A bubble keeps 2 px in from its sides, so
   // one beside the locked bubble stays its own drop instead of joining it into one slab.
   const BOX = { top: 6, height: 52, side: 2 }
+  /** A box's corner at rest, concentric with the bar's: the window corner less the 6 px inset. */
+  const CORNER = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--radius-window')) - BOX.top
   let pointer: { x: number; y: number } | null = null
   /** A highlight under a button that flows to the next one like a drop of liquid: it stretches
    *  behind as it speeds up, thins as it stretches, and settles with a little give. The hover one
@@ -142,7 +144,7 @@
       const flow = 1 - Math.exp(-Math.abs(v) / 1200) // 0 at rest, easing toward 1 with speed
       const stretch = 40 * flow
       const height = BOX.height - 9 * flow
-      const head = 6 + (height / 2 - 6) * flow
+      const head = CORNER + (height / 2 - CORNER) * flow
       const tail = head + stretch * 0.8 * flow
       const [l, r] = v > 0 ? [tail, head] : [head, tail]
       return {
@@ -429,7 +431,7 @@
     display: flex;
     align-items: center;
     padding: 0 10px; /* the end buttons' boxes; the close circle starts 20 px in, like the gear's chevron ends */
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-window);
     background: var(--surface-root);
     box-shadow: var(--hairline);
     color: var(--fg-default);
@@ -442,7 +444,7 @@
     padding: 0;
     display: flex;
     align-items: center;
-    border-radius: var(--radius-sm); /* concentric: 6 px inside the 12 px bar */
+    border-radius: calc(var(--radius-window) - 6px); /* concentric: 6 px inside the bar */
   }
   button:focus-visible {
     outline: 2px solid var(--brand);
@@ -613,7 +615,7 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-window);
     background: var(--surface-veil);
     box-shadow: var(--hairline);
     backdrop-filter: blur(2px);

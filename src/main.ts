@@ -24,6 +24,7 @@ const [name, query = ''] = location.hash.replace(/^#\/?/, '').split('?')
 const load = routes[name] ?? routes.recorder
 const { default: Window } = await load()
 document.documentElement.dataset.window = name
+document.documentElement.dataset.macos = String(window.studio.macos)
 await document.fonts.load('13px "Inter Variable"').catch(() => {}) // the first frame, canvases included, draws in Inter
 installPress()
 mount(Window, { target: document.body, props: { params: new URLSearchParams(query) } })

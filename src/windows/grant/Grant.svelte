@@ -38,7 +38,7 @@
     height: 100vh;
     padding: 0 12px 0 14px;
     background: var(--surface-root);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-window);
     box-shadow: var(--hairline);
     cursor: grab;
   }
