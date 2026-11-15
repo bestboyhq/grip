@@ -519,7 +519,6 @@ const FOLD = 0.6; // how far across the bevel the content stops and turns back: 
 const CURL = 0.72; // from here across the bevel the turn back tightens...
 const CURL_K = 6.76; // ...by this much: the rim shows what lies a third of a bevel inside the flat top's
 // edge, running back 4.5 times faster than the flat top magnifies
-const CURL_TAPS = 6; // most taps across a pixel where the curl shrinks the content
 const DISPERSION = 0.12; // how much less red bends than green, and blue more: a share of the bevel's bend
 const KEY = vec3f(0.0, -0.9, 0.43); // key light direction (output px axes, z toward the viewer): straight above,
 // so a lens's shadow falls the way the window's and the camera's do
@@ -610,29 +609,18 @@ fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, count: i32) -> vec4f
   let shown = m.x / max(rho, 1e-4); // 1 / mag on the flat top: the magnification stays round when stretched
   let s = clamp((rho - (1.0 - BEVEL)) / BEVEL, 0.0, 1.0); // 0 on the flat top, 1 at the rim
   let glass = clamp(mag - 1.0, 0.0, 1.0); // at magnification 1 the lens is flat glass: it bends and blurs nothing
-  // The curl shrinks the content across the rim several times more than along it, and one round
-  // footprint that wide blurs it along the rim. Still glass takes taps across the pixel there, along
-  // the radius, each as wide as the content is along the rim; smeared across the shutter, one will do.
-  let taps = select(1, clamp(i32(ceil(abs(m.y) / max(shown, 1e-4))), 1, CURL_TAPS), count <= 4);
-  let foot = aa * max(abs(m.y) / f32(taps), shown); // unzoomed px per output px
+  let foot = aa * max(abs(m.y), shown); // unzoomed px per output px
   let vs = vt.z / foot * aa;
-  var col = vec3f(0.0);
-  for (var k = 0; k < taps; k++) {
-    let rk = min(rho + ((f32(k) + 0.5) / f32(taps) - 0.5) * aa / R, 1.0);
-    let mk = lensMap(rk, mag).x;
-    var ck = underLens(c + q * (mk / max(rho, 1e-4)), foot, vs, cs);
-    if (s > 0.0 && count <= 4) {
-      // Dispersion: red bends least, so it shows what lies a little further out, and blue the reverse,
-      // each by a share of how far the bevel bends the content in. Splitting the shown radius instead
-      // tears the colors into rainbows where the content turns back.
-      let sp = DISPERSION * (rk / mag - mk) * glass;
-      let r = (mk + sp) / max(rho, 1e-4);
-      let b = (mk - sp) / max(rho, 1e-4);
-      ck = vec3f(underLens(c + q * r, foot, vs, cs).r, ck.g, underLens(c + q * b, foot, vs, cs).b);
-    }
-    col += ck;
+  var col = underLens(c + q * shown, foot, vs, cs);
+  if (s > 0.0 && count <= 4) {
+    // Dispersion: red bends least, so it shows what lies a little further out, and blue the reverse,
+    // each by a share of how far the bevel bends the content in. Splitting the shown radius instead
+    // tears the colors into rainbows where the content turns back.
+    let sp = DISPERSION * (rho / mag - m.x) * glass;
+    let r = (m.x + sp) / max(rho, 1e-4);
+    let b = (m.x - sp) / max(rho, 1e-4);
+    col = vec3f(underLens(c + q * r, foot, vs, cs).r, col.g, underLens(c + q * b, foot, vs, cs).b);
   }
-  col /= f32(taps);
 
   // Surface normal of the bevel: flat on top, turning to near vertical at the rim.
   let tilt = 1.5 * pow(s, 2.4);

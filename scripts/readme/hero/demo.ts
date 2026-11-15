@@ -26,7 +26,9 @@ export default {
     p.clips[0].end = 4.976
     p.zooms = [
       { id: 'deploy', start: 1.41, end: 2.046, level: 1.7, target: { kind: 'cursor' }, enabled: true },
-      { id: 'timer', start: 2.323, end: 4.719, level: 1.7, target: { kind: 'point', x: 0.394, y: 0.4 }, enabled: true, mode: 'loupe', size: 160 },
+      // The lens shows the new build's status alone, with the frame around the screen (a larger lens against it) and
+      // without: a label of the next row that only touches where the bevel turns back stretches into a colored blob.
+      { id: 'timer', start: 2.323, end: 4.719, level: 2, target: { kind: 'point', x: 0.398, y: 0.396 }, enabled: true, mode: 'loupe', size: 160 },
     ]
     p.autoZoomed = true
     p.playhead = 0.633
