@@ -105,10 +105,6 @@
         <button class="btn primary" onclick={() => invoke('update:move')}>Move to Applications</button>
       </div>
     {/if}
-
-    {#if c.step === 'ready'}
-      <p class="line">Or it installs when you quit, or while you’re away.</p>
-    {/if}
   {/if}
 </main>
 
@@ -117,7 +113,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 8px 8px 10px;
+    padding: 8px;
     color: var(--fg-default);
     background: var(--surface-root);
     border-radius: var(--radius-lg);
