@@ -7,6 +7,8 @@ declare global {
       on(channel: string, cb: (...args: any[]) => void): () => void
       /** Absolute path of a dropped File. */
       pathForFile(file: File): string
+      /** The major macOS version, such as 26: window corners differ by release (src/ui/theme.css). */
+      macos: number
       /** GPU frames main sends (sharedTexture.sendSharedTexture), each with what main sent beside it. Close each. */
       onFrame(cb: (frame: VideoFrame, ...args: any[]) => Promise<void>): void
     }

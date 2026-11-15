@@ -195,7 +195,7 @@
     padding: 8px 8px 10px;
     color: var(--fg-default);
     background: var(--surface-root);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-window);
     box-shadow: var(--hairline);
   }
   .picture {
@@ -204,7 +204,7 @@
     place-items: center;
     max-height: 200px;
     overflow: hidden;
-    border-radius: var(--radius-sm);
+    border-radius: calc(var(--radius-window) - 8px); /* concentric: 8 px inside the card */
     background: rgb(0 0 0 / 0.35);
     box-shadow: var(--hairline);
   }
