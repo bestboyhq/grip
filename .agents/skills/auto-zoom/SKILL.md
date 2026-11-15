@@ -15,20 +15,23 @@ Turning clicks and typing into camera direction.
 - Vertical output follows the cursor continuously, since the frame is narrower than the source.
 - Glass loupe magnifies a region in place when a full zoom would move too much of the screen.
   It has no outline; its rim is the edge: the magnification holds almost to it, then the content slows to a stop short of the rim and turns back, so the outer bevel mirrors what lies just inside.
+  In the last part of the bevel the content curls back several times faster, so every line that reaches the rim ends in a hook, the way it does in thick glass.
   Content that stands still at the rim smears every stroke that reaches it into a streak to the edge.
   A bevel that squeezes the frame around the lens back to 1x crams too much into a sliver, which aliases into streaks.
   The bevel splits the colors by a share of how far it bends the content; splitting the shown radius instead tears them into rainbows where the content turns back.
-  The steep bevel defocuses what it bends, and light scattered inside the glass frosts the outer bevel with a wide blur of it, so the rim softens into its own content: milky over light UI, smoky over dark.
+  The glass is clear up to its rim and ends in a crisp cut.
+  A bevel that blurs what it bends, a wide blur laid over the outer bevel, or an edge that fades into the screen reads as frost on the glass: milky over light UI, smoky over dark.
   White added at the rim rings every dark window, and a rim that lets the screen under it show through shows it twice, a ghost beside what the glass bends.
-  While the lens moves, the shutter's samples share the frost's taps; taking them all at every sample more than doubles the export time of a moving lens.
-  The rim rounds toward the viewer: it shades a little darker on the side turned from the light, and a hairline of light catches the edge facing it.
+  The rim rounds toward the viewer: it shades darker and a little warmer on the side turned from the light, and a thin, faint line of light catches the arc facing it.
+  That line made brighter or longer reads as an outline.
   An outline all around rings flat UI: darkened, a gray one over light UI; lit, a white one over dark.
   The light comes from straight above, where the window's and the camera's shadows say it is; a lens lit from a corner casts its shadow at odds with theirs.
   Broad specular crescents make the lens read as plastic.
-  While a lens shows, the whole frame around it dims evenly by 8%, alike for every lens size, so the lens stands out.
-  The lens also casts a faint, soft shadow away from the light, gone within half a radius of its rim, so it lifts off the screen.
-  A darker shadow, packed into that short reach, reads as a heavy gray crescent.
+  The lens casts a wide, soft shadow away from the light, darkest under its lower rim and gone two radii out, so it lifts off the screen.
+  A dark shadow packed into a short reach reads as a heavy gray crescent, and a faint one leaves the lens flat on the screen.
+  That shadow sets the lens off, so the frame around it keeps its brightness.
   A dim that fades out with distance darkens the frame more under a big lens than a small one, and its faint ramp bands into rings in every export.
+  Supersampling the rim's curl changes a few hundred pixels of a frame, which does not earn its taps.
 - A loupe following the cursor keeps it on the magnifying flat top through the fastest flick: the lens aims ahead by its spring's lag, and a cursor that reaches the edge of what the flat top shows carries the lens along.
   A lens that trails a flick hides the cursor under its glass, then curls it back in at the rim, which reads as a stutter.
 - A loupe pops in and out in about a fifth of a second, smeared by motion blur, and what it shows blurs while it glides or magnifies like the rest of the frame.
