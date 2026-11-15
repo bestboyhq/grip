@@ -79,7 +79,7 @@ const LOUPE_TOP = 0.85 // the flat top's share of the lens radius (shaders.wgsl 
 const LOUPE_WALL = 0.7 // the cursor never gets further from the lens center than this share of what the flat top shows
 /** Loupe lens radius in units (Zoom.size): what fits depends on what it shows, a button or a paragraph.
  *  At 540 (half of 1080) the lens spans the frame's short side; past it, the frame crops the lens. */
-export const LOUPE_SIZE = { min: 60, max: 800, initial: 350 }
+export const LOUPE_SIZE = { min: 60, max: 600, initial: 350 }
 /** The look of `z` for new zooms: a loupe's mode, size, and shape, or nothing for a full zoom (the default). */
 export const lookOf = (z: ZoomLook): ZoomLook =>
   z.mode === 'loupe' ? { mode: 'loupe', ...(z.size ? { size: z.size } : {}), ...(z.liquid ? { liquid: true } : {}) } : {}

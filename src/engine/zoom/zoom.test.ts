@@ -313,7 +313,7 @@ test('loupe fades in and out, magnifies, and follows its target', () => {
   const sized = (size?: number) => loupeAt(setup([zoom({ start: 2, end: 5, mode: 'loupe', size })], events, { duration: 10 }).p.zoom, 3.5)!.radius
   near(sized(), (350 * 1200) / 1080, 1e-3)
   near(sized(100), (100 * 1200) / 1080, 1e-3)
-  near(sized(5000), (800 * 1200) / 1080, 1e-3)
+  near(sized(5000), (600 * 1200) / 1080, 1e-3)
   near(sized(NaN), (350 * 1200) / 1080, 1e-3)
   const fadeOut = loupeAt(p.zoom, 5.1)!
   assert.ok(fadeOut.opacity > 0 && fadeOut.opacity < 1)
