@@ -94,7 +94,7 @@
     inset: 0;
     display: flex;
     flex-direction: column;
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-window);
     overflow: hidden;
     --surface-root: var(--surface-veil); /* a denser veil than the toolbar's, so notes read over any desktop */
     background: var(--surface-root);
@@ -136,7 +136,7 @@
   .icon {
     width: 28px;
     height: 28px;
-    border-radius: var(--radius-sm);
+    border-radius: calc(var(--radius-window) - 6px); /* concentric: the header's end icons are 6 px inside the window */
   }
   .icon:hover {
     background: var(--surface-hover);

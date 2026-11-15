@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('studio', {
     return () => ipcRenderer.removeListener(channel, listener)
   },
   pathForFile: (file) => webUtils.getPathForFile(file),
+  macos: Number(process.getSystemVersion().split('.')[0]),
   // GPU frames main sends with sharedTexture.sendSharedTexture: cb gets each as a VideoFrame it closes, with
   // what main sent beside it; main's send resolves once cb does. One receiver a window.
   onFrame: (cb) =>
