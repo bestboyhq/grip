@@ -105,7 +105,7 @@
     align-items: center;
     gap: 2px;
     padding: 0 8px 0 16px;
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-window);
     background: var(--surface-root);
     box-shadow: var(--hairline);
     color: var(--fg-default);
@@ -143,7 +143,7 @@
     height: 34px;
     padding: 0;
     border: 0;
-    border-radius: var(--radius-sm);
+    border-radius: calc(var(--radius-window) - 7px); /* concentric: 7 px inside the widget */
     background: none;
     color: var(--fg-secondary);
   }

@@ -92,6 +92,10 @@
   --radius: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
+  /* A panel that fills its window (the HUD windows) rounds on the window's own corner, so its hairline runs
+     all the way around it: macOS 26 and later round these windows at 16 px, a smoothed corner. Boxes inset
+     p inside such a panel take calc(var(--radius-window) - p). */
+  --radius-window: 16px;
   --gutter: 8px; /* between the window edge and panels, between panels, and inside wells */
   --control-h: 26px;
   /* The platform's menu shell, its shadow deepened for a dark window. */
@@ -111,6 +115,10 @@
   --come: 180ms;
   --drop-scale: 0.935;
 }
+
+/* ponytail: macOS 15's window corner is unmeasured, so its panels keep the 12 px they had. Measure it on a
+   macOS 15 Mac as the 16 px was (a window capture fit against smoothed CSS corners) and set it here. */
+:root[data-macos='15'] { --radius-window: 12px; }
 
 /* HUD windows (recorder bar, widget, notes) float over native HUD vibrancy. Their panel is a veil the
    blur shows through, and states are white veils instead of opaque grays. Hairlines are re-declared
@@ -132,6 +140,9 @@
 @font-face { font-family: 'JetBrains Mono Fallback'; src: local('Menlo'), local('Consolas'); size-adjust: 96%; ascent-override: 109%; descent-override: 27%; }
 
 * { box-sizing: border-box; }
+/* Corners take the macOS continuous curve, as in every Bestboy window (the platform's docs/design.md).
+   Outlines and hairlines take it too, so nested boxes stay concentric; pills and circles keep their shape. */
+*, ::before, ::after { -electron-corner-smoothing: system-ui; }
 html, body { margin: 0; height: 100%; font: 13px/1.4 var(--font); color: var(--fg-default); background: transparent; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-optical-sizing: auto; user-select: none; overflow: hidden; }
 button, input, select, textarea { font: inherit; color: inherit; }
 input, textarea { user-select: text; }

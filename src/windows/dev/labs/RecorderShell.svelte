@@ -39,7 +39,7 @@
   .window {
     position: relative;
     transform: translateZ(0); /* contain the windows' position: fixed */
-    border-radius: 12px;
+    border-radius: var(--radius-window);
     box-shadow:
       0 0 0 0.5px rgb(0 0 0 / 0.6),
       0 10px 30px rgb(0 0 0 / 0.22);
