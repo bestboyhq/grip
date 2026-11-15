@@ -132,6 +132,9 @@
 @font-face { font-family: 'JetBrains Mono Fallback'; src: local('Menlo'), local('Consolas'); size-adjust: 96%; ascent-override: 109%; descent-override: 27%; }
 
 * { box-sizing: border-box; }
+/* Corners take the macOS continuous curve, as in every Bestboy window (the platform's docs/design.md).
+   Outlines and hairlines take it too, so nested boxes stay concentric; pills and circles keep their shape. */
+*, ::before, ::after { -electron-corner-smoothing: system-ui; }
 html, body { margin: 0; height: 100%; font: 13px/1.4 var(--font); color: var(--fg-default); background: transparent; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-optical-sizing: auto; user-select: none; overflow: hidden; }
 button, input, select, textarea { font: inherit; color: inherit; }
 input, textarea { user-select: text; }
