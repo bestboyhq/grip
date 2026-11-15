@@ -141,7 +141,7 @@ export const setQuitting = (on: boolean) => (quitting = on)
 /** Recording UI floats over everything, on every Space and over fullscreen apps, and stays out
  *  of screenshots. ScreenCaptureKit ignores sharingType on recent macOS, so the capture engine
  *  also excludes this app from its content filter. */
-const floating: BrowserWindowConstructorOptions = {
+export const floating: BrowserWindowConstructorOptions = {
   type: 'panel',
   frame: false,
   resizable: false,
@@ -152,7 +152,7 @@ const floating: BrowserWindowConstructorOptions = {
 }
 /** A panel floats over fullscreen apps without Electron hiding the dock icon for it (updateDock owns that
  *  icon), and stays when the user hides other apps: the recording controls must not go with them. */
-function protect(win: BrowserWindow, level: number) {
+export function protect(win: BrowserWindow, level: number) {
   win.setContentProtection(true)
   win.setAlwaysOnTop(true, 'screen-saver', level)
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })

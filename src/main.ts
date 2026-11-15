@@ -17,6 +17,7 @@ const routes: Record<string, () => Promise<{ default: Component<{ params: URLSea
   demo: () => import('./windows/demo/Demo.svelte'),
   result: () => import('./windows/result/Result.svelte'),
   grant: () => import('./windows/grant/Grant.svelte'),
+  update: () => import('./windows/update/Update.svelte'),
   dev: () => import('./windows/dev/Dev.svelte'),
 }
 
