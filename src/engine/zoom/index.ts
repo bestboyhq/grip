@@ -72,7 +72,7 @@ const OUT = 0.4
 /** After an auto zoom, a cursor that sets off within HOLD to point at something gets a glass lens that
  *  follows it there: it rests (still this long, s) at least `away` screen points from the last action,
  *  within HOLD of setting off. The lens holds `hold` s once the cursor rests; `size` in LOUPE_SIZE units. */
-const POINT = { rest: 1, away: 60, hold: 1.3, size: 170 }
+const POINT = { rest: 1, away: 60, hold: 1.3, size: 240 }
 /** An auto lens magnifies at least this much, whatever the auto zoom level: a full zoom at 1.5x shows a
  *  whole dialog, but a lens at 1.5x bends the screen without making anything easier to read. */
 const LENS_MIN = 2

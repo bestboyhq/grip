@@ -505,14 +505,14 @@ test('generateAutoZooms: a cursor that sets off to point at something after a zo
   const spans = (zs: Zoom[]) => zs.map((z) => [z.mode ?? 'zoom', +z.start.toFixed(2), +z.end.toFixed(2)])
   const zs = generateAutoZooms(take(4.8, [1800, 700]), sources, on, {}, [])
   assert.deepEqual(spans(zs), [['zoom', 2.57, 4], ['loupe', 4.81, 6.6]], 'on as the cursor sets off, off 1.3 s after it rests')
-  assert.ok(zs[1].auto && zs[1].target.kind === 'cursor' && zs[1].level === 2 && zs[1].size === 170)
+  assert.ok(zs[1].auto && zs[1].target.kind === 'cursor' && zs[1].level === 2 && zs[1].size === 240)
   assert.deepEqual(spans(generateAutoZooms(take(4.8, [1440, 880]), sources, on, {}, [])), [['zoom', 2.57, 4]], 'a nudge points at nothing new')
   assert.deepEqual(spans(generateAutoZooms(take(6.5, [1800, 700]), sources, on, {}, [])), [['zoom', 2.57, 4]], 'setting off long after is not a follow-up')
   const next = (t: number) => [press(t, 'down', 1800, 700), press(t + 0.1, 'up', 1800, 700)]
   assert.deepEqual(spans(generateAutoZooms(take(5.9, [1800, 700], next(7.6)), sources, on, {}, [])), [['zoom', 2.57, 4], ['loupe', 5.91, 7.17], ['zoom', 7.17, 8.6]], 'the lens gives way to the next zoom')
   assert.deepEqual(spans(generateAutoZooms(take(6, [1800, 700], next(7.6)), sources, on, {}, [])), [['zoom', 2.57, 4], ['zoom', 7.17, 8.6]], '...or leaves it to it when it would flinch')
-  const [, lens] = generateAutoZooms(take(4.8, [1800, 700]), sources, on, { mode: 'loupe', size: 240, liquid: true }, [])
-  assert.ok(lens.mode === 'loupe' && lens.size === 240 && lens.liquid, 'the lens look the user last picked')
+  const [, lens] = generateAutoZooms(take(4.8, [1800, 700]), sources, on, { mode: 'loupe', size: 300, liquid: true }, [])
+  assert.ok(lens.mode === 'loupe' && lens.size === 300 && lens.liquid, 'the lens look the user last picked')
   // A lens magnifies 2x at least, whatever the auto level, and keeps to that as the level changes.
   const p = createProject('t', { duration: 45, screen: SCREEN })
   p.zooms = generateAutoZooms(take(4.8, [1800, 700]), sources, { enabled: true, level: 1.5 }, {}, [])
