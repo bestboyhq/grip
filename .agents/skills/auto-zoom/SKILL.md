@@ -9,6 +9,13 @@ Turning clicks and typing into camera direction.
 
 - Generate zoom ranges from clicks and typing as ordinary timeline items the user edits or disables.
   A press holds its zoom until it is released, so a drag stays zoomed in from the press to the drop.
+- An auto zoom pulls out 0.4 s after its last click, keystroke, or release, once it has shown its framing for 1 s.
+  Held 2 s, the view stays on the spot of a dialog its submit just closed, while what the submit did shows elsewhere.
+  Clicks still join one zoom as if each held 2 s: pulling out and back in between clicks a few seconds apart looks erratic.
+- After an auto zoom, a cursor that sets off within 2 s and comes to rest elsewhere is pointing at what the action did: a glass lens follows it there and holds 1.3 s once it rests.
+  The lens gives way to the next zoom, and is left out when that leaves it too short to read.
+  A cursor that waits where it clicked, nudges a little, or wanders on gets no lens; a lens after every move is noise.
+  An auto lens magnifies 2x at least, whatever the auto zoom level: at 1.5x a full zoom still frames a whole dialog, but a lens only bends the screen.
 - A zoomed view follows the cursor through a dead zone, panning only as the cursor nears the edge.
 - A click or typing place outside the middle of the view, or away from the places the view frames now, moves the action there: the view glides to center it, together with the places after it that fit in one view, and lands by the click.
   A view clamped at the screen's edge can reach a place at the side of its frame; judged from the view alone, that place counts as framed.

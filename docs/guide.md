@@ -82,6 +82,7 @@ Drag the preview straight into another app to drop the file.
 </p>
 
 - **Auto-zoom.** Clicks and typing become zooms that follow your cursor.
+  A zoom pulls out soon after your last click, and when the cursor then goes to point at what changed, a glass loupe follows it there.
   Each one is a plain timeline item you can move, retime, or switch off.
   Pick a smooth glide or a focused move that settles fast.
   Rather zoom by hand? Turn auto-zoom off for new recordings in Settings.

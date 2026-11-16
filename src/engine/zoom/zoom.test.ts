@@ -481,16 +481,47 @@ test('generateAutoZooms: merges, leads, holds, covers typing, skips the erratic'
     [{ start: 20, end: 23 }, { start: 37, end: 38 }], // typing happens where the last click before it was
   )
   const spans = zs.map((z) => [+z.start.toFixed(2), +z.end.toFixed(2)])
-  // 0.2, 3, 4 merge; 10 alone; the click at 19.5 joins its typing; the burst across the screen is
-  // erratic; typing at 37 zooms on the click at 32.1; the last click is cut short by the end.
-  assert.deepEqual(spans, [[0, 6], [9.57, 12], [19.07, 25], [36.57, 40]])
+  // 0.2, 3, 4 merge; 10 alone holds its framing 1 s; the click at 19.5 joins its typing; the burst
+  // across the screen is erratic; typing at 37 zooms on the click at 32.1. Each zooms out 0.4 s after
+  // its last action, so what the action did shows in full.
+  assert.deepEqual(spans, [[0, 4.4], [9.57, 11], [19.07, 23.4], [36.57, 38.4]])
   for (const z of zs) assert.ok(z.auto && z.enabled && z.level === 2 && z.target.kind === 'cursor' && z.id)
   assert.deepEqual(generateAutoZooms([], sources, on, {}, [{ start: 5, end: 8 }]), [], 'typing with no known place is left out')
   const up = (t: number, x = 1400, y = 900): InputEvent => ({ t, type: 'up', x, y, button: 'left' })
   const held = generateAutoZooms([click(3), up(3.1), click(10), up(15, 2000, 1200), click(20), click(25, -10, 900), up(27)], sources, on, {}, [])
-  assert.deepEqual(held.map((z) => [+z.start.toFixed(2), +z.end.toFixed(2)]), [[2.57, 5.1], [9.57, 17], [19.57, 22]], 'a drag holds from press to release; a release after a press off the screen holds nothing')
-  const [last] = generateAutoZooms([click(42.4)], sources, on, {}, [])
-  assert.deepEqual([+last.start.toFixed(2), last.end], [41.97, 45], 'too close to the end to zoom out: it holds to the end')
+  assert.deepEqual(held.map((z) => [+z.start.toFixed(2), +z.end.toFixed(2)]), [[2.57, 4], [9.57, 15.4], [19.57, 21]], 'a drag holds from press to release; a release after a press off the screen holds nothing')
+  const [last] = generateAutoZooms([click(43.4)], sources, on, {}, [])
+  assert.deepEqual([+last.start.toFixed(2), last.end], [42.97, 45], 'too close to the end to zoom out: it holds to the end')
+})
+
+test('generateAutoZooms: a cursor that sets off to point at something after a zoom gets a lens that follows it there', () => {
+  // Submit a form, wait for it to close, then point at what it added: the zoom is out by then, and a
+  // lens rides the cursor to the new row and holds on it a moment.
+  const sources = createProject('t', { duration: 45, screen: SCREEN }).sources
+  const on = { enabled: true, level: 2 }
+  const press = (t: number, type: 'down' | 'up', x = 1400, y = 900): InputEvent => ({ t, type, x, y, button: 'left' })
+  const take = (setOff: number, to: [number, number], more: InputEvent[] = []) =>
+    [...moves([[0, 1400, 900], [setOff, 1400, 900], [setOff + 0.5, ...to], [45, ...to]]), press(3, 'down'), press(3.1, 'up'), ...more].sort((a, b) => a.t - b.t)
+  const spans = (zs: Zoom[]) => zs.map((z) => [z.mode ?? 'zoom', +z.start.toFixed(2), +z.end.toFixed(2)])
+  const zs = generateAutoZooms(take(4.8, [1800, 700]), sources, on, {}, [])
+  assert.deepEqual(spans(zs), [['zoom', 2.57, 4], ['loupe', 4.81, 6.6]], 'on as the cursor sets off, off 1.3 s after it rests')
+  assert.ok(zs[1].auto && zs[1].target.kind === 'cursor' && zs[1].level === 2 && zs[1].size === 170)
+  assert.deepEqual(spans(generateAutoZooms(take(4.8, [1440, 880]), sources, on, {}, [])), [['zoom', 2.57, 4]], 'a nudge points at nothing new')
+  assert.deepEqual(spans(generateAutoZooms(take(6.5, [1800, 700]), sources, on, {}, [])), [['zoom', 2.57, 4]], 'setting off long after is not a follow-up')
+  const next = (t: number) => [press(t, 'down', 1800, 700), press(t + 0.1, 'up', 1800, 700)]
+  assert.deepEqual(spans(generateAutoZooms(take(5.9, [1800, 700], next(7.6)), sources, on, {}, [])), [['zoom', 2.57, 4], ['loupe', 5.91, 7.17], ['zoom', 7.17, 8.6]], 'the lens gives way to the next zoom')
+  assert.deepEqual(spans(generateAutoZooms(take(6, [1800, 700], next(7.6)), sources, on, {}, [])), [['zoom', 2.57, 4], ['zoom', 7.17, 8.6]], '...or leaves it to it when it would flinch')
+  const [, lens] = generateAutoZooms(take(4.8, [1800, 700]), sources, on, { mode: 'loupe', size: 240, liquid: true }, [])
+  assert.ok(lens.mode === 'loupe' && lens.size === 240 && lens.liquid, 'the lens look the user last picked')
+  // A lens magnifies 2x at least, whatever the auto level, and keeps to that as the level changes.
+  const p = createProject('t', { duration: 45, screen: SCREEN })
+  p.zooms = generateAutoZooms(take(4.8, [1800, 700]), sources, { enabled: true, level: 1.5 }, {}, [])
+  assert.deepEqual(p.zooms.map((z) => z.level), [1.5, 2])
+  p.style.autoZoom.level = 1.5
+  setAutoZoom(p, [], { enabled: true, level: 3 })
+  assert.deepEqual(p.zooms.map((z) => z.level), [3, 3])
+  setAutoZoom(p, [], { enabled: true, level: 1.25 })
+  assert.deepEqual(p.zooms.map((z) => z.level), [1.25, 2])
 })
 
 test('autoZoomOnce: auto zooms on the first open only, never again after the user deletes them', () => {
@@ -542,7 +573,7 @@ test('fixture: auto zooms cover every click, keep the cursor in frame and clicke
   t.diagnostic(`auto zooms: ${zooms.map((z) => `${z.start.toFixed(2)}-${z.end.toFixed(2)}`).join(', ')}`)
   const clicks = events.filter((e): e is Extract<InputEvent, { button: unknown }> => e.type === 'down')
   assert.ok(zooms.length > 0)
-  for (const c of clicks) assert.ok(zooms.some((z) => z.start <= c.t - 0.4 && z.end >= c.t + 1.5), `click at ${c.t} is not covered`)
+  for (const c of clicks) assert.ok(zooms.some((z) => z.start <= c.t - 0.4 && z.end >= c.t + 0.4), `click at ${c.t} is not covered`)
   zooms.forEach((z, i) => assert.ok(z.start >= 0 && z.end <= project.sources.duration && (i === 0 || zooms[i - 1].end <= z.start)))
 
   for (const style of ['focused', 'smooth'] as const) {

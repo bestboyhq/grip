@@ -41,7 +41,7 @@ import type { Loupe, SceneInput, View } from '../scene.ts'
 import { frameOf, pipCameraAt, screenAt, type prepareLayout, type ScreenPlace } from '../layout.ts'
 import { cursorPoint, type prepareCursor } from '../motion/index.ts'
 import { springDuration, springProgress, mix, type SpringConfig } from '../motion/spring.ts'
-import { typingSegments, type Segment } from '../input/index.ts'
+import { idleSegments, typingSegments, type Segment } from '../input/index.ts'
 
 const DT = 1 / 120 // s between camera samples
 /** Camera springs per screen animation style, all critical (no overshoot): focused is half way in
@@ -65,7 +65,18 @@ const CAMERA_CLEAR = 28 // screen points x cursor size (about a cursor's height,
 // zoom) the cursor and clicked elements keep from a picture-in-picture camera
 const LEAD = 6 / Math.sqrt(SPRINGS.focused.stiffness) // s: auto zooms start this long before a click or typing, so the focused spring is ~98% there
 const KEEP = 1 // s: a clicked element stays framed this long after the click
-const HOLD = 2 // s: an auto zoom holds this long after its last click or keystroke, or a press's release
+const HOLD = 2 // s: auto zooms group as if each held this long after its last click or keystroke, or a press's release
+/** s: ...but one zooms out this soon after it, once it has shown its framing for MIN_HOLD. Held longer,
+ *  the view stays on a dialog the click just closed, while what the click did shows elsewhere. */
+const OUT = 0.4
+/** After an auto zoom, a cursor that sets off within HOLD to point at something gets a glass lens that
+ *  follows it there: it rests (still this long, s) at least `away` screen points from the last action,
+ *  within HOLD of setting off. The lens holds `hold` s once the cursor rests; `size` in LOUPE_SIZE units. */
+const POINT = { rest: 1, away: 60, hold: 1.3, size: 170 }
+/** An auto lens magnifies at least this much, whatever the auto zoom level: a full zoom at 1.5x shows a
+ *  whole dialog, but a lens at 1.5x bends the screen without making anything easier to read. */
+const LENS_MIN = 2
+const autoLevel = (level: number, mode: Zoom['mode']) => (mode === 'loupe' ? Math.max(LENS_MIN, level) : level)
 const ZOOM_OUT = 6 / Math.sqrt(SPRINGS.smooth.stiffness) // s: the slower spring's zoom out; an auto zoom ending closer than this to the recording's end holds to it, so the video never ends mid-move
 const MERGE_GAP = 2 // s: auto zooms closer than this merge; zooming out and back in that fast looks erratic
 const MIN_AUTO = 1.2 // s: shorter auto zooms (clipped by the recording's ends) are dropped
@@ -698,7 +709,7 @@ export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZo
   const screen = sources.screen
   if (!autoZoom.enabled || !screen) return []
   const level = Math.max(1, autoZoom.level)
-  const groups: Array<{ start: number; end: number; points: Pt[] }> = []
+  const groups: Array<{ start: number; end: number; points: Focus[] }> = []
   for (const f of focuses(events, typing, screen)) {
     const g = groups.at(-1)
     const end = (f.up ?? f.t1) + HOLD
@@ -717,10 +728,43 @@ export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZo
     }
     return far >= 2 && far / (g.end - g.start) > FAR_JUMPS_PER_S
   }
-  return groups
-    .map((g) => ({ ...g, start: Math.max(0, g.start), end: g.end > sources.duration - ZOOM_OUT ? sources.duration : g.end }))
+  const D = sources.duration
+  const shape = lookOf(look)
+  const kept = groups
+    .map((g) => ({ ...g, done: g.end - HOLD, start: Math.max(0, g.start), end: g.end > D - ZOOM_OUT ? D : g.end }))
     .filter((g) => g.end - g.start >= MIN_AUTO && !erratic(g))
-    .map((g): Zoom => ({ id: uid(), start: g.start, end: g.end, level, target: { kind: 'cursor' }, auto: true, enabled: true, ...lookOf(look) }))
+    .map((g) => {
+      const out = Math.max(g.done + OUT, g.points[0].t0 + MIN_HOLD)
+      return { ...g, end: out > D - ZOOM_OUT ? D : out }
+    })
+  const zooms = kept.map((g): Zoom => ({ id: uid(), start: g.start, end: g.end, level: autoLevel(level, shape.mode), target: { kind: 'cursor' }, auto: true, enabled: true, ...shape }))
+
+  const rests = idleSegments(events, POINT.rest, D)
+  const away = POINT.away * (screen.scale || 1)
+  const lens = { ...shape, mode: 'loupe' as const }
+  let j = 0 // rests that end before a zoom's last action matter to no later zoom either
+  const lenses = kept.flatMap((g, i): Zoom[] => {
+    const next = kept[i + 1]?.start ?? D
+    const last = g.points.at(-1)!
+    while (j < rests.length && rests[j].end <= g.done) j++
+    // The cursor waits where the last action left it, then sets off: it points at the first place it
+    // rests away from there.
+    let off = g.done
+    for (let k = j; k < rests.length && rests[k].start < next && off <= g.end + HOLD; k++) {
+      const { start, end, at } = rests[k]
+      if (start < g.done || !at || Math.hypot(at.x - last.x, at.y - last.y) < away) {
+        off = Math.max(off, end)
+        continue
+      }
+      const a = Math.max(g.end + LEAD, off)
+      const b = Math.min(start + POINT.hold, next)
+      const shown = at.x >= 0 && at.y >= 0 && at.x <= screen.width && at.y <= screen.height
+      if (start - off > HOLD || !shown || b - a < MIN_AUTO) return []
+      return [{ id: uid(), start: a, end: b > D - LOUPE_FADE ? D : b, level: autoLevel(level, 'loupe'), target: { kind: 'cursor' }, auto: true, enabled: true, ...lens, size: lens.size ?? POINT.size }]
+    }
+    return []
+  })
+  return [...zooms, ...lenses].sort((a, b) => a.start - b.start)
 }
 
 /** Set the auto zoom defaults (the inspector, a preset) and bring the auto zooms along: turned on or
@@ -732,7 +776,7 @@ export function setAutoZoom(p: Project, events: InputEvent[], autoZoom: Style['a
   if (autoZoom.enabled && !was.enabled && !autos.length) p.zooms.push(...generateAutoZooms(events, p.sources, autoZoom, look))
   for (const z of autos) {
     if (autoZoom.enabled !== was.enabled) z.enabled = autoZoom.enabled
-    if (autoZoom.level !== was.level) z.level = autoZoom.level
+    if (autoZoom.level !== was.level) z.level = autoLevel(autoZoom.level, z.mode)
   }
 }
 
