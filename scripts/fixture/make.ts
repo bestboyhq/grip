@@ -114,4 +114,8 @@ app.whenReady().then(async () => {
   writeFileSync(join(out, 'project.json'), JSON.stringify(project, null, 2))
   console.log(out)
   app.quit()
+}).catch((err) => {
+  // Electron stays up after an error in main: without this exit, CI waits on it for hours.
+  console.error(err)
+  app.exit(1)
 })

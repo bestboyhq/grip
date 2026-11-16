@@ -211,6 +211,8 @@ export async function loadSpoken(bundle: string, project: Project): Promise<Tran
 
 const jobs = new Map<string, { ac: AbortController; done: Promise<Transcript | null>; listeners: Set<(p: Progress) => void> }>()
 let queue: Promise<unknown> = Promise.resolve() // one at a time: each run holds the model in memory
+/** Whether a transcription runs or waits its turn: an update waiting to install waits for it. */
+export const transcribing = () => jobs.size > 0
 
 /** Transcribe `bundle` (transcript:run), or join its run under way; null when cancelled. Every window
  *  hears how it goes, so an editor shows an agent's run as its own; `progress` hears it too. */
