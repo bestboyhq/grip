@@ -7,6 +7,8 @@ import { importDialog, openOnboarding, openProjectDialog, showPicker } from './r
 import { settings } from './settings.ts'
 import { updateMenuItems } from './update.ts'
 
+export const REPO = 'https://github.com/bestboyhq/grip'
+
 /** The bundle shown by the focused editor window. */
 function focusedProject(): string | null {
   const win = BrowserWindow.getFocusedWindow()
@@ -88,6 +90,13 @@ export function setAppMenu() {
     },
     { label: 'View', submenu: [{ role: 'togglefullscreen' }, ...(app.isPackaged ? [] : [{ type: 'separator' as const }, { role: 'reload' as const }, { role: 'toggleDevTools' as const }])] },
     { role: 'windowMenu' },
+    {
+      role: 'help',
+      submenu: [
+        { label: 'Grip Guide', click: () => void shell.openExternal(`${REPO}/blob/main/docs/guide.md`) },
+        { label: 'Star Grip on GitHub', click: () => void shell.openExternal(REPO) },
+      ],
+    },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }

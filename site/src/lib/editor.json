@@ -1,0 +1,68 @@
+{
+	"width": 1440,
+	"height": 900,
+	"fps": 60,
+	"frames": 258,
+	"still": "media/editor.webp",
+	"transport": {
+		"box": [
+			703,
+			689,
+			34,
+			34
+		],
+		"src": "media/editor-transport.webp"
+	},
+	"timeline": {
+		"box": [
+			8,
+			728,
+			1424,
+			164
+		],
+		"x0": 23.75,
+		"perSecond": 323.81
+	},
+	"wallpapers": [
+		{
+			"name": "Nacre",
+			"box": [
+				84,
+				206.2,
+				33.15,
+				33.15
+			],
+			"src": "media/editor-nacre.mp4"
+		},
+		{
+			"name": "Halo",
+			"box": [
+				207.45,
+				206.2,
+				33.15,
+				33.15
+			],
+			"src": "media/editor-halo.mp4"
+		},
+		{
+			"name": "Meringue",
+			"box": [
+				125.15,
+				247.34,
+				33.15,
+				33.15
+			],
+			"src": "media/editor-meringue.mp4"
+		},
+		{
+			"name": "Marbling",
+			"box": [
+				289.74,
+				247.34,
+				33.15,
+				33.15
+			],
+			"src": "media/editor-marbling.mp4"
+		}
+	]
+}

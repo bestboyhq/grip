@@ -1,36 +1,43 @@
-<!-- The hero: the eyebrow, the headline with its quiet second sentence, and the clip on its lit plate. The landing page
-     adds its lede, buttons, and fine print under the headline and a caption under the clip. As a card it is the Open
-     Graph image's source (`/og`): settled, the clip's dark still as `scripts/og.ts` renders it dark, tighter around the
-     headline. -->
+<!-- The hero: the eyebrow, the headline with its quiet second sentence, and Grip's editor on its lit plate, playing a
+     take a visitor can scrub, pause, and give another wallpaper (Editor.svelte). The landing page adds its buttons
+     and fine print beside the headline. As a card it is the Open Graph image's source (`/og`): settled, the
+     editor's still, tighter around the headline. -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import Arrow from './Arrow.svelte';
+	import Editor, { still } from './Editor.svelte';
+	import editor from './editor.json';
 	import GitHubIcon from './GitHubIcon.svelte';
 	import Glow, { type Layer } from './Glow.svelte';
-	import Media, { clip } from './Media.svelte';
+	import Media from './Media.svelte';
 	import { GITHUB_URL } from './links.ts';
 
-	type Props = { card?: boolean; children?: Snippet; caption?: Snippet };
+	type Props = { card?: boolean; children?: Snippet };
 
-	let { card = false, children, caption }: Props = $props();
+	let { card = false, children }: Props = $props();
 
 	const HORIZON: readonly Layer[] = [{ box: [0, -0.46, 1, 0.9], peak: [0.42, 0.86], start: 0.18 }];
-	const hero = clip('hero');
+	const ALT =
+		'Grip’s editor playing a 4-second take of a deployments dashboard: the view zooms in as the cursor glides to Deploy, the click swells and starts a build, and a glass loupe rides the cursor to the build’s status as it turns Ready. The timeline under it holds the zooms Grip made.';
 	let lit = $state(false);
 </script>
 
 <section class={['hero', { card }]} aria-labelledby="hero-title" data-place="hero">
 	<div class="wrap intro">
-		<a class="eyebrow" href={GITHUB_URL}>
-			<GitHubIcon size={14} />
-			<span>Free and open source macOS app</span>
-			<Arrow class="ahead" />
-		</a>
-		<h1 id="hero-title">
-			<span>Professional recordings</span>
-			<span class="quiet">and screenshots within seconds.</span>
-		</h1>
-		{@render children?.()}
+		<div class="title">
+			<a class="eyebrow" href={GITHUB_URL}>
+				<GitHubIcon size={14} />
+				<span>Free and open source macOS app</span>
+				<Arrow class="ahead" />
+			</a>
+			<h1 id="hero-title">
+				<span>Professional recordings</span>
+				<span class="quiet">and screenshots within seconds.</span>
+			</h1>
+		</div>
+		{#if children}
+			<div class="pitch">{@render children()}</div>
+		{/if}
 	</div>
 	<div class="plate beat">
 		<!-- The light's CSS version, gone once the WebGL one draws over it: blurred, masked, and growing, it would cost
@@ -41,32 +48,39 @@
 		<div class="gl" aria-hidden="true">
 			<Glow layers={HORIZON} opacity={0.85} bind:lit />
 		</div>
-		<figure class="wrap window">
-			<Media
-				{...card ? { src: hero.dark.still } : { clip: hero }}
-				width={2304}
-				height={1440}
-				r={21}
-				eager
-				alt="A deployments dashboard polished by Grip: the view zooms in as the cursor glides to Deploy, the click swells through the screen, and a glass loupe magnifies the new build's timer as it turns from Building to Ready."
-			/>
-			{#if caption}
-				<figcaption>{@render caption()}</figcaption>
+		<div class="wrap window">
+			{#if card}
+				<Media src={still} width={editor.width} height={editor.height} r={13} eager alt={ALT} />
+			{:else}
+				<Editor alt={ALT} />
 			{/if}
-		</figure>
+		</div>
 	</div>
 </section>
 
 <style>
+	/* The headline beside its pitch, both settled on the line under them, so the editor starts on the first screen. The
+	   pitch is as wide as its buttons, which end where the editor does, and its text wraps to them. */
 	.intro {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		column-gap: 56px;
+		align-items: end;
+		padding-block: 40px;
+	}
+
+	.pitch > :global(p) {
+		contain: inline-size;
+	}
+
+	.title {
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
-		padding-top: 72px;
-		padding-bottom: 64px;
 	}
 
-	.intro > :global(*),
+	.title > *,
+	.pitch > :global(*),
 	.window {
 		animation:
 			blur-in calc(var(--duration) * var(--pace)) var(--enter-ease) calc(var(--delay) * var(--pace))
@@ -105,8 +119,8 @@
 		--blur: 12px;
 		--duration: 1400ms;
 		--delay: 0ms;
-		margin-top: 24px;
-		font-size: clamp(38px, 5.2vw, 68px);
+		margin-top: 20px;
+		font-size: clamp(34px, 3.2vw, 46px); /* two lines in its column from 1024 px up */
 		font-weight: 550;
 		line-height: 1.02;
 		letter-spacing: -0.04em;
@@ -135,7 +149,7 @@
 		);
 		--delay: 350ms;
 		isolation: isolate;
-		padding: 64px 0;
+		padding: 40px 0;
 		background: linear-gradient(var(--panel) 0 0) 50% 0 / var(--col) 100% no-repeat;
 	}
 
@@ -183,16 +197,6 @@
 		container-type: inline-size;
 	}
 
-	figcaption {
-		max-width: 560px;
-		margin: 24px auto 0;
-		color: var(--fg-muted);
-		font-size: 13px;
-		line-height: 1.55;
-		text-align: center;
-		text-wrap: balance;
-	}
-
 	@keyframes grow {
 		from {
 			--grow: 0;
@@ -206,9 +210,10 @@
 		}
 	}
 
-	/* The card is the hero at rest in 1200x630: no entrance, the headline at its widest size, a tighter frame around
-	   it, and the window cut off by the bottom edge. */
+	/* The card is the hero at rest in 1200x630: no entrance, the headline larger than the page's so a thumbnail reads
+	   it, a tighter frame around it, and the window cut off by the bottom edge. */
 	.card .intro {
+		grid-template-columns: minmax(0, 1fr);
 		padding-block: 32px 40px;
 	}
 
@@ -220,7 +225,7 @@
 		padding-top: 48px;
 	}
 
-	.card .intro > *,
+	.card .title > *,
 	.card .window,
 	.card .horizon,
 	.card .gl,
@@ -239,24 +244,30 @@
 		}
 	}
 
-	@media (max-width: 1023px) {
+	/* The split needs the column at its full width; narrower, the pitch goes under the headline. */
+	@media (max-width: 1279px) {
 		.intro {
-			padding-top: 56px;
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		h1 {
+			font-size: clamp(34px, 6vw, 46px);
+		}
+
+		.pitch {
+			margin-top: 32px;
 		}
 	}
 
 	@media (max-width: 639px) {
 		.plate {
-			padding: 40px 0;
-		}
-
-		.window {
-			padding-inline: 12px;
+			padding: 32px 0;
 		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.intro > :global(*),
+		.title > *,
+		.pitch > :global(*),
 		.window {
 			animation: fade-in 400ms ease backwards;
 		}

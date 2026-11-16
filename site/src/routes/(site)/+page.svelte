@@ -1,6 +1,7 @@
-<!-- Grip's landing page: the hero shows a video Grip made and what people say about theirs, then beat by beat how a
-     take becomes one (capture, how fast it opens, auto-zoom, captions, the editor, the look, export), the bugs it
-     designs out, why it is safe to rely on, the questions, and the close. Every claim and number comes from the README. -->
+<!-- Grip's landing page: the hero shows Grip's editor playing a take and what people say about theirs, then beat by beat how a
+     take becomes one (auto-zoom, captions, the editor, the look, capture, how fast it opens, export), the bugs it
+     designs out, why it is safe to rely on, the questions, and the close. Every claim and number comes from the README
+     and the guide. -->
 <script lang="ts">
 	import capture from '../../../../.github/readme/capture.webp';
 	import editor from '../../../../.github/readme/editor.webp';
@@ -11,6 +12,7 @@
 	import Faq from '#lib/Faq.svelte';
 	import FeatureRow from '#lib/FeatureRow.svelte';
 	import GitHubIcon from '#lib/GitHubIcon.svelte';
+	import { still } from '#lib/Editor.svelte';
 	import Head from '#lib/Head.svelte';
 	import Hero from '#lib/Hero.svelte';
 	import Media, { clip } from '#lib/Media.svelte';
@@ -46,12 +48,12 @@
 	const BEATS = [
 		'love',
 		'how',
-		'capture',
-		'speed',
 		'zoom',
 		'captions',
 		'editor',
 		'look',
+		'capture',
+		'speed',
 		'export',
 		'agents',
 		'bugs',
@@ -174,6 +176,21 @@
 				'Yes. Grip is free and open source under AGPL-3.0, with no subscription, no account, and no watermark.',
 		},
 		{
+			question: 'Can I use it for commercial work?',
+			answer:
+				'Yes. The license lets you use Grip for any work, and the videos and screenshots you make are yours.',
+		},
+		{
+			question: 'How is Grip different from other screen recorders?',
+			answer:
+				'It keeps the raw recording apart from the edits. The screen is recorded without the cursor, every zoom and caption is an edit you can change, and one renderer draws the preview and the export, so they match frame for frame. A screenshot tool with markup sits on the same shortcut.',
+		},
+		{
+			question: 'Is there a Windows version?',
+			answer:
+				'No. Grip is built on macOS frameworks for capture, encoding, and transcription, and it needs macOS 15 or later on Apple silicon.',
+		},
+		{
 			question: 'What do I need?',
 			answer:
 				'macOS 15 or later on Apple silicon. Captions download a speech model of about 670 MB the first time you use them.',
@@ -213,40 +230,28 @@
 
 <Head title="Grip: professional recordings and screenshots within seconds" description={SITE_DESCRIPTION} path="" />
 
-<!-- The hero's still in the system's theme; a theme picked on the page against it loads its own when the page shows. -->
+<!-- The hero editor's still, which shows until its take plays. -->
 <svelte:head>
-	{#each ['light', 'dark'] as const as theme (theme)}
-		<link
-			rel="preload"
-			as="image"
-			href={clip('hero')[theme].still}
-			media="(prefers-color-scheme: {theme})"
-			fetchpriority="high"
-		/>
-	{/each}
+	<link rel="preload" as="image" href={still} fetchpriority="high" />
 </svelte:head>
 
 <Hero>
-	<p class="lede">
-		Press your keys and talk. Grip zooms where you click, glides your cursor, and captions your voice.
-		The link works before the upload finishes.
-	</p>
 	<div class="actions">
 		<a class="button primary" href={DOWNLOAD_URL}>
 			{@render apple()}
 			Download for macOS
 		</a>
-		<a class="button secondary" href={docHref()}>Read the docs</a>
+		<a class="button secondary" href={GITHUB_URL}>
+			<GitHubIcon size={16} />
+			Star on GitHub
+		</a>
 	</div>
 	<p class="fine">
 		<span>macOS 15 or later on Apple silicon</span>
+		<span>No subscription</span>
 		<span>No account</span>
 		<span>No watermark</span>
 	</p>
-	{#snippet caption()}
-		Exported by Grip from a raw 6-second take. The zoom, the gliding cursor, and the click swell are
-		automatic.
-	{/snippet}
 </Hero>
 
 <SectionHeading
@@ -274,6 +279,81 @@
 		<Cells items={steps} ordered />
 	{/snippet}
 </SectionHeading>
+
+<FeatureRow
+	id="zoom"
+	beat={beat('zoom', 'Auto-zoom')}
+	title="It zooms where you click."
+	body="Clicks and typing become zooms that follow your cursor, and a glass loupe magnifies one spot while the rest stays in view. The cursor is redrawn smooth, passing exactly through every click."
+	href={docHref('polished-by-default')}
+	linkLabel="What Grip polishes"
+	checks={['Each zoom is an edit you can move', 'Keystrokes as keycaps in your layout']}
+>
+	<Media
+		clip={clip('loupe')}
+		width={1152}
+		height={720}
+		r={13}
+		alt="A revenue dashboard: a glass loupe follows the cursor along the growth chart, magnifies each day's figure, then the Export CSV button as it turns to Exported."
+	/>
+</FeatureRow>
+
+<FeatureRow
+	id="captions"
+	beat={beat('captions', 'Captions and voice')}
+	mirrored
+	title="Captions written on your Mac."
+	body="Grip transcribes your voice on your Mac and times every word. It cuts background noise, softens harsh S sounds, keeps quiet phrases audible, and makes sure nothing clips, so you sound produced."
+	href={docHref('polished-by-default')}
+	linkLabel="How your voice sounds"
+	checks={['25 European languages', 'As loud as online video']}
+>
+	<Media
+		clip={clip('captions')}
+		width={1152}
+		height={720}
+		r={13}
+		alt="A launch checklist with big word-by-word captions, Okay, launch day. Changelog, done. Demo video, done., while each item is checked off."
+	/>
+</FeatureRow>
+
+<FeatureRow
+	id="editor"
+	beat={beat('editor', 'Editor')}
+	title="Edit a video like a doc."
+	body="Select words in the transcript and press Delete, and the video follows. Grip finds filler words and long pauses and removes them in one click. The rest is a keyboard-first timeline."
+	href={docHref('edit-a-video-like-a-doc')}
+	linkLabel="Everything the editor does"
+	checks={['C cuts, X ripple-deletes, Z zooms', 'Speed from 0.25× to 8×, pitch kept']}
+>
+	<Media
+		src={editor}
+		width={2784}
+		height={1864}
+		crop={[112, 76, 2560, 1640]}
+		r={34}
+		alt="The Grip editor: a glass loupe over a Create project button in the preview, three filler words struck through in the transcript, and the timeline split where they were cut."
+	/>
+</FeatureRow>
+
+<FeatureRow
+	id="look"
+	beat={beat('look', 'Make it yours')}
+	mirrored
+	title="Frame it after the take."
+	body="Pick a wallpaper, a device frame, and a camera style once the recording is done. Save the whole look as a preset, and every new take can wear it."
+	href={docHref('make-it-yours')}
+	linkLabel="Every look Grip has"
+	checks={['165 wallpapers, drawn live on the GPU', 'MacBook, iPhone, and iPad frames']}
+>
+	<Media
+		clip={clip('macbook')}
+		width={1280}
+		height={720}
+		r={14}
+		alt="A calendar app in a MacBook frame on a warm wallpaper: the view pushes in as a Design review event is created, then pulls back to the whole laptop."
+	/>
+</FeatureRow>
 
 <FeatureRow
 	id="capture"
@@ -314,81 +394,6 @@
 		<Cells items={speed} />
 	</div>
 </section>
-
-<FeatureRow
-	id="zoom"
-	beat={beat('zoom', 'Auto-zoom')}
-	mirrored
-	title="It zooms where you click."
-	body="Clicks and typing become zooms that follow your cursor, and a glass loupe magnifies one spot while the rest stays in view. The cursor is redrawn smooth, passing exactly through every click."
-	href={docHref('polished-by-default')}
-	linkLabel="What Grip polishes"
-	checks={['Each zoom is an edit you can move', 'Keystrokes as keycaps in your layout']}
->
-	<Media
-		clip={clip('loupe')}
-		width={1152}
-		height={720}
-		r={13}
-		alt="A revenue dashboard: a glass loupe follows the cursor along the growth chart, magnifies each day's figure, then the Export CSV button as it turns to Exported."
-	/>
-</FeatureRow>
-
-<FeatureRow
-	id="captions"
-	beat={beat('captions', 'Captions and voice')}
-	title="Captions written on your Mac."
-	body="Grip transcribes your voice on your Mac and times every word. It cuts background noise, softens harsh S sounds, keeps quiet phrases audible, and makes sure nothing clips, so you sound produced."
-	href={docHref('polished-by-default')}
-	linkLabel="How your voice sounds"
-	checks={['25 European languages', 'As loud as online video']}
->
-	<Media
-		clip={clip('captions')}
-		width={1152}
-		height={720}
-		r={13}
-		alt="A launch checklist with big word-by-word captions, Okay, launch day. Changelog, done. Demo video, done., while each item is checked off."
-	/>
-</FeatureRow>
-
-<FeatureRow
-	id="editor"
-	beat={beat('editor', 'Editor')}
-	mirrored
-	title="Edit a video like a doc."
-	body="Select words in the transcript and press Delete, and the video follows. Grip finds filler words and long pauses and removes them in one click. The rest is a keyboard-first timeline."
-	href={docHref('edit-a-video-like-a-doc')}
-	linkLabel="Everything the editor does"
-	checks={['C cuts, X ripple-deletes, Z zooms', 'Speed from 0.25× to 8×, pitch kept']}
->
-	<Media
-		src={editor}
-		width={2784}
-		height={1864}
-		crop={[112, 76, 2560, 1640]}
-		r={34}
-		alt="The Grip editor: a glass loupe over a Create project button in the preview, three filler words struck through in the transcript, and the timeline split where they were cut."
-	/>
-</FeatureRow>
-
-<FeatureRow
-	id="look"
-	beat={beat('look', 'Make it yours')}
-	title="Frame it after the take."
-	body="Pick a wallpaper, a device frame, and a camera style once the recording is done. Save the whole look as a preset, and every new take can wear it."
-	href={docHref('make-it-yours')}
-	linkLabel="Every look Grip has"
-	checks={['165 wallpapers, drawn live on the GPU', 'MacBook, iPhone, and iPad frames']}
->
-	<Media
-		clip={clip('macbook')}
-		width={1280}
-		height={720}
-		r={14}
-		alt="A calendar app in a MacBook frame on a warm wallpaper: the view pushes in as a Design review event is created, then pulls back to the whole laptop."
-	/>
-</FeatureRow>
 
 <SectionHeading
 	id="export"
@@ -498,19 +503,6 @@
 		translate: 0 -1.5px;
 	}
 
-	.lede {
-		--rise: 3px;
-		--blur: 10px;
-		--duration: 1300ms;
-		--delay: 150ms;
-		max-width: 640px;
-		margin-top: 24px;
-		color: var(--fg-muted);
-		font-size: 19px;
-		line-height: 1.55;
-		text-wrap: pretty;
-	}
-
 	.actions {
 		--rise: 3px;
 		--blur: 8px;
@@ -519,7 +511,6 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 12px;
-		margin-top: 32px;
 	}
 
 	.fine {
@@ -533,6 +524,7 @@
 		color: var(--fg-muted);
 		font-size: 13px;
 		line-height: 1.55;
+		text-wrap: balance;
 	}
 
 	/* Each item leads with its dot, and the line starts one dot early behind the clip, so no line starts or ends on a
@@ -636,10 +628,6 @@
 		background: var(--panel);
 	}
 
-	.close-actions .actions {
-		margin-top: 0;
-	}
-
 	@media (max-width: 1023px) {
 		.formats {
 			margin-top: 48px;
@@ -648,7 +636,6 @@
 	}
 
 	@media (max-width: 859px) {
-		.lede,
 		.sub {
 			font-size: 17px;
 		}

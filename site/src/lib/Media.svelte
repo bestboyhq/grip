@@ -15,15 +15,16 @@
 		dark: { src: asset(`media/${name}-dark.mp4`), still: asset(`media/${name}-dark.webp`) },
 	});
 
-	// Only the clip most in view plays: Chrome takes two playing at once for a video call and holds the whole page to
-	// 60 Hz while they play, so a scroll on a 120 Hz display drops every other frame. Another clip takes over once it
-	// shows a fifth more of itself than the playing one, so two clips in view at a like share do not trade back and forth.
+	// Only the clip most in view plays, the hero's editor among them (`follow`, then `start` to play on a press): Chrome
+	// takes two playing at once for a video call and holds the whole page to 60 Hz while they play, so a scroll on a
+	// 120 Hz display drops every other frame. Another clip takes over once it shows a fifth more of itself than the
+	// playing one, so two clips in view at a like share do not trade back and forth.
 	const SWITCH = 0.2;
 	const clips = new Map<HTMLVideoElement, { share: number; held: () => boolean }>();
 	let playing: HTMLVideoElement | null = null;
 	let seen: IntersectionObserver | null = null;
 
-	function start(media: HTMLVideoElement | null): void {
+	export function start(media: HTMLVideoElement | null): void {
 		playing = media;
 		for (const other of clips.keys()) if (other !== media) other.pause();
 		if (media?.paused) media.play().catch(() => {});
@@ -39,7 +40,7 @@
 		start(keep ? playing : most);
 	}
 
-	function follow(media: HTMLVideoElement, held: () => boolean): () => void {
+	export function follow(media: HTMLVideoElement, held: () => boolean): () => void {
 		seen ??= new IntersectionObserver(
 			(entries) => {
 				for (const { target, isIntersecting, intersectionRatio } of entries) {

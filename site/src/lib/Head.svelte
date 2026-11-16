@@ -29,7 +29,7 @@
 	<meta property="og:image:height" content="630" />
 	<meta
 		property="og:image:alt"
-		content="Grip's page: Professional recordings and screenshots within seconds. Below, a deployments dashboard Grip polished, its glass loupe magnifying a new build's timer."
+		content="Grip's page: Professional recordings and screenshots within seconds. Below, Grip's editor playing a take of a deployments dashboard, its glass loupe over a build that is Ready."
 	/>
 	<meta name="twitter:card" content="summary_large_image" />
 </svelte:head>

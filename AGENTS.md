@@ -4,6 +4,7 @@ The rules in this file apply to all code in the repository.
 Domain rules live in `.agents/skills/`, as plain Markdown in the Agent Skills format that belongs to no particular tool, one folder per skill.
 `.claude/skills` links to it.
 Each product domain has one: `capture`, `input-events`, `camera`, `audio`, `motion`, `auto-zoom`, `compositor`, `export`, `timeline`, `transcript`, `projects`, `sharing`, `app-shell`, `agents`.
+`banding` cuts across them: read it before drawing or changing a shadow, glow, dim, or gradient.
 
 Read the skill for the domain you are touching before changing code there.
 
@@ -76,6 +77,7 @@ Grip's side is `electron/upload.ts` and `electron/account.ts`; `STUDIO_SHARE_URL
 - `npm run build:native` builds the Rust addon.
 - `cd site && npm run dev` serves the landing page at `localhost:5173/grip`, and `npm test` there builds it and tests the worker.
   `npx electron scripts/readme/make.ts <demo>` renders a README demo into a project, `npx electron scripts/readme/export.ts` exports every demo through the running app (`STUDIO_CDP_PORT=9333`) as the README's GIFs and the page's frameless clips in its dark and light themes, and `sh site/media.sh` encodes those clips for the page.
+  The page's hero is the editor itself: `node scripts/readme/editor.ts` captures it from the running app, one take per wallpaper a visitor can pick.
   `npx electron scripts/og.ts` renders its Open Graph image from the hero, and the site's tests ask for a re-render whenever what the image shows changes.
   `.github/workflows/site.yml` deploys it on merge, so a site-only change is a `chore(site)` or `docs(site)` and never ships an app release.
 - `npx electron scripts/fixture/make.ts [out.grip]` generates a synthetic 24 s recording with events, camera, mic speech, and system audio, by default at `.context/fixtures/Demo #1 ✨ café.grip`.

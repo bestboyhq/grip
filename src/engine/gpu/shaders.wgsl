@@ -525,6 +525,7 @@ const KEY = vec3f(0.0, -0.9, 0.43); // key light direction (output px axes, z to
 const SHADOW = 0.55; // how dark a lens's shadow is under it
 const SHADOW_SHIFT = 0.32; // the shadow falls this many radii off the lens, away from the light
 const SHADOW_BLUR = 0.65; // ...blurred over this many radii (the Gaussian's sigma)
+const SHADOW_STEP = 2.0; // ...and by no more units than this for each 8-bit level it darkens what it falls on
 const LENSES = 4u;
 const LENS_SAMPLES = 9u; // per lens in F.loupeS (renderer.ts LOUPE_SAMPLES)
 
@@ -668,15 +669,31 @@ fn lensesAt(p: vec2f, f: f32, count: i32) -> vec4f {
 // dither mark. A shadow is its lens's drop moved away from the light and blurred wide, gone two radii
 // from its edge. Over video the mark is 0, so it marks every pixel the shadow darkens by half a level
 // or more: without the dither, flat UI under the ramp bands into rings.
+// An encoder strips that dither, so in an export a ramp is smooth only while it steps a level every
+// few px. A shadow that multiplies has as many levels to cross as the content under it is bright: a
+// white page gives the wide ramp over a hundred, and a dark one a handful, each a ring tens of px
+// wide. So the shadow's reach follows what it falls on, SHADOW_STEP units of blur for each level it
+// darkens: wide and soft on a light page, a contact shadow at the rim on a dark one, where the wide
+// one showed only as its rings.
 @fragment fn fs_lensshadow(v: VO) -> @location(0) vec4f {
-  let u = unview(v.pos.xy, F.viewT.xyz);
+  let vt = F.viewT.xyz;
+  let u = unview(v.pos.xy, vt);
+  let off = normalize(KEY.xy) * SHADOW_SHIFT;
+  var levels = -1.0; // the 8-bit luma under this pixel, read once a shadow reaches it
   var sh = 0.0;
   for (var i = 0u; i < LENSES; i++) {
     let L = F.loupes[2u * i];
     if (L.z <= 0.0) { continue; }
     let b = F.loupes[2u * i + 1u];
-    let x = length(drop(u - L.xy + normalize(KEY.xy) * SHADOW_SHIFT * L.z, b.zw)) - L.z; // out from the shadow's edge
-    sh = max(sh, SHADOW * b.x * (0.5 - 0.5 * erf2(vec2f(x * 0.70710678 / (SHADOW_BLUR * L.z))).x));
+    let s = SHADOW * b.x;
+    let sigma = SHADOW_BLUR * L.z;
+    // The wide shadow first: the tight one is the same at the lens's edge and weaker everywhere past it.
+    let wide = s * (0.5 - 0.5 * erf2(vec2f((length(drop(u - L.xy + off * L.z, b.zw)) - L.z) * 0.70710678 / sigma)).x);
+    if (wide < 1.0 / 1020.0) { continue; }
+    if (levels < 0.0) { levels = 255.0 * dot(zoomed(u, 1.0 / vt.z).rgb, vec3f(0.2126, 0.7152, 0.0722)); }
+    let k = clamp(SHADOW_STEP * F.a.z * levels * s / (sigma * vt.z), 0.01, 1.0); // the share of the wide reach this content can show
+    let x = length(drop(u - L.xy + off * L.z * k, b.zw)) - L.z; // out from the shadow's edge
+    sh = max(sh, s * (0.5 - 0.5 * erf2(vec2f(x * 0.70710678 / (sigma * k))).x));
   }
   return vec4f(vec3f(1.0 - sh), min(sh * 510.0, 1.0));
 }
