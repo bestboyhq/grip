@@ -1,4 +1,4 @@
-<!-- Grip's landing page: the hero shows a video Grip made and what people say about theirs, then beat by beat how a
+<!-- Grip's landing page: the hero shows Grip's editor playing a take and what people say about theirs, then beat by beat how a
      take becomes one (auto-zoom, captions, the editor, the look, capture, how fast it opens, export), the bugs it
      designs out, why it is safe to rely on, the questions, and the close. Every claim and number comes from the README
      and the guide. -->
@@ -12,6 +12,7 @@
 	import Faq from '#lib/Faq.svelte';
 	import FeatureRow from '#lib/FeatureRow.svelte';
 	import GitHubIcon from '#lib/GitHubIcon.svelte';
+	import { still } from '#lib/Editor.svelte';
 	import Head from '#lib/Head.svelte';
 	import Hero from '#lib/Hero.svelte';
 	import Media, { clip } from '#lib/Media.svelte';
@@ -227,26 +228,14 @@
 	];
 </script>
 
-<Head title="Grip: free screen recorder and screenshot tool for Mac" description={SITE_DESCRIPTION} path="" />
+<Head title="Grip: professional recordings and screenshots within seconds" description={SITE_DESCRIPTION} path="" />
 
-<!-- The hero's still in the system's theme; a theme picked on the page against it loads its own when the page shows. -->
+<!-- The hero editor's still, which shows until its take plays. -->
 <svelte:head>
-	{#each ['light', 'dark'] as const as theme (theme)}
-		<link
-			rel="preload"
-			as="image"
-			href={clip('hero')[theme].still}
-			media="(prefers-color-scheme: {theme})"
-			fetchpriority="high"
-		/>
-	{/each}
+	<link rel="preload" as="image" href={still} fetchpriority="high" />
 </svelte:head>
 
 <Hero>
-	<p class="lede">
-		Grip can take over ⇧⌘5, and it opens in 8 ms. Mark up a screenshot and paste it, or record a demo
-		that zooms where you click, smooths your cursor, and captions your voice.
-	</p>
 	<div class="actions">
 		<a class="button primary" href={DOWNLOAD_URL}>
 			{@render apple()}
@@ -263,10 +252,6 @@
 		<span>No account</span>
 		<span>No watermark</span>
 	</p>
-	{#snippet caption()}
-		Exported by Grip from a raw 4-second take. The zoom, the gliding cursor, and the click swell are
-		automatic.
-	{/snippet}
 </Hero>
 
 <SectionHeading
@@ -518,19 +503,6 @@
 		translate: 0 -1.5px;
 	}
 
-	.lede {
-		--rise: 3px;
-		--blur: 10px;
-		--duration: 1300ms;
-		--delay: 150ms;
-		max-width: 640px;
-		margin-top: 24px;
-		color: var(--fg-muted);
-		font-size: 19px;
-		line-height: 1.55;
-		text-wrap: pretty;
-	}
-
 	.actions {
 		--rise: 3px;
 		--blur: 8px;
@@ -539,7 +511,6 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 12px;
-		margin-top: 32px;
 	}
 
 	.fine {
@@ -553,6 +524,7 @@
 		color: var(--fg-muted);
 		font-size: 13px;
 		line-height: 1.55;
+		text-wrap: balance;
 	}
 
 	/* Each item leads with its dot, and the line starts one dot early behind the clip, so no line starts or ends on a
@@ -656,10 +628,6 @@
 		background: var(--panel);
 	}
 
-	.close-actions .actions {
-		margin-top: 0;
-	}
-
 	@media (max-width: 1023px) {
 		.formats {
 			margin-top: 48px;
@@ -668,7 +636,6 @@
 	}
 
 	@media (max-width: 859px) {
-		.lede,
 		.sub {
 			font-size: 17px;
 		}

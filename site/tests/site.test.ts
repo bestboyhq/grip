@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fingerprint, HASH, IMAGE, RENDER } from '../og.ts';
+import editor from '../src/lib/editor.json' with { type: 'json' };
 import { RELEASES } from '../src/lib/changelog.ts';
 import { LOGDASH_SITE } from '../src/lib/logdash.ts';
 import worker, { type Env } from '../worker/index.ts';
@@ -70,7 +71,7 @@ test('every download goes through bestboy.dev, which finds the latest DMG', () =
 
 test('every clip ships with the page in both themes, its still beside it', () => {
 	const stills = [...page.matchAll(/url\(\/grip\/(media\/[\w.-]+)-(light|dark)\.webp\)/gu)];
-	assert.ok(stills.length >= 10, `${stills.length} stills`);
+	assert.ok(stills.length >= 8, `${stills.length} stills`);
 	for (const [, name, theme] of stills) {
 		assert.ok(stills.some((other) => other[1] === name && other[2] !== theme), `${name} in one theme`);
 		for (const file of [`${name}-${theme}.webp`, `${name}-${theme}.mp4`])
@@ -86,6 +87,16 @@ const tracks = (file: Buffer): string[] => {
 		handlers.push(file.toString('latin1', at + 12, at + 16));
 	return handlers;
 };
+
+test('the hero editor ships its still, its transport, and a silent take for each wallpaper', () => {
+	assert.ok(page.includes(`url(/grip/${editor.still})`), 'the page shows no editor still');
+	for (const file of [editor.still, editor.transport.src]) assert.ok(existsSync(join(build, file)), file);
+	assert.ok(editor.wallpapers.length > 1, 'one wallpaper leaves nothing to pick');
+	for (const { src } of editor.wallpapers) {
+		const handlers = tracks(readFileSync(join(build, src)));
+		assert.ok(handlers.includes('vide') && !handlers.includes('soun'), `${src} has ${handlers.join(', ')}`);
+	}
+});
 
 test('the changelog runs newest first, each clip silent and its still beside it', () => {
 	assert.match(changelog, new RegExp(`<link rel="canonical" href="${SITE}/changelog"`, 'u'));
