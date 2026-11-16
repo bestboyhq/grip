@@ -19,6 +19,7 @@
 	import Quotes, { type Quote } from '#lib/Quotes.svelte';
 	import { reveal } from '#lib/reveal.ts';
 	import SectionHeading from '#lib/SectionHeading.svelte';
+	import StageLight from '#lib/StageLight.svelte';
 	import { AGENTS, docHref, DOWNLOAD_URL, GITHUB_URL, SITE_DESCRIPTION } from '#lib/links.ts';
 
 	// Each quote is the person's own, published with their permission.
@@ -93,6 +94,23 @@
 		{ name: 'Heartbeat', note: 'One beat at rest', ms: 800 },
 	];
 	const longest = Math.max(...speed.map((row) => row.ms));
+
+	// The formats clip's three windows, in its pixels: strip.html at 2x, cropped to them. The page shows only the
+	// windows, on its own stage, with their labels in its own type.
+	const STRIP = [76, 72, 2406, 688] as const;
+	const formats = [
+		{ ratio: '16:9', where: 'YouTube', x: 0, width: 1224, icon: [16, 11] },
+		{ ratio: '1:1', where: 'LinkedIn', x: 1278, width: 688, icon: [12, 12] },
+		{ ratio: '9:16', where: 'Reels', x: 2018, width: 388, icon: [9, 14] },
+	] as const;
+	const WINDOW_RADIUS = 16;
+	const windowsMask = `url("data:image/svg+xml,${encodeURIComponent(
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${STRIP[2]} ${STRIP[3]}">${formats
+			.map(({ x, width }) => `<rect x="${x}" width="${width}" height="${STRIP[3]}" rx="${WINDOW_RADIUS}"/>`)
+			.join('')}</svg>`,
+	)}")`;
+	let formatWindows = $state<HTMLElement[]>([]);
+	let formatsLit = $state(false);
 
 	const agents = [
 		{
@@ -407,14 +425,34 @@
 	description="MP4 up to 4K, a GIF that fits a README, or subtitles aligned through every cut. Narrow formats follow the cursor, and share links take comments at the exact second."
 >
 	{#snippet after()}
-		<div class="formats rise">
-			<Media
-				clip={clip('formats')}
-				width={2560}
-				height={880}
-				r={24}
-				alt="One chat recording exported as 16:9 for YouTube, 1:1 for LinkedIn, and 9:16 for Reels, each following the cursor as a reply is sent."
-			/>
+		<div class="formats">
+			<StageLight side="right" casters={formatWindows} bind:lit={formatsLit} />
+			<div class={['strip', 'rise', { lit: formatsLit }]} style:--windows={windowsMask}>
+				<ul aria-hidden="true">
+					{#each formats as { ratio, where, x, width, icon }, index (ratio)}
+						<li style:left="{(x / STRIP[2]) * 100}%" style:width="{(width / STRIP[2]) * 100}%">
+							<span
+								class="window"
+								bind:this={formatWindows[index]}
+								style:aspect-ratio="{width} / {STRIP[3]}"
+								style:border-radius="{(WINDOW_RADIUS / width) * 100}% / {(WINDOW_RADIUS / STRIP[3]) * 100}%"
+							></span>
+							<span class="label">
+								<i style:width="{icon[0]}px" style:height="{icon[1]}px"></i>{ratio}
+								<span class="where">{where}</span>
+							</span>
+						</li>
+					{/each}
+				</ul>
+				<Media
+					clip={clip('formats')}
+					width={2560}
+					height={880}
+					crop={STRIP}
+					r={WINDOW_RADIUS}
+					alt="One chat recording exported as 16:9 for YouTube, 1:1 for LinkedIn, and 9:16 for Reels, each following the cursor as a reply is sent."
+				/>
+			</div>
 		</div>
 	{/snippet}
 </SectionHeading>
@@ -697,11 +735,76 @@
 		background: var(--painting);
 	}
 
+	/* The formats stand on a lit stage like the features' windows, across the whole column. */
 	.formats {
+		position: relative;
 		margin: 72px calc(-1 * max(var(--pad), env(safe-area-inset-left))) 0;
 		padding: 64px max(var(--pad), env(safe-area-inset-left));
 		border-top: 1px solid var(--frame);
-		background: var(--panel);
+	}
+
+	.strip {
+		position: relative;
+		max-width: 1120px;
+		margin: 0 auto;
+		padding-bottom: 40px;
+	}
+
+	/* The clip shows only its windows; the stage shows between them. */
+	.strip :global(.frame) {
+		mask: var(--windows) 0 0 / 100% 100% no-repeat;
+	}
+
+	/* Each window's ring and shadow sit under the clip, so a shadow never falls on the window beside it. */
+	.strip ul {
+		position: absolute;
+		inset: 0;
+		list-style: none;
+	}
+
+	.strip li {
+		position: absolute;
+		top: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 20px;
+	}
+
+	.window {
+		width: 100%;
+		box-shadow:
+			0 0 0 1px var(--ring-faint),
+			0 2px 4px rgb(0 0 0 / 0.08),
+			0 32px 64px -24px rgb(0 0 0 / 0.45);
+	}
+
+	/* Lit, the stage draws the windows' long shadows, which a CSS shadow draws in steps. */
+	.lit .window {
+		box-shadow:
+			0 0 0 1px var(--ring-faint),
+			0 2px 4px rgb(0 0 0 / 0.08);
+	}
+
+	.label {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		color: var(--fg-default);
+		font-family: var(--mono);
+		font-size: 13px;
+		line-height: 20px;
+		white-space: nowrap;
+	}
+
+	.label i {
+		box-sizing: border-box;
+		border: 1.5px solid var(--fg-muted);
+		border-radius: 3px;
+	}
+
+	.where {
+		color: var(--fg-muted);
 	}
 
 	@media (max-width: 1023px) {
@@ -734,6 +837,19 @@
 
 		.formats {
 			padding: 32px 12px;
+		}
+
+		/* The 9:16 window is too narrow here for its platform beside its ratio. */
+		.where {
+			display: none;
+		}
+
+		.strip {
+			padding-bottom: 32px;
+		}
+
+		.strip li {
+			gap: 12px;
 		}
 	}
 </style>

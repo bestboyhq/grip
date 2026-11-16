@@ -56,7 +56,7 @@
 			</ul>
 		</div>
 		<div class="stage">
-			<StageLight side={mirrored ? 'right' : 'left'} {caster} bind:lit />
+			<StageLight side={mirrored ? 'right' : 'left'} casters={caster ? [caster] : []} bind:lit />
 			<div class={['window', 'rise', { lit }]} bind:this={windowElement}>{@render children()}</div>
 		</div>
 	</div>

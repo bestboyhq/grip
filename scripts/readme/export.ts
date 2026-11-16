@@ -2,8 +2,9 @@
 // landing page's clips into .context/readme for site/media.sh. The page frames every clip in a card,
 // so hero, loupe, and captions leave out their wallpaper, padding, corners, and shadow; the MacBook
 // keeps its frame, and the formats clip is the 16:9, 1:1, and 9:16 exports side by side (formats/strip.html).
-// The page and the README follow their theme, so each clip comes as <name>-dark.mp4 and <name>-light.mp4,
-// and each GIF as <name>.gif and <name>-light.gif, from make.ts's two takes of the scene.
+// The README follows its reader's theme, so each GIF comes as <name>.gif and <name>-light.gif, from make.ts's
+// two takes of the scene. The page shows the light take in either theme, as <name>-light.mp4; the formats strip
+// renders in both, for its two GIFs.
 // Run after make.ts, with the app up (STUDIO_CDP_PORT=9333 npm run dev):
 // npx electron scripts/readme/export.ts [demo...]   (all six by default)
 import { app, BrowserWindow, nativeTheme } from 'electron'
@@ -93,8 +94,9 @@ app.whenReady().then(async () => {
       add({}, GIF, join(ROOT, '.github/readme', `${name}.gif`))
       add({}, GIF, join(ROOT, '.github/readme', `${name}-light.gif`), SCREENS.light)
     }
+    const themes: Array<[string, string]> = name === 'formats' ? Object.entries(SCREENS) : [['light', SCREENS.light]]
     for (const [base, style, options] of SITE[name])
-      for (const [theme, file] of Object.entries(SCREENS)) add(style, options, join(OUT, `${base}-${theme}.mp4`), file)
+      for (const [theme, file] of themes) add(style, options, join(OUT, `${base}-${theme}.mp4`), file)
   }
   const ids: string[] = (await invoke('export:enqueue', requests)).map((j: { id: string }) => j.id)
   for (;;) {
