@@ -48,7 +48,10 @@ Turning clicks and typing into camera direction.
   Supersampling the rim's curl changes a few hundred pixels of a frame, which does not earn its taps.
 - A loupe following the cursor keeps it on the magnifying flat top through the fastest flick: the lens aims ahead by its spring's lag, and a cursor that reaches the edge of what the flat top shows carries the lens along.
   A lens that trails a flick hides the cursor under its glass, then curls it back in at the rim, which reads as a stutter.
-- A loupe pops in and out in about a fifth of a second, smeared by motion blur, and what it shows blurs while it glides or magnifies like the rest of the frame.
+- A loupe opens out of what it shows as the camera zooms in, half way in about 0.12 s on the same spring, and closes back into it a fifth faster.
+  Its glass grows from 0.4 of its radius together with its magnification.
+  Motion blur smears the lens, and what it shows blurs while it glides or magnifies like the rest of the frame.
+  A full-size lens that magnifies in a few frames shows up at once, on a clock of its own, and the motion blur swirls what it shows: it reads as a glitch, not glass.
 - A loupe keeps its round shape by default; Liquid, which stretches the glass along its motion, is the user's pick.
 - New zooms, manual and automatic, take the type, loupe size, and Liquid the user last picked on any zoom, in every project.
 - A loupe appears by growing its magnification from 1 with its content opaque; fading its content in shows the screen twice, magnified over unmagnified.

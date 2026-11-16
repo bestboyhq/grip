@@ -82,8 +82,13 @@ const MERGE_GAP = 2 // s: auto zooms closer than this merge; zooming out and bac
 const MIN_AUTO = 1.2 // s: shorter auto zooms (clipped by the recording's ends) are dropped
 const FAR_JUMPS_PER_S = 0.5 // an auto zoom panning a half view more often than this is erratic: skipped
 const LOUPE_SPRING: SpringConfig = { stiffness: 300, damping: 2 * Math.sqrt(300), mass: 1 } // one loupe eases into the next's level, size, and shape in ~0.5 s
-const LOUPE_POP: SpringConfig = { stiffness: 900, damping: 2 * Math.sqrt(900), mass: 1 } // a lens magnifies in or out, half way in ~0.06 s, settled in ~0.3 s
-const LOUPE_FADE = springDuration(LOUPE_POP)
+/** A lens opens out of what it shows as the camera zooms in, half way in ~0.12 s, and closes back into
+ *  it a fifth faster: its glass grows from LOUPE_SEED of its radius together with its magnification. */
+const LOUPE_OPEN = SPRINGS.focused
+const LOUPE_CLOSE = LOUPE_SPRING
+const LOUPE_SEED = 0.4
+const LOUPE_IN = springDuration(LOUPE_OPEN)
+const LOUPE_OUT = springDuration(LOUPE_CLOSE)
 const LOUPE_FOLLOW: SpringConfig = { stiffness: 120, damping: 2 * 0.65 * Math.sqrt(120), mass: 1 } // follows the cursor softly, a little overshoot
 const LOUPE_LEAD = LOUPE_FOLLOW.damping / LOUPE_FOLLOW.stiffness // s: the follow spring trails a steady glide by this, so it aims that far ahead
 const LOUPE_TOP = 0.85 // the flat top's share of the lens radius (shaders.wgsl BEVEL): only it shows the content magnified
@@ -385,7 +390,7 @@ function lens(run: Span[], layout: ReturnType<typeof prepareLayout>, cursor: Ret
   const a = run[0].a
   const last = run.reduce((x, y) => (y.b >= x.b ? y : x))
   const b = last.b
-  const n = Math.ceil((b + LOUPE_FADE - a) / DT) + 1
+  const n = Math.ceil((b + LOUPE_OUT - a) / DT) + 1
   const path = new Float32Array(LENS * n)
   const jumps = new Map<number, number>()
   const follow = springStep(DT, LOUPE_FOLLOW)
@@ -683,9 +688,9 @@ export function loupesAcross(z: ReturnType<typeof prepareZoom>, t: number, ts: n
 
 function lensAt(lens: ReturnType<typeof prepareZoom>['loupes'][number], t: number): Loupe | null {
   const { a, b, path } = lens
-  if (t < a || t >= b + (lens.last.instant ? 0 : LOUPE_FADE)) return null
-  const fadeIn = lens.first.instant || a < AT_START ? 1 : springProgress(t - a, LOUPE_POP)
-  const fadeOut = t < b ? 0 : springProgress(t - b, LOUPE_POP)
+  if (t < a || t >= b + (lens.last.instant ? 0 : LOUPE_OUT)) return null
+  const fadeIn = lens.first.instant || a < AT_START ? 1 : springProgress(t - a, LOUPE_OPEN)
+  const fadeOut = t < b ? 0 : springProgress(t - b, LOUPE_CLOSE)
   const p = fadeIn * (1 - fadeOut)
   const n = path.length / LENS
   const x = clamp((t - a) / DT, 0, n - 1)
@@ -698,7 +703,9 @@ function lensAt(lens: ReturnType<typeof prepareZoom>['loupes'][number], t: numbe
   const speed = Math.hypot(vx, vy)
   const e = at(6) * Math.min(LOUPE_MAX_STRETCH, (LOUPE_STRETCH * speed) / radius)
   const stretch = e > 0 ? { x: (vx / speed) * e, y: (vy / speed) * e } : { x: 0, y: 0 }
-  return { x: at(0), y: at(1), radius, scale: mix(1, at(4), p), opacity: p, stretch }
+  // The glass grows with the magnification: a full-size lens that magnifies in a few frames shows up at
+  // once, and the motion blur swirls what it shows.
+  return { x: at(0), y: at(1), radius: radius * mix(LOUPE_SEED, 1, p), scale: mix(1, at(4), p), opacity: p, stretch }
 }
 
 /** Auto zooms (source time) from clicks and typing: merge activity close in time, start LEAD before
@@ -760,7 +767,7 @@ export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZo
       const b = Math.min(start + POINT.hold, next)
       const shown = at.x >= 0 && at.y >= 0 && at.x <= screen.width && at.y <= screen.height
       if (start - off > HOLD || !shown || b - a < MIN_AUTO) return []
-      return [{ id: uid(), start: a, end: b > D - LOUPE_FADE ? D : b, level: autoLevel(level, 'loupe'), target: { kind: 'cursor' }, auto: true, enabled: true, ...lens, size: lens.size ?? POINT.size }]
+      return [{ id: uid(), start: a, end: b > D - LOUPE_OUT ? D : b, level: autoLevel(level, 'loupe'), target: { kind: 'cursor' }, auto: true, enabled: true, ...lens, size: lens.size ?? POINT.size }]
     }
     return []
   })
@@ -836,7 +843,7 @@ export function zoomProblems(p: Project, m: TimeMap, layout: ReturnType<typeof p
       return acc
     }, [])
   const camera = stretches(pieces(on.filter((z) => z.mode !== 'loupe'), m), BRIDGE).map((r) => ({ ...r, what: 'zooms', early: lead - LEAD, settle: LEAD, leave: lead }))
-  const glass = stretches(pieces(on.filter((z) => z.mode === 'loupe'), m), 0).map((r) => ({ ...r, what: 'loupe', early: 0, settle: LOUPE_FADE, leave: LOUPE_FADE }))
+  const glass = stretches(pieces(on.filter((z) => z.mode === 'loupe'), m), 0).map((r) => ({ ...r, what: 'loupe', early: 0, settle: LOUPE_IN, leave: LOUPE_OUT }))
 
   // The glides inside the camera's stretches, timed the way simulate times them.
   const framed = (zs: Zoom[], t: number) => {

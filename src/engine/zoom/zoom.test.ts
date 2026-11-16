@@ -364,12 +364,20 @@ test('a fast flick never leaves the lens: the cursor stays on its magnifying fla
   }
 })
 
-test('a loupe pops: most of the way in a tenth of a second, gone in a third', () => {
+test('a loupe opens out of what it shows as the camera zooms in, and closes back into it a fifth faster', () => {
   const events = moves([[0, 1000, 800], [10, 1000, 800]])
-  const { p } = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 3 })], events, { duration: 10 })
-  assert.ok(loupeAt(p.zoom, 2.1)!.scale > 2.5, 'in: past 3/4 of the way at 0.1 s')
-  assert.ok(loupeAt(p.zoom, 5.1)!.scale < 1.5, 'out: past 3/4 of the way at 0.1 s')
-  assert.equal(loupeAt(p.zoom, 5.35), null)
+  const { p, view } = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 3 }), zoom({ start: 7, end: 9, level: 3 })], events, { duration: 10 })
+  const R = loupeAt(p.zoom, 3.5)!.radius
+  const half = loupeAt(p.zoom, 2.12)!
+  near(half.scale, 2, 0.02, 'in: half way at 0.12 s...')
+  near(view(7.12).scale, 2, 0.02, '...as the camera is')
+  near(half.radius, 0.7 * R, 0.01 * R, 'the glass grows with the magnification, from 0.4 of its radius')
+  assert.ok(loupeAt(p.zoom, 2.01)!.radius < 0.45 * R, 'never at full size in its first frame')
+  const out = loupeAt(p.zoom, 5.1)!
+  near(out.scale, 2, 0.05, 'out: half way at 0.1 s')
+  near(out.radius, 0.7 * R, 0.02 * R)
+  assert.ok(loupeAt(p.zoom, 5.5), 'closing')
+  assert.equal(loupeAt(p.zoom, 5.6), null)
   // Across a shutter straddling its start, the lens is there unmagnified and clear before it begins.
   const ts = [1.99, 2, 2.01, 2.02]
   const [path] = loupesAcross(p.zoom, 2.01, ts)
@@ -687,7 +695,7 @@ test('zoom problems: each fix leaves nothing to fix, and the camera then holds s
     ['the end mid zoom-out', [zoom({ id: 'z', start: 15, end: 19.8 })], /the video ends at 17 s while the camera is still moving out/, { type: 'set_zoom', id: 'z', end: 17 }],
     ['cut out', [zoom({ id: 'z', start: 5.5, end: 7.5 })], /never plays/, { type: 'remove_zoom', id: 'z' }],
     ['a stretch out over the cut', [zoom({ id: 'y', start: 1, end: 3 }), zoom({ id: 'z', start: 3.5, end: 4.9 })], /Zooms y to z/, { type: 'set_zoom', id: 'z', end: 4.57 }],
-    ['a loupe out over the cut', [zoom({ id: 'z', start: 1, end: 4.95, mode: 'loupe' })], /the loupe moves out over 4.95-5.3 s/, { type: 'set_zoom', id: 'z', end: 4.65 }],
+    ['a loupe out over the cut', [zoom({ id: 'z', start: 1, end: 4.95, mode: 'loupe' })], /the loupe moves out over 4.95-5.51 s/, { type: 'set_zoom', id: 'z', end: 4.43 }],
     ['a glide that never lands', [zoom({ id: 'y', start: 9, end: 12, target: pt(0.2, 0.25) }), zoom({ id: 'z', start: 12.2, end: 13, target: pt(0.8, 0.75) })], /glides to it from zoom y over 9.2-10.17 s and moves on at 10 s/, { type: 'set_zoom', id: 'z', end: 10.67 }, 10.55],
     ['a glide into the end', [zoom({ id: 'y', start: 15, end: 19, target: pt(0.2, 0.25) }), zoom({ id: 'z', start: 19.2, end: 20, target: pt(0.8, 0.75) })], /holds only 0 s. Hold it at least 0.5 s/, [{ type: 'set_zoom', id: 'y', end: 15.53 }, { type: 'set_zoom', id: 'z', start: 15.53 }], 16.9],
   ]
