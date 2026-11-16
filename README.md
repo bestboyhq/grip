@@ -25,7 +25,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: light)" srcset=".github/readme/hero-light.gif">
-    <img src=".github/readme/hero.gif" width="100%" alt="A deployments dashboard polished by Grip on a pastel iridescent wallpaper: the view zooms in as the cursor glides to the Deploy button, the click swells through the screen, and a new build slides in as Building. A glass loupe appears on the cursor as it leaves the button, grows wide over the build's commit, shrinks as it follows the cursor to the status, and holds there until the build turns Ready. Then the cursor glides back to its start.">
+    <img src=".github/readme/hero.gif" width="100%" alt="A deployments dashboard polished by Grip on a pastel iridescent wallpaper, in a seamless loop: a glass loupe on the top build's Ready status lets go as the cursor leaves, and the view zooms in as it glides to the Deploy button. The click swells through the screen and the build turns Building. A loupe appears on the cursor as it sweeps back, grows wide over the build's row, closes onto the status, and tightens as the build turns Ready.">
   </picture>
 </p>
 

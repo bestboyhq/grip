@@ -48,7 +48,7 @@
 				height={1440}
 				r={21}
 				eager
-				alt="A deployments dashboard polished by Grip: the view zooms in as the cursor glides to Deploy, the click swells through the screen, and a glass loupe follows the cursor along the new build, wide over its commit and tight on its status as it turns from Building to Ready."
+				alt="A deployments dashboard polished by Grip: the view zooms in as the cursor glides to Deploy, the click swells through the screen and starts a build, and a glass loupe follows the cursor back along the build, wide over its row and tight on its status as it turns from Building to Ready."
 			/>
 			{#if caption}
 				<figcaption>{@render caption()}</figcaption>

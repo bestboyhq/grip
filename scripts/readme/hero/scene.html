@@ -59,9 +59,9 @@
 <div class="field" style="left:825px;width:238px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="light-dark(#777,#9a9aa2)" stroke-width="1.4" stroke-linecap="round"><rect x="1.8" y="3" width="12.4" height="11" rx="2"/><path d="M1.8 6.5h12.4M5 1.5v3M11 1.5v3"/></svg><span style="font-weight:400">Select Date Range</span></div>
 <div class="field" style="left:1075px;width:178px;justify-content:space-between">All Environments<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="light-dark(#777,#9a9aa2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2.5 4.5 3.5 3.5 3.5-3.5"/></svg></div>
 <div class="field" style="left:1264px;width:139px;justify-content:space-between"><span>Status <span class="mut" style="margin-left:5px">5/6</span></span><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="light-dark(#777,#9a9aa2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m2.5 4.5 3.5 3.5 3.5-3.5"/></svg></div>
-<div id="table"><div id="fresh" style="height:0;overflow:hidden"></div><div id="rows"></div></div>
+<div id="table"><div id="top"></div><div id="rows"></div></div>
 <script>
-  const S = JSON.parse(new URLSearchParams(location.search).get('s')) // { click: {down, up}, row, ready }
+  const S = JSON.parse(new URLSearchParams(location.search).get('s')) // { click: {down, up}, ready, tick }
   const BR = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="light-dark(#666,#9a9aa2)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="3.5" r="1.7"/><circle cx="4" cy="12.5" r="1.7"/><circle cx="12" cy="5" r="1.7"/><path d="M4 5.2v5.6M12 6.7c0 3-3.5 2.2-8 4.3"/></svg>'
   const CM = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="light-dark(#999,#6b6b73)" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="2.4"/><path d="M1 8h4.6M10.4 8H15"/></svg>'
   const DOTS = '<div class="more">···</div>'
@@ -83,8 +83,6 @@
     <div class="when">${when}</div><div class="abs av sm">${ini}</div>${DOTS}</div>`
   const rows = DATA.map((d, i) => row(d[0], d[1], ['Ready', d[2]], 'light-dark(#10b36b,#1fbf78)', d[3], d[4], d[5], d[6], d[7], false)).join('')
   document.getElementById('rows').innerHTML = rows
-  const rowsEl = document.getElementById('rows')
-  rowsEl.firstElementChild.querySelector('.sub').insertAdjacentHTML('beforeend', '<span class="cur">Current</span>')
   const ease = (p) => 1 - (1 - p) ** 3
   const SPIN = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="light-dark(#fff,#0b0b0c)" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="8" r="6" stroke-opacity=".25"/><path id="arc" d="M8 2a6 6 0 0 1 6 6"/></svg>'
   const UP = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="light-dark(#fff,#0b0b0c)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11V2.5M4.5 5.5 8 2l3.5 3.5M2.5 10v3.5h11V10"/></svg>'
@@ -98,16 +96,18 @@
     btn.style.borderColor = btn.style.background
     btn.style.transform = t >= S.click.down && t < S.click.up ? 'scale(.97)' : ''
     const arc = document.getElementById('arc'); if (arc) arc.parentNode.style.transform = `rotate(${t * 540}deg)`
-    const p = ease(Math.max(0, Math.min(1, (t - S.row) / 0.55)))
-    const fresh = document.getElementById('fresh')
-    if (p > 0) {
-      const ready = t >= S.ready
-      const secs = 11 - Math.floor((S.ready - t) / 0.8) // counts up to 11s, then Ready says 12s
-      fresh.innerHTML = row('9fK2mQx7r', 'Production', ready ? ['Ready', '12s (just now)'] : ['Building', secs + 's'], ready ? 'light-dark(#10b36b,#1fbf78)' : '#f5a623', 'main', '7c1e4a9', 'feat(checkout): one-tap Apple Pay', 'just now by mayachen', 'MC', ready)
-      fresh.style.height = 81.3 * p + 'px'
-      fresh.style.opacity = String(p)
-      rowsEl.firstElementChild.querySelector('.cur')?.remove()
-      if (!ready) rowsEl.firstElementChild.querySelector('.sub').insertAdjacentHTML('beforeend', '<span class="cur">Current</span>')
-    } else fresh.style.height = '0'
+    // Deploy rebuilds the top deployment in place, so the take ends as it starts and loops without a seam:
+    // the row lights up, builds for 0s to 11s, and is Ready in 12s again, its dot ringing out once.
+    const top = document.getElementById('top')
+    const ready = deploying ? null : 'light-dark(#10b36b,#1fbf78)'
+    const secs = Math.floor((t - S.click.down) / S.tick)
+    top.innerHTML = row('9fK2mQx7r', 'Production', ready ? ['Ready', '12s (just now)'] : ['Building', secs + 's'], ready ?? '#f5a623', 'main', '7c1e4a9', 'feat(checkout): one-tap Apple Pay', 'just now by mayachen', 'MC', true)
+    const lit = t >= S.click.down ? 1 - ease(Math.min(1, (t - S.click.down) / 0.8)) : 0
+    top.firstElementChild.style.background = lit ? `color-mix(in srgb, light-dark(#f0f0f2,#202024) ${(lit * 100).toFixed(1)}%, transparent)` : ''
+    const age = t - S.ready
+    if (age >= 0 && age < 0.6) {
+      const q = ease(age / 0.6)
+      top.querySelector('.c2').insertAdjacentHTML('beforeend', `<div class="st" style="background:none;box-shadow:0 0 0 ${1.5 + 1.5 * (1 - q)}px light-dark(#10b36b,#1fbf78);transform:scale(${1 + 1.4 * q});opacity:${0.9 * (1 - q)}"></div>`)
+    }
   }
 </script></body></html>
