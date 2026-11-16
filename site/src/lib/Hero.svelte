@@ -27,8 +27,8 @@
 			<Arrow class="ahead" />
 		</a>
 		<h1 id="hero-title">
-			<span>Professional recordings</span>
-			<span class="quiet">and screenshots within seconds.</span>
+			<span>Polished screen recordings</span>
+			<span class="quiet">on the first take.</span>
 		</h1>
 		{@render children?.()}
 	</div>

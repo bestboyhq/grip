@@ -2,16 +2,17 @@ import { asset, resolve } from '$app/paths';
 
 export const SITE_URL = 'https://bestboy.dev/grip';
 export const SITE_DESCRIPTION =
-	'Grip is a free, open source screen recorder for the Mac: professional recordings and screenshots within seconds. It zooms where you click, glides your cursor, and captions your voice.';
+	'Grip is a free, open source screen recorder for the Mac that makes polished demos on the first take. It zooms where you click, smooths your cursor, and captions your voice, with a screenshot tool built in.';
 
 // The DMG's name carries its version, so bestboy.dev looks up the latest release's and redirects to it.
 export const DOWNLOAD_URL = 'https://bestboy.dev/download/grip';
 export const GITHUB_URL = 'https://github.com/bestboyhq/grip';
 export const BESTBOY_URL = 'https://bestboy.dev';
 
-// Grip's docs are its README.
-export const docHref = (section = 'readme'): string => `${GITHUB_URL}#${section}`;
-const README_MD = 'https://raw.githubusercontent.com/bestboyhq/grip/main/README.md';
+// Grip's docs are its guide, one file beside the README.
+const GUIDE = `${GITHUB_URL}/blob/main/docs/guide.md`;
+export const docHref = (section?: string): string => (section ? `${GUIDE}#${section}` : GUIDE);
+const GUIDE_MD = 'https://raw.githubusercontent.com/bestboyhq/grip/main/docs/guide.md';
 
 export const HOME = resolve('/(site)').replace(/\/$/u, '');
 export const CHANGELOG = resolve('/(site)/changelog');
@@ -107,7 +108,7 @@ export const MENUS: readonly Menu[] = [
 			{
 				label: 'Docs',
 				links: [
-					{ title: 'Grip docs', href: docHref(), line: 'Capture, edit, and share, in its README' },
+					{ title: 'Grip docs', href: docHref(), line: 'Capture, edit, and share, in one guide' },
 					{ title: 'Shortcuts', href: docHref('shortcuts'), line: 'Every key, on one page' },
 					{ title: 'Changelog', href: CHANGELOG, line: 'What you can do now, release by release' },
 				],
@@ -117,7 +118,7 @@ export const MENUS: readonly Menu[] = [
 				links: [
 					{ title: 'Grip for agents', href: AGENTS, line: 'A video of every change your agent ships' },
 					{ ...LLMS, line: 'Every app’s docs, as markdown' },
-					{ title: 'Grip in one file', href: README_MD, line: 'All its docs at once, for an agent’s context' },
+					{ title: 'Grip in one file', href: GUIDE_MD, line: 'All its docs at once, for an agent’s context' },
 				],
 			},
 			{
@@ -156,7 +157,7 @@ export const SITEMAP: readonly Readonly<{ label: string; links: readonly Link[] 
 	},
 	{
 		label: 'For agents',
-		links: [{ title: 'Grip for agents', href: AGENTS }, LLMS, { title: 'Docs as markdown', href: README_MD }],
+		links: [{ title: 'Grip for agents', href: AGENTS }, LLMS, { title: 'Docs as markdown', href: GUIDE_MD }],
 	},
 	{
 		label: 'Project',
