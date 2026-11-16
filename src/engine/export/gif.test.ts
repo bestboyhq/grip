@@ -175,3 +175,60 @@ test('GIF LZW survives full code tables (noise), and loop counts', () => {
     assert.ok(meanError(noise, d.frames[0].image) < 1, 'every pixel decodes back')
   }
 })
+
+test('GIF keeps a soft shadow that appears mid-scene smooth, not dithered into rings', () => {
+  // A dark UI, then a loupe's shadow over it: tones 10 to 18 the first frame's palette has none of.
+  const ui = (x: number, y: number): [number, number, number] => (y % 16 === 8 && x > 8 && x < 88 ? [140, 140, 146] : x < 6 ? [10, 132, 255] : [18, 18, 18])
+  const a = frame(ui)
+  const b = frame((x, y) => {
+    const c = ui(x, y)
+    const k = Math.max(0, 1 - Math.hypot(x - 48, y - 32) / 30) ** 1.5 // 0 outside, 1 at the center
+    return c[0] === 18 ? [18 - Math.round(8 * k), 18 - Math.round(8 * k), 18 - Math.round(8 * k)] : c
+  })
+  const enc = new GifEncoder(W, H, 15, 0)
+  const shadow = decode(new Uint8Array([...enc.add(a), ...enc.add(b), ...enc.finish()])).frames[1]
+  const img = shadow.image
+  let off = 0
+  for (let k = 0; k < W * H; k++) if (Math.abs(img[k * 3] - b[k * 4]) >= 3) off++
+  assert.ok(meanError(b, img) < 0.5, `shadow close to source, mean error ${meanError(b, img).toFixed(2)}`)
+  assert.ok(off < W * H * 0.01, `${off} pixels off by 3 levels or more`)
+  // The shadow's tones need a fresh palette, and the frame still stores only the shadow, not the whole UI.
+  assert.ok(shadow.x >= 18 && shadow.x + shadow.w <= 79, `stored x ${shadow.x} to ${shadow.x + shadow.w}`)
+})
+
+test('GIF dithers a gray between grays, not toward a tint the palette holds nearer', () => {
+  // Exact flat surfaces: grays 200 and 210, and a cool tint between them that is nearer some grays of
+  // the ramp than either gray. Saturated noise crowds the rest of the palette, so the ramp has to dither.
+  let seed = 5
+  const rand = () => ((seed = (seed * 1103515245 + 12345) >>> 0) >>> 8) & 255
+  const a = frame((x, y) => {
+    if (x < 12) return y < 32 ? [200, 200, 200] : [210, 210, 210]
+    if (x < 24) return [204, 205, 212]
+    if (x < 40 && y < 16) return Array(3).fill(200 + Math.floor(((x - 24) / 16) * 10)) as [number, number, number]
+    return [rand(), rand() & 63, rand()]
+  })
+  const enc = new GifEncoder(W, H, 15, 0)
+  const img = decode(new Uint8Array([...enc.add(a), ...enc.finish()])).frames[0].image
+  // What the eye sees: each 8x8 block of the ramp, averaged.
+  for (let by = 0; by < 16; by += 8)
+    for (let bx = 24; bx < 40; bx += 8) {
+      const sum = [0, 0, 0, 0]
+      for (let y = by; y < by + 8; y++)
+        for (let x = bx; x < bx + 8; x++) {
+          for (let c = 0; c < 3; c++) sum[c] += img[(y * W + x) * 3 + c]
+          sum[3] += a[(y * W + x) * 4]
+        }
+      const [r, g, b, src] = sum.map((s) => s / 64)
+      assert.ok(Math.abs(g - src) < 1, `block ${bx},${by}: ${g.toFixed(1)} for ${src.toFixed(1)}`)
+      assert.ok(Math.abs(r - b) < 0.5, `block ${bx},${by} leans ${r > b ? 'warm' : 'cool'}: ${[r, g, b].map((v) => v.toFixed(1))}`)
+    }
+})
+
+test("GIF leaves a recording's noise out: a frame that differs by a level is the same frame", () => {
+  const a = frame((x, y) => (x > 20 && x < 70 && y > 10 && y < 50 ? [245, 245, 247] : [40 + x, 60 + y, 160]))
+  let seed = 11
+  const b = a.map((v, k) => (k % 4 === 3 ? v : v + (((seed = (seed * 1103515245 + 12345) >>> 0) >>> 8) % 3) - 1))
+  const enc = new GifEncoder(W, H, 15, 0)
+  const d = decode(new Uint8Array([...enc.add(a), ...enc.add(b), ...enc.finish()]))
+  assert.equal(d.frames.length, 1, 'the noisy frame extends the first')
+})

@@ -12,7 +12,11 @@ import { fingerprint, HASH, IMAGE } from '../site/og.ts'
 
 const site = join(import.meta.dirname, '../site')
 const build = join(site, 'build')
-execFileSync('npm', ['run', 'build'], { cwd: site, stdio: 'inherit' })
+try {
+  execFileSync('npm', ['run', 'build'], { cwd: site, stdio: 'inherit' })
+} catch {
+  process.exit(1) // npm printed why; a throw here would leave Electron waiting on its load error forever
+}
 app.setPath('userData', join(tmpdir(), `grip-og-${process.pid}`))
 app.commandLine.appendSwitch('force-color-profile', 'srgb') // the same colors whatever display the Mac has
 

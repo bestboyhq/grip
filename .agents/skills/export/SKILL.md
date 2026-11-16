@@ -19,6 +19,7 @@ Encoding, muxing, and delivery of the final video.
 - Cancel stops at once and deletes the partial file.
 - Memory stays flat regardless of duration.
 - GIF export: per-scene palettes with dithering, loop count, and a size target.
+  Soft shadows and gradients come out smooth, never in rings: a loupe's shadow in rings is what users call stepped.
 - Destinations: file, clipboard, share link.
   Batch export asks for every destination first, then runs unattended in the background while the user keeps editing.
 - Export is one click: it repeats the last export, settings and destination alike (a file lands in the same folder unasked), and the ▾ menu beside it changes them, each setting in a submenu like any macOS menu.
