@@ -102,7 +102,7 @@
     const fresh = document.getElementById('fresh')
     if (p > 0) {
       const ready = t >= S.ready
-      const secs = Math.min(11, 9 + Math.floor((t - S.row) / 0.8))
+      const secs = 11 - Math.floor((S.ready - t) / 0.8) // counts up to 11s, then Ready says 12s
       fresh.innerHTML = row('9fK2mQx7r', 'Production', ready ? ['Ready', '12s (just now)'] : ['Building', secs + 's'], ready ? 'light-dark(#10b36b,#1fbf78)' : '#f5a623', 'main', '7c1e4a9', 'feat(checkout): one-tap Apple Pay', 'just now by mayachen', 'MC', ready)
       fresh.style.height = 81.3 * p + 'px'
       fresh.style.opacity = String(p)

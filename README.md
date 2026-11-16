@@ -25,14 +25,14 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: light)" srcset=".github/readme/hero-light.gif">
-    <img src=".github/readme/hero.gif" width="100%" alt="A deployments dashboard polished by Grip on a pastel iridescent wallpaper: the view zooms in as the cursor glides to the Deploy button, the click swells through the screen, a new build slides in as Building, a glass loupe magnifies its timer as it counts up, and the build turns Ready as the cursor glides back to its start.">
+    <img src=".github/readme/hero.gif" width="100%" alt="A deployments dashboard polished by Grip on a pastel iridescent wallpaper: the view zooms in as the cursor glides to the Deploy button, the click swells through the screen, and a new build slides in as Building. A glass loupe appears on the cursor as it leaves the button, grows wide over the build's commit, shrinks as it follows the cursor to the status, and holds there until the build turns Ready. Then the cursor glides back to its start.">
   </picture>
 </p>
 
 <p align="center">
-  <sub>Exported by Grip from a raw 6-second take.
+  <sub>Exported by Grip from a raw 8-second take.
   The zoom, the smooth cursor, and the click swell are automatic.
-  The only edits: a trim, a wallpaper, a glass loupe on the new build, and a larger cursor that returns to its start, so the GIF loops.</sub>
+  The only edits: a trim, a wallpaper, a glass loupe that follows the cursor and changes size, and a larger cursor that returns to its start, so the GIF loops.</sub>
 </p>
 
 <p align="center">

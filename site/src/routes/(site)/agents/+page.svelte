@@ -325,7 +325,7 @@
 								height={1440}
 								r={36}
 								flat
-								alt="The demo the agent recorded: the view zooms in as the cursor glides to Deploy, and a glass loupe follows the new build from Building to Ready."
+								alt="The demo the agent recorded: the view zooms in as the cursor glides to Deploy, and a glass loupe follows the cursor along the new build as it turns from Building to Ready."
 							/>
 							<p class="link"><span class="url">bestboy.dev/v/x7Kq2mP9aB3c</span> Recorded with Grip</p>
 							<div class="review">

@@ -4,6 +4,7 @@ The rules in this file apply to all code in the repository.
 Domain rules live in `.agents/skills/`, as plain Markdown in the Agent Skills format that belongs to no particular tool, one folder per skill.
 `.claude/skills` links to it.
 Each product domain has one: `capture`, `input-events`, `camera`, `audio`, `motion`, `auto-zoom`, `compositor`, `export`, `timeline`, `transcript`, `projects`, `sharing`, `app-shell`, `agents`.
+`banding` cuts across them: read it before drawing or changing a shadow, glow, dim, or gradient.
 
 Read the skill for the domain you are touching before changing code there.
 

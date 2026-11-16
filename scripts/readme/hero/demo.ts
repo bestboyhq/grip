@@ -1,12 +1,20 @@
-// The README hero: a raw 6 s take of a deployments dashboard. The cursor rests, glides to Deploy,
-// waits out the click, then drifts toward the new build. Zooms come from Grip's auto zoom.
+// The README hero: a raw 8 s take of a deployments dashboard. The cursor rests, glides to Deploy,
+// clicks, travels to the new build's commit, goes on along the row to its status, waits there for
+// Ready, and returns to its start. The zoom onto Deploy comes from Grip's auto zoom.
 import type { Demo } from '../make.ts'
 import { click, glide, pointer } from '../input.ts'
 
-const DURATION = 6
-const SCRIPT = { click: { down: 2.1, up: 2.2 }, row: 2.35, ready: 4.75 }
+const DURATION = 8
+const SCRIPT = { click: { down: 2.1, up: 2.2 }, row: 2.35, ready: 5.4 }
 const DEPLOY = { x0: 1267, x1: 1403, y0: 172, y1: 217 }
-const at = glide([[0, 679, 693], [0.7, 679, 693], [1.95, 1335, 195], [3.0, 1335, 195], [4.0, 1060, 385], [DURATION, 1060, 385]])
+const START = [679, 693] as const
+const COMMIT = [928, 396] as const // under the commit message, so the arrow covers no text
+const STATUS = [658, 340] as const // beside the new build's status, clear of its text
+const at = glide([
+  [0, ...START], [0.7, ...START], [1.95, 1335, 195], [2.5, 1335, 195],
+  [3.15, ...COMMIT], [3.65, ...COMMIT], [4.3, ...STATUS], [6.1, ...STATUS], [7.1, ...START], [DURATION, ...START],
+])
+const cursor = { kind: 'cursor' } as const
 
 export default {
   name: 'Deployments hero',
@@ -18,16 +26,20 @@ export default {
     ...pointer(at, DURATION, ([x, y]) => (x >= DEPLOY.x0 && x <= DEPLOY.x1 && y >= DEPLOY.y0 && y <= DEPLOY.y1 ? 'pointer' : 'arrow')),
     ...click(SCRIPT.click.down, at(SCRIPT.click.down)),
   ],
-  // The GIF's edits: a trim, a short zoom onto Deploy, and a loupe on the new build's timer.
+  // The GIF's edits: a trim, a short zoom onto Deploy, and one lens that follows the cursor from
+  // Deploy: small as it leaves, wide over the commit, and tight on the status, where it stays.
   edit(p) {
     Object.assign(p.style, { background: { kind: 'wallpaper', id: 'iridescent-nacre' }, padding: 56, radius: 14, shadow: 0.4, screenAnimation: 'smooth' })
-    Object.assign(p.style.cursor, { size: 2.4, loop: true })
+    Object.assign(p.style.cursor, { size: 2, loop: true })
     p.clips[0].start = 0.633
-    p.clips[0].end = 4.976
+    p.clips[0].end = 7.4
     p.zooms = [
-      { id: 'deploy', start: 1.41, end: 2.046, level: 1.7, target: { kind: 'cursor' }, enabled: true },
-      // The lens takes the default size, the one a new loupe gets in the editor.
-      { id: 'timer', start: 2.323, end: 4.719, level: 2, target: { kind: 'point', x: 0.398, y: 0.396 }, enabled: true, mode: 'loupe' },
+      { id: 'deploy', start: 1.41, end: 2.046, level: 1.7, target: cursor, enabled: true },
+      { id: 'leave', start: 2.55, end: 2.85, level: 1.9, target: cursor, enabled: true, mode: 'loupe', size: 180 },
+      { id: 'commit', start: 2.85, end: 3.8, level: 1.9, target: cursor, enabled: true, mode: 'loupe', size: 340 },
+      { id: 'travel', start: 3.8, end: 4.45, level: 1.8, target: cursor, enabled: true, mode: 'loupe', size: 215 },
+      // Framed on the status, its timer, and the cursor beside them, with the build under it left to the rim.
+      { id: 'status', start: 4.45, end: 6, level: 1.8, target: { kind: 'point', x: 0.4236, y: 0.3789 }, enabled: true, mode: 'loupe', size: 215 },
     ]
     p.autoZoomed = true
     p.playhead = 0.633

@@ -26,6 +26,7 @@ GPU composition of each output frame.
   Wallpaper, gradient, and color tiles preview; an image tile waits for its pick, which copies the image into the project.
 - Video stays undithered, but a ramp drawn over it, like the loupe's shadow, must raise the dither mark too, or flat UI under it bands into rings in the preview.
   The encoder strips that dither, so an export stays smooth only under a ramp that steps a level every few px: a faint one spread over hundreds of px bands into rings tens of px wide.
+  The `banding` skill has the rules for sizing a ramp and the check that finds a stepped one.
 - Rounded corners and shadows are antialiased on light and dark backgrounds at every scale.
 - The inset is a band between the frame's edge and the recording: the recording's own edge stretched out, or a color at an opacity.
   Roundness is the recording's own corners, and the frame's are Roundness plus the inset, so the band stays even all round.

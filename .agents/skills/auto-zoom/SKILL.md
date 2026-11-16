@@ -28,6 +28,8 @@ Turning clicks and typing into camera direction.
   The light comes from straight above, where the window's and the camera's shadows say it is; a lens lit from a corner casts its shadow at odds with theirs.
   Broad specular crescents make the lens read as plastic.
   The lens casts a wide, soft shadow away from the light, darkest under its lower rim and gone two radii out, so it lifts off the screen.
+  The shadow's reach follows the brightness of what it falls on: wide on a light page, a contact shadow at the rim on a dark one.
+  A wide shadow on dark UI has a handful of levels to cross, and an export shows them as rings tens of px wide (the `banding` skill).
   A dark shadow packed into a short reach reads as a heavy gray crescent, and a faint one leaves the lens flat on the screen.
   That shadow sets the lens off, so the frame around it keeps its brightness.
   A dim that fades out with distance darkens the frame more under a big lens than a small one, and its faint ramp bands into rings in every export.

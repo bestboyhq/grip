@@ -9,7 +9,7 @@
 set -e
 cd "$(dirname "$0")"
 mkdir -p static/media
-for clip in hero:2.6 loupe:1.3 captions:7.1 macbook:9.9 formats:7.6; do
+for clip in hero:2.9 loupe:1.3 captions:7.1 macbook:9.9 formats:7.6; do
 	for theme in dark light; do
 		name=${clip%:*}-$theme
 		src=../.context/readme/$name.mp4
