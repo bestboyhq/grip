@@ -30,9 +30,10 @@
 </p>
 
 <p align="center">
-  <sub>Exported by Grip from a raw 8-second take.
+  <sub>Exported by Grip from a raw 4-second take.
   The zoom, the smooth cursor, and the click swell are automatic.
-  The only edits: a trim, a wallpaper, a glass loupe that follows the cursor and changes size, and a larger cursor that returns to its start, so the GIF loops.</sub>
+  The only edits: a wallpaper, a glass loupe that follows the cursor and changes size, and a larger cursor.
+  The take ends where it starts, so the GIF loops.</sub>
 </p>
 
 <p align="center">

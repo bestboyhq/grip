@@ -264,7 +264,7 @@
 		<span>No watermark</span>
 	</p>
 	{#snippet caption()}
-		Exported by Grip from a raw 8-second take. The zoom, the gliding cursor, and the click swell are
+		Exported by Grip from a raw 4-second take. The zoom, the gliding cursor, and the click swell are
 		automatic.
 	{/snippet}
 </Hero>
