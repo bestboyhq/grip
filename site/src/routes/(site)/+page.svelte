@@ -85,24 +85,14 @@
 		},
 	];
 
-	// Grip opens in 8 ms; each comparison is that against a familiar moment.
+	// Grip opens in 8 ms; each bar sets that against a familiar moment, drawn to scale.
 	const speed = [
-		{
-			stat: '12×',
-			title: 'Faster than a blink',
-			body: 'Even the quickest blink takes about 100 milliseconds. Grip is ready twelve times over.',
-		},
-		{
-			stat: '100×',
-			title: 'In one heartbeat',
-			body: 'At rest, your heart beats about once every 0.8 seconds. Grip could open a hundred times in between.',
-		},
-		{
-			stat: '2×',
-			title: 'Faster than a hummingbird',
-			body: 'Its wings flap about 50 times a second. Grip is ready before one flap is done.',
-		},
+		{ name: 'Grip', note: 'Shortcut to ready', ms: 8 },
+		{ name: 'Hummingbird', note: 'One wing flap', ms: 20 },
+		{ name: 'Blink', note: 'The quickest one', ms: 100 },
+		{ name: 'Heartbeat', note: 'One beat at rest', ms: 800 },
 	];
+	const longest = Math.max(...speed.map((row) => row.ms));
 
 	const agents = [
 		{
@@ -391,7 +381,20 @@
 				</p>
 			</div>
 		</div>
-		<Cells items={speed} />
+		<figure class="chart">
+			<figcaption class="rise">Milliseconds, lower is faster</figcaption>
+			<ul>
+				{#each speed as row, index (row.name)}
+					<li class={['rise', { grip: index === 0 }]} style:--share={row.ms / longest}>
+						<span class="who"><span class="name">{row.name}</span> {row.note}</span>
+						<span class="track">
+							<span class="bar" aria-hidden="true"></span>
+							{row.ms} ms
+						</span>
+					</li>
+				{/each}
+			</ul>
+		</figure>
 	</div>
 </section>
 
@@ -621,6 +624,79 @@
 		text-wrap: pretty;
 	}
 
+	.chart {
+		margin: 72px calc(-1 * max(var(--pad), env(safe-area-inset-left))) 0;
+		padding: 40px max(var(--pad), env(safe-area-inset-left));
+		border-top: 1px solid var(--frame);
+	}
+
+	figcaption {
+		color: var(--fg-faint);
+		font-family: var(--mono);
+		font-size: 12px;
+		line-height: 24px;
+	}
+
+	.chart ul {
+		display: grid;
+		gap: 20px;
+		margin-top: 28px;
+		list-style: none;
+	}
+
+	.chart li {
+		display: grid;
+		grid-template-columns: 200px minmax(0, 1fr);
+		gap: 8px 24px;
+		align-items: center;
+	}
+
+	.who {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		color: var(--fg-faint);
+		font-size: 13px;
+		line-height: 1.4;
+	}
+
+	.name {
+		color: var(--fg-muted);
+		font-size: 17px;
+		font-weight: 550;
+		letter-spacing: -0.01em;
+	}
+
+	.track {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+		color: var(--fg-muted);
+		font-family: var(--mono);
+		font-size: 13px;
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* To scale against the longest moment, which ends with its value at the edge. The floor only keeps Grip's sliver
+	   visible on a phone, where a wider one would draw it as long as the hummingbird's. */
+	.bar {
+		flex: none;
+		width: max(3px, calc((100% - 6ch - 14px) * var(--share)));
+		height: 10px;
+		border-radius: 3px;
+		background: var(--border-default);
+	}
+
+	.grip .name,
+	.grip .track {
+		color: var(--fg-default);
+	}
+
+	.grip .bar {
+		height: 14px;
+		background: var(--painting);
+	}
+
 	.formats {
 		margin: 72px calc(-1 * max(var(--pad), env(safe-area-inset-left))) 0;
 		padding: 64px max(var(--pad), env(safe-area-inset-left));
@@ -629,6 +705,11 @@
 	}
 
 	@media (max-width: 1023px) {
+		.chart {
+			margin-top: 48px;
+			padding-block: 32px;
+		}
+
 		.formats {
 			margin-top: 48px;
 			padding-block: 40px;
@@ -647,6 +728,10 @@
 	}
 
 	@media (max-width: 559px) {
+		.chart li {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
 		.formats {
 			padding: 32px 12px;
 		}
