@@ -1,12 +1,12 @@
 // Menu bar icon. A click starts a capture (the area picker: record it or copy a screenshot); while
 // recording a click finishes. Right-click opens the menu: new recording, recent captures (each
-// reopens its result card), recent projects, open, import, settings, account, updates, quit; while
-// recording finish, pause, draw, delete. Dropped .grip bundles open; dropped videos import as new
-// projects. While exports run the icon is a progress ring and the menu leads with them, Cancel
+// reopens its result card), recent projects, open, import, settings, account, updates, the GitHub
+// star, quit; while recording finish, pause, draw, delete. Dropped .grip bundles open; dropped
+// videos import as new projects. While exports run the icon is a progress ring and the menu leads with them, Cancel
 // included. A blue dot marks an update waiting for a restart, and an outlined one a check or
 // download under way. The update card hangs under the icon (electron/shell/update.ts); a click on
 // the icon closes it, as it closes a menu.
-import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions } from 'electron'
+import { app, Menu, nativeImage, shell, Tray, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { native } from '../native.ts'
 import { exportListeners, exportMenuItems, exportStatus } from '../export.ts'
@@ -15,6 +15,7 @@ import { accountMenuItems } from '../account.ts'
 import { recentProjects } from '../projects.ts'
 import { closeCard, readyVersion, updateActivity, updateListeners, updateMenuItems } from './update.ts'
 import { settings } from './settings.ts'
+import { REPO } from './menu.ts'
 import { captureRows, projectRows } from './captures.ts'
 import { cancelRecording, command, importDialog, openFilesOrAlert, openOnboarding, openProject, openProjectDialog, recordingStatus, reopenCapture, SHORTCUTS, showPicker, statusListeners, toggleDrawing } from './recorder.ts'
 
@@ -57,6 +58,7 @@ async function template(): Promise<MenuItemConstructorOptions[]> {
     { label: 'Settings…', click: () => openOnboarding('page=settings') },
     ...accountMenuItems(),
     ...updateMenuItems(),
+    { label: 'Star Grip on GitHub', click: () => void shell.openExternal(REPO) },
     { type: 'separator' },
     { label: 'Quit Grip', accelerator: 'Command+Q', registerAccelerator: false, click: () => app.quit() },
   ]

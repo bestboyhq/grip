@@ -227,7 +227,7 @@
 	];
 </script>
 
-<Head title="Grip: free screen recorder for Mac with auto-zoom and captions" description={SITE_DESCRIPTION} path="" />
+<Head title="Grip: free screen recorder and screenshot tool for Mac" description={SITE_DESCRIPTION} path="" />
 
 <!-- The hero's still in the system's theme; a theme picked on the page against it loads its own when the page shows. -->
 <svelte:head>
@@ -244,8 +244,8 @@
 
 <Hero>
 	<p class="lede">
-		Grip zooms where you click, smooths your cursor, and captions your voice. One shortcut records a
-		demo or takes a screenshot.
+		Grip can take over ⇧⌘5, and it opens in 8 ms. Mark up a screenshot and paste it, or record a demo
+		that zooms where you click, smooths your cursor, and captions your voice.
 	</p>
 	<div class="actions">
 		<a class="button primary" href={DOWNLOAD_URL}>

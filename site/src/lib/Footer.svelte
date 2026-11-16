@@ -16,7 +16,7 @@
 					<img class="app-icon" src={asset('icons/grip.webp')} width="28" height="28" alt="" />
 					Grip
 				</a>
-				<p>Polished screen recordings and screenshots on the first take.</p>
+				<p>One shortcut for screenshots and polished demos.</p>
 			</div>
 			{#each SITEMAP as column (column.label)}
 				<nav aria-label={column.label}>

@@ -5,8 +5,8 @@
 <h1 align="center">Grip</h1>
 
 <p align="center">
-  <b>The free screen recorder for Mac that makes polished demos on the first take.</b><br>
-  Grip zooms where you click, smooths your cursor, and captions your voice. A screenshot tool is built in.<br>
+  <b>One shortcut for screenshots and polished demos.</b><br>
+  Grip is the free screen recorder for Mac that zooms where you click, smooths your cursor, and captions your voice.<br>
   Open source. No subscription, no account, no watermark. Free for commercial use.
 </p>
 

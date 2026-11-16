@@ -27,8 +27,8 @@
 			<Arrow class="ahead" />
 		</a>
 		<h1 id="hero-title">
-			<span>Polished screen recordings</span>
-			<span class="quiet">on the first take.</span>
+			<span>One shortcut for screenshots</span>
+			<span class="quiet">and polished demos.</span>
 		</h1>
 		{@render children?.()}
 	</div>
