@@ -11,6 +11,7 @@
   import { fileUrl } from '../../../engine/media/index.ts'
   import { Renderer, type Motion } from '../../../engine/gpu/renderer.ts'
   import { motionAt } from '../../../engine/compose.ts'
+  import { LOUPE_SIZE } from '../../../engine/zoom/index.ts'
   import { WALLPAPERS } from '../../../engine/backgrounds/index.ts'
   import { wallpaperThumbnail } from '../../../engine/backgrounds/thumbnails.ts'
   import { SvelteMap } from 'svelte/reactivity'
@@ -46,7 +47,7 @@
     lmag: 2,
     lstart: 0, // source seconds the loupe zoom starts (render just after it to see it appear)
     lliquid: false,
-    lsize: 260,
+    lsize: LOUPE_SIZE.initial,
     motion: 0, // simulated zoom speed: scale change across the shutter
     cursor: '' as string, // built-in override: arrow, pointer, ibeam, touch
     set: 'system' as NonNullable<Style['cursor']['set']>,
@@ -299,7 +300,7 @@
     <label>loupe level <input type="range" min="1" max="4" step="0.1" bind:value={s.lmag} /> {s.lmag}</label>
     <label>loupe start <input type="range" min="0" max="23" step="0.05" bind:value={s.lstart} /> {s.lstart}</label>
     <label><input type="checkbox" bind:checked={s.lliquid} /> liquid loupe</label>
-    <label>loupe size <input type="range" min="60" max="400" step="10" bind:value={s.lsize} /> {s.lsize}</label>
+    <label>loupe size <input type="range" min={LOUPE_SIZE.min} max={LOUPE_SIZE.max} step="10" bind:value={s.lsize} /> {s.lsize}</label>
     <label><input type="checkbox" bind:checked={s.removeBg} /> remove background</label>
     <label><input type="checkbox" bind:checked={s.followFace} /> follow face</label>
     <label><input type="checkbox" bind:checked={s.lut} /> LUT</label>
