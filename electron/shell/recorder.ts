@@ -141,7 +141,7 @@ export const setQuitting = (on: boolean) => (quitting = on)
 /** Recording UI floats over everything, on every Space and over fullscreen apps, and stays out
  *  of screenshots. ScreenCaptureKit ignores sharingType on recent macOS, so the capture engine
  *  also excludes this app from its content filter. */
-const floating: BrowserWindowConstructorOptions = {
+export const floating: BrowserWindowConstructorOptions = {
   type: 'panel',
   frame: false,
   resizable: false,
@@ -152,7 +152,7 @@ const floating: BrowserWindowConstructorOptions = {
 }
 /** A panel floats over fullscreen apps without Electron hiding the dock icon for it (updateDock owns that
  *  icon), and stays when the user hides other apps: the recording controls must not go with them. */
-function protect(win: BrowserWindow, level: number) {
+export function protect(win: BrowserWindow, level: number) {
   win.setContentProtection(true)
   win.setAlwaysOnTop(true, 'screen-saver', level)
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
@@ -718,17 +718,20 @@ const routes = new WeakMap<BrowserWindow, string>()
  *  form of an accented name finds it: both name the same bundle on disk. */
 export function editorFor(path: string): BrowserWindow | undefined {
   const want = path.normalize('NFC')
-  return windowsOf('editor').find((w) => {
-    const query = !w.webContents.isDestroyed() && (w.webContents.getURL() || routes.get(w) || '').split('#')[1]?.split('?')[1]
-    return !!query && new URLSearchParams(query).get('project')?.normalize('NFC') === want
-  })
+  return windowsOf('editor').find((w) => projectOf(w)?.normalize('NFC') === want)
+}
+
+/** The bundle an editor window shows. */
+export function projectOf(w: BrowserWindow): string | undefined {
+  const query = !w.webContents.isDestroyed() && (w.webContents.getURL() || routes.get(w) || '').split('#')[1]?.split('?')[1]
+  return (query && new URLSearchParams(query).get('project')) || undefined
 }
 
 /** Open a bundle in the editor, or bring its editor forward. `recovered`: the editor says so.
  *  Like every window and dialog the user asks for, it closes the picker first, which floats above them.
  *  `focus: false` is for what nobody asked to see, such as an agent's frame: the frontmost app keeps the
- *  keyboard, and the picker stays. */
-export function openProject(path: string, { recovered = false, focus = true } = {}) {
+ *  keyboard, and the picker stays. `at`: where a new window opens, in place of where editors last were. */
+export function openProject(path: string, { recovered = false, focus = true, at }: { recovered?: boolean; focus?: boolean; at?: Rectangle } = {}): BrowserWindow | undefined {
   if (focus) closePicker()
   path = resolve(path).replace(/\/+$/, '')
   if (!path.endsWith('.grip') || !existsSync(path) || !statSync(path).isDirectory()) {
@@ -736,14 +739,16 @@ export function openProject(path: string, { recovered = false, focus = true } = 
     return
   }
   const open = editorFor(path)
-  if (open) return reveal(open, focus)
+  if (open) return (reveal(open, focus), open)
   app.addRecentDocument(path)
   const route = `editor?project=${encodeURIComponent(path)}${recovered ? '&recovered' : ''}`
   const win = openWindow(route, { show: focus })
+  if (at) win.setBounds(at)
   if (!focus) reveal(win, false)
   routes.set(win, `#/${route}`)
   closeGracefully(win)
   count('project_opened', { recovered })
+  return win
 }
 
 /** Open what the user hands us (Finder, dock, menu bar icon, window drops, File menu): bundles open

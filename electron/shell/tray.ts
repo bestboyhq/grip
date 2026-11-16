@@ -4,7 +4,8 @@
 // recording finish, pause, draw, delete. Dropped .grip bundles open; dropped videos import as new
 // projects. While exports run the icon is a progress ring and the menu leads with them, Cancel
 // included. A blue dot marks an update waiting for a restart, and an outlined one a check or
-// download under way.
+// download under way. The update card hangs under the icon (electron/shell/update.ts); a click on
+// the icon closes it, as it closes a menu.
 import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { native } from '../native.ts'
@@ -12,12 +13,14 @@ import { exportListeners, exportMenuItems, exportStatus } from '../export.ts'
 import { ring } from './png.ts'
 import { accountMenuItems } from '../account.ts'
 import { recentProjects } from '../projects.ts'
-import { readyVersion, updateActivity, updateListeners, updateMenuItems } from './update.ts'
+import { closeCard, readyVersion, updateActivity, updateListeners, updateMenuItems } from './update.ts'
 import { settings } from './settings.ts'
 import { captureRows, projectRows } from './captures.ts'
 import { cancelRecording, command, importDialog, openFilesOrAlert, openOnboarding, openProject, openProjectDialog, recordingStatus, reopenCapture, SHORTCUTS, showPicker, statusListeners, toggleDrawing } from './recorder.ts'
 
 let tray: Tray | null = null // module scope: a collected Tray disappears from the menu bar
+/** Where the icon is on screen, for the update card under it; none in hidden runs. */
+export const trayBounds = () => tray?.getBounds()
 
 /** The export ring at `pct` percent, drawn for both display scales. */
 function ringIcon(pct: number) {
@@ -78,7 +81,7 @@ export function createTray() {
   const running = () => ['recording', 'paused'].includes(recordingStatus())
   // One click to capture: the picker, or while recording a stop button, with no menu to land in the
   // recording. Right-click (or ⌃-click) opens the menu.
-  tray.on('click', (e) => (e.ctrlKey ? pop() : running() ? command('stop') : showPicker()))
+  tray.on('click', (e) => (closeCard() ? undefined : e.ctrlKey ? pop() : running() ? command('stop') : showPicker()))
   tray.on('right-click', pop)
   tray.on('drop-files', (_e, files) => openFilesOrAlert(files))
   let shown = 'trayTemplate.png'

@@ -5,6 +5,7 @@ import { plainError } from './errors.ts'
 import { areaOf, arrangement, fit, place, reachable, under, underCamera } from './bounds.ts'
 import { hold, release } from './session.ts'
 import { ring, withScale } from './png.ts'
+import { whatsNew } from './changes.ts'
 import { execFile } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -187,4 +188,24 @@ test('the menu bar export ring fills clockwise from 12 o\'clock', () => {
   assert.ok(alpha(quarter, top[0], top[1]) > 200)
   assert.equal(alpha(quarter, 0, 0), 0) // corners stay clear
   assert.equal(ring(18, 0.4).length, 18 * 18 * 4)
+})
+
+test('what is new in an update, from GitHub release notes', () => {
+  const li = (title: string, n: number) =>
+    `<li>${title} by <a class="user-mention notranslate" href="https://github.com/szymeo">@szymeo</a> in <a class="issue-link js-issue-link" href="https://github.com/bestboyhq/grip/pull/${n}">#${n}</a></li>`
+  const note = (...items: string[]) => `<h2>What&#39;s Changed</h2>\n<ul>\n${items.join('\n')}\n</ul>\n<p><strong>Full Changelog</strong>: <a href="x"><tt>v0.36.0...v0.36.1</tt></a></p>`
+  // Newest release first, as electron-updater lists them; chores and docs are no news to a user.
+  const notes = [
+    { version: '0.36.2', note: note(li('fix(app-shell): one-modifier shortcuts &amp; live keys', 88), li('chore(site): new hero', 89)) },
+    { version: '0.36.1', note: note(li('feat(compositor)!: redraw every wallpaper, preview on hover', 86), li('docs: say what “café” means', 90)) },
+    { version: '0.36.0', note: null },
+  ]
+  assert.deepEqual(whatsNew(notes), ['One-modifier shortcuts & live keys', 'Redraw every wallpaper, preview on hover'])
+  // One release's notes come as a string; a title that ships twice shows once; a long list is cut.
+  assert.deepEqual(whatsNew(note(li('perf: open huge projects at once', 1), li('fix: Demo #1 ✨ café exports', 2), li('perf: open huge projects at once', 3))), ['Open huge projects at once', 'Demo #1 ✨ café exports'])
+  assert.deepEqual(whatsNew(note(...[1, 2, 3, 4, 5, 6, 7].map((n) => li(`fix: bug ${n}`, n))), 3), ['Bug 1', 'Bug 2', 'Bug 3'])
+  // A squash commit's title, and notes GitHub left empty.
+  assert.deepEqual(whatsNew('<ul><li>feat(agents): record a demo of every change (#84)</li></ul>'), ['Record a demo of every change'])
+  assert.deepEqual(whatsNew(''), [])
+  assert.deepEqual(whatsNew(null), [])
 })

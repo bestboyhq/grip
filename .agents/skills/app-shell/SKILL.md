@@ -47,6 +47,12 @@ The native macOS app around everything else.
   Only real key presses prove this works: a page-level key event skips both layers.
 - Ask before quitting during a recording or export, and Cancel on any prompt really cancels.
 - Universal binary, in-app auto-update, crash reports with diagnostics, and plain-language messages for system error codes (disk full, permission denied).
-  A restart into an update, asked for or not, comes back to the menu bar only: updating is no reason to open the picker.
+  A restart into an update, asked for or not, comes back to the menu bar and to the editors that were open, each where it was: updating is no reason to open the picker.
+  An open editor never holds an update back, since it saves and comes back; only work a restart cuts short does (a recording, an export, a transcription, a playing preview).
+  An editor left open for days held back every update until its next quit, and a preview can play for long with no input, which reads as the user being away.
+  Check for Updates… answers in a card under the menu bar icon, never in a system dialog: checking, the download with what's new, ready, up to date, or what failed with Try Again.
+  The question of moving Grip to Applications asks there too.
+  A system dialog for each step read as cheap: one click on Check for Updates… took up to three modals to get through.
+  A waiting update also shows on the recording toolbar, with Later and Restart to Update.
 
 Done when a new user goes from install, through permissions, to a first exported video without reading docs.

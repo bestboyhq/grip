@@ -1,8 +1,10 @@
 // `node scripts/update-e2e.ts`: in-app updates end to end, the way a user gets them. A signed build
-// of 0.0.1 finds 0.0.2 on a local feed and downloads it; 0.0.3 ships while 0.0.2 waits and replaces
+// of 0.0.1 finds no feed, and Check for Updates… says so in the update card; its Try Again finds 0.0.2
+// on a local feed, downloads it, and says what's new in it; 0.0.3 ships while 0.0.2 waits and replaces
 // it, and "Restart to Update" (clicked in the app menu) relaunches it as 0.0.3, the latest, in one
-// restart. Then 0.0.4 ships and installs by itself while the user is away. Both restarts come back to
-// the menu bar only: no window, no dock icon, never the picker. Run it before publishing a release.
+// restart, back in the menu bar only: no window, no dock icon, never the picker. Then 0.0.4 ships and
+// installs by itself while the user is away with a project open, which comes back in its editor and
+// opens nothing else. Run it before publishing a release.
 // Needs the Developer ID identity (Squirrel installs only signed updates) and Accessibility for the
 // terminal (it clicks the menu). It builds under its own name and app id, so an installed Grip, its
 // settings, and its update cache stay untouched.
@@ -16,12 +18,16 @@ import { fileURLToPath } from 'node:url'
 const NAME = 'GripUpdateTest'
 const ID = 'com.bestboyhq.grip.updatetest'
 const PORT = 8765
+const CDP = 9339 // the hidden app's windows, for the update card it never shows
 const dir = join(import.meta.dirname, '../.context/update-e2e')
 const app = join(dir, 'Applications', `${NAME}.app`) // in an Applications folder, so it never offers to move itself
+const title = 'Demo #1 ✨ café' // a hostile name, from the marker file through to the editor's title
+const project = join(dir, `${title}.grip`)
 const sh = (cmd: string, args: string[]) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 const run = (cmd: string, args: string[]) => execFileSync(cmd, args, { stdio: 'inherit' })
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const menu = () => sh('osascript', ['-e', `tell application "System Events" to tell process "${NAME}" to get name of menu items of menu 1 of menu bar item "${NAME}" of menu bar 1`])
+const click = (item: string) => sh('osascript', ['-e', `tell application "System Events" to tell process "${NAME}" to click menu item "${item}" of menu 1 of menu bar item "${NAME}" of menu bar 1`])
 const quit = (signal: string) => spawn('pkill', [signal, '-f', `${app}/Contents/MacOS/${NAME}`])
 function alive(pattern: string) {
   try {
@@ -46,10 +52,25 @@ async function menuBarOnly(v: string) {
   if (windows() || policy() !== '1') throw new Error(`${v} came back with ${windows()} windows and activation policy ${policy()}, not 1 (accessory)`)
 }
 
-async function until(what: string, test: () => boolean, ms = 180_000) {
+/** `expression` evaluated in the update card, over Chromium's DevTools protocol. */
+async function inCard(expression: string): Promise<unknown> {
+  const pages: Array<{ url: string; webSocketDebuggerUrl: string }> = await (await fetch(`http://127.0.0.1:${CDP}/json/list`)).json()
+  const page = pages.find((p) => p.url.includes('#/update'))
+  if (!page) throw new Error('no update card')
+  const ws = new WebSocket(page.webSocketDebuggerUrl)
+  await new Promise((resolve, reject) => ((ws.onopen = resolve), (ws.onerror = reject)))
+  const reply = new Promise<{ result: { result: { value: unknown } } }>((resolve) => (ws.onmessage = (m) => resolve(JSON.parse(String(m.data)))))
+  ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, returnByValue: true } }))
+  const { result } = await reply
+  ws.close()
+  return result.result.value
+}
+const card = async () => String(await inCard('document.body.innerText'))
+
+async function until(what: string, test: () => boolean | Promise<boolean>, ms = 180_000) {
   for (const end = Date.now() + ms; Date.now() < end; await sleep(1000)) {
     try {
-      if (test()) return
+      if (await test()) return
     } catch {} // not there yet: no process, no menu
   }
   throw new Error(`timed out waiting for ${what}`)
@@ -77,6 +98,7 @@ async function cleanup() {
 const base = JSON.parse(readFileSync(join(import.meta.dirname, '../package.json'), 'utf8')).build
 const { CFBundleDocumentTypes, UTExportedTypeDeclarations, ...info } = base.mac.extendInfo
 run('npm', ['run', 'build'])
+if (!existsSync(project)) run('npx', ['electron', 'scripts/fixture/make.ts', project])
 for (const v of ['0.0.1', '0.0.2', '0.0.3', '0.0.4']) {
   const config = {
     ...base,
@@ -88,14 +110,16 @@ for (const v of ['0.0.1', '0.0.2', '0.0.3', '0.0.4']) {
     fileAssociations: [],
     mac: { ...base.mac, target: [{ target: 'zip', arch: 'arm64' }], extendInfo: info, notarize: false },
     publish: { provider: 'generic', url: `http://127.0.0.1:${PORT}` },
+    // GitHub's notes as the feed hands them over: the card says what's new from them.
+    releaseInfo: { releaseNotes: `<ul><li>feat(app-shell): the update card says what&#8217;s new in ${v} by @grip in #1</li><li>chore: no news</li></ul>` },
   }
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, `${v}.json`), JSON.stringify(config))
   run('npx', ['electron-builder', '--mac', '--publish', 'never', '--config', join(dir, `${v}.json`)])
 }
 
-// The feed: the latest release's latest-mac.yml and zip.
-let latest = '0.0.2'
+// The feed: the latest release's latest-mac.yml and zip; none at first.
+let latest = ''
 const feed = createServer((req, res) => {
   const file = join(dir, latest, decodeURIComponent(new URL(req.url!, 'http://x').pathname))
   if (!existsSync(file)) return res.writeHead(404).end()
@@ -109,8 +133,19 @@ try {
   // Hidden: windows off screen, no prompts; it checks every 5 s instead of every few hours. The
   // relaunched app runs without either, like a user's. Its onboarding window, open though hidden,
   // keeps it from installing by itself while the user is away.
-  launch({ STUDIO_HIDDEN: '1', STUDIO_UPDATE_EVERY: '5000' })
+  launch({ STUDIO_HIDDEN: '1', STUDIO_UPDATE_EVERY: '5000', STUDIO_CDP_PORT: String(CDP) })
   await until('0.0.1 to start', running)
+  // Check for Updates… (or Checking…, mid-check) opens the card, which says the check failed.
+  await until('the card to say the check failed', async () => {
+    if (!menu().includes('Restart to Update')) click(menu().includes('Check for Updates…') ? 'Check for Updates…' : 'Checking for Updates…')
+    return (await card()).includes('Couldn’t check for updates')
+  })
+  latest = '0.0.2'
+  // The card's Try Again (unless a check every 5 s has it on Checking… just now).
+  await until('Try Again in the card', async () => (await inCard(`(() => { const b = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Try Again'); b?.click(); return !!b })()`)) === true)
+  await until('the card to offer 0.0.2 and say what is new', async () => /Grip 0\.0\.2[\s\S]*Ready to install[\s\S]*The update card says what’s new in 0\.0\.2/.test(await card()))
+  if ((await card()).includes('No news')) throw new Error('the card lists a chore as news')
+  console.log(`card: ${(await card()).replace(/\n+/g, ' | ')}`)
   await until('Restart to Update in the app menu', () => menu().includes('Restart to Update'))
   console.log(`menu: ${menu()}`)
   latest = '0.0.3' // a newer release ships while 0.0.2 waits for a restart
@@ -121,15 +156,17 @@ try {
   await menuBarOnly('0.0.3')
   console.log(`ok: 0.0.1 updated itself to ${version()} and relaunched to the menu bar only`)
 
-  // Away: no window open (grip://stop finds nothing to stop, so neither picker nor onboarding opens),
-  // and a second without input counts as away.
+  // Away with a project open in the editor, which saves and comes back: no other window opens, and a
+  // second without input counts as away.
   await stop()
   latest = '0.0.4'
-  launch({ STUDIO_HIDDEN: '1', STUDIO_UPDATE_EVERY: '5000', STUDIO_UPDATE_AWAY: '1' }, ['grip://stop'])
+  launch({ STUDIO_HIDDEN: '1', STUDIO_UPDATE_EVERY: '5000', STUDIO_UPDATE_AWAY: '1' }, [project])
   await until('0.0.4 to be installed while away', () => version() === '0.0.4')
   await until('0.0.4 to relaunch', () => running() && policy() !== '')
-  await menuBarOnly('0.0.4')
-  console.log(`ok: 0.0.3 updated itself to ${version()} while away and came back to the menu bar only`)
+  await sleep(5000) // a launch that opens onboarding or the picker has it on screen by now
+  const back = sh('osascript', ['-e', `tell application "System Events" to get name of windows of process "${NAME}"`])
+  if (back !== title) throw new Error(`0.0.4 came back with windows “${back}”, not the editor of “${title}” alone`)
+  console.log(`ok: 0.0.3 updated itself to ${version()} while away and came back to its editor only`)
 } catch (e) {
   // Why it did not install or relaunch, before cleanup deletes the evidence.
   for (const p of [`Library/Caches/${ID}.ShipIt/ShipIt_stderr.log`, `Library/Caches/${ID}.ShipIt/ShipIt_stdout.log`, `Library/Logs/${NAME}/main.log`])

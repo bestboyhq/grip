@@ -171,6 +171,7 @@ jobs:
   # breaks it must not reach main.
   update-e2e:
     runs-on: macos-26
+    timeout-minutes: 20 # about 6 minutes; a hang fails instead of holding a runner for hours
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -183,6 +184,7 @@ jobs:
           shared-key: macos-26-release # one cache for every release build; build scripts cache Xcode paths: a new runner image needs a new cache
       - run: npm ci
       - *keychain
+      - run: brew install ffmpeg # the fixture project its editor opens
       - run: node scripts/update-e2e.ts
         env:
           CSC_FOR_PULL_REQUEST: true # electron-builder skips signing in PRs, and Squirrel installs only signed updates
