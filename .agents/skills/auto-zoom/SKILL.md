@@ -10,6 +10,11 @@ Turning clicks and typing into camera direction.
 - Generate zoom ranges from clicks and typing as ordinary timeline items the user edits or disables.
   A press holds its zoom until it is released, so a drag stays zoomed in from the press to the drop.
 - A zoomed view follows the cursor through a dead zone, panning only as the cursor nears the edge.
+- A click or typing place outside the middle of the view, or away from the places the view frames now, moves the action there: the view glides to center it, together with the places after it that fit in one view, and lands by the click.
+  A view clamped at the screen's edge can reach a place at the side of its frame; judged from the view alone, that place counts as framed.
+  While a place holds the view, the cursor on its way there only has to stay in frame.
+  Nudged only far enough to bring it in, a dialog opened from a corner button stays at the side of the frame and cut, and the camera reads as lagging.
+  Centering each click on its own pans at every field of a form.
 - Manual zooms set target, level, and duration, animated or instant.
 - A zoom that starts on the first frame starts zoomed in.
 - Vertical output follows the cursor continuously, since the frame is narrower than the source.

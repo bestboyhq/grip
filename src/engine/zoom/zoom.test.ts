@@ -137,6 +137,33 @@ test('clicked elements stay whole, but the cursor always stays in frame', () => 
   }
 })
 
+test('a click away from the framing re-centers the view on it and the clicks after it, gliding there by the click', () => {
+  // A button in the top-right corner opens a dialog in the middle, filled in with three clicks: the action
+  // moves there, and so does the view, framing them all, so the clicks after the first do not pan it again.
+  // Clamped at the screen's edge for the button, the view reaches the dialog's first field just inside its
+  // focus zone: that field is far from the button, not from the view.
+  const click = (t: number, x: number, y: number): InputEvent => ({ t, type: 'down', x, y, button: 'left' })
+  const path: Array<[number, number, number]> = [[0, 2682, 236], [1.6, 2682, 236], [2.8, 1440, 590], [5, 1440, 590], [5.3, 1440, 987], [6.5, 1440, 987], [6.8, 1772, 917], [12, 1772, 917]]
+  const events = [...moves(path), click(1.5, 2682, 236), click(3, 1440, 590), click(5.6, 1440, 987), click(7, 1772, 917)].sort((a, b) => a.t - b.t)
+  const project = createProject('t', { duration: 20, screen: SCREEN, events: 'sources/events.jsonl' })
+  project.style.padding = 56
+  const { view, screen } = setup([zoom({ start: 1, end: 10, level: 1.5 })], events, { width: 1660, height: 1080, project })
+  const at = (x: number, y: number) => ({ x: screen(3).x + (x * screen(3).w) / SCREEN.width, y: screen(3).y + (y * screen(3).h) / SCREEN.height })
+  const off = (t: number, p: { x: number; y: number }) => {
+    const v = visible(view(t), 1660, 1080)
+    return Math.max(Math.abs(p.x - view(t).center.x) / v.hw, Math.abs(p.y - view(t).center.y) / v.hh)
+  }
+  // Centered between them (left where it was, the first field would sit at the zone's 0.4 edge) by the first click.
+  for (const t of [3, 4.5, 5.6, 7]) assert.ok(off(t, at(1606, 788.5)) < 0.06, `the dialog is ${off(t, at(1606, 788.5))} of the half view off center at ${t} s`)
+  // The corner button stays framed through its click, and the pan eases in and out like a change of
+  // zooms: a spring alone whips it 10% to 90% of the way in 0.24 s.
+  assert.ok(view(1.7).center.x >= view(1.5).center.x - 0.5, 'the pan leaves the corner button before its click')
+  const x0 = view(1.5).center.x
+  const x1 = view(3.2).center.x
+  const when = (share: number) => frames(1.5, 3.2, 240).find((t) => (view(t).center.x - x0) / (x1 - x0) >= share)!
+  assert.ok(when(0.9) - when(0.1) >= 0.3, `the pan takes ${when(0.9) - when(0.1)} s`)
+})
+
 test('clamped: a zoomed view never shows background past the screen edge', () => {
   for (const level of [2, 3.5]) {
     for (const [x, y] of [[0, 0], [1, 0], [0, 1], [1, 1], [0.02, 0.5], [0.5, 0.99]]) {

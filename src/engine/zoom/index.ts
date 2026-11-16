@@ -262,6 +262,20 @@ function glideTime(off: number[], from: number, s: number, vp: Rect): number {
   return Math.min(GLIDE.min + GLIDE.perView * views, GLIDE.max)
 }
 
+/** The middle of the click and typing places from frames[i] on that one view frames together: the run
+ *  of them, in order and before output time `end`, that fits within the focus zone of its middle at
+ *  half view (hw, hh). Framing the clicks ahead keeps a dialog whole while its fields are filled in,
+ *  where centering on each click would pan at every one and cut off what lies above or below it. */
+function together(frames: Array<{ a: number; p: Pt }>, i: number, end: number, hw: number, hh: number): Pt {
+  let [x0, x1, y0, y1] = [frames[i].p.x, frames[i].p.x, frames[i].p.y, frames[i].p.y]
+  for (let j = i + 1; j < frames.length && frames[j].a < end; j++) {
+    const { x, y } = frames[j].p
+    if (Math.max(x1, x) - Math.min(x0, x) > 2 * FOCUS_ZONE * hw || Math.max(y1, y) - Math.min(y0, y) > 2 * FOCUS_ZONE * hh) break
+    ;[x0, x1, y0, y1] = [Math.min(x0, x), Math.max(x1, x), Math.min(y0, y), Math.max(y1, y)]
+  }
+  return { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }
+}
+
 /** Move center c the least so that p lies within (rx, ry) of it. */
 const keep = (c: Pt, p: Pt, rx: number, ry: number): Pt => ({ x: clamp(c.x, p.x - rx, p.x + rx), y: clamp(c.y, p.y - ry, p.y + ry) })
 
@@ -493,7 +507,8 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   let caught = false // the cursor has been in view since the camera began following it
   let prev: Seg | null = null
   let si = 0
-  let fi = 0
+  let entered = 0 // frames whose window has opened
+  let run: Pt | null = null // the middle of the places the view frames now
   for (let k = 0; k <= n; k++) {
     const t = k * DT
     const place = layerAt(t)
@@ -509,25 +524,44 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
     const tl = t + lag
     const cp = follow ? cursorPt(tl, shown) : null
     const { points, s, mid } = framing(zs, r, vp, b0, cp)
+    let recenter = false // the view sets off for a new place
 
     let c: Pt = { x: vp.x + vp.w / 2, y: vp.y + vp.h / 2 }
     if (!follow && mid) c = aim = mid
     else if (follow) {
       // Follow: the cursor roams a dead zone, focus places and targeted points stay central, all stay
       // out from under a picture-in-picture camera, and the cursor stays in frame above all.
-      while (fi < frames.length && frames[fi].b < tl) fi++
-      if (seg && seg !== prev && !prev?.zooms.some((z) => z.target.kind !== 'point')) {
-        // The camera starts following the cursor: aim at the first click or typing place, else at the
-        // cursor. A zoom taking over from one that followed it already carries on from where it was.
-        aim = frames.find((f) => f.b >= seg.a && f.a <= seg.a + lead + 0.4)?.p ?? cp ?? aim
-      }
       const hw = vp.w / (2 * s)
       const hh = vp.h / (2 * s)
-      const focus: Pt[] = [] // clicked places, then targeted points: the ones the level makes room for go last
-      for (let i = fi; i < frames.length && frames[i].a <= tl; i++) if (frames[i].b >= tl) focus.push(frames[i].p)
-      focus.push(...points)
+      if (seg && seg !== prev && !prev?.zooms.some((z) => z.target.kind !== 'point')) {
+        // The camera starts following the cursor: aim at the first click or typing place and the ones
+        // after it that fit, else at the cursor. A zoom taking over from one that followed it already
+        // carries on from where it was.
+        const first = frames.findIndex((f) => f.b >= seg.a && f.a <= seg.a + lead + 0.4)
+        run = first >= 0 ? together(frames, first, seg.b, hw, hh) : null
+        aim = run ?? cp ?? aim
+      }
       c = aim ?? mid ?? { x: shown.x + shown.w / 2, y: shown.y + shown.h / 2 }
-      if (cp) c = keep(c, cp, DEAD_ZONE * hw, DEAD_ZONE * hh)
+      // Click and typing places open their windows in order. One outside the focus zone, of the view or
+      // of the run of places it frames, moves the action there: the view re-centers on it and the places
+      // after it that fit, its window opening as soon as the glide there has to set off to land by the
+      // click, once the click before it is done. Nudged only to the zone's edge, or left where it is because
+      // a view clamped at the screen's edge happens to reach it, a dialog opened from a corner button stays
+      // at the frame's side.
+      const far = (p: Pt) => [c, run].some((q) => q && (Math.abs(p.x - q.x) > FOCUS_ZONE * hw || Math.abs(p.y - q.y) > FOCUS_ZONE * hh))
+      const due = (f: (typeof frames)[number]) => {
+        if (seg !== prev || f.a + lead - GLIDE.max > tl || (entered && frames[entered - 1].b - KEEP > tl) || !far(f.p)) return false
+        const m = together(frames, entered, seg!.b, hw, hh)
+        return tl + glideTime([c.x - m.x, c.y - m.y], s, s, vp) >= f.a + lead
+      }
+      for (let f; (f = frames[entered]) && (f.a <= tl || (seg && due(f))); entered++) {
+        if (seg && far(f.p)) (c = run = together(frames, entered, seg.b, hw, hh)), (recenter = true)
+      }
+      // The latest place open holds the view; a newer one releases it. Between places the cursor roams a
+      // dead zone; while one holds the view, the cursor on its way there only has to stay in frame.
+      const spot = entered && frames[entered - 1].b >= tl ? frames[entered - 1].p : null
+      if (cp && !spot) c = keep(c, cp, DEAD_ZONE * hw, DEAD_ZONE * hh)
+      const focus = spot ? [spot, ...points] : points // targeted points, which the level makes room for, go last
       for (const p of focus) c = keep(c, p, FOCUS_ZONE * hw, FOCUS_ZONE * hh)
       // The camera as it will sit once the view gets there (it steps back while zoomed in).
       const pip = pipCameraAt(layout, tl, magnified(s, b0))
@@ -539,15 +573,16 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
       if (cp) c = keep(c, cp, EDGE_ZONE * hw, EDGE_ZONE * hh)
       c = aim = clampCenter(c, bounds, s, vp)
     }
+    while (entered < frames.length && frames[entered].a <= tl) entered++ // not following, places pass unframed
     c = clampCenter(c, bounds, s, vp)
 
     const cut = k === 0 || (seg !== prev && cutsTo(prev?.zooms ?? [], zs))
     if (cut || !seg) glide = null // zooming out to rest is the springs' alone
-    else if (prev && seg !== prev) {
-      // Zoomed in on both sides: glide from where the camera was headed (the last target, one step
-      // on) to the new framing. Its center keeps the offset, gliding away, so following the cursor
-      // carries on throughout and two zooms on it play as one; its scale blends, so it never leaves
-      // the range between the two.
+    else if (prev && (seg !== prev || recenter)) {
+      // Zoomed in on both sides, or re-centering on a new place: glide from where the camera was headed
+      // (the last target, one step on) to the new framing. Its center keeps the offset, gliding away, so
+      // following the cursor carries on throughout and two zooms on it play as one; its scale blends, so
+      // it never leaves the range between the two.
       const from = target[2] + drift[2]
       const off = [target[0] + drift[0] - c.x, target[1] + drift[1] - c.y]
       glide = { t0: t, dur: glideTime(off, from, s, vp), off, from }
