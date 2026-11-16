@@ -57,6 +57,7 @@ async function strip(duration: number, fps = 30, scale = 2) {
     await win.webContents.executeJavaScript('document.fonts.ready.then(() => 0)')
     const enc = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'bgra', '-s', `${1280 * scale}x${440 * scale}`, '-r', String(fps), '-i', '-',
       '-c:v', 'libx264', '-crf', '12', '-pix_fmt', 'yuv420p', join(OUT, `formats-${theme}.mp4`)], { stdio: ['pipe', 'inherit', 'inherit'] })
+    enc.on('exit', (code) => code && app.exit(code)) // a failed encoder never drains, so the capture would wait forever
     for (let i = 0; i < Math.round(duration * fps); i++) {
       await win.webContents.executeJavaScript(`seek(${(i + 0.5) / fps}).then(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))`)
       // A seeked frame can paint late, so a frame counts once two captures agree.

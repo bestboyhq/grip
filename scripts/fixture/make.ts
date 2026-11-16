@@ -70,6 +70,7 @@ async function screen() {
   await win.loadFile(join(import.meta.dirname, 'scene.html'), { query: { s: JSON.stringify(SCRIPT) } })
   const enc = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'bgra', '-s', `${W * SCALE}x${H * SCALE}`, '-r', String(FPS), '-i', '-',
     '-c:v', 'h264_videotoolbox', '-b:v', '16M', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', join(src, 'screen.mp4')], { stdio: ['pipe', 'inherit', 'inherit'] })
+  enc.on('exit', (code) => code && app.exit(code)) // a failed encoder never drains, so the capture would wait forever
   for (let i = 0; i < DURATION * FPS; i++) {
     await win.webContents.executeJavaScript(`render(${i / FPS}); new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))`)
     const bmp = (await win.webContents.capturePage()).toBitmap()

@@ -44,6 +44,7 @@ async function screen() {
     await win.webContents.executeJavaScript('document.fonts.ready.then(() => 0)')
     const enc = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'bgra', '-s', `${w * SCALE}x${h * SCALE}`, '-r', String(fps), '-i', '-',
       '-c:v', 'h264_videotoolbox', '-b:v', '24M', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', join(src, file)], { stdio: ['pipe', 'inherit', 'inherit'] })
+    enc.on('exit', (code) => code && app.exit(code)) // a failed encoder never drains, so the capture would wait forever
     for (let i = 0; i < Math.round(demo.duration * fps); i++) {
       await win.webContents.executeJavaScript(`render(${i / fps}); new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))`)
       // A heavy layout (a popover opening) can land a paint late, so a frame counts once two captures agree.
