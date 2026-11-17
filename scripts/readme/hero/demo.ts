@@ -30,8 +30,8 @@ export default {
     ...pointer(at, T.end, ([x, y]) => (x >= DEPLOY.x0 && x <= DEPLOY.x1 && y >= DEPLOY.y0 && y <= DEPLOY.y1 ? 'pointer' : 'arrow')),
     ...click(T.click, at(T.click)),
   ],
-  // The GIF's edits. The camera pushes in on Deploy and the build under it, and pulls out as the cursor
-  // leaves; a lens takes over on the moving cursor, opens wide over the row, closes onto the status, and
+  // The GIF's edits. The camera pushes in on Deploy and the build under it, setting off 0.28 s before the
+  // click as an auto zoom does, and pulls out as the cursor leaves; a lens takes over on the moving cursor, opens wide over the row, closes onto the status, and
   // tightens as Ready lands. The lens the take ends on is the one it opens on, until the cursor leaves.
   edit(p) {
     Object.assign(p.style, { background: { kind: 'wallpaper', id: 'iridescent-nacre' }, padding: 56, radius: 14, shadow: 0.4, screenAnimation: 'focused' })
@@ -41,7 +41,7 @@ export default {
       ({ id, start, end, level, target, enabled: true, mode: 'loupe' as const, size })
     p.zooms = [
       lens('opening', 0, T.leave - 0.15, 240, 2, status),
-      { id: 'deploy', start: 0.75, end: go + 0.05, level: 1.65, target: { kind: 'point', x: 0.6806, y: 0.3778 }, enabled: true },
+      { id: 'deploy', start: T.click - 0.28, end: go + 0.05, level: 1.65, target: { kind: 'point', x: 0.6806, y: 0.3778 }, enabled: true },
       lens('leave', go + 0.3, go + 0.45, 160, 1.8, cursor),
       lens('travel', go + 0.45, go + 0.85, 280, 1.7, cursor),
       lens('status', go + 0.85, T.ready, 240, 1.7, status),
