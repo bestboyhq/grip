@@ -19,6 +19,8 @@
   const bundle = query.get('bundle') ?? ''
   let shot = $state(query.get('shot') ?? '')
   let saved = $state(query.has('saved')) // the file is on the Desktop
+  let finder = $state('') // Finder's own icon, on Open
+  if (query.has('shot')) invoke('shell:finder-icon').then((url: string) => (finder = url))
   /** What the card did, checked next to the title: a new screenshot is copied or saved already. */
   let did = $state<'copied' | 'saved' | ''>(query.has('reopened') ? '' : query.has('saved') ? 'saved' : 'copied')
 
@@ -170,7 +172,7 @@
         <button class="btn" onclick={copyShot}><Icon name="copy" size={16} />Copy</button>
       {/if}
       {#if saved}
-        <button class="btn" onclick={() => invoke('shell:reveal', shot)}><Icon name="folder" size={16} />Show in Finder</button>
+        <button class="btn" onclick={() => invoke('shell:reveal', shot)} title="Show in Finder"><img class="app" src={finder || undefined} alt="" />Open</button>
       {:else}
         <button class="btn" onclick={saveShot}><Icon name="download" size={16} />Save to Desktop</button>
       {/if}
@@ -279,6 +281,11 @@
     height: 30px;
     padding: 0 8px;
     gap: 5px;
+  }
+  .app {
+    flex: none;
+    width: 16px;
+    height: 16px;
   }
   .overlay {
     position: absolute;

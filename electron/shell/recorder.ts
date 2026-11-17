@@ -31,6 +31,7 @@
 //   shell:fit(height)             the result card sizes itself to its content (bottom edge stays), and shows
 //   shell:drag(path, iconUrl)     the result card: drag its file out (into Slack, Mail, Finder)
 //   shell:reveal(path)            the result card: show its file in Finder
+//   shell:finder-icon -> data URL the result card: Finder's own icon, 32 px, for Open ('' when macOS has none)
 //   shell:shot-copy(path)         the result card: a screenshot onto the clipboard again
 //   shell:shot-save(path) -> path the result card: a screenshot into a file on the Desktop
 //   shell:shot-edit(path)         the result card: a screenshot in the editor, as its still project (made once)
@@ -971,6 +972,9 @@ export function registerRecorder() {
     moveCapture(path, file) // Recent Captures follows it to the Desktop; Grip's copy goes
     return file
   })
+  // Quick Look's, since app.getFileIcon looks icons up by file type: every .app gets the blank app icon.
+  let finderIcon: Promise<string> | undefined
+  ipcMain.handle('shell:finder-icon', () => (finderIcon ??= nativeImage.createThumbnailFromPath('/System/Library/CoreServices/Finder.app', { width: 32, height: 32 }).then((i) => i.toDataURL(), () => '')))
   ipcMain.handle('shell:shot-edit', async (_e, path: unknown) => {
     if (!ours(path) || !shots.has(path)) return
     const made = captures().find((c) => c.path === path)?.project
