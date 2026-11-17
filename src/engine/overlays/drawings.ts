@@ -5,6 +5,7 @@
 
 import { getStroke } from 'perfect-freehand'
 import type { InputEvent } from '../../shared/events.ts'
+import { easeOut } from '../motion/spring.ts'
 
 export interface Stroke {
   start: number // time of the earliest point
@@ -41,7 +42,7 @@ export function visibleStrokes(strokes: Stroke[], t: number): Array<{ points: Ar
   let group: Stroke[] = []
   let end = -Infinity
   const flush = () => {
-    const opacity = Math.min(1, Math.max(0, 1 - (t - end - DRAW_HOLD) / DRAW_FADE))
+    const opacity = 1 - easeOut((t - end - DRAW_HOLD) / DRAW_FADE)
     if (opacity > 0) for (const s of group) out.push({ points: s.points.filter((p) => p.t <= t), color: s.color, width: s.width, opacity })
   }
   // Strokes starting after t never join a group early enough to change it before t.

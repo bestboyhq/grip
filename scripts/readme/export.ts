@@ -1,24 +1,29 @@
-// Exports the README demos through the running app: each demo's GIFs into .github/readme, and the
+// Exports the README demos through the running app: each demo's animated WebPs into .github/readme, and the
 // landing page's clips into .context/readme for site/media.sh. The page frames every clip in a card,
 // so hero, loupe, and captions leave out their wallpaper, padding, corners, and shadow; the MacBook
 // keeps its frame, and the formats clip is the 16:9, 1:1, and 9:16 exports side by side (formats/strip.html).
-// The page and the README follow their theme, so each clip comes as <name>-dark.mp4 and <name>-light.mp4,
-// and each GIF as <name>.gif and <name>-light.gif, from make.ts's two takes of the scene.
-// Run after make.ts, with the app up (STUDIO_CDP_PORT=9333 npm run dev):
+// The README follows its reader's theme, so each WebP comes as <name>.webp and <name>-light.webp, from make.ts's
+// two takes of the scene. The page shows the light take in either theme, as <name>-light.mp4; the formats strip
+// renders in both, for its two WebPs. Every clip runs at 60 fps: a GIF cannot, since it keeps whole hundredths
+// of a second per frame, and GitHub drops a README's <video>.
+// Run after make.ts, with the app up (STUDIO_CDP_PORT=9333 npm run dev), with ffmpeg and img2webp (brew install webp):
 // npx electron scripts/readme/export.ts [demo...]   (all six by default)
 import { app, BrowserWindow, nativeTheme } from 'electron'
-import { execFileSync, spawn } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { execFile, spawn } from 'node:child_process'
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { promisify } from 'node:util'
 import type { Demo } from './make.ts'
 
 const ROOT = join(import.meta.dirname, '../..')
 const OUT = join(ROOT, '.context/readme')
+const README = join(ROOT, '.github/readme')
+const FPS = 60
 const PORT = process.env.STUDIO_CDP_PORT ?? '9333'
 const FRAMELESS = { padding: 0, radius: 0, shadow: 0 }
-const GIF = { format: 'gif', size: 1080, fps: 24, codec: 'h264', quality: 'studio', loop: 0, maxMB: 10 }
-const mp4 = (size: number, fps = 60) => ({ format: 'mp4', size, fps, codec: 'h264', quality: 'studio', loop: 0, maxMB: 0 })
+const mp4 = (size: number) => ({ format: 'mp4', size, fps: FPS, codec: 'h264', quality: 'studio', loop: 0, maxMB: 0 })
 const ASPECTS = { wide: '16:9', square: '1:1', tall: '9:16' }
 const SCREENS = { dark: 'sources/screen.mp4', light: 'sources/screen-light.mp4' } // make.ts's takes
 // The site's exports of each demo: name, style over the demo's, options. The hero fills the page's
@@ -28,7 +33,7 @@ const SITE: Record<string, Array<[string, object, object]>> = {
   loupe: [['loupe', FRAMELESS, mp4(720)]],
   captions: [['captions', FRAMELESS, mp4(720)]],
   macbook: [['macbook', {}, mp4(720)]],
-  formats: Object.entries(ASPECTS).map(([k, aspect]) => [`formats-${k}`, { aspect }, mp4(1080, 30)]),
+  formats: Object.entries(ASPECTS).map(([k, aspect]) => [`formats-${k}`, { aspect }, mp4(1080)]),
   ink: [],
 }
 
@@ -46,9 +51,21 @@ async function evaluate(expr: string): Promise<any> {
   return result.result.value
 }
 const invoke = (channel: string, ...args: unknown[]) => evaluate(`window.studio.invoke(${JSON.stringify(channel)}, ...${JSON.stringify(args)})`)
+const run = promisify(execFile)
+
+/** A README WebP of every frame of a FPS clip, at most 1660 px wide, twice the README's column. It is lossy at q80,
+ *  where text stays as sharp as in the clip: q90 is half again the bytes for no visible gain, and method 6 saves 3%
+ *  at 17 times the time. WebP keeps whole ms per frame, so the frames take 17, 16, and 17 ms in turn to stay on time. */
+async function webp(src: string, dest: string) {
+  const dir = mkdtempSync(join(tmpdir(), 'grip-webp-'))
+  await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', src, '-vf', "scale='min(1660,iw)':-2:flags=lanczos", join(dir, '%05d.png')])
+  const frames = readdirSync(dir).sort().flatMap((f, i) => ['-d', String(Math.round(((i + 1) * 1000) / FPS) - Math.round((i * 1000) / FPS)), join(dir, f)])
+  await run('img2webp', ['-loop', '0', '-lossy', '-q', '80', '-m', '4', ...frames, '-o', dest])
+  rmSync(dir, { recursive: true })
+}
 
 /** The formats clip in each theme: strip.html stepped through every frame of the three exports, at twice its size. */
-async function strip(duration: number, fps = 30, scale = 2) {
+async function strip(duration: number, fps = FPS, scale = 2) {
   const win = new BrowserWindow({ width: 1280, height: 440, show: false, webPreferences: { offscreen: { deviceScaleFactor: scale } as any } })
   for (const theme of Object.keys(SCREENS) as Array<keyof typeof SCREENS>) {
     nativeTheme.themeSource = theme
@@ -69,17 +86,16 @@ async function strip(duration: number, fps = 30, scale = 2) {
     await new Promise((r) => enc.on('exit', r))
   }
   win.destroy()
-  // The README's copies: GIF has no per-scene palettes here, so one palette over the whole clip.
-  for (const [theme, gif] of [['dark', 'formats.gif'], ['light', 'formats-light.gif']])
-    execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', join(OUT, `formats-${theme}.mp4`), '-vf',
-      'fps=24,scale=1280:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle',
-      join(ROOT, '.github/readme', gif)], { stdio: 'inherit' })
 }
 
+app.on('window-all-closed', () => {}) // the strip's window closing must not quit before the WebPs are done
 app.whenReady().then(async () => {
   const names = process.argv.filter((a) => a in SITE)
   const demos: Record<string, Demo> = {}
   const requests: object[] = []
+  const tmp = mkdtempSync(join(tmpdir(), 'grip-readme-'))
+  // The README's WebPs: [clip, WebP]. A demo's clip is its framed take; the formats clip is the strip.
+  const webps: Array<[string, string]> = []
   for (const name of names.length ? names : Object.keys(SITE)) {
     const demo: Demo = (demos[name] = (await import(join(import.meta.dirname, name, 'demo.ts'))).default)
     const bundle = join(OUT, `${demo.name}.grip`)
@@ -89,12 +105,18 @@ app.whenReady().then(async () => {
     if (p.sources.mic && !p.sources.transcript) await invoke('transcript:run', bundle).then(() => (p = read()))
     const add = (style: object, options: object, path: string, file = SCREENS.dark) =>
       requests.push({ bundle, project: { ...p, sources: { ...p.sources, screen: { ...p.sources.screen, file } }, style: { ...p.style, ...style } }, options, dest: 'file', path, quiet: true })
-    if (name !== 'formats') {
-      add({}, GIF, join(ROOT, '.github/readme', `${name}.gif`))
-      add({}, GIF, join(ROOT, '.github/readme', `${name}-light.gif`), SCREENS.light)
+    for (const [theme, file] of Object.entries(SCREENS)) {
+      const dest = join(README, `${name}${theme === 'light' ? '-light' : ''}.webp`)
+      if (name === 'formats') webps.push([join(OUT, `formats-${theme}.mp4`), dest])
+      else {
+        const take = join(tmp, `${name}-${theme}.mp4`)
+        add({}, mp4(1080), take, file)
+        webps.push([take, dest])
+      }
     }
+    const themes: Array<[string, string]> = name === 'formats' ? Object.entries(SCREENS) : [['light', SCREENS.light]]
     for (const [base, style, options] of SITE[name])
-      for (const [theme, file] of Object.entries(SCREENS)) add(style, options, join(OUT, `${base}-${theme}.mp4`), file)
+      for (const [theme, file] of themes) add(style, options, join(OUT, `${base}-${theme}.mp4`), file)
   }
   const ids: string[] = (await invoke('export:enqueue', requests)).map((j: { id: string }) => j.id)
   for (;;) {
@@ -105,6 +127,8 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 2000))
   }
   if (demos.formats) await strip(demos.formats.duration)
+  await Promise.all(webps.map(([src, dest]) => webp(src, dest)))
+  rmSync(tmp, { recursive: true })
   app.quit()
 }).catch((e) => {
   console.error(e)

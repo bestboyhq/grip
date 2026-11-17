@@ -1,18 +1,17 @@
 <!-- A real screenshot or clip from Grip in the screenshot frame: its own corner radius, a hairline ring, and a shadow
      unless it lies flat on the page.
      A clip plays muted in a loop only while it is the clip most on screen; a press on its button pauses or plays it,
-     and under reduced motion it holds its still until someone presses play. It comes in the page's theme and follows a
-     switch. -->
+     and under reduced motion it holds its still until someone presses play. -->
 <script module lang="ts">
 	import { asset } from '$app/paths';
 
-	type Theme = 'light' | 'dark';
-	export type Clip = Readonly<Record<Theme, { src: string; still: string }>>;
+	export type Clip = Readonly<{ src: string; still: string }>;
 
-	// A clip from `static/media` (see `media.sh`) with its still, in each theme.
+	// A clip from `static/media` (see `media.sh`) with its still. Every clip is the app's light take in either theme of
+	// the page, as the app looks on the stage it sits on.
 	export const clip = (name: 'hero' | 'loupe' | 'captions' | 'macbook' | 'formats'): Clip => ({
-		light: { src: asset(`media/${name}-light.mp4`), still: asset(`media/${name}-light.webp`) },
-		dark: { src: asset(`media/${name}-dark.mp4`), still: asset(`media/${name}-dark.webp`) },
+		src: asset(`media/${name}.mp4`),
+		still: asset(`media/${name}.webp`),
 	});
 
 	// Only the clip most in view plays, the hero's editor among them (`follow`, then `start` to play on a press): Chrome
@@ -71,7 +70,7 @@
 		alt: string;
 		// The corner radius in the media's own pixels, so the frame follows the corner at any size.
 		r: number;
-		// The window's box (x, y, width, height) inside a screenshot that bakes the window's shadow around it.
+		// The window's box (x, y, width, height) inside media that draws more around it, such as a baked shadow.
 		crop?: readonly [number, number, number, number];
 		eager?: boolean;
 		flat?: boolean;
@@ -86,30 +85,7 @@
 
 	function watch(media: HTMLVideoElement): () => void {
 		held = matchMedia('(prefers-reduced-motion: reduce)').matches;
-		// The clip in the page's theme. A switch swaps the other in at the same moment, playing if this one was.
-		const root = document.documentElement;
-		const scheme = matchMedia('(prefers-color-scheme: dark)');
-		const pick = (): void => {
-			const chosen = root.dataset.theme;
-			const theme = chosen === 'light' || chosen === 'dark' ? chosen : scheme.matches ? 'dark' : 'light';
-			const next = clip?.[theme];
-			if (!next || media.getAttribute('src') === next.src) return;
-			const { currentTime, paused } = media;
-			media.poster = next.still;
-			media.src = next.src;
-			media.addEventListener('loadedmetadata', () => (media.currentTime = currentTime), { once: true });
-			if (!paused) media.play().catch(() => {});
-		};
-		pick();
-		const themed = new MutationObserver(pick);
-		themed.observe(root, { attributeFilter: ['data-theme'] });
-		scheme.addEventListener('change', pick);
-		const unfollow = follow(media, () => held);
-		return () => {
-			unfollow();
-			themed.disconnect();
-			scheme.removeEventListener('change', pick);
-		};
+		return follow(media, () => held);
 	}
 
 	function toggle(): void {
@@ -120,19 +96,21 @@
 </script>
 
 <div
-	class={['frame', { clip, held, flat }]}
+	class={['frame', { held, flat }]}
 	style:aspect-ratio="{box[2]} / {box[3]}"
 	style:border-radius="{(r / box[2]) * 100}% / {(r / box[3]) * 100}%"
-	style:--still-light={clip && `url(${clip.light.still})`}
-	style:--still-dark={clip && `url(${clip.dark.still})`}
 >
 	{#if clip}
 		<video
 			bind:this={video}
 			bind:paused
 			{@attach watch}
+			src={clip.src}
+			poster={clip.still}
 			{width}
 			{height}
+			style:width="{(width / box[2]) * 100}%"
+			style:margin="{(-box[1] / box[2]) * 100}% 0 0 {(-box[0] / box[2]) * 100}%"
 			muted
 			loop
 			playsinline
@@ -189,30 +167,11 @@
 		box-shadow: 0 0 0 1px var(--ring-faint);
 	}
 
-	/* A clip's still in the page's theme, there before the script picks the clip and under its poster after. */
-	.clip {
-		background: var(--still-dark) 0 0 / 100% 100% var(--surface-elevated);
-	}
-
-	:global(:root[data-theme='light']) .clip {
-		background-image: var(--still-light);
-	}
-
-	@media (prefers-color-scheme: light) {
-		:global(:root:not([data-theme])) .clip {
-			background-image: var(--still-light);
-		}
-	}
-
 	img,
 	video {
 		display: block;
 		max-width: none;
 		height: auto;
-	}
-
-	video {
-		width: 100%;
 	}
 
 	.toggle {

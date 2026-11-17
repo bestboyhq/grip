@@ -77,14 +77,14 @@ export function typingSegments(events: InputEvent[]): Segment[] {
   return out
 }
 
-/** Stretches where the cursor does not move (candidates to hide the cursor), from the recording
- *  start to `duration` when given. Clicks and scrolls are activity; jitter is not. */
-export function idleSegments(events: InputEvent[], minSeconds = 2, duration?: number): Segment[] {
-  const out: Segment[] = []
+/** Stretches where the cursor does not move, from the recording start to `duration` when given, with
+ *  where it rests (null before the first event). Clicks and scrolls are activity; jitter is not. */
+export function idleSegments(events: InputEvent[], minSeconds = 2, duration?: number): Array<Segment & { at: Point | null }> {
+  const out: Array<Segment & { at: Point | null }> = []
   let since = 0
   let rest: Point | null = null
   const active = (t: number) => {
-    if (t - since >= minSeconds) out.push({ start: since, end: t })
+    if (t - since >= minSeconds) out.push({ start: since, end: t, at: rest && { x: rest.x, y: rest.y } })
     since = t
   }
   for (const e of events) {

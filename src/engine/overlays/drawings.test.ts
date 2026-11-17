@@ -5,6 +5,7 @@ import { createProject } from '../../shared/project.ts'
 import { removeSourceRange } from '../../shared/timemap.ts'
 import { prepare, sceneAt } from '../scene.ts'
 import { DRAW_FADE, DRAW_HOLD, strokesFromEvents, visibleStrokes } from './drawings.ts'
+import { easeOut } from '../motion/spring.ts'
 
 const draw = (t: number, phase: 'start' | 'move' | 'end', x: number, y: number, more = {}): InputEvent => ({ t, type: 'draw', phase, x, y, ...more })
 const EVENTS: InputEvent[] = [
@@ -30,7 +31,7 @@ test('visibleStrokes: grows as drawn, a group holds then fades together', () => 
   assert.deepEqual(at(6).map((d) => d.opacity), [1, 1]) // the first stroke is held by the second
   const mid = at(4.5 + DRAW_HOLD + DRAW_FADE / 2)
   assert.equal(mid.length, 2)
-  for (const d of mid) assert.ok(Math.abs(d.opacity - 0.5) < 1e-9)
+  for (const d of mid) assert.ok(Math.abs(d.opacity - (1 - easeOut(0.5))) < 1e-9) // on the ease-out curve
   assert.deepEqual(at(4.5 + DRAW_HOLD + DRAW_FADE + 1e-6), [])
   assert.deepEqual(at(10.2).map((d) => d.points.length), [1]) // the torn stroke draws
   assert.equal(at(10.4 + DRAW_HOLD).length, 1)

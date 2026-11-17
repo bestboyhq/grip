@@ -10,7 +10,7 @@ import type { InputEvent, Modifier } from '../../shared/events.ts'
 import type { Style } from '../../shared/project.ts'
 import { outputSize, type Caption, type Click, type Drawing, type Keystroke, type Scene, type SceneInput } from '../scene.ts'
 import { screenAt, type prepareLayout } from '../layout.ts'
-import { springProgress } from '../motion/spring.ts'
+import { easeOut } from '../motion/spring.ts'
 import { captionCues } from '../transcript/index.ts'
 import { paintStroke, strokesFromEvents, visibleStrokes, type Stroke } from './drawings.ts'
 
@@ -18,7 +18,8 @@ type Ctx = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D
 type Prepared = ReturnType<typeof prepareOverlays>
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x))
-const easeOut = (x: number) => 1 - (1 - clamp01(x)) ** 3
+/** Every overlay moves and fades on the shared ease-out curve: in toward its end, out toward its end. */
+const fadeOut = (u: number) => 1 - easeOut(u)
 
 /** Index of the first item that starts after t (items sorted by start). */
 function upper(a: Array<{ start: number }>, t: number): number {
@@ -34,16 +35,14 @@ function upper(a: Array<{ start: number }>, t: number): number {
 
 // ---- Tuning (seconds, and lengths in units: 1 unit = min(w, h) / 1080 px). ----
 
-const smooth = (x: number) => { const k = clamp01(x); return k * k * (3 - 2 * k) }
-const ramp = (p: number) => smooth(p / 0.08) // a crest never pops in
+const ramp = (p: number) => easeOut(p / 0.08) // a crest never pops in
 // ponytail: clicks don't track the release, so a long press or a drag plays like a quick click.
 // Pair each down with its up if long presses need their own look.
 const PRESS_FOR = 0.1
-const CIRCLE_SPRING = { stiffness: 2014, damping: 90, mass: 1 } // 0.14 s response, no bounce
 const CIRCLE_FADE = 0.38
-const FOCUS_SPRING = { stiffness: 584, damping: 39, mass: 1 } // 0.26 s response, a slight overshoot
-const FOCUS_LAND = 0.234 // the ring has about landed: it fades from here, or from the release if later
+const FOCUS_LAND = 0.234 // the ring lands: it fades from here, or from the release if later
 const FOCUS_FADE = 0.25
+const WAVE_HOLD = 0.4 // the wave's share of its life at full strength
 
 type Effect = Exclude<Click['style'], 'none'>
 /** Click effects, drawn by the compositor on the screen's glass (shaders.wgsl, click effects). at(age)
@@ -51,24 +50,24 @@ type Effect = Exclude<Click['style'], 'none'>
  *  both are 0 at age 0 and at `life`, so nothing pops in or out. */
 export const CLICK_FX: Record<Effect, { life: number; at: (age: number) => [number, number] }> = {
   // One broad crest whose front keeps travelling as it fades all the way out.
-  swell: { life: 0.6, at: (t) => { const p = t / 0.6; return [320 * (1 - (1 - p) ** 3), (1 - p) * ramp(p)] } },
-  // A narrower crest on a quint ease that brakes hard, at full strength until a late fade.
-  wave: { life: 0.7, at: (t) => { const p = t / 0.7; return [220 * (1 - (1 - p) ** 5), (1 - p ** 2.5) * ramp(p)] } },
+  swell: { life: 0.6, at: (t) => { const p = t / 0.6; return [320 * easeOut(p), fadeOut(p) * ramp(p)] } },
+  // A narrower crest, at full strength until a late fade.
+  wave: { life: 0.7, at: (t) => { const p = t / 0.7; return [220 * easeOut(p), fadeOut((p - WAVE_HOLD) / (1 - WAVE_HOLD)) * ramp(p)] } },
   // A tinted disc settles to half size under the press, then grows to full size as it fades.
   circle: {
     life: PRESS_FOR + CIRCLE_FADE,
     at: (t) => {
-      const a = springProgress(t, CIRCLE_SPRING)
-      const q = clamp01((t - PRESS_FOR) / CIRCLE_FADE)
-      return [30 * (0.5 * a + 0.5 * (1 - (1 - q) ** 3)), 0.2 * a * (1 - q * q)]
+      const a = easeOut(t / PRESS_FOR)
+      const q = (t - PRESS_FOR) / CIRCLE_FADE
+      return [30 * (0.5 * a + 0.5 * easeOut(q)), 0.2 * a * fadeOut(q)]
     },
   },
   // A ring closes in from 48 to 15 units and locks onto the click, like a camera finding focus.
   focus: {
     life: Math.max(PRESS_FOR, FOCUS_LAND) + FOCUS_FADE,
     at: (t) => {
-      const q = clamp01((t - Math.max(PRESS_FOR, FOCUS_LAND)) / FOCUS_FADE)
-      return [15 + 33 * (1 - springProgress(t, FOCUS_SPRING)), smooth(t / 0.1) * (1 - q * q)]
+      const q = (t - Math.max(PRESS_FOR, FOCUS_LAND)) / FOCUS_FADE
+      return [15 + 33 * fadeOut(t / FOCUS_LAND), easeOut(t / 0.1) * fadeOut(q)]
     },
   },
 }
@@ -313,7 +312,7 @@ export function keystrokesAt(o: Prepared, t: number): Keystroke[] {
   let slot = 0 // stack height of newer shortcuts, animated
   for (let i = upper(o.keys, t) - 1; i >= 0 && o.keyReach[i] > t; i--) {
     const g = o.keys[i]
-    const leave = clamp01((g.end + LINGER + KEY_OUT - t) / KEY_OUT)
+    const leave = fadeOut((t - g.end - LINGER) / KEY_OUT)
     if (leave <= 0) continue
     const enter = easeOut((t - g.start) / KEY_SLIDE)
     const pressed = g.presses.filter((q) => q.from <= t) // the first one at least, from g.start on
@@ -322,7 +321,7 @@ export function keystrokesAt(o: Prepared, t: number): Keystroke[] {
       count: pressed.length,
       age: t - pressed.at(-1)!.out,
       size: st.size,
-      opacity: clamp01((t - g.start) / KEY_IN) * leave * clamp01(MAX_STACK - slot),
+      opacity: easeOut((t - g.start) / KEY_IN) * leave * clamp01(MAX_STACK - slot),
       y: o.keyBase - slot * (KEY_H + ROW_GAP) * k + (1 - enter) * 0.4 * KEY_H * k,
     })
     slot += enter * leave
@@ -428,7 +427,7 @@ export function captionAt(o: Prepared, t: number): Caption | null {
       active: w.start <= t && t < (p.words[j + 1]?.start ?? p.end),
       progress: style.mode === 'line' ? 1 : instant ? +(t >= w.start) : easeOut((t - w.start) / WORD_IN),
     })),
-    progress: instant ? 1 : Math.min(easeOut((t - p.start) / CAP_IN), p.fadeOut ? clamp01((p.end - t) / CAP_OUT) : 1),
+    progress: instant ? 1 : Math.min(easeOut((t - p.start) / CAP_IN), p.fadeOut ? fadeOut((t - p.end + CAP_OUT) / CAP_OUT) : 1),
     style,
   }
 }
@@ -466,7 +465,7 @@ export function drawOverlays(ctx: Ctx, scene: Scene): void {
 }
 
 const SYSTEM = '-apple-system, BlinkMacSystemFont, system-ui, sans-serif'
-const PRESS = { stiffness: 520, damping: 26, mass: 1 }
+const PRESS_UP = 0.2 // s a pressed keycap takes to come back up
 
 /** Symbol and name printed on a keycap. */
 function face(id: string): [string, string] {
@@ -496,8 +495,8 @@ function drawKeystroke(ctx: Ctx, s: Keystroke, scene: Scene) {
   const badgeW = badge ? ctx.measureText(badge).width + 2 * 13 * k : 0
   const total = caps.reduce((n, c) => n + c.w, 0) + KEY_GAP * k * (caps.length - 1) + (badge ? badgeW + 10 * k : 0)
   const top = s.y - h
-  // Pressed in on each press, springs back up.
-  const press = depth * (1 - springProgress(s.age, PRESS))
+  // Pressed in on each press, comes back up.
+  const press = depth * fadeOut(s.age / PRESS_UP)
   let x = Math.round(scene.width / 2 - total / 2)
 
   const r = 13 * k

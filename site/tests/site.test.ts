@@ -69,13 +69,19 @@ test('every download goes through bestboy.dev, which finds the latest DMG', () =
 	assert.doesNotMatch(page, /\.dmg"/u);
 });
 
-test('every clip ships with the page in both themes, its still beside it', () => {
-	const stills = [...page.matchAll(/url\(\/grip\/(media\/[\w.-]+)-(light|dark)\.webp\)/gu)];
-	assert.ok(stills.length >= 8, `${stills.length} stills`);
-	for (const [, name, theme] of stills) {
-		assert.ok(stills.some((other) => other[1] === name && other[2] !== theme), `${name} in one theme`);
-		for (const file of [`${name}-${theme}.webp`, `${name}-${theme}.mp4`])
-			assert.ok(existsSync(join(build, file)), file);
+test('every clip ships with its pages, its still as its poster', () => {
+	for (const [html, least] of [
+		[page, 4],
+		[agents, 1],
+		[changelog, 1],
+	] as const) {
+		const clips = [...html.matchAll(/<video\b[^>]*\bsrc="\/grip\/(media\/[\w.-]+\.mp4)"[^>]*>/gu)];
+		assert.ok(clips.length >= least, `${clips.length} clips`);
+		for (const [tag, file] of clips) {
+			const still = /\bposter="\/grip\/(media\/[\w.-]+\.webp)"/u.exec(tag)?.[1];
+			assert.ok(still, `${file} has no still`);
+			for (const shipped of [file, still]) assert.ok(existsSync(join(build, shipped)), shipped);
+		}
 	}
 });
 
@@ -108,7 +114,7 @@ test('the changelog runs newest first, each clip silent and its still beside it'
 		versions.every((version, index) => index === 0 || version < (versions[index - 1] ?? 0)),
 		'releases out of order',
 	);
-	const stills = new Set([...changelog.matchAll(/url\(\/grip\/(media\/changelog-[\d.]+)\.webp\)/gu)].map((match) => match[1]));
+	const stills = new Set([...changelog.matchAll(/poster="\/grip\/(media\/changelog-[\d.]+)\.webp"/gu)].map((match) => match[1]));
 	assert.equal(stills.size, RELEASES.filter((release) => release.clip).length);
 	for (const name of stills) {
 		assert.ok(existsSync(join(build, `${name}.webp`)), `${name}.webp`);

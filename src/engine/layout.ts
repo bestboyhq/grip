@@ -1,6 +1,6 @@
 // Owner: compositor. Where each layer sits at output time t, in output px (unzoomed space):
 // the screen (padding, aspect fit, device mockup), the camera per CameraLayout item (pip,
-// fullscreen, hidden, split) with spring transitions in output time, face-follow crop, hide when
+// fullscreen, hidden, split) with ease-out transitions in output time, face-follow crop, hide when
 // silent, and masks locked to the screen. Pure: prepareLayout precomputes, layoutAt evaluates.
 // A crop (project.crop) fits only the shown part of the recording: `visible` is where that part
 // sits, and `screen` stays where the whole recording would sit, reaching past it, so recording px
@@ -10,11 +10,11 @@
 
 import { screenCrop, type CameraLayoutKind, type Mask, type NRect, type Rect, type Style, type Word } from '../shared/project.ts'
 import { mapRange, toSource, type TimeMap } from '../shared/timemap.ts'
-import { springDuration, springProgress, type SpringConfig } from './motion/spring.ts'
+import { easeOut } from './motion/spring.ts'
 import type { CameraLayer, FaceSample, MaskLayer, ScreenLayer, SceneInput } from './scene.ts'
 
-const SPRING: SpringConfig = { stiffness: 170, damping: 26, mass: 1 }
-const SETTLE = springDuration(SPRING)
+/** Seconds a layout change takes, on the shared ease-out curve like every other move. */
+const SETTLE = 0.5
 /** Masks fade OUTSIDE their range, so covered content never shows through a half-faded mask. */
 const MASK_FADE = 0.2
 /** Hide when silent: a gap of this many seconds without words hides the camera. */
@@ -337,7 +337,7 @@ function stateAt(l: PreparedLayout, t: number, i: number, depth = 0): State {
   // camera fades where it is instead of flying to the corner as a ghost.
   if (c.kind === 'hidden') to = { ...to, ...hiddenCamera(from) }
   else if (l.changes[i - 1].kind === 'hidden' && from.cameraOpacity < 1e-3) from = { ...from, ...hiddenCamera(to) }
-  const p = springProgress(dt, SPRING)
+  const p = easeOut(dt / SETTLE)
   const mix = (a: number, b: number) => a + (b - a) * p
   const rect = (a: Rect, b: Rect) => ({ x: mix(a.x, b.x), y: mix(a.y, b.y), w: mix(a.w, b.w), h: mix(a.h, b.h) })
   return {
@@ -450,10 +450,10 @@ function masksAt(l: PreparedLayout, t: number, screen: Rect): MaskLayer[] {
   for (let k = lo - 1; k >= 0 && maxHi[k] >= t; k--) if (list[k].hi >= t) near.push(list[k])
   for (const { m, ranges } of near.sort((a, b) => a.i - b.i)) {
     let opacity = 0
-    for (const [a, b] of ranges) opacity = Math.max(opacity, 1 - Math.max(a - t, t - b, 0) / MASK_FADE)
+    for (const [a, b] of ranges) opacity = Math.max(opacity, t < a ? easeOut(1 - (a - t) / MASK_FADE) : 1 - easeOut((t - b) / MASK_FADE))
     if (opacity <= 0) continue
     const r = m.rect
-    out.push({ kind: m.kind, opacity: Math.min(opacity, 1), rect: { x: screen.x + r.x * screen.w, y: screen.y + r.y * screen.h, w: r.w * screen.w, h: r.h * screen.h } })
+    out.push({ kind: m.kind, opacity, rect: { x: screen.x + r.x * screen.w, y: screen.y + r.y * screen.h, w: r.w * screen.w, h: r.h * screen.h } })
   }
   return out
 }

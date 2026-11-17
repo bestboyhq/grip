@@ -10,6 +10,7 @@ import { cursorPoint as cursorAt } from '../motion/index.ts'
 import { applyEdits } from '../../shared/edits.ts'
 import { timeMap } from '../../shared/timemap.ts'
 import { autoZoomOnce, generateAutoZooms, lookOf, loupesAcross, loupesAt, setAutoZoom, viewAt, zoomProblems } from './index.ts'
+import { easeOut } from '../motion/spring.ts'
 
 const SCREEN = { file: 'sources/screen.mp4', width: 2880, height: 1800, fps: 30, scale: 2 }
 const CAMERA = { file: 'sources/camera.mp4', width: 1280, height: 720, fps: 30, scale: 1 }
@@ -65,18 +66,24 @@ function loupeAt(z: Parameters<typeof loupesAt>[0], t: number) {
 }
 const near = (a: number, b: number, eps: number, msg = '') => assert.ok(Math.abs(a - b) <= eps, `${a} != ${b} ±${eps} ${msg}`)
 
-test('a zoom at output 0 starts zoomed in; a later one animates in and out', () => {
+test('a zoom at output 0 starts zoomed in; a later one moves in and out on the ease-out curve', () => {
   let { view } = setup([zoom({ start: 0, end: 3, target: point(0.5, 0.5) })])
   near(view(0).scale, 2, 1e-4)
   ;({ view } = setup([zoom({ start: 2, end: 6, target: point(0.5, 0.5) })]))
   near(view(0).scale, 1, 1e-6)
-  near(view(2).scale, 1, 1e-3)
-  near(view(2.12).scale, 1.5, 0.02, 'half way in after 0.12 s, in scale, not log scale')
-  assert.ok(view(2.3).scale > 1.2 && view(2.3).scale < 1.95)
-  near(view(4).scale, 2, 0.01)
-  near(view(6.12).scale, 1.5, 0.02, 'half way out after 0.12 s')
-  assert.ok(view(6.3).scale > 1.05 && view(6.3).scale < 1.95)
-  near(view(8).scale, 1, 0.01)
+  // 2x moves the frame's edges half a view: 0.45 s each way, in log scale, in as out.
+  for (const u of [0, 0.1, 0.25, 0.5, 0.75, 0.9]) {
+    near(Math.log2(view(2 + 0.45 * u).scale), easeOut(u), 2e-3, `in at ${u}`)
+    near(Math.log2(view(6 + 0.45 * u).scale), 1 - easeOut(u), 2e-3, `out at ${u}`)
+  }
+  // Each move comes to rest where it lands: no carry past it and back.
+  for (const t of frames(2.47, 4, 60)) near(view(t).scale, 2, 1e-6, `held in at ${t}`)
+  for (const t of frames(6.47, 8, 60)) near(view(t).scale, 1, 1e-6, `held out at ${t}`)
+  // The smooth style takes twice as long.
+  const project = createProject('t', { duration: 12, screen: SCREEN, events: 'sources/events.jsonl' })
+  project.style.screenAnimation = 'smooth'
+  ;({ view } = setup([zoom({ start: 4, end: 8, target: point(0.5, 0.5) })], [], { project }))
+  near(Math.log2(view(8 + 0.45).scale), 1 - easeOut(0.5), 2e-3, 'smooth: half the way out at 0.45 s')
 })
 
 test('pure: any frame alone equals the same frame rendered in sequence', () => {
@@ -135,6 +142,36 @@ test('clicked elements stay whole, but the cursor always stays in frame', () => 
     const c = cursorAt(p.cursor, t)!
     assert.ok(c.x >= v.x0 && c.x <= v.x1 && c.y >= v.y0 && c.y <= v.y1, `cursor out of frame at t=${t}`)
   }
+})
+
+test('a click away from the framing re-centers the view on it and the clicks after it, setting off 0.28 s before the click', () => {
+  // A button in the top-right corner opens a dialog in the middle, filled in with three clicks: the action
+  // moves there, and so does the view, framing them all, so the clicks after the first do not pan it again.
+  // Clamped at the screen's edge for the button, the view reaches the dialog's first field just inside its
+  // focus zone: that field is far from the button, not from the view.
+  const click = (t: number, x: number, y: number): InputEvent => ({ t, type: 'down', x, y, button: 'left' })
+  const path: Array<[number, number, number]> = [[0, 2682, 236], [1.6, 2682, 236], [2.8, 1440, 590], [5, 1440, 590], [5.3, 1440, 987], [6.5, 1440, 987], [6.8, 1772, 917], [12, 1772, 917]]
+  const events = [...moves(path), click(1.5, 2682, 236), click(3, 1440, 590), click(5.6, 1440, 987), click(7, 1772, 917)].sort((a, b) => a.t - b.t)
+  const project = createProject('t', { duration: 20, screen: SCREEN, events: 'sources/events.jsonl' })
+  project.style.padding = 56
+  const { view, screen } = setup([zoom({ start: 1, end: 10, level: 1.5 })], events, { width: 1660, height: 1080, project })
+  const at = (x: number, y: number) => ({ x: screen(3).x + (x * screen(3).w) / SCREEN.width, y: screen(3).y + (y * screen(3).h) / SCREEN.height })
+  const off = (t: number, p: { x: number; y: number }) => {
+    const v = visible(view(t), 1660, 1080)
+    return Math.max(Math.abs(p.x - view(t).center.x) / v.hw, Math.abs(p.y - view(t).center.y) / v.hh)
+  }
+  // Centered between them (left where it was, the first field would sit at the zone's 0.4 edge) from the first click on.
+  for (const t of [3.3, 4.5, 5.6, 7]) assert.ok(off(t, at(1606, 788.5)) < 0.06, `the dialog is ${off(t, at(1606, 788.5))} of the half view off center at ${t} s`)
+  // The corner button stays framed through its click, and the pan runs on the curve like a change of zooms.
+  assert.ok(view(1.7).center.x >= view(1.5).center.x - 0.5, 'the pan leaves the corner button before its click')
+  const x0 = view(1.5).center.x
+  const x1 = view(3.4).center.x
+  const when = (share: number) => frames(1.5, 3.4, 240).find((t) => (view(t).center.x - x0) / (x1 - x0) >= share)!
+  assert.ok(when(0.9) - when(0.1) >= 0.2, `the pan takes ${when(0.9) - when(0.1)} s`)
+  // The cursor leads and the pan lands through the click. There by the click, the view moves with the
+  // cursor and everything then stands still until the click.
+  assert.ok(Math.abs(when(0.01) - 2.72) < 0.02, `the pan sets off at ${when(0.01)} s for the click at 3 s`)
+  assert.ok(when(0.99) > 3 && when(0.99) < 3.3, `the pan lands at ${when(0.99)} s`)
 })
 
 test('clamped: a zoomed view never shows background past the screen edge', () => {
@@ -198,7 +235,8 @@ test('zooms back to back or over one another glide from one framing to the next:
       for (const t of frames(2.9, 10.4, 60).slice(1)) {
         const v = shift(view(t - 1 / 60), view(t))
         assert.ok(v < 120, `${style}, ${name}: the view jumps ${v.toFixed(0)} px at t=${t.toFixed(3)}`)
-        assert.ok(Math.abs(v - speed) < 8, `${style}, ${name}: the view jolts from ${speed.toFixed(1)} to ${v.toFixed(1)} px a frame at t=${t.toFixed(3)}`)
+        // A move sets off from rest at once, as the ease-out curve does, and only slows from there.
+        assert.ok(Math.abs(v - speed) < 8 || speed < 0.5, `${style}, ${name}: the view jolts from ${speed.toFixed(1)} to ${v.toFixed(1)} px a frame at t=${t.toFixed(3)}`)
         speed = v
       }
     }
@@ -337,12 +375,23 @@ test('a fast flick never leaves the lens: the cursor stays on its magnifying fla
   }
 })
 
-test('a loupe pops: most of the way in a tenth of a second, gone in a third', () => {
+test('a loupe opens out of what it shows as the camera zooms in, and closes back into it a fifth faster', () => {
   const events = moves([[0, 1000, 800], [10, 1000, 800]])
-  const { p } = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 3 })], events, { duration: 10 })
-  assert.ok(loupeAt(p.zoom, 2.1)!.scale > 2.5, 'in: past 3/4 of the way at 0.1 s')
-  assert.ok(loupeAt(p.zoom, 5.1)!.scale < 1.5, 'out: past 3/4 of the way at 0.1 s')
-  assert.equal(loupeAt(p.zoom, 5.35), null)
+  const { p, view } = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 3 }), zoom({ start: 7, end: 9, level: 3 })], events, { duration: 10 })
+  const R = loupeAt(p.zoom, 3.5)!.radius
+  // 3x takes the camera 0.3 + 0.3 * log2(3) / 2 s to zoom in, on the ease-out curve in log scale.
+  const time = 0.3 + 0.15 * Math.log2(3)
+  for (const u of [0.1, 0.25, 0.5, 0.75]) {
+    const l = loupeAt(p.zoom, 2 + time * u)!
+    near(Math.log(l.scale) / Math.log(3), easeOut(u), 2e-3, `in at ${u}...`)
+    near(view(7 + time * u).scale, l.scale, 2e-3, '...as the camera is')
+    near(l.radius, R * (0.4 + 0.6 * easeOut(u)), 0.01 * R, 'the glass grows with the magnification, from 0.4 of its radius')
+    const out = loupeAt(p.zoom, 5 + 0.8 * time * u)!
+    near(Math.log(out.scale) / Math.log(3), 1 - easeOut(u), 2e-3, `out at ${u}, a fifth faster`)
+  }
+  assert.ok(loupeAt(p.zoom, 2.01)!.radius < 0.45 * R, 'never at full size in its first frame')
+  assert.ok(loupeAt(p.zoom, 5 + 0.8 * time - 0.01), 'closing')
+  assert.equal(loupeAt(p.zoom, 5 + 0.8 * time), null)
   // Across a shutter straddling its start, the lens is there unmagnified and clear before it begins.
   const ts = [1.99, 2, 2.01, 2.02]
   const [path] = loupesAcross(p.zoom, 2.01, ts)
@@ -371,6 +420,12 @@ test('a loupe into the next keeps the glass up: it glides there and eases into i
     near(on.radius, (160 * 1200) / 1080, 0.5)
     near(on.x, screen(7.5).x + 0.7 * screen(7.5).w, 1)
     near(Math.hypot(on.stretch.x, on.stretch.y), 0, 1e-6, 'eased into rigid')
+    // It lands on the target as the glide ends and holds there: no carry past it and back.
+    for (const t of frames(5.62, 7.5, 60)) {
+      const l = loupeAt(p.zoom, t)!
+      near(l.x, screen(t).x + 0.7 * screen(t).w, 1e-3, `held at t=${t}`)
+      near(l.scale, 3, 1e-6, `held at t=${t}`)
+    }
   }
   // A longer gap fades out and back in; an instant loupe cuts in.
   const gap = setup([zoom({ start: 2, end: 3.5, mode: 'loupe' }), next], events, { duration: 12 })
@@ -454,16 +509,47 @@ test('generateAutoZooms: merges, leads, holds, covers typing, skips the erratic'
     [{ start: 20, end: 23 }, { start: 37, end: 38 }], // typing happens where the last click before it was
   )
   const spans = zs.map((z) => [+z.start.toFixed(2), +z.end.toFixed(2)])
-  // 0.2, 3, 4 merge; 10 alone; the click at 19.5 joins its typing; the burst across the screen is
-  // erratic; typing at 37 zooms on the click at 32.1; the last click is cut short by the end.
-  assert.deepEqual(spans, [[0, 6], [9.57, 12], [19.07, 25], [36.57, 40]])
+  // 0.2, 3, 4 merge; 10 alone holds its framing 1 s; the click at 19.5 joins its typing; the burst
+  // across the screen is erratic; typing at 37 zooms on the click at 32.1. Each zooms out 0.4 s after
+  // its last action, so what the action did shows in full.
+  assert.deepEqual(spans, [[0, 4.4], [9.72, 11], [19.22, 23.4], [36.72, 38.4]])
   for (const z of zs) assert.ok(z.auto && z.enabled && z.level === 2 && z.target.kind === 'cursor' && z.id)
   assert.deepEqual(generateAutoZooms([], sources, on, {}, [{ start: 5, end: 8 }]), [], 'typing with no known place is left out')
   const up = (t: number, x = 1400, y = 900): InputEvent => ({ t, type: 'up', x, y, button: 'left' })
   const held = generateAutoZooms([click(3), up(3.1), click(10), up(15, 2000, 1200), click(20), click(25, -10, 900), up(27)], sources, on, {}, [])
-  assert.deepEqual(held.map((z) => [+z.start.toFixed(2), +z.end.toFixed(2)]), [[2.57, 5.1], [9.57, 17], [19.57, 22]], 'a drag holds from press to release; a release after a press off the screen holds nothing')
-  const [last] = generateAutoZooms([click(42.4)], sources, on, {}, [])
-  assert.deepEqual([+last.start.toFixed(2), last.end], [41.97, 45], 'too close to the end to zoom out: it holds to the end')
+  assert.deepEqual(held.map((z) => [+z.start.toFixed(2), +z.end.toFixed(2)]), [[2.72, 4], [9.72, 15.4], [19.72, 21]], 'a drag holds from press to release; a release after a press off the screen holds nothing')
+  const [last] = generateAutoZooms([click(43.4)], sources, on, {}, [])
+  assert.deepEqual([+last.start.toFixed(2), last.end], [43.12, 45], 'too close to the end to zoom out: it holds to the end')
+})
+
+test('generateAutoZooms: a cursor that sets off to point at something after a zoom gets a lens that follows it there', () => {
+  // Submit a form, wait for it to close, then point at what it added: the zoom is out by then, and a
+  // lens rides the cursor to the new row and holds on it a moment.
+  const sources = createProject('t', { duration: 45, screen: SCREEN }).sources
+  const on = { enabled: true, level: 2 }
+  const press = (t: number, type: 'down' | 'up', x = 1400, y = 900): InputEvent => ({ t, type, x, y, button: 'left' })
+  const take = (setOff: number, to: [number, number], more: InputEvent[] = []) =>
+    [...moves([[0, 1400, 900], [setOff, 1400, 900], [setOff + 0.5, ...to], [45, ...to]]), press(3, 'down'), press(3.1, 'up'), ...more].sort((a, b) => a.t - b.t)
+  const spans = (zs: Zoom[]) => zs.map((z) => [z.mode ?? 'zoom', +z.start.toFixed(2), +z.end.toFixed(2)])
+  const zs = generateAutoZooms(take(4.8, [1800, 700]), sources, on, {}, [])
+  assert.deepEqual(spans(zs), [['zoom', 2.72, 4], ['loupe', 4.81, 6.6]], 'on as the cursor sets off, off 1.3 s after it rests')
+  assert.ok(zs[1].auto && zs[1].target.kind === 'cursor' && zs[1].level === 2 && zs[1].size === 240)
+  assert.deepEqual(spans(generateAutoZooms(take(4.8, [1440, 880]), sources, on, {}, [])), [['zoom', 2.72, 4]], 'a nudge points at nothing new')
+  assert.deepEqual(spans(generateAutoZooms(take(6.5, [1800, 700]), sources, on, {}, [])), [['zoom', 2.72, 4]], 'setting off long after is not a follow-up')
+  const next = (t: number) => [press(t, 'down', 1800, 700), press(t + 0.1, 'up', 1800, 700)]
+  assert.deepEqual(spans(generateAutoZooms(take(5.9, [1800, 700], next(7.6)), sources, on, {}, [])), [['zoom', 2.72, 4], ['loupe', 5.91, 7.32], ['zoom', 7.32, 8.6]], 'the lens gives way to the next zoom')
+  assert.deepEqual(spans(generateAutoZooms(take(6.2, [1800, 700], next(7.6)), sources, on, {}, [])), [['zoom', 2.72, 4], ['zoom', 7.32, 8.6]], '...or leaves it to it when it would flinch')
+  const [, lens] = generateAutoZooms(take(4.8, [1800, 700]), sources, on, { mode: 'loupe', size: 300, liquid: true }, [])
+  assert.ok(lens.mode === 'loupe' && lens.size === 300 && lens.liquid, 'the lens look the user last picked')
+  // A lens magnifies 2x at least, whatever the auto level, and keeps to that as the level changes.
+  const p = createProject('t', { duration: 45, screen: SCREEN })
+  p.zooms = generateAutoZooms(take(4.8, [1800, 700]), sources, { enabled: true, level: 1.5 }, {}, [])
+  assert.deepEqual(p.zooms.map((z) => z.level), [1.5, 2])
+  p.style.autoZoom.level = 1.5
+  setAutoZoom(p, [], { enabled: true, level: 3 })
+  assert.deepEqual(p.zooms.map((z) => z.level), [3, 3])
+  setAutoZoom(p, [], { enabled: true, level: 1.25 })
+  assert.deepEqual(p.zooms.map((z) => z.level), [1.25, 2])
 })
 
 test('autoZoomOnce: auto zooms on the first open only, never again after the user deletes them', () => {
@@ -515,7 +601,7 @@ test('fixture: auto zooms cover every click, keep the cursor in frame and clicke
   t.diagnostic(`auto zooms: ${zooms.map((z) => `${z.start.toFixed(2)}-${z.end.toFixed(2)}`).join(', ')}`)
   const clicks = events.filter((e): e is Extract<InputEvent, { button: unknown }> => e.type === 'down')
   assert.ok(zooms.length > 0)
-  for (const c of clicks) assert.ok(zooms.some((z) => z.start <= c.t - 0.4 && z.end >= c.t + 1.5), `click at ${c.t} is not covered`)
+  for (const c of clicks) assert.ok(zooms.some((z) => z.start <= c.t - 0.25 && z.end >= c.t + 0.4), `click at ${c.t} is not covered`)
   zooms.forEach((z, i) => assert.ok(z.start >= 0 && z.end <= project.sources.duration && (i === 0 || zooms[i - 1].end <= z.start)))
 
   for (const style of ['focused', 'smooth'] as const) {
@@ -529,7 +615,9 @@ test('fixture: auto zooms cover every click, keep the cursor in frame and clicke
     const r = layoutAt(p.layout, 0).screen!.rect
     for (const c of clicks) {
       const v = visible(view(c.t))
-      assert.ok(view(c.t).scale > 1.9, `not zoomed in at the click at ${c.t}`)
+      // The zoom in lands through the click: most of the way in as it happens, and in right after.
+      assert.ok(view(c.t).scale > 1.5, `not zoomed in at the click at ${c.t}: ${view(c.t).scale.toFixed(3)} (${style})`)
+      if (style === 'focused') assert.ok(view(c.t + 0.35).scale > 1.98, `not in after the click at ${c.t}: ${view(c.t + 0.35).scale.toFixed(3)}`)
       const x = r.x + (c.x * r.w) / project.sources.screen!.width
       const y = r.y + (c.y * r.h) / project.sources.screen!.height
       // Within the focus zone (plus spring slack), so the element around the click is in frame.
@@ -622,16 +710,16 @@ test('zoom problems: each fix leaves nothing to fix, and the camera then holds s
   const pt = (x: number, y: number) => ({ kind: 'point' as const, x, y })
   // The last: a time at which the camera holds still once fixed.
   const cases: Array<[string, Zoom[], RegExp, object | object[], number?]> = [
-    ['out over the cut', [zoom({ id: 'z', start: 1, end: 4.9 })], /moves out over 4.9-5.33 s, and the cut at 5 s/, { type: 'set_zoom', id: 'z', end: 4.57 }],
-    ['in over the cut', [zoom({ id: 'z', start: 4.8, end: 12 })], /moves in over 4.8-5.23 s, and the cut at 5 s/, { type: 'set_zoom', id: 'z', start: 5 }],
-    ['a flinch', [zoom({ id: 'z', start: 10, end: 10.5 })], /holds only 0.07 s/, { type: 'set_zoom', id: 'z', end: 8.43 }],
-    ['a flinch at the end', [zoom({ id: 'z', start: 19.8, end: 20 })], /holds only 0 s/, { type: 'set_zoom', id: 'z', end: 17, start: 15.57 }],
+    ['out over the cut', [zoom({ id: 'z', start: 1, end: 4.9 })], /moves out over 4.9-5.35 s, and the cut at 5 s/, { type: 'set_zoom', id: 'z', end: 4.55 }],
+    ['in over the cut', [zoom({ id: 'z', start: 4.8, end: 12 })], /moves in over 4.8-5.25 s, and the cut at 5 s/, { type: 'set_zoom', id: 'z', start: 5 }],
+    ['a flinch', [zoom({ id: 'z', start: 10, end: 10.5 })], /in at 7.45 s and leaves at 7.5 s, so it holds only 0.05 s/, { type: 'set_zoom', id: 'z', end: 8.45 }],
+    ['a flinch at the end', [zoom({ id: 'z', start: 19.8, end: 20 })], /holds only 0 s/, { type: 'set_zoom', id: 'z', end: 17, start: 15.55 }],
     ['the end mid zoom-out', [zoom({ id: 'z', start: 15, end: 19.8 })], /the video ends at 17 s while the camera is still moving out/, { type: 'set_zoom', id: 'z', end: 17 }],
     ['cut out', [zoom({ id: 'z', start: 5.5, end: 7.5 })], /never plays/, { type: 'remove_zoom', id: 'z' }],
-    ['a stretch out over the cut', [zoom({ id: 'y', start: 1, end: 3 }), zoom({ id: 'z', start: 3.5, end: 4.9 })], /Zooms y to z/, { type: 'set_zoom', id: 'z', end: 4.57 }],
-    ['a loupe out over the cut', [zoom({ id: 'z', start: 1, end: 4.95, mode: 'loupe' })], /the loupe moves out over 4.95-5.3 s/, { type: 'set_zoom', id: 'z', end: 4.65 }],
-    ['a glide that never lands', [zoom({ id: 'y', start: 9, end: 12, target: pt(0.2, 0.25) }), zoom({ id: 'z', start: 12.2, end: 13, target: pt(0.8, 0.75) })], /glides to it from zoom y over 9.2-10.17 s and moves on at 10 s/, { type: 'set_zoom', id: 'z', end: 10.67 }, 10.55],
-    ['a glide into the end', [zoom({ id: 'y', start: 15, end: 19, target: pt(0.2, 0.25) }), zoom({ id: 'z', start: 19.2, end: 20, target: pt(0.8, 0.75) })], /holds only 0 s. Hold it at least 0.5 s/, [{ type: 'set_zoom', id: 'y', end: 15.53 }, { type: 'set_zoom', id: 'z', start: 15.53 }], 16.9],
+    ['a stretch out over the cut', [zoom({ id: 'y', start: 1, end: 3 }), zoom({ id: 'z', start: 3.3, end: 4.9 })], /Zooms y to z/, { type: 'set_zoom', id: 'z', end: 4.55 }],
+    ['a loupe out over the cut', [zoom({ id: 'z', start: 1, end: 4.95, mode: 'loupe' })], /the loupe moves out over 4.95-5.31 s/, { type: 'set_zoom', id: 'z', end: 4.64 }],
+    ['a glide that never lands', [zoom({ id: 'y', start: 9, end: 12, target: pt(0.2, 0.25) }), zoom({ id: 'z', start: 12.2, end: 13, target: pt(0.8, 0.75) })], /glides to it from zoom y over 9.2-9.92 s and moves on at 10 s/, { type: 'set_zoom', id: 'z', end: 10.43 }, 10.3],
+    ['a glide into the end', [zoom({ id: 'y', start: 15, end: 19, target: pt(0.2, 0.25) }), zoom({ id: 'z', start: 19.2, end: 20, target: pt(0.8, 0.75) })], /holds only 0.08 s. Hold it at least 0.5 s/, [{ type: 'set_zoom', id: 'y', end: 15.77 }, { type: 'set_zoom', id: 'z', start: 15.77 }], 16.9],
   ]
   for (const [name, zooms, message, fix, holds] of cases) {
     const project = createProject('t', { duration: 20, screen: SCREEN, events: 'sources/events.jsonl' })
