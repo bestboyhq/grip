@@ -11,7 +11,6 @@
   import { live as heard, startTake, stopTake, take } from '../../../lib/take.svelte.ts'
   import { peaks as enginePeaks, voiceGain } from '../../../engine/audio/index.ts'
   import { fileUrl } from '../../../engine/media/index.ts'
-  import CommandMenu from '../commands/CommandMenu.svelte'
   import { consumesKey, registerCommands, run } from '../commands/registry.ts'
   import * as M from './model.ts'
   import * as A from './actions.svelte.ts'
@@ -857,7 +856,6 @@
 {#if menu}
   <Menu x={menu.x} y={menu.y} t={menu.t} target={menu.target} trigger={menu.from} onclose={closeMenu} />
 {/if}
-<CommandMenu />
 <Lens bind:this={lens} redraw={requestDraw} />
 
 <style>

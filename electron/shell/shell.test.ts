@@ -4,7 +4,7 @@ import { inTurn, parseLaunch, parseGripUrl } from './url.ts'
 import { plainError } from './errors.ts'
 import { areaOf, arrangement, fit, place, reachable, under, underCamera } from './bounds.ts'
 import { hold, release } from './session.ts'
-import { ring, withScale } from './png.ts'
+import { pngInfo, ring, withScale } from './png.ts'
 import { whatsNew } from './changes.ts'
 import { execFile } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -175,6 +175,12 @@ test('screenshots carry their pixel density, like the ones macOS takes', () => {
   assert.equal(out.readUInt32BE(phys + 8), 5669) // 144 dpi
   assert.equal(out.readUInt8(phys + 16), 1)
   assert.deepEqual([...out.subarray(out.length - 12 - 15, out.length - 12)].slice(8, 11), [1, 2, 3])
+  // Read back: its size from the header, the density as the display scale it was taken at.
+  const ihdr = (w: number, h: number) => chunk('IHDR', [...Buffer.from([0, 0, w >> 8, w & 255, 0, 0, h >> 8, h & 255]), 8, 6, 0, 0, 0])
+  const shot = Buffer.concat([sig, ihdr(2400, 1480), chunk('IDAT', [1]), chunk('IEND', [])])
+  assert.deepEqual(pngInfo(withScale(shot, 2)), { width: 2400, height: 1480, scale: 2 })
+  assert.deepEqual(pngInfo(shot), { width: 2400, height: 1480, scale: 1 }, 'no density: 1x')
+  assert.equal(pngInfo(Buffer.from('GIF89a, not a PNG at all, no header')), null)
 })
 
 test('the menu bar export ring fills clockwise from 12 o\'clock', () => {

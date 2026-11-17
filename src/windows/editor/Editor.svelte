@@ -1,15 +1,16 @@
 <!-- The editor window: #/editor?project=<bundle path>[&recovered]. Loads the project, events, and
      transcript into doc, restores the saved playhead, and lays out title bar, preview, inspector, and
-     timeline (which owns the one transport bar). Keys go through the command registry (CommandMenu). -->
+     timeline (which owns the one transport bar). Keys go through the command registry (CommandMenu).
+     A still (a screenshot, isStill) has no timeline: its look is styled, then copied or saved as an image. -->
 <script lang="ts">
   import { onMount } from 'svelte'
   import { fade } from 'svelte/transition'
-  import { doc, canUndo, canRedo, edit, hear, pruneSelection, save, selection, zoomLook } from '../../lib/doc.svelte.ts'
+  import { doc, canUndo, canRedo, edit, hear, pruneSelection, redo, save, selection, undo, zoomLook } from '../../lib/doc.svelte.ts'
   import { player, seek, stats } from '../../lib/player.svelte.ts'
   import { dropFiles, invoke, on } from '../../lib/ipc.ts'
   import { fileUrl } from '../../engine/media/index.ts'
   import { parseEvents } from '../../shared/events.ts'
-  import type { Project, Sources, Style, Transcript } from '../../shared/project.ts'
+  import { isStill, type Project, type Sources, type Style, type Transcript } from '../../shared/project.ts'
   import { applyEdits, type Edit } from '../../shared/edits.ts'
   import { timeMap, toSource } from '../../shared/timemap.ts'
   import { autoZoomOnce } from '../../engine/zoom/index.ts'
@@ -26,8 +27,10 @@
   import ShareButton from './share/ShareButton.svelte'
   import { take, stopTake } from '../../lib/take.svelte.ts'
   import { commandForMenu, keyOf, registerCommands, run } from './commands/registry.ts'
+  import CommandMenu from './commands/CommandMenu.svelte'
   import { reason } from './helpers.ts'
-  import { renderStills, sendThumbnail } from './thumbnail.ts'
+  import { renderStills, sendThumbnail, stillPng } from './thumbnail.ts'
+  import { nativeHeight, outputSize } from '../../engine/scene.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
@@ -127,6 +130,9 @@
   const aiming = $derived(!!doc.project?.zooms.some((z) => selection.ids.includes(z.id)))
   const masking = $derived(!aiming && !!doc.project?.masks.some((m) => selection.ids.includes(m.id)))
   const undoable = $derived.by(() => (doc.rev, { undo: canUndo(), redo: canRedo() }))
+  const still = $derived(!!doc.project && isStill(doc.project.sources))
+  // A still's image as Copy and Save hand it out: at the screenshot's own pixels.
+  const imageSize = $derived.by(() => (doc.rev, still && doc.project ? outputSize(doc.project, nativeHeight(doc.project)) : null))
 
   $effect(() => {
     document.title = doc.project?.name || 'Grip'
@@ -141,6 +147,41 @@
       { id: 'project.crop', group: 'Project', title: 'Crop…', run: () => (cropOpen = true), enabled: () => !!doc.project?.sources.screen },
     ]),
   )
+
+  // A still has no timeline, whose commands undo a video's edits: its own undo, and the image out.
+  $effect(() => {
+    if (!still) return
+    return registerCommands([
+      { id: 'image.copy', group: 'Image', title: 'Copy image', run: () => void image('copy'), keys: ['⌘C'] },
+      { id: 'image.save', group: 'Image', title: 'Save image to the Desktop', run: () => void image('save'), keys: ['⌘S'] },
+      { id: 'image.undo', group: 'Edit', title: 'Undo', run: undo, enabled: canUndo, keys: ['⌘Z'], repeat: true },
+      { id: 'image.redo', group: 'Edit', title: 'Redo', run: redo, enabled: canRedo, keys: ['⇧⌘Z'], repeat: true },
+    ])
+  })
+
+  /** The still in its look, rendered as export renders, onto the clipboard or into a file on the Desktop. */
+  let imaging = $state(false)
+  async function image(to: 'copy' | 'save') {
+    const p = doc.project
+    if (imaging || !p || !imageSize) return
+    imaging = true
+    try {
+      const png = await stillPng()
+      const scale = p.sources.screen?.scale ?? 1
+      const size = `${imageSize.width} × ${imageSize.height}`
+      if (to === 'copy') {
+        await invoke('shell:image-copy', png, scale)
+        flash(`Copied, ${size}. Paste it anywhere.`)
+      } else {
+        const file: string = await invoke('shell:image-save', png, scale, p.name)
+        flash(`Saved “${file.split('/').pop()}” to the Desktop, ${size}.`)
+      }
+    } catch (e) {
+      flash(`Couldn’t ${to} the image: ${reason(e)}`)
+    } finally {
+      imaging = false
+    }
+  }
 
   function flash(text: string) {
     notice = text
@@ -283,8 +324,8 @@
           {/snippet}
         </Popover>
         <span class="sep"></span>
-        <button class="icon-btn" aria-label="Undo" disabled={!undoable.undo} onclick={() => run('timeline.undo')} {@attach tooltip('Undo', '⌘Z')}><Icon name="undo" /></button>
-        <button class="icon-btn" aria-label="Redo" disabled={!undoable.redo} onclick={() => run('timeline.redo')} {@attach tooltip('Redo', '⇧⌘Z')}><Icon name="redo" /></button>
+        <button class="icon-btn" aria-label="Undo" disabled={!undoable.undo} onclick={() => run(still ? 'image.undo' : 'timeline.undo')} {@attach tooltip('Undo', '⌘Z')}><Icon name="undo" /></button>
+        <button class="icon-btn" aria-label="Redo" disabled={!undoable.redo} onclick={() => run(still ? 'image.redo' : 'timeline.redo')} {@attach tooltip('Redo', '⇧⌘Z')}><Icon name="redo" /></button>
       </div>
       <input
         bind:this={nameInput}
@@ -306,8 +347,13 @@
         <span class="saved" class:failed={!!doc.saveError} {@attach tooltip('Edits save as you go. Find this project again under Recent Projects in Grip’s menu.')}>
           {#if !doc.dirty && !doc.saveError}<Icon name="check" size={14} />{/if}{doc.saveError ? 'Not saved' : doc.dirty ? 'Edited' : 'Saved'}
         </span>
-        <ShareButton {exportVideo} />
-        <ExportButton />
+        {#if still}
+          <button class="btn image" disabled={imaging} onclick={() => image('save')} {@attach tooltip('Save the image to the Desktop', '⌘S')}><Icon name="download" size={16} />Save</button>
+          <button class="btn primary image" disabled={imaging} onclick={() => image('copy')} {@attach tooltip('Copy the image, to paste anywhere', '⌘C')}><Icon name="copy" size={16} />Copy</button>
+        {:else}
+          <ShareButton {exportVideo} />
+          <ExportButton />
+        {/if}
       </div>
     {/if}
   </header>
@@ -324,7 +370,10 @@
       <section class="stage">
         <div class="toolbar">
           <AspectPicker />
-          {#if doc.project.sources.screen}
+          {#if still}
+            <button class="btn ghost crop" onclick={() => (cropOpen = true)} {@attach tooltip('Crop the screenshot')}><Icon name="crop" size={16} />Crop</button>
+            {#if imageSize}<span class="size" {@attach tooltip('Copy and Save keep every pixel of the screenshot')}>{imageSize.width} × {imageSize.height} px</span>{/if}
+          {:else if doc.project.sources.screen}
             <button class="btn ghost crop" onclick={() => (cropOpen = true)} {@attach tooltip('Crop the recording')}><Icon name="crop" size={16} />Crop</button>
             <button class="btn ghost crop" onclick={() => run('timeline.addMask')} {@attach tooltip('Blur a name or email for a few seconds', 'B')}><Icon name="blur" size={16} />Blur</button>
           {/if}
@@ -344,8 +393,9 @@
         <Preview />
       </section>
     </main>
-    <div class="timeline"><Timeline /></div>
+    {#if !still}<div class="timeline"><Timeline /></div>{/if}
     <CropDialog bind:open={cropOpen} />
+    <CommandMenu />
   {/if}
 </div>
 
@@ -383,6 +433,9 @@
   .toolbar { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; }
   .crop { height: 28px; padding: 0 10px 0 8px; }
   .crop :global(.icon) { color: var(--fg-secondary); }
+  .image { height: 28px; padding: 0 11px 0 9px; border-radius: var(--radius-sm); }
+  .image.primary { margin-left: 4px; }
+  .size { margin-left: auto; color: var(--fg-faint); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .aim-hint { display: flex; align-items: center; gap: 6px; min-width: 0; margin-left: auto; color: var(--fg-faint); font-size: 12px; white-space: nowrap; }
   .aim-hint span { overflow: hidden; text-overflow: ellipsis; }
 

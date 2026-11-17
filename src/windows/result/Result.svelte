@@ -4,7 +4,8 @@
      under 20 MB or a GIF under 10 MB, ready to paste anywhere, or shares as a link, each styled like
      the project (plain by default, as it was on screen); or it opens in the editor. Exports keep
      running if the card closes. A new screenshot is already on the clipboard (or on the Desktop) and
-     the card leaves by itself. Drag the picture into another app to drop the file. -->
+     the card leaves by itself; Edit styles it in the editor, with a background or a preset, for a post.
+     Drag the picture into another app to drop the file. -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
   import { invoke, on } from '../../lib/ipc.ts'
@@ -82,6 +83,11 @@
 
   async function edit() {
     await invoke('shell:open-project', bundle)
+    close()
+  }
+
+  async function editShot() {
+    await invoke('shell:shot-edit', shot)
     close()
   }
 
@@ -168,6 +174,7 @@
       {:else}
         <button class="btn" onclick={saveShot}><Icon name="download" size={16} />Save to Desktop</button>
       {/if}
+      <button class="btn" onclick={editShot} title="Style it in the editor: a background, a preset, a shape for posts"><Icon name="edit" size={16} />Edit</button>
     </div>
   {:else if job}
     <div class="status" class:failed={job.state === 'failed'} role="status">

@@ -15,6 +15,7 @@ export interface Capture {
   kind: 'shot' | 'recording'
   path: string // the PNG, or the .grip bundle
   at: number // ms since epoch
+  project?: string // a shot's still project, made by its first Edit: every later Edit opens it again
 }
 
 export const KEEP = 5
@@ -60,10 +61,17 @@ export function addCapture(c: Capture) {
   save(list, remember(list, c))
 }
 
-/** A capture moved: a project renamed, a screenshot saved to the Desktop. */
+/** A capture moved: a project renamed (a shot's own too), a screenshot saved to the Desktop. */
 export function moveCapture(from: string, to: string) {
   const list = read() // a renamed project is gone from `from` already
-  if (list.some((c) => c.path === from)) save(list, list.map((c) => (c.path === from ? { ...c, path: to } : c)))
+  const move = (p: string) => (p === from ? to : p)
+  if (list.some((c) => c.path === from || c.project === from)) save(list, list.map((c) => ({ ...c, path: move(c.path), ...(c.project && { project: move(c.project) }) })))
+}
+
+/** The shot at `path` was opened in the editor as `project`. */
+export function linkProject(path: string, project: string) {
+  const list = read()
+  save(list, list.map((c) => (c.path === path ? { ...c, project } : c)))
 }
 
 // ---- Menu rows ----

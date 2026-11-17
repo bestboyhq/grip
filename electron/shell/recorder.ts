@@ -33,6 +33,9 @@
 //   shell:reveal(path)            the result card: show its file in Finder
 //   shell:shot-copy(path)         the result card: a screenshot onto the clipboard again
 //   shell:shot-save(path) -> path the result card: a screenshot into a file on the Desktop
+//   shell:shot-edit(path)         the result card: a screenshot in the editor, as its still project (made once)
+//   shell:image-copy(png, scale)  a still's editor: its styled image onto the clipboard
+//   shell:image-save(png, scale, name) -> path   a still's editor: its styled image into a new file on the Desktop
 //   shell:captures -> [{ id, label, icon }]   Recent Captures as menu items (id: the path; icon: PNG at 2x)
 //   shell:reopen(path)            a recent capture's result card again (the picker closes first)
 //   shell:projects -> [{ id, label, icon }]   Recent Projects as menu items (id: the bundle; open with shell:open-project)
@@ -57,22 +60,24 @@ import { app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, i
 import { existsSync, statSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
-import { importVideo, recentProjects, recoveredAtLaunch } from '../projects.ts'
+import { importImage, importVideo, projectsDir, recentProjects, recoveredAtLaunch } from '../projects.ts'
 import { capture, recordingEvents, recordingName } from '../recording.ts'
 import { native } from '../native.ts'
 import { DRAW_FADE, DRAW_HOLD } from '../../src/engine/overlays/drawings.ts'
 import { activeDisplay, hidden, openWindow, reveal, sendAll, windowsOf, withDock } from '../windows.ts'
 import { arrangement, place, reachable, underCamera } from './bounds.ts'
-import { withScale } from './png.ts'
+import { pngInfo, withScale } from './png.ts'
 import { plainError, type Permission } from './errors.ts'
 import { editorCloser, type Choice } from './closing.ts'
 import { hold, release, type Held } from './session.ts'
 import { setSettings, settings, settingsListeners, type Settings } from './settings.ts'
-import { addCapture, captureRows, captures, moveCapture, projectRows, shotsDir } from './captures.ts'
+import { addCapture, captureRows, captures, linkProject, moveCapture, projectRows, shotsDir } from './captures.ts'
 import { toolbarUpdate, updateListeners } from './update.ts'
 import { setAppMenu } from './menu.ts'
 import { count } from '../usage.ts'
 import { symbols } from '../../src/shared/shortcut.ts'
+import { STILL_FILE } from '../../src/shared/project.ts'
+import { safeFileName, uniqueName } from '../../src/engine/export/options.ts'
 import type { Mode } from './url.ts'
 import type { Rect, StartOptions, Still } from '../../native/index.d.ts'
 
@@ -752,12 +757,12 @@ export function openProject(path: string, { recovered = false, focus = true, at 
 }
 
 /** Open what the user hands us (Finder, dock, menu bar icon, window drops, File menu): bundles open
- *  in the editor, .mp4/.mov videos import as new projects first. Throws the first failure. */
+ *  in the editor, .mp4/.mov videos and .png screenshots import as new projects first. Throws the first failure. */
 export async function openFiles(paths: string[]): Promise<void> {
   let failure: unknown
   for (const p of paths) {
     try {
-      openProject(/\.grip\/?$/i.test(p) ? p : await importVideo(p))
+      openProject(/\.grip\/?$/i.test(p) ? p : STILL_FILE.test(p) ? await importImage(p, projectsDir(), settings().preset) : await importVideo(p))
     } catch (e) {
       failure ??= e
     }
@@ -964,6 +969,26 @@ export function registerRecorder() {
     if (!ours(path) || !shots.has(path)) return null
     const file = await writeShot(app.getPath('desktop'), await readFile(path))
     moveCapture(path, file) // Recent Captures follows it to the Desktop; Grip's copy goes
+    return file
+  })
+  ipcMain.handle('shell:shot-edit', async (_e, path: unknown) => {
+    if (!ours(path) || !shots.has(path)) return
+    const made = captures().find((c) => c.path === path)?.project
+    if (made && existsSync(made)) return void openProject(made)
+    const bundle = await importImage(path, projectsDir(), settings().preset)
+    linkProject(path, bundle)
+    openProject(bundle)
+  })
+  // A still's styled image, rendered by its editor: checked, and marked with the screenshot's density.
+  const styled = (png: unknown, scale: unknown) => {
+    if (!(png instanceof Uint8Array) || png.byteLength > 512 << 20 || !pngInfo(png)) throw new Error('The image is not a PNG under 512 MB.')
+    return withScale(png, Math.min(Math.max(Number(scale) || 1, 1), 4))
+  }
+  ipcMain.handle('shell:image-copy', (_e, png: unknown, scale: unknown) => copyImage(styled(png, scale)))
+  ipcMain.handle('shell:image-save', async (_e, png: unknown, scale: unknown, name: unknown) => {
+    const dir = app.getPath('desktop')
+    const file = join(dir, uniqueName((typeof name === 'string' && safeFileName(name)) || 'Screenshot', 'png', (n) => existsSync(join(dir, n))))
+    await writeFile(file, styled(png, scale), { flag: 'wx' })
     return file
   })
   ipcMain.handle('shell:captures', async () => (await captureRows()).map((r) => ({ id: r.path, label: r.label, icon: r.icon.toPNG({ scaleFactor: 2 }) })))
