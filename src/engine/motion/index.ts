@@ -8,10 +8,12 @@
 //   3. During a drag (button held and moved) the path eases onto the raw position, so the cursor
 //      sticks to whatever it drags. Clips with smoothing off (rawCursor) ease onto it the same way.
 //   4. Across a cut (the next clip does not continue the previous one in source time) the cursor
-//      springs from where it was to its new position instead of teleporting.
+//      moves from where it was to its new position instead of teleporting.
 //   5. Loop: over the last second the cursor glides back to its position at t = 0.
 //   6. Tilt: a springy angle follows the horizontal velocity, clamped; it settles to 0 in raw clips.
 //   7. Clips with hideCursor fade the cursor out from their start and back in from their end.
+// Every timed move and fade here runs on the shared ease-out curve (spring.ts easeOut), as the camera does;
+// only the tilt, which follows the speed, is a spring. A press shrinks the cursor until its release.
 // cursorAt / cursorPoint then only interpolate (O(log n), pure), so a frame evaluated alone equals
 // the same frame evaluated in sequence. Clicks (down and up) are pinned analytically on top: each
 // adds a raised-cosine bump carrying its residual, and no bump reaches a neighbor click, so the
@@ -25,7 +27,7 @@ import type { InputEvent } from '../../shared/events.ts'
 import type { TimeMap } from '../../shared/timemap.ts'
 import type { CursorLayer, SceneInput } from '../scene.ts'
 import { screenAt, type prepareLayout } from '../layout.ts'
-import { springProgress } from './spring.ts'
+import { easeOut, mix } from './spring.ts'
 import { CURSORS, type BuiltinName } from '../../assets/cursors.ts'
 
 // Time constants, all in OUTPUT seconds.
@@ -39,6 +41,10 @@ const IDLE = 1.5 // still this long, then fade out
 const FADE_OUT = 0.3
 const FADE_IN = 0.15 // fade in ends when the movement starts
 const HIDE = 0.15 // fade when a clip hides or shows the cursor
+const CUT = 0.4 // move across a cut to the next clip's position
+/** A press shrinks the cursor to `scale` over `down` s, and the release brings it back over `up` s: a click
+ *  reads as a press, not only as an effect on the screen under it. */
+const PRESS = { scale: 0.8, down: 0.15, up: 0.2 }
 const FLICKER = 0.08 // cursor images shown shorter than this are skipped
 const STILL = 3 // screen points of travel that count as moving (ignores hand tremor)
 const TILT_MAX = 0.3 // radians the velocity can ask for
@@ -128,6 +134,7 @@ function bakePath(input: SceneInput, map: TimeMap) {
   const segT: number[] = [] // and its output time
   const pins: Array<{ t: number; x: number; y: number; seg: number }> = []
   const holds: number[] = [] // flat [start, end] output ranges of drags
+  const presses: number[] = [] // flat [down, up] output ranges a button is held
   const spans: number[] = [] // flat [first, last] output times of bursts of activity
   const imgs: Array<{ t: number; img: Img }> = []
 
@@ -181,6 +188,9 @@ function bakePath(input: SceneInput, map: TimeMap) {
     let dragged = false
     const release = (o: number) => {
       if (dragged) holds.push(held, o)
+      // A press held on through contiguous clips stays one press.
+      if (press && Math.abs(presses.at(-1)! - held) < 1e-6) presses[presses.length - 1] = o
+      else if (press) presses.push(held, o)
       press = null
       dragged = false
     }
@@ -229,24 +239,22 @@ function bakePath(input: SceneInput, map: TimeMap) {
       const z = holds[h + 1]
       for (let i = Math.max(0, Math.ceil((a - HOLD) * RATE)); i < n && i / RATE < z + HOLD; i++) {
         const t = i / RATE
-        const w = t < a ? ease((t - a + HOLD) / HOLD) : t > z ? ease((z + HOLD - t) / HOLD) : 1
+        const w = t < a ? easeOut((t - a + HOLD) / HOLD) : t > z ? 1 - easeOut((t - z) / HOLD) : 1
         x[i] += (rx[i] - x[i]) * w
         y[i] += (ry[i] - y[i]) * w
       }
     }
   }
 
-  // 4. Across a cut, spring from the old position to the new path.
+  // 4. Across a cut, move from the old position onto the new path.
   for (let j = 1; j < segI.length; j++) {
     const s = segI[j]
-    const e = segI[j + 1] ?? n
+    const e = Math.min(segI[j + 1] ?? n, s + Math.ceil(CUT * RATE))
     if (s <= 0 || s >= n) continue
     const dx = x[s - 1] - x[s]
     const dy = y[s - 1] - y[s]
-    const d = Math.max(Math.abs(dx), Math.abs(dy))
     for (let i = s; i < e; i++) {
-      const g = 1 - springProgress((i - s) / RATE)
-      if (Math.abs(g) * d < 0.01) break
+      const g = 1 - easeOut((i - s) / (CUT * RATE))
       x[i] += dx * g
       y[i] += dy * g
     }
@@ -259,7 +267,7 @@ function bakePath(input: SceneInput, map: TimeMap) {
     const x0 = x[0]
     const y0 = y[0]
     for (let i = Math.max(1, Math.floor(t0 * RATE)); i < n; i++) {
-      const w = ease((i / RATE - t0) / L)
+      const w = easeOut((i / RATE - t0) / L)
       x[i] += (x0 - x[i]) * w
       y[i] += (y0 - y[i]) * w
     }
@@ -280,8 +288,12 @@ function bakePath(input: SceneInput, map: TimeMap) {
     }
   }
 
-  // 7. Hidden clips: opacity steps toward 0 or 1 at a fixed rate, so a fade starts at the clip edge.
-  for (let i = 1; vis && i < n; i++) vis[i] = Math.max(vis[i - 1] - 1 / (HIDE * RATE), Math.min(vis[i - 1] + 1 / (HIDE * RATE), vis[i]))
+  // 7. Hidden clips: the opacity fades toward 0 or 1 from the clip edge, from wherever the last fade left it.
+  let fade = { at: 0, from: vis?.[0] ?? 1, to: vis?.[0] ?? 1 }
+  for (let i = 1; vis && i < n; i++) {
+    if (vis[i] !== fade.to) fade = { at: i, from: vis[i - 1], to: vis[i] }
+    vis[i] = mix(fade.from, fade.to, easeOut((i - fade.at) / (HIDE * RATE)))
+  }
 
   // Click pins: residual against the finished grid, reach limited to the neighbors and the run.
   const kept = pins.filter((q, k) => k === 0 || q.t - pins[k - 1].t > 1e-6)
@@ -324,6 +336,8 @@ function bakePath(input: SceneInput, map: TimeMap) {
     pinB,
     spanA: Float64Array.from(spans.filter((_, i) => i % 2 === 0)),
     spanB: Float64Array.from(spans.filter((_, i) => i % 2 === 1)),
+    pressA: Float64Array.from(presses.filter((_, i) => i % 2 === 0)),
+    pressB: Float64Array.from(presses.filter((_, i) => i % 2 === 1)),
     imgT: Float64Array.from(imgT),
     imgV,
   }
@@ -353,7 +367,7 @@ export function cursorAt(c: PreparedCursor, t: number): CursorLayer | null {
     image: img.image,
     hotX: img.hotX,
     hotY: img.hotY,
-    scale: (p.k / img.scale) * st.size,
+    scale: (p.k / img.scale) * st.size * pressOf(c, bisect(c.pressA, t) - 1, t),
     angle: c.angle ? lerp(c.angle, t) : 0, // about the hotspot, positive = clockwise on screen
     opacity,
   }
@@ -381,9 +395,20 @@ function locate(c: PreparedCursor, t: number): { x: number; y: number; k: number
 
 function opacityAt(c: PreparedCursor, t: number): number {
   const j = bisect(c.spanA, t) - 1
-  const out = j >= 0 ? 1 - ease((t - c.spanB[j] - IDLE) / FADE_OUT) : 0
-  const into = j + 1 < c.spanA.length ? ease((t - c.spanA[j + 1] + FADE_IN) / FADE_IN) : 0
+  const out = j >= 0 ? 1 - easeOut((t - c.spanB[j] - IDLE) / FADE_OUT) : 0
+  const into = j + 1 < c.spanA.length ? easeOut((t - c.spanA[j + 1] + FADE_IN) / FADE_IN) : 0
   return Math.max(out, into)
+}
+
+/** The cursor's size at t from press j on (the last that starts by t; none: -1), relative to its own: down
+ *  toward PRESS.scale from where the press before left it, and back up from the release. */
+function pressOf(c: PreparedCursor, j: number, t: number, depth = 0): number {
+  if (j < 0) return 1
+  const a = c.pressA[j]
+  const b = c.pressB[j]
+  const from = j && depth < 8 && a - c.pressB[j - 1] < PRESS.up ? pressOf(c, j - 1, a, depth + 1) : 1
+  const down = mix(from, PRESS.scale, easeOut((Math.min(t, b) - a) / PRESS.down))
+  return t < b ? down : mix(down, 1, easeOut((t - b) / PRESS.up))
 }
 
 const clampT = (c: PreparedCursor, t: number) => (t > 0 ? Math.min(t, c.duration) : 0) // NaN -> 0
@@ -420,8 +445,6 @@ function box(a: Float32Array, from: number, to: number, r: number, tmp: Float32A
   }
   a.set(tmp.subarray(0, len), from)
 }
-
-const ease = (u: number) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
 
 function valid(e: InputEvent): boolean {
   if (!e || !Number.isFinite(e.t)) return false

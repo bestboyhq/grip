@@ -6,14 +6,10 @@
 	import Head from '#lib/Head.svelte';
 	import Media, { type Clip } from '#lib/Media.svelte';
 
-	// A changelog clip is recorded in one theme and shows in both.
-	const clip = (version: Shown): Clip => {
-		const one = {
-			src: asset(`media/changelog-${version}.mp4`),
-			still: asset(`media/changelog-${version}.webp`),
-		};
-		return { light: one, dark: one };
-	};
+	const clip = (version: Shown): Clip => ({
+		src: asset(`media/changelog-${version}.mp4`),
+		still: asset(`media/changelog-${version}.webp`),
+	});
 
 	const day = (iso: string): string =>
 		new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', {

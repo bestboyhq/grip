@@ -9,7 +9,22 @@ Turning clicks and typing into camera direction.
 
 - Generate zoom ranges from clicks and typing as ordinary timeline items the user edits or disables.
   A press holds its zoom until it is released, so a drag stays zoomed in from the press to the drop.
+- An auto zoom pulls out 0.4 s after its last click, keystroke, or release, once it has shown its framing for 1 s.
+  Held 2 s, the view stays on the spot of a dialog its submit just closed, while what the submit did shows elsewhere.
+  Clicks still join one zoom as if each held 2 s: pulling out and back in between clicks a few seconds apart looks erratic.
+- After an auto zoom, a cursor that sets off within 2 s and comes to rest elsewhere is pointing at what the action did: a glass lens follows it there and holds 1.3 s once it rests.
+  The lens gives way to the next zoom, and is left out when that leaves it too short to read.
+  A cursor that waits where it clicked, nudges a little, or wanders on gets no lens; a lens after every move is noise.
+  An auto lens magnifies 2x at least, whatever the auto zoom level: at 1.5x a full zoom still frames a whole dialog, but a lens only bends the screen.
 - A zoomed view follows the cursor through a dead zone, panning only as the cursor nears the edge.
+- The camera sets off for a click or typing 0.28 s before it, twice that at Smooth: an auto zoom starts then, and so does a glide to a new place.
+  The cursor leads, and the move lands through the action.
+  A camera that is there by the click moves together with the cursor, and then everything stands still for a beat before the click.
+- A click or typing place outside the middle of the view, or away from the places the view frames now, moves the action there: the view glides to center it, together with the places after it that fit in one view.
+  A view clamped at the screen's edge can reach a place at the side of its frame; judged from the view alone, that place counts as framed.
+  While a place holds the view, the cursor on its way there only has to stay in frame.
+  Nudged only far enough to bring it in, a dialog opened from a corner button stays at the side of the frame and cut, and the camera reads as lagging.
+  Centering each click on its own pans at every field of a form.
 - Manual zooms set target, level, and duration, animated or instant.
 - A zoom that starts on the first frame starts zoomed in.
 - Vertical output follows the cursor continuously, since the frame is narrower than the source.
@@ -36,21 +51,28 @@ Turning clicks and typing into camera direction.
   Supersampling the rim's curl changes a few hundred pixels of a frame, which does not earn its taps.
 - A loupe following the cursor keeps it on the magnifying flat top through the fastest flick: the lens aims ahead by its spring's lag, and a cursor that reaches the edge of what the flat top shows carries the lens along.
   A lens that trails a flick hides the cursor under its glass, then curls it back in at the rim, which reads as a stutter.
-- A loupe pops in and out in about a fifth of a second, smeared by motion blur, and what it shows blurs while it glides or magnifies like the rest of the frame.
+- A loupe opens out of what it shows as the camera zooms in, on the same curve and in the camera's time for its level, and closes back into it a fifth faster.
+  Its glass grows from 0.4 of its radius together with its magnification.
+  Motion blur smears the lens, and what it shows blurs while it glides or magnifies like the rest of the frame.
+  A full-size lens that magnifies in a few frames shows up at once, on a clock of its own, and the motion blur swirls what it shows: it reads as a glitch, not glass.
 - A loupe keeps its round shape by default; Liquid, which stretches the glass along its motion, is the user's pick.
 - New zooms, manual and automatic, take the type, loupe size, and Liquid the user last picked on any zoom, in every project.
 - A loupe appears by growing its magnification from 1 with its content opaque; fading its content in shows the screen twice, magnified over unmagnified.
 - Zooms may overlap, and none of them wins: overlapping zooms combine.
   The camera takes the deepest level on and keeps every targeted point, and the followed cursor, in frame; it backs out to fit them, never past the shallowest zoom on.
-- Zoomed in, a change of zooms (back to back, or one coming on or off over another) glides the camera to the new framing: it eases in and out, longer the further the framing moves.
-  A spring as stiff as a snappy zoom in, given that change as one step, whips a pan across the zoomed screen half way in a tenth of a second, which reads as a jump.
+- Every camera move, in, out, or to a new framing, runs on the ease-out curve (the `motion` skill), longer the further the framing moves: 0.45 s for a 2x zoom in or out at Focused, twice that at Smooth.
+  A third longer, the move is still under way well after the click it serves, and the video reads as slow.
+  A spring as stiff as a snappy zoom in, given a change of framing as one step, whips a pan across the zoomed screen half way in a tenth of a second, which reads as a jump.
+- A camera move is one zoom about the point that stays put on screen, in log scale, so the screen flows under the camera.
+  Every view on the way lies between the first and the last, so none needs clamping to the screen.
+  Clamped to the screen frame by frame instead, a zoom in at a corner hits the corner in a few frames and then only grows out of it, which reads as stiff.
 - A zoom on the cursor taking over from one that already followed it carries on from where the view was.
   Re-aiming at the cursor there lurches the view across the seam for no reason the viewer can see.
 - A view that starts following the cursor from a framing elsewhere glides to it, and holds the cursor in frame only once it is in view.
   Pulling the view to the cursor at once snaps it across the screen in a single frame.
   A loupe over a full zoom magnifies the zoomed view.
   Loupes on different targets show as separate lenses; loupes on one target share one lens at the largest size and deepest level.
-- Loupes back to back, or less than a second apart, share one lens: it glides to the next target and eases into the next level, size, and shape.
+- Loupes back to back, or less than a second apart, share one lens: it glides to the next target and into the next level, size, and shape on the curve.
   Fading one lens out and the next in at another spot reads as two unrelated effects.
 - Zoomed text stays sharp: capture at native resolution, and past the source pixel density upscale with a local super-resolution model trained on UI text.
 

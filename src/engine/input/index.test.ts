@@ -43,12 +43,12 @@ test('idle: still stretches from the start to the duration, jitter and keys do n
     [{ t: 10, type: 'scroll', x: 300, y: 100, dx: 0, dy: -40 }],
   )
   assert.deepEqual(idleSegments(events, 2, 15), [
-    { start: 0, end: 5 },
-    { start: 5.58, end: 10 },
-    { start: 10, end: 15 },
+    { start: 0, end: 5, at: { x: 100, y: 100 } },
+    { start: 5.58, end: 10, at: { x: 300, y: 100 } },
+    { start: 10, end: 15, at: { x: 300, y: 100 } },
   ])
   assert.deepEqual(idleSegments(events, 6), []) // no duration: no open tail
-  assert.deepEqual(idleSegments([], 2, 3), [{ start: 0, end: 3 }])
+  assert.deepEqual(idleSegments([], 2, 3), [{ start: 0, end: 3, at: null }])
 })
 
 test('jitter: in-place nudges go, real slow motion and every non-move event stay', () => {

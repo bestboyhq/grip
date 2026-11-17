@@ -28,8 +28,8 @@
   .dm .av{width:18px;height:18px;border-radius:5px;font-size:7.5px}
   .pres{position:absolute;right:-3px;bottom:-3px;width:9px;height:9px;border-radius:50%;background:#22c55e;border:2px solid light-dark(#141416,#0b0b0c)}
   .pres.away{background:light-dark(#141416,#0b0b0c);box-shadow:inset 0 0 0 1.5px light-dark(#71717a,#6b6b73)}
-  /* panel */
-  #panel{position:absolute;left:260px;top:44px;width:1172px;height:848px;background:light-dark(#fff,#141416);box-shadow:0 0 0 1px light-dark(transparent,rgba(255,255,255,.06));border-radius:10px;overflow:hidden;display:flex}
+  /* panel: it runs to the screen's right and bottom edges, so a crop that reaches them shows no chrome */
+  #panel{position:absolute;left:260px;top:44px;width:1180px;height:856px;padding:0 8px 8px 0;background:light-dark(#fff,#141416);box-shadow:0 0 0 1px light-dark(transparent,rgba(255,255,255,.06));border-radius:10px 0 0 0;overflow:hidden;display:flex}
   #chan{flex:1;min-width:0;display:flex;flex-direction:column}
   header{height:56px;flex:none;border-bottom:1px solid light-dark(#ebebeb,#202023);display:flex;align-items:center;padding:0 16px 0 20px;gap:8px;white-space:nowrap}
   header h1{font-size:16px;font-weight:650;letter-spacing:-.1px;display:flex;align-items:center;gap:4px}

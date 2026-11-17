@@ -2,7 +2,8 @@
      bottom corner, a floor that brightens toward it, and the window's shadow. CSS gradients and a big box-shadow step
      through 8-bit tones in visible rings; WebGL works in floats and dithers, so the light and the shadow run smooth. One
      WebGL context draws every stage, each copied into its own 2D canvas. Until it draws, or without WebGL, a CSS
-     version shows with a fine grain, `lit` stays false, and the window keeps its CSS shadow. -->
+     version shows with a fine grain, `lit` stays false, and the window keeps its CSS shadow. A stage holds up to
+     three windows, each casting its own shadow. -->
 <script module lang="ts">
 	import type { Attachment } from 'svelte/attachments';
 
@@ -21,6 +22,8 @@
 
 	// The window's `0 32px 64px -24px` box-shadow, in CSS pixels.
 	const CAST = { offset: 32, blur: 64, spread: -24 } as const;
+	// The windows one stage casts the shadows of; the shader unrolls a loop of this length.
+	const CASTERS = 3;
 
 	type Cast = Readonly<{
 		rect: readonly [x: number, y: number, width: number, height: number];
@@ -36,15 +39,13 @@
 		ink: Rgba;
 		strength: number;
 		shadow: Rgba;
-		cast: Cast | null;
+		casts: readonly Cast[];
 	}>;
 
 	type Renderer = Readonly<{
 		source: HTMLCanvasElement;
 		draw: (width: number, height: number, scene: Scene) => void;
 	}>;
-
-	const NO_CAST: Cast = { rect: [0, 0, 0, 0], radius: 0, sigma: 1, offset: 0, spread: 0 };
 
 	const VERTEX = 'attribute vec2 position; void main() { gl_Position = vec4(position, 0., 1.); }';
 
@@ -59,8 +60,9 @@ uniform vec2 spread;
 uniform vec2 floorFrom;
 uniform vec2 floorTo;
 uniform float strength;
-uniform vec4 caster;
-uniform float casterRadius;
+uniform vec4 casters[${CASTERS}];
+uniform float casterRadii[${CASTERS}];
+uniform int casterCount;
 uniform float shadowSigma;
 uniform float shadowOffset;
 uniform float shadowSpread;
@@ -129,11 +131,13 @@ void main() {
 	color = mix(color, ink, .1875 * strength * softClamp(1. - spotDistance, .3));
 	color += (ink - page) * .0186 * strength;
 
-	if (shadow.a > 0.) {
-		vec2 point = vec2(gl_FragCoord.x, size.y - gl_FragCoord.y);
+	vec2 point = vec2(gl_FragCoord.x, size.y - gl_FragCoord.y);
+	for (int i = 0; i < ${CASTERS}; i++) {
+		if (i >= casterCount) break;
+		vec4 caster = casters[i];
 		vec2 lower = caster.xy - shadowSpread + vec2(0., shadowOffset);
 		vec2 upper = caster.xy + caster.zw + shadowSpread + vec2(0., shadowOffset);
-		float corner = max(casterRadius + shadowSpread, 0.);
+		float corner = max(casterRadii[i] + shadowSpread, 0.);
 		color = mix(color, shadow.rgb, shadow.a * roundedBoxShadow(lower, upper, point, shadowSigma, corner));
 	}
 
@@ -205,8 +209,9 @@ void main() {
 		const floorFrom = uniform('floorFrom');
 		const floorTo = uniform('floorTo');
 		const strength = uniform('strength');
-		const caster = uniform('caster');
-		const casterRadius = uniform('casterRadius');
+		const casters = uniform('casters');
+		const casterRadii = uniform('casterRadii');
+		const casterCount = uniform('casterCount');
 		const shadowSigma = uniform('shadowSigma');
 		const shadowOffset = uniform('shadowOffset');
 		const shadowSpread = uniform('shadowSpread');
@@ -226,14 +231,16 @@ void main() {
 				gl.uniform2f(floorFrom, ...scene.lighting.floorFrom);
 				gl.uniform2f(floorTo, ...scene.lighting.floorTo);
 				gl.uniform1f(strength, scene.strength);
-				const cast = scene.cast ?? NO_CAST;
-				const [red, green, blue, opacity] = scene.shadow;
-				gl.uniform4f(caster, ...cast.rect);
-				gl.uniform1f(casterRadius, cast.radius);
-				gl.uniform1f(shadowSigma, cast.sigma);
-				gl.uniform1f(shadowOffset, cast.offset);
-				gl.uniform1f(shadowSpread, cast.spread);
-				gl.uniform4f(shadow, red, green, blue, scene.cast ? opacity : 0);
+				const casts = scene.casts.slice(0, CASTERS);
+				gl.uniform1i(casterCount, casts.length);
+				if (casts[0]) {
+					gl.uniform4fv(casters, casts.flatMap((cast) => cast.rect));
+					gl.uniform1fv(casterRadii, casts.map((cast) => cast.radius));
+					gl.uniform1f(shadowSigma, casts[0].sigma);
+					gl.uniform1f(shadowOffset, casts[0].offset);
+					gl.uniform1f(shadowSpread, casts[0].spread);
+				}
+				gl.uniform4fv(shadow, [...scene.shadow]);
 				gl.drawArrays(gl.TRIANGLES, 0, 3);
 			},
 		};
@@ -302,7 +309,7 @@ void main() {
 	function light(
 		lighting: Lighting,
 		ready: (lit: boolean) => void,
-		caster: Element | undefined,
+		casters: readonly Element[],
 	): Attachment<HTMLCanvasElement> {
 		return (canvas) => {
 			let visible = false;
@@ -322,7 +329,7 @@ void main() {
 					ink: toRgba(style.color),
 					strength: Number.parseFloat(style.getPropertyValue('--strength')) || 1,
 					shadow: toRgba(style.getPropertyValue('--shadow')),
-					cast: caster ? castOf(canvas, caster) : null,
+					casts: casters.map((caster) => castOf(canvas, caster)),
 				});
 				target.drawImage(gl.source, 0, 0);
 				ready(true);
@@ -348,7 +355,7 @@ void main() {
 			} catch {
 				resized.observe(canvas);
 			}
-			if (caster) resized.observe(caster);
+			for (const caster of casters) resized.observe(caster);
 			seen.observe(canvas);
 			warm();
 			themed.observe(document.documentElement, { attributeFilter: ['data-theme'] });
@@ -368,15 +375,15 @@ void main() {
 <script lang="ts">
 	type Props = {
 		side: Side; // the bottom corner the light rises from
-		caster?: Element | undefined;
+		casters?: readonly Element[];
 		lit?: boolean;
 	};
 
-	let { side, caster, lit = $bindable(false) }: Props = $props();
+	let { side, casters = [], lit = $bindable(false) }: Props = $props();
 </script>
 
 <div class={['light', side, { lit }]} aria-hidden="true">
-	<canvas width="0" height="0" {@attach light(LIGHTING[side], (ready) => (lit = ready), caster)}></canvas>
+	<canvas width="0" height="0" {@attach light(LIGHTING[side], (ready) => (lit = ready), casters)}></canvas>
 </div>
 
 <style>

@@ -46,3 +46,22 @@ export function springDuration(c: SpringConfig = SPRING_DEFAULT, eps = 1e-3): nu
 }
 
 export const mix = (a: number, b: number, p: number) => a + (b - a) * p
+
+/** CSS `ease-out`, cubic-bezier(0, 0, 0.58, 1): progress 0 -> 1 at u of a move's duration (clamped). Every
+ *  timed move and fade the renderer draws runs on it, so the camera, loupes, cursor, overlays, and layout
+ *  move as one: it sets off at 1.72 times the mean speed, is 90% there at 0.74, and lands with no speed left.
+ *  Springs stay only on what follows something moving (the camera and a loupe on the cursor, the tilt). */
+export function easeOut(u: number): number {
+  if (!(u > 0)) return 0
+  if (u >= 1) return 1
+  // x(s) = s²(1.74 - 0.74 s) rises steadily, so halving finds the s at u; y(s) = s²(3 - 2 s) is the progress.
+  let lo = 0
+  let hi = 1
+  for (let i = 0; i < 24; i++) {
+    const s = (lo + hi) / 2
+    if (s * s * (1.74 - 0.74 * s) < u) lo = s
+    else hi = s
+  }
+  const s = (lo + hi) / 2
+  return s * s * (3 - 2 * s)
+}

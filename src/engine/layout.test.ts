@@ -4,6 +4,7 @@ import { createProject, type Project, type Rect } from '../shared/project.ts'
 import { mapRange, timeMap } from '../shared/timemap.ts'
 import { nativeHeight, outputSize } from './scene.ts'
 import { prepareLayout, layoutAt, fitScreen, deviceGeometry, deviceBounds, cameraCrop, faceAt, silentRanges, voiceRanges, coverRatio } from './layout.ts'
+import { easeOut } from './motion/spring.ts'
 
 const W = 1920, H = 1080
 const project = (edit: (p: Project) => void = () => {}) => {
@@ -226,8 +227,8 @@ test('masks around t are found by index: same layers, in project order, as a sca
     const s = layoutAt(l, t).screen!.rect
     const scan = p.masks.flatMap((m) => {
       let o = 0
-      for (const [a, b] of mapRange(map, m.start, m.end)) o = Math.max(o, 1 - Math.max(a - t, t - b, 0) / 0.2)
-      return o > 0 ? [{ x: s.x + m.rect.x * s.w, o: Math.min(o, 1) }] : []
+      for (const [a, b] of mapRange(map, m.start, m.end)) o = Math.max(o, t < a ? easeOut(1 - (a - t) / 0.2) : 1 - easeOut((t - b) / 0.2))
+      return o > 0 ? [{ x: s.x + m.rect.x * s.w, o }] : []
     })
     assert.deepEqual(layoutAt(l, t).masks.map((m) => [m.rect.x, m.opacity]), scan.map((m) => [m.x, m.o]), `t=${t}`)
   }
