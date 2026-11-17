@@ -49,7 +49,7 @@ export const mix = (a: number, b: number, p: number) => a + (b - a) * p
 
 /** CSS `ease-out`, cubic-bezier(0, 0, 0.58, 1): progress 0 -> 1 at u of a move's duration (clamped). Every
  *  timed move and fade the renderer draws runs on it, so the camera, loupes, cursor, overlays, and layout
- *  move as one: it sets off at 1.74 times the mean speed, is 90% there at 0.66, and lands with no speed left.
+ *  move as one: it sets off at 1.72 times the mean speed, is 90% there at 0.74, and lands with no speed left.
  *  Springs stay only on what follows something moving (the camera and a loupe on the cursor, the tilt). */
 export function easeOut(u: number): number {
   if (!(u > 0)) return 0

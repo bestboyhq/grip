@@ -144,7 +144,7 @@ test('clicked elements stay whole, but the cursor always stays in frame', () => 
   }
 })
 
-test('a click away from the framing re-centers the view on it and the clicks after it, gliding there by the click', () => {
+test('a click away from the framing re-centers the view on it and the clicks after it, setting off 0.28 s before the click', () => {
   // A button in the top-right corner opens a dialog in the middle, filled in with three clicks: the action
   // moves there, and so does the view, framing them all, so the clicks after the first do not pan it again.
   // Clamped at the screen's edge for the button, the view reaches the dialog's first field just inside its
@@ -160,15 +160,19 @@ test('a click away from the framing re-centers the view on it and the clicks aft
     const v = visible(view(t), 1660, 1080)
     return Math.max(Math.abs(p.x - view(t).center.x) / v.hw, Math.abs(p.y - view(t).center.y) / v.hh)
   }
-  // Centered between them (left where it was, the first field would sit at the zone's 0.4 edge) by the first click.
-  for (const t of [3, 4.5, 5.6, 7]) assert.ok(off(t, at(1606, 788.5)) < 0.06, `the dialog is ${off(t, at(1606, 788.5))} of the half view off center at ${t} s`)
+  // Centered between them (left where it was, the first field would sit at the zone's 0.4 edge) from the first click on.
+  for (const t of [3.3, 4.5, 5.6, 7]) assert.ok(off(t, at(1606, 788.5)) < 0.06, `the dialog is ${off(t, at(1606, 788.5))} of the half view off center at ${t} s`)
   // The corner button stays framed through its click, and the pan eases in and out like a change of
   // zooms: a spring alone whips it 10% to 90% of the way in 0.24 s.
   assert.ok(view(1.7).center.x >= view(1.5).center.x - 0.5, 'the pan leaves the corner button before its click')
   const x0 = view(1.5).center.x
-  const x1 = view(3.2).center.x
-  const when = (share: number) => frames(1.5, 3.2, 240).find((t) => (view(t).center.x - x0) / (x1 - x0) >= share)!
+  const x1 = view(3.4).center.x
+  const when = (share: number) => frames(1.5, 3.4, 240).find((t) => (view(t).center.x - x0) / (x1 - x0) >= share)!
   assert.ok(when(0.9) - when(0.1) >= 0.3, `the pan takes ${when(0.9) - when(0.1)} s`)
+  // The cursor leads and the pan lands through the click. There by the click, the view moves with the
+  // cursor and everything then stands still until the click.
+  assert.ok(Math.abs(when(0.01) - 2.72) < 0.02, `the pan sets off at ${when(0.01)} s for the click at 3 s`)
+  assert.ok(when(0.99) > 3 && when(0.99) < 3.3, `the pan lands at ${when(0.99)} s`)
 })
 
 test('clamped: a zoomed view never shows background past the screen edge', () => {
@@ -509,14 +513,14 @@ test('generateAutoZooms: merges, leads, holds, covers typing, skips the erratic'
   // 0.2, 3, 4 merge; 10 alone holds its framing 1 s; the click at 19.5 joins its typing; the burst
   // across the screen is erratic; typing at 37 zooms on the click at 32.1. Each zooms out 0.4 s after
   // its last action, so what the action did shows in full.
-  assert.deepEqual(spans, [[0, 4.4], [9.57, 11], [19.07, 23.4], [36.57, 38.4]])
+  assert.deepEqual(spans, [[0, 4.4], [9.72, 11], [19.22, 23.4], [36.72, 38.4]])
   for (const z of zs) assert.ok(z.auto && z.enabled && z.level === 2 && z.target.kind === 'cursor' && z.id)
   assert.deepEqual(generateAutoZooms([], sources, on, {}, [{ start: 5, end: 8 }]), [], 'typing with no known place is left out')
   const up = (t: number, x = 1400, y = 900): InputEvent => ({ t, type: 'up', x, y, button: 'left' })
   const held = generateAutoZooms([click(3), up(3.1), click(10), up(15, 2000, 1200), click(20), click(25, -10, 900), up(27)], sources, on, {}, [])
-  assert.deepEqual(held.map((z) => [+z.start.toFixed(2), +z.end.toFixed(2)]), [[2.57, 4], [9.57, 15.4], [19.57, 21]], 'a drag holds from press to release; a release after a press off the screen holds nothing')
+  assert.deepEqual(held.map((z) => [+z.start.toFixed(2), +z.end.toFixed(2)]), [[2.72, 4], [9.72, 15.4], [19.72, 21]], 'a drag holds from press to release; a release after a press off the screen holds nothing')
   const [last] = generateAutoZooms([click(43.4)], sources, on, {}, [])
-  assert.deepEqual([+last.start.toFixed(2), last.end], [42.97, 45], 'too close to the end to zoom out: it holds to the end')
+  assert.deepEqual([+last.start.toFixed(2), last.end], [43.12, 45], 'too close to the end to zoom out: it holds to the end')
 })
 
 test('generateAutoZooms: a cursor that sets off to point at something after a zoom gets a lens that follows it there', () => {
@@ -529,13 +533,13 @@ test('generateAutoZooms: a cursor that sets off to point at something after a zo
     [...moves([[0, 1400, 900], [setOff, 1400, 900], [setOff + 0.5, ...to], [45, ...to]]), press(3, 'down'), press(3.1, 'up'), ...more].sort((a, b) => a.t - b.t)
   const spans = (zs: Zoom[]) => zs.map((z) => [z.mode ?? 'zoom', +z.start.toFixed(2), +z.end.toFixed(2)])
   const zs = generateAutoZooms(take(4.8, [1800, 700]), sources, on, {}, [])
-  assert.deepEqual(spans(zs), [['zoom', 2.57, 4], ['loupe', 4.81, 6.6]], 'on as the cursor sets off, off 1.3 s after it rests')
+  assert.deepEqual(spans(zs), [['zoom', 2.72, 4], ['loupe', 4.81, 6.6]], 'on as the cursor sets off, off 1.3 s after it rests')
   assert.ok(zs[1].auto && zs[1].target.kind === 'cursor' && zs[1].level === 2 && zs[1].size === 240)
-  assert.deepEqual(spans(generateAutoZooms(take(4.8, [1440, 880]), sources, on, {}, [])), [['zoom', 2.57, 4]], 'a nudge points at nothing new')
-  assert.deepEqual(spans(generateAutoZooms(take(6.5, [1800, 700]), sources, on, {}, [])), [['zoom', 2.57, 4]], 'setting off long after is not a follow-up')
+  assert.deepEqual(spans(generateAutoZooms(take(4.8, [1440, 880]), sources, on, {}, [])), [['zoom', 2.72, 4]], 'a nudge points at nothing new')
+  assert.deepEqual(spans(generateAutoZooms(take(6.5, [1800, 700]), sources, on, {}, [])), [['zoom', 2.72, 4]], 'setting off long after is not a follow-up')
   const next = (t: number) => [press(t, 'down', 1800, 700), press(t + 0.1, 'up', 1800, 700)]
-  assert.deepEqual(spans(generateAutoZooms(take(5.9, [1800, 700], next(7.6)), sources, on, {}, [])), [['zoom', 2.57, 4], ['loupe', 5.91, 7.17], ['zoom', 7.17, 8.6]], 'the lens gives way to the next zoom')
-  assert.deepEqual(spans(generateAutoZooms(take(6, [1800, 700], next(7.6)), sources, on, {}, [])), [['zoom', 2.57, 4], ['zoom', 7.17, 8.6]], '...or leaves it to it when it would flinch')
+  assert.deepEqual(spans(generateAutoZooms(take(5.9, [1800, 700], next(7.6)), sources, on, {}, [])), [['zoom', 2.72, 4], ['loupe', 5.91, 7.32], ['zoom', 7.32, 8.6]], 'the lens gives way to the next zoom')
+  assert.deepEqual(spans(generateAutoZooms(take(6.2, [1800, 700], next(7.6)), sources, on, {}, [])), [['zoom', 2.72, 4], ['zoom', 7.32, 8.6]], '...or leaves it to it when it would flinch')
   const [, lens] = generateAutoZooms(take(4.8, [1800, 700]), sources, on, { mode: 'loupe', size: 300, liquid: true }, [])
   assert.ok(lens.mode === 'loupe' && lens.size === 300 && lens.liquid, 'the lens look the user last picked')
   // A lens magnifies 2x at least, whatever the auto level, and keeps to that as the level changes.
@@ -598,7 +602,7 @@ test('fixture: auto zooms cover every click, keep the cursor in frame and clicke
   t.diagnostic(`auto zooms: ${zooms.map((z) => `${z.start.toFixed(2)}-${z.end.toFixed(2)}`).join(', ')}`)
   const clicks = events.filter((e): e is Extract<InputEvent, { button: unknown }> => e.type === 'down')
   assert.ok(zooms.length > 0)
-  for (const c of clicks) assert.ok(zooms.some((z) => z.start <= c.t - 0.4 && z.end >= c.t + 0.4), `click at ${c.t} is not covered`)
+  for (const c of clicks) assert.ok(zooms.some((z) => z.start <= c.t - 0.25 && z.end >= c.t + 0.4), `click at ${c.t} is not covered`)
   zooms.forEach((z, i) => assert.ok(z.start >= 0 && z.end <= project.sources.duration && (i === 0 || zooms[i - 1].end <= z.start)))
 
   for (const style of ['focused', 'smooth'] as const) {
@@ -612,8 +616,9 @@ test('fixture: auto zooms cover every click, keep the cursor in frame and clicke
     const r = layoutAt(p.layout, 0).screen!.rect
     for (const c of clicks) {
       const v = visible(view(c.t))
-      // The ease-out curve lands the last tenth of a 2x zoom as the click happens.
-      assert.ok(view(c.t).scale > 1.8, `not zoomed in at the click at ${c.t}: ${view(c.t).scale.toFixed(3)} (${style})`)
+      // The zoom in lands through the click: most of the way in as it happens, and in right after.
+      assert.ok(view(c.t).scale > 1.5, `not zoomed in at the click at ${c.t}: ${view(c.t).scale.toFixed(3)} (${style})`)
+      if (style === 'focused') assert.ok(view(c.t + 0.35).scale > 1.98, `not in after the click at ${c.t}: ${view(c.t + 0.35).scale.toFixed(3)}`)
       const x = r.x + (c.x * r.w) / project.sources.screen!.width
       const y = r.y + (c.y * r.h) / project.sources.screen!.height
       // Within the focus zone (plus spring slack), so the element around the click is in frame.

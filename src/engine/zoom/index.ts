@@ -46,8 +46,7 @@ import { idleSegments, typingSegments, type Segment } from '../input/index.ts'
 const DT = 1 / 120 // s between camera samples
 /** Camera springs per screen animation style, all critical (no overshoot), for following the cursor
  *  between moves: a critical spring trails a moving target by 2 / omega s, so following aims that far
- *  ahead, and framing starts 6 / omega s early. Every move to a new framing runs on the ease-out curve
- *  instead, PACE times as long in the style. */
+ *  ahead. Every move to a new framing runs on the ease-out curve instead, PACE times as long in the style. */
 const SPRINGS: Record<Style['screenAnimation'], SpringConfig> = {
   focused: { stiffness: 196, damping: 28, mass: 1 },
   smooth: { stiffness: 49, damping: 14, mass: 1 },
@@ -66,7 +65,11 @@ const EDGE_ZONE = 0.85 // the cursor never gets closer to the frame edge than th
 const WALL_ZONE = 0.95 // ...and when a fast flick outruns the trailing spring, never past this
 const CAMERA_CLEAR = 28 // screen points x cursor size (about a cursor's height, magnified with it by the
 // zoom) the cursor and clicked elements keep from a picture-in-picture camera
-const LEAD = 6 / Math.sqrt(SPRINGS.focused.stiffness) // s: auto zooms start this long before a click or typing, so the camera is about there by then
+/** s: the camera sets off for a click or typing this long before it (PACE times that in a slower style),
+ *  and an auto zoom starts this long before its first. The cursor leads, and the move lands through the
+ *  action. A camera that is there by the click moves together with the cursor, then everything stands
+ *  still for a beat before the click. */
+const LEAD = 0.28
 const KEEP = 1 // s: a clicked element stays framed this long after the click
 const HOLD = 2 // s: auto zooms group as if each held this long after its last click or keystroke, or a press's release
 /** s: ...but one zooms out this soon after it, once it has shown its framing for MIN_HOLD. Held longer,
@@ -509,7 +512,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   const pace = PACE[project.style.screenAnimation] ?? PACE.focused
   const omega = Math.sqrt(spring.stiffness / spring.mass)
   const lag = 2 / omega
-  const lead = 6 / omega
+  const lead = pace * LEAD
   if (!screen) return { n, data: new Float32Array(0), jumps: new Map<number, number>() }
 
   // The screen layer at t; where the layout hides the screen, the last one seen.
@@ -532,7 +535,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   frames.sort((p, q) => p.a - q.a)
 
   const cam = segments(enabled.filter((z) => z.mode !== 'loupe'), map)
-  // A slower style starts zooming in that much earlier, so every style is about in by LEAD after the start.
+  // A slower style starts zooming in that much earlier, so every style is as far in by the click.
   cam.forEach((s, i) => {
     if (!s.zooms.some((z) => z.instant) && s.a > AT_START) s.a = Math.max(s.a - (lead - LEAD), i ? cam[i - 1].b : 0)
   })
@@ -586,17 +589,11 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
       c = aim ?? mid ?? { x: shown.x + shown.w / 2, y: shown.y + shown.h / 2 }
       // Click and typing places open their windows in order. One outside the focus zone, of the view or
       // of the run of places it frames, moves the action there: the view re-centers on it and the places
-      // after it that fit, its window opening as soon as the glide there has to set off to land by the
-      // click, once the click before it is done. Nudged only to the zone's edge, or left where it is because
-      // a view clamped at the screen's edge happens to reach it, a dialog opened from a corner button stays
-      // at the frame's side.
+      // after it that fit, setting off as its window opens, LEAD before the click. Nudged only to the zone's
+      // edge, or left where it is because a view clamped at the screen's edge happens to reach it, a dialog
+      // opened from a corner button stays at the frame's side.
       const far = (p: Pt) => [c, run].some((q) => q && (Math.abs(p.x - q.x) > FOCUS_ZONE * hw || Math.abs(p.y - q.y) > FOCUS_ZONE * hh))
-      const due = (f: (typeof frames)[number]) => {
-        if (seg !== prev || f.a + lead - GLIDE.max > tl || (entered && frames[entered - 1].b - KEEP > tl) || !far(f.p)) return false
-        const m = together(frames, entered, seg!.b, hw, hh)
-        return tl + pace * glideTime([c.x - m.x, c.y - m.y], s, s, vp) >= f.a + lead
-      }
-      for (let f; (f = frames[entered]) && (f.a <= tl || (seg && due(f))); entered++) {
+      for (let f; (f = frames[entered]) && f.a <= t; entered++) {
         if (seg && far(f.p)) (c = run = together(frames, entered, seg.b, hw, hh)), (recenter = true)
       }
       // The latest place open holds the view; a newer one releases it. Between places the cursor roams a
@@ -615,7 +612,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
       if (cp) c = keep(c, cp, EDGE_ZONE * hw, EDGE_ZONE * hh)
       c = aim = clampCenter(c, bounds, s, vp)
     }
-    while (entered < frames.length && frames[entered].a <= tl) entered++ // not following, places pass unframed
+    while (entered < frames.length && frames[entered].a <= t) entered++ // not following, places pass unframed
     c = clampCenter(c, bounds, s, vp)
 
     const cut = k === 0 || (seg !== prev && cutsTo(prev?.zooms ?? [], zs))
@@ -800,7 +797,7 @@ export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZo
         off = Math.max(off, end)
         continue
       }
-      const a = Math.max(g.end + LEAD, off)
+      const a = Math.max(g.end + zoomTime(level, PACE.focused), off) // once the camera is out
       const b = Math.min(start + POINT.hold, next)
       const shown = at.x >= 0 && at.y >= 0 && at.x <= screen.width && at.y <= screen.height
       if (start - off > HOLD || !shown || b - a < MIN_AUTO) return []
@@ -863,9 +860,8 @@ export function zoomProblems(p: Project, m: TimeMap, layout: ReturnType<typeof p
   const out: ZoomProblem[] = []
   const D = m.duration
   const jumps = m.clips.flatMap((c, i) => (i && Math.abs(m.clips[i - 1].end - c.start) > 1e-6 ? [m.outStarts[i]] : []))
-  const spring = SPRINGS[p.style.screenAnimation] ?? SPRINGS.focused
   const pace = PACE[p.style.screenAnimation] ?? PACE.focused
-  const lead = 6 / Math.sqrt(spring.stiffness / spring.mass)
+  const lead = pace * LEAD
   const on = p.zooms.filter((z) => z.enabled)
   for (const z of on) {
     if (!mapRange(m, z.start, z.end).length) out.push({ id: z.id, message: `Zoom ${z.id} never plays: its part of the recording is cut out.`, fix: [{ type: 'remove_zoom', id: z.id }] })

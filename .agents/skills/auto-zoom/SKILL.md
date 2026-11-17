@@ -17,7 +17,10 @@ Turning clicks and typing into camera direction.
   A cursor that waits where it clicked, nudges a little, or wanders on gets no lens; a lens after every move is noise.
   An auto lens magnifies 2x at least, whatever the auto zoom level: at 1.5x a full zoom still frames a whole dialog, but a lens only bends the screen.
 - A zoomed view follows the cursor through a dead zone, panning only as the cursor nears the edge.
-- A click or typing place outside the middle of the view, or away from the places the view frames now, moves the action there: the view glides to center it, together with the places after it that fit in one view, and lands by the click.
+- The camera sets off for a click or typing 0.28 s before it, twice that at Smooth: an auto zoom starts then, and so does a glide to a new place.
+  The cursor leads, and the move lands through the action.
+  A camera that is there by the click moves together with the cursor, and then everything stands still for a beat before the click.
+- A click or typing place outside the middle of the view, or away from the places the view frames now, moves the action there: the view glides to center it, together with the places after it that fit in one view.
   A view clamped at the screen's edge can reach a place at the side of its frame; judged from the view alone, that place counts as framed.
   While a place holds the view, the cursor on its way there only has to stay in frame.
   Nudged only far enough to bring it in, a dialog opened from a corner button stays at the side of the frame and cut, and the camera reads as lagging.
