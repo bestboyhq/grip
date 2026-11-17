@@ -5,6 +5,7 @@ import { removeSourceRange, setSpeed, splitAt, timeMap } from '../../shared/time
 import type { InputEvent } from '../../shared/events.ts'
 import { layoutAt, prepareLayout } from '../layout.ts'
 import { cursorAt, cursorPoint, prepareCursor } from './index.ts'
+import { easeOut } from './spring.ts'
 import { CURSORS } from '../../assets/cursors.ts'
 
 // Deterministic PRNG (mulberry32).
@@ -310,4 +311,29 @@ test('per clip: raw clips follow the raw path without tilt, hidden clips fade th
   assert.ok(back > 0.3 && back < 0.7, `fades in from the clip end: ${back}`)
   assert.equal(cursorAt(s.c, 25.2)!.opacity, 1)
   assert.ok(cursorPoint(s.c, 22), 'zoom follow still sees the hidden cursor')
+})
+
+test('a press shrinks the cursor on the ease-out curve and the release brings it back, from where it was', () => {
+  const ev: InputEvent[] = [
+    { t: 0, type: 'move', x: 1000, y: 800 },
+    { t: 1, type: 'down', x: 1000, y: 800, button: 'left' },
+    { t: 1.5, type: 'up', x: 1000, y: 800, button: 'left' },
+    // A double click: the second press sets off before the first release is done.
+    { t: 3, type: 'down', x: 1000, y: 800, button: 'left' },
+    { t: 3.05, type: 'up', x: 1000, y: 800, button: 'left' },
+    { t: 3.1, type: 'down', x: 1000, y: 800, button: 'left' },
+    { t: 3.15, type: 'up', x: 1000, y: 800, button: 'left' },
+  ]
+  const { c } = setup(ev, 5, (p) => (p.style.cursor.hideIdle = false))
+  const size = (t: number) => cursorAt(c, t)!.scale / cursorAt(c, 0.5)!.scale
+  assert.equal(size(0.99), 1)
+  for (const u of [0.25, 0.5, 1]) assert.ok(Math.abs(size(1 + 0.15 * u) - (1 - 0.2 * easeOut(u))) < 1e-9, `down at ${u}`)
+  assert.ok(Math.abs(size(1.5 + 0.1) - (0.8 + 0.2 * easeOut(0.5))) < 1e-9, 'up half way')
+  assert.ok(Math.abs(size(1.7) - 1) < 1e-9, 'back to its size')
+  let was = 1
+  for (let t = 2.9; t < 3.5; t += 1 / 240) {
+    const s = size(t)
+    assert.ok(Math.abs(s - was) < 0.03 && s >= 0.8 - 1e-9 && s <= 1, `no jump at ${t.toFixed(3)}: ${was} -> ${s}`)
+    was = s
+  }
 })

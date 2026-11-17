@@ -6,6 +6,7 @@ import { removeSourceRange, setSpeed, timeMap } from '../../shared/timemap.ts'
 import { captionCues } from '../transcript/index.ts'
 import { prepare, sceneAt, type SceneInput } from '../scene.ts'
 import { breakLines, captionAt, classifyKey, CLICK_FX, clicksAt, drawOverlays, keystrokesAt, maxLineChars } from './index.ts'
+import { easeOut } from '../motion/spring.ts'
 
 const key = (t: number, k: string, mods: Modifier[] = [], hold = 0.08): InputEvent[] => [
   { t, type: 'key', down: true, key: k, code: 0, mods },
@@ -103,7 +104,7 @@ test('keystrokes: a shortcut cut out shows over the footage kept after it, as it
   assert.equal(named(9.99)['⌘X'].count, 1)
   const { '⌘X': x, '⌘C': c } = named(10.06)
   assert.ok(x.count === 2 && Math.abs(x.age - 0.46) < 1e-9, `${x.count} ${x.age}`)
-  assert.ok(Math.abs(c.opacity - 0.5) < 1e-9 && Math.abs(c.age - 0.16) < 1e-9, `⌘C enters at the cut, pressed before it: ${c.opacity} ${c.age}`)
+  assert.ok(Math.abs(c.opacity - easeOut(0.5)) < 1e-9 && Math.abs(c.age - 0.16) < 1e-9, `⌘C enters at the cut, pressed before it: ${c.opacity} ${c.age}`)
 })
 
 test('clicks: mapped through cuts, positioned on the screen rect, gone after their life', () => {

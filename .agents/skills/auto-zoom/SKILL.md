@@ -48,7 +48,7 @@ Turning clicks and typing into camera direction.
   Supersampling the rim's curl changes a few hundred pixels of a frame, which does not earn its taps.
 - A loupe following the cursor keeps it on the magnifying flat top through the fastest flick: the lens aims ahead by its spring's lag, and a cursor that reaches the edge of what the flat top shows carries the lens along.
   A lens that trails a flick hides the cursor under its glass, then curls it back in at the rim, which reads as a stutter.
-- A loupe opens out of what it shows as the camera zooms in, half way in about 0.12 s on the same spring, and closes back into it a fifth faster.
+- A loupe opens out of what it shows as the camera zooms in, on the same curve and in the camera's time for its level, and closes back into it a fifth faster.
   Its glass grows from 0.4 of its radius together with its magnification.
   Motion blur smears the lens, and what it shows blurs while it glides or magnifies like the rest of the frame.
   A full-size lens that magnifies in a few frames shows up at once, on a clock of its own, and the motion blur swirls what it shows: it reads as a glitch, not glass.
@@ -57,15 +57,18 @@ Turning clicks and typing into camera direction.
 - A loupe appears by growing its magnification from 1 with its content opaque; fading its content in shows the screen twice, magnified over unmagnified.
 - Zooms may overlap, and none of them wins: overlapping zooms combine.
   The camera takes the deepest level on and keeps every targeted point, and the followed cursor, in frame; it backs out to fit them, never past the shallowest zoom on.
-- Zoomed in, a change of zooms (back to back, or one coming on or off over another) glides the camera to the new framing: it eases in and out, longer the further the framing moves.
-  A spring as stiff as a snappy zoom in, given that change as one step, whips a pan across the zoomed screen half way in a tenth of a second, which reads as a jump.
+- Every camera move, in, out, or to a new framing, runs on the ease-out curve (the `motion` skill), longer the further the framing moves: 0.6 s for a 2x zoom in or out at Focused, twice that at Smooth.
+  A spring as stiff as a snappy zoom in, given a change of framing as one step, whips a pan across the zoomed screen half way in a tenth of a second, which reads as a jump.
+- A camera move is one zoom about the point that stays put on screen, in log scale, so the screen flows under the camera.
+  Every view on the way lies between the first and the last, so none needs clamping to the screen.
+  Clamped to the screen frame by frame instead, a zoom in at a corner hits the corner in a few frames and then only grows out of it, which reads as stiff.
 - A zoom on the cursor taking over from one that already followed it carries on from where the view was.
   Re-aiming at the cursor there lurches the view across the seam for no reason the viewer can see.
 - A view that starts following the cursor from a framing elsewhere glides to it, and holds the cursor in frame only once it is in view.
   Pulling the view to the cursor at once snaps it across the screen in a single frame.
   A loupe over a full zoom magnifies the zoomed view.
   Loupes on different targets show as separate lenses; loupes on one target share one lens at the largest size and deepest level.
-- Loupes back to back, or less than a second apart, share one lens: it glides to the next target and eases into the next level, size, and shape.
+- Loupes back to back, or less than a second apart, share one lens: it glides to the next target and into the next level, size, and shape on the curve.
   Fading one lens out and the next in at another spot reads as two unrelated effects.
 - Zoomed text stays sharp: capture at native resolution, and past the source pixel density upscale with a local super-resolution model trained on UI text.
 

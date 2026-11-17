@@ -325,7 +325,7 @@
     border-radius: 6px;
     box-shadow: 0 0 0 1.5px rgb(255 255 255 / 0.8);
     opacity: 0;
-    animation: click 5s infinite;
+    animation: click 5s ease-out infinite;
   }
   .cursor {
     position: absolute;
@@ -387,12 +387,12 @@
     0%,
     24% {
       scale: 1;
-      animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+      animation-timing-function: ease-out; /* the video's curve, in and out */
     }
     42%,
     72% {
       scale: 2;
-      animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+      animation-timing-function: ease-out;
     }
     90%,
     100% {

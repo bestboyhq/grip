@@ -40,30 +40,33 @@ import { mapRange, toOutput, type TimeMap } from '../../shared/timemap.ts'
 import type { Loupe, SceneInput, View } from '../scene.ts'
 import { frameOf, pipCameraAt, screenAt, type prepareLayout, type ScreenPlace } from '../layout.ts'
 import { cursorPoint, type prepareCursor } from '../motion/index.ts'
-import { springDuration, springProgress, mix, type SpringConfig } from '../motion/spring.ts'
+import { easeOut, springProgress, mix, type SpringConfig } from '../motion/spring.ts'
 import { idleSegments, typingSegments, type Segment } from '../input/index.ts'
 
 const DT = 1 / 120 // s between camera samples
-/** Camera springs per screen animation style, all critical (no overshoot): focused is half way in
- *  0.12 s and settles in ~0.65 s, smooth glides in ~1.3 s. A critical spring trails a moving target
- *  by 2 / omega s, so following aims that far ahead, and is ~98% there after 6 / omega s, so framing
- *  starts that early. */
+/** Camera springs per screen animation style, all critical (no overshoot), for following the cursor
+ *  between moves: a critical spring trails a moving target by 2 / omega s, so following aims that far
+ *  ahead, and framing starts 6 / omega s early. Every move to a new framing runs on the ease-out curve
+ *  instead, PACE times as long in the style. */
 const SPRINGS: Record<Style['screenAnimation'], SpringConfig> = {
   focused: { stiffness: 196, damping: 28, mass: 1 },
   smooth: { stiffness: 49, damping: 14, mass: 1 },
 }
+const PACE: Record<Style['screenAnimation'], number> = { focused: 1, smooth: 2 }
 const BRIDGE = 1 // s: a shorter gap between zooms pans across instead of zooming out and back in
-/** Zoomed in, a change of zooms (back to back, or one coming on or off over another) glides the
- *  camera to the new framing: this long, plus this much per view it moves, at most this. The springs
- *  alone would whip a pan across the zoomed screen half way in a tenth of a second. */
+/** A change of framing (zooming in or out, one zoom into the next, re-centering) moves the camera there
+ *  on the ease-out curve: this long, plus this much per view it moves, at most this. */
 const GLIDE = { min: 0.4, perView: 0.4, max: 1.5 } // s
+const moveTime = (views: number) => Math.min(GLIDE.min + GLIDE.perView * views, GLIDE.max)
+/** s the camera takes to zoom in to `level` from rest, or out to rest from it, at `pace`. */
+const zoomTime = (level: number, pace: number) => pace * moveTime(Math.abs(Math.log2(Math.max(level, 1e-3))) / 2)
 const DEAD_ZONE = 0.5 // the cursor roams this fraction of the half view before the camera pans
 const FOCUS_ZONE = 0.4 // clicked elements and typing stay this close to the center, so they show whole
 const EDGE_ZONE = 0.85 // the cursor never gets closer to the frame edge than this
 const WALL_ZONE = 0.95 // ...and when a fast flick outruns the trailing spring, never past this
 const CAMERA_CLEAR = 28 // screen points x cursor size (about a cursor's height, magnified with it by the
 // zoom) the cursor and clicked elements keep from a picture-in-picture camera
-const LEAD = 6 / Math.sqrt(SPRINGS.focused.stiffness) // s: auto zooms start this long before a click or typing, so the focused spring is ~98% there
+const LEAD = 6 / Math.sqrt(SPRINGS.focused.stiffness) // s: auto zooms start this long before a click or typing, so the camera is about there by then
 const KEEP = 1 // s: a clicked element stays framed this long after the click
 const HOLD = 2 // s: auto zooms group as if each held this long after its last click or keystroke, or a press's release
 /** s: ...but one zooms out this soon after it, once it has shown its framing for MIN_HOLD. Held longer,
@@ -77,18 +80,16 @@ const POINT = { rest: 1, away: 60, hold: 1.3, size: 240 }
  *  whole dialog, but a lens at 1.5x bends the screen without making anything easier to read. */
 const LENS_MIN = 2
 const autoLevel = (level: number, mode: Zoom['mode']) => (mode === 'loupe' ? Math.max(LENS_MIN, level) : level)
-const ZOOM_OUT = 6 / Math.sqrt(SPRINGS.smooth.stiffness) // s: the slower spring's zoom out; an auto zoom ending closer than this to the recording's end holds to it, so the video never ends mid-move
 const MERGE_GAP = 2 // s: auto zooms closer than this merge; zooming out and back in that fast looks erratic
 const MIN_AUTO = 1.2 // s: shorter auto zooms (clipped by the recording's ends) are dropped
 const FAR_JUMPS_PER_S = 0.5 // an auto zoom panning a half view more often than this is erratic: skipped
-const LOUPE_SPRING: SpringConfig = { stiffness: 300, damping: 2 * Math.sqrt(300), mass: 1 } // one loupe eases into the next's level, size, and shape in ~0.5 s
-/** A lens opens out of what it shows as the camera zooms in, half way in ~0.12 s, and closes back into
- *  it a fifth faster: its glass grows from LOUPE_SEED of its radius together with its magnification. */
-const LOUPE_OPEN = SPRINGS.focused
-const LOUPE_CLOSE = LOUPE_SPRING
+/** s a lens at `level` takes to open out of what it shows: as long as the camera takes to zoom in that
+ *  far, on the same curve. It closes back into it a fifth faster, and its glass grows from LOUPE_SEED of
+ *  its radius together with its magnification. */
+const lensIn = (level: number) => zoomTime(level, PACE.focused)
+const lensOut = (level: number) => 0.8 * lensIn(level)
 const LOUPE_SEED = 0.4
-const LOUPE_IN = springDuration(LOUPE_OPEN)
-const LOUPE_OUT = springDuration(LOUPE_CLOSE)
+const LOUPE_GLIDE = lensIn(2) // s: one loupe glides into the next's target, level, size, and shape
 const LOUPE_FOLLOW: SpringConfig = { stiffness: 120, damping: 2 * 0.65 * Math.sqrt(120), mass: 1 } // follows the cursor softly, a little overshoot
 const LOUPE_LEAD = LOUPE_FOLLOW.damping / LOUPE_FOLLOW.stiffness // s: the follow spring trails a steady glide by this, so it aims that far ahead
 const LOUPE_TOP = 0.85 // the flat top's share of the lens radius (shaders.wgsl BEVEL): only it shows the content magnified
@@ -275,7 +276,7 @@ function glideTime(off: number[], from: number, s: number, vp: Rect): number {
   // way), or the zoom (doubling the magnification moves the frame's edges half a view).
   const halfway = (s + from) / 2
   const views = Math.max(Math.hypot((off[0] * halfway) / vp.w, (off[1] * halfway) / vp.h), Math.abs(Math.log2(from / s)) / 2)
-  return Math.min(GLIDE.min + GLIDE.perView * views, GLIDE.max)
+  return moveTime(views)
 }
 
 /** The middle of the click and typing places from frames[i] on that one view frames together: the run
@@ -390,13 +391,15 @@ function lens(run: Span[], layout: ReturnType<typeof prepareLayout>, cursor: Ret
   const a = run[0].a
   const last = run.reduce((x, y) => (y.b >= x.b ? y : x))
   const b = last.b
-  const n = Math.ceil((b + LOUPE_OUT - a) / DT) + 1
+  const close = last.zoom.instant ? 0 : lensOut(last.zoom.level)
+  const n = Math.ceil((b + close - a) / DT) + 1
   const path = new Float32Array(LENS * n)
   const jumps = new Map<number, number>()
   const follow = springStep(DT, LOUPE_FOLLOW)
-  const morph = springStep(DT, LOUPE_SPRING)
   const pos = [0, 0, 0, 0, 0] // x, y, log level, radius, liquid
   const vel = [0, 0, 0, 0, 0]
+  let glide: { t0: number; off: number[] } | null = null // into the next loupe: how far off its target the lens set out
+  const aimed = [0, 0] // the target's x, y one step before
   let aim: Pt | null = null
   let now: Pt | null = null // the cursor at t, while the lens follows it
   let caught = false // the cursor got onto the flat top since the lens began following it
@@ -425,13 +428,27 @@ function lens(run: Span[], layout: ReturnType<typeof prepareLayout>, cursor: Ret
     const zs = held.map((p) => p.zoom)
     const level = Math.max(1, ...zs.map((z) => z.level))
     const target = [aim.x, aim.y, Math.log(level), Math.max(...zs.map((z) => radiusOf(z, unit))), zs.every((z) => z.liquid) ? 1 : 0]
-    if (!started || (was !== held && cutsTo(was.map((p) => p.zoom), zs))) {
+    const changed = was.length !== held.length || held.some((p) => !was.includes(p))
+    if (!started || (changed && cutsTo(was.map((p) => p.zoom), zs))) {
       // The first sample, or an instant loupe cutting in or out: jump, no animation.
       const into = held.find((p) => !was.includes(p))
       if (started) jumps.set(k - 1, into ? into.a : was.find((p) => !held.includes(p))!.b)
       started = true
       pos.splice(0, 5, ...target)
       vel.fill(0)
+      glide = null
+    } else if (changed) glide = { t0: t, off: pos.map((p, o) => p - target[o]) }
+    const u = glide ? (t - glide.t0) / LOUPE_GLIDE : 1
+    if (glide) {
+      // Into the next loupe on the ease-out curve, from where the lens is, its target moving with the cursor.
+      // The last step lands on the target with the curve at rest, so the follow spring takes over at the
+      // target's own speed; the speed of that step instead carries the lens past it and back.
+      const left = 1 - easeOut(u)
+      for (let o = 0; o < 5; o++) {
+        const p = target[o] + glide.off[o] * left
+        vel[o] = u < 1 ? (p - pos[o]) / DT : o < 2 ? (target[o] - aimed[o]) / DT : 0
+        pos[o] = p
+      }
     }
     if (now) {
       // A flick outruns the spring. Past the flat top the cursor would vanish under the glass and then
@@ -444,14 +461,21 @@ function lens(run: Span[], layout: ReturnType<typeof prepareLayout>, cursor: Ret
       if (caught && d > wall) (pos[0] = now.x + (dx * wall) / d), (pos[1] = now.y + (dy * wall) / d)
     } else caught = false
     path.set([pos[0], pos[1], vel[0], vel[1], Math.exp(pos[2]), pos[3], pos[4]], LENS * k)
-    for (let o = 0; o < 5; o++) {
-      const [h, g, dh, dg] = o < 2 ? follow : morph
-      const d = pos[o] - target[o]
-      pos[o] = target[o] + d * h + vel[o] * g
-      vel[o] = d * dh + vel[o] * dg
+    // Between glides the lens follows the cursor on a soft spring; its level, size, and shape hold.
+    if (!glide) {
+      for (let o = 0; o < 2; o++) {
+        const [h, g, dh, dg] = follow
+        const d = pos[o] - target[o]
+        pos[o] = target[o] + d * h + vel[o] * g
+        vel[o] = d * dh + vel[o] * dg
+      }
+      pos.splice(2, 3, ...target.slice(2))
     }
+    if (u >= 1) glide = null
+    aimed.splice(0, 2, target[0], target[1])
   }
-  return { a, b, first: run[0].zoom, last: last.zoom, path, jumps }
+  const open = run[0].zoom.instant || a < AT_START ? 0 : lensIn(run[0].zoom.level)
+  return { a, b, open, close, path, jumps }
 }
 
 let last: { events: InputEvent[]; cursor: Float32Array; key: string; path: ZoomPath } | null = null
@@ -482,6 +506,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   const enabled = project.zooms.filter((z) => z.enabled)
   const n = Math.ceil(map.duration / DT)
   const spring = SPRINGS[project.style.screenAnimation] ?? SPRINGS.focused
+  const pace = PACE[project.style.screenAnimation] ?? PACE.focused
   const omega = Math.sqrt(spring.stiffness / spring.mass)
   const lag = 2 / omega
   const lead = 6 / omega
@@ -507,7 +532,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   frames.sort((p, q) => p.a - q.a)
 
   const cam = segments(enabled.filter((z) => z.mode !== 'loupe'), map)
-  // A slower spring starts zooming in that much earlier, so every style is in by LEAD after the start.
+  // A slower style starts zooming in that much earlier, so every style is about in by LEAD after the start.
   cam.forEach((s, i) => {
     if (!s.zooms.some((z) => z.instant) && s.a > AT_START) s.a = Math.max(s.a - (lead - LEAD), i ? cam[i - 1].b : 0)
   })
@@ -517,7 +542,8 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
   const pos = [0, 0, 0] // x, y, scale
   const vel = [0, 0, 0]
   const target = [0, 0, 0] // what the springs chase
-  const drift = [0, 0, 0] // how far it moved over the last step
+  const goal = [0, 0, 0] // the framing the camera was headed for at the last step
+  const step = [0, 0, 0] // and how far it moved over that step
   let glide: { t0: number; dur: number; off: number[]; from: number } | null = null
   let aim: Pt | null = null // where the follow camera wants its center
   let caught = false // the cursor has been in view since the camera began following it
@@ -568,7 +594,7 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
       const due = (f: (typeof frames)[number]) => {
         if (seg !== prev || f.a + lead - GLIDE.max > tl || (entered && frames[entered - 1].b - KEEP > tl) || !far(f.p)) return false
         const m = together(frames, entered, seg!.b, hw, hh)
-        return tl + glideTime([c.x - m.x, c.y - m.y], s, s, vp) >= f.a + lead
+        return tl + pace * glideTime([c.x - m.x, c.y - m.y], s, s, vp) >= f.a + lead
       }
       for (let f; (f = frames[entered]) && (f.a <= tl || (seg && due(f))); entered++) {
         if (seg && far(f.p)) (c = run = together(frames, entered, seg.b, hw, hh)), (recenter = true)
@@ -593,51 +619,61 @@ function simulate(input: SceneInput, map: TimeMap, layout: ReturnType<typeof pre
     c = clampCenter(c, bounds, s, vp)
 
     const cut = k === 0 || (seg !== prev && cutsTo(prev?.zooms ?? [], zs))
-    if (cut || !seg) glide = null // zooming out to rest is the springs' alone
-    else if (prev && (seg !== prev || recenter)) {
-      // Zoomed in on both sides, or re-centering on a new place: glide from where the camera was headed
-      // (the last target, one step on) to the new framing. Its center keeps the offset, gliding away, so
-      // following the cursor carries on throughout and two zooms on it play as one; its scale blends, so
-      // it never leaves the range between the two.
-      const from = target[2] + drift[2]
-      const off = [target[0] + drift[0] - c.x, target[1] + drift[1] - c.y]
-      glide = { t0: t, dur: glideTime(off, from, s, vp), off, from }
+    const next = [c.x, c.y, s]
+    // A framing moved on from where the last one was headed: zooming in or out, one zoom into the next,
+    // or re-centering on a new place. A zoom taking over the same framing carries on as one.
+    const moved = Math.hypot(c.x - goal[0] - step[0], c.y - goal[1] - step[1]) > 0.5 || Math.abs(s - goal[2] - step[2]) > 1e-4
+    for (let i = 0; i < 3; i++) (step[i] = cut ? 0 : next[i] - goal[i]), (goal[i] = next[i])
+    if (cut) glide = null
+    else if ((seg !== prev || recenter) && moved) {
+      // Move there from where the camera is. Its center keeps the offset, gliding away, so following
+      // the cursor carries on throughout.
+      const off = [pos[0] - c.x, pos[1] - c.y]
+      glide = { t0: t, dur: pace * glideTime(off, pos[2], s, vp), off, from: pos[2] }
     }
-    let next = [c.x, c.y, s]
     const u = glide ? (t - glide.t0) / glide.dur : 1
-    if (glide && u < 1) {
-      // Smootherstep: the move sets off and lands without a jolt, and the springs round it off.
-      const left = 1 - u * u * u * (u * (6 * u - 15) + 10)
-      const v = mix(s, glide.from, left)
-      const w = clampCenter({ x: c.x + glide.off[0] * left, y: c.y + glide.off[1] * left }, bounds, v, vp)
-      next = [w.x, w.y, v]
-    } else glide = null
-    for (let i = 0; i < 3; i++) (drift[i] = cut ? 0 : next[i] - target[i]), (target[i] = next[i])
+    if (glide) {
+      // On the ease-out curve, as a zoom about the one point of the screen that stays put, in log scale:
+      // every view on the way lies between the first and the last, so the screen flows under the camera
+      // and never meets its edge. A clamp to the screen each step pinned the view to the corner it
+      // zoomed toward within a few frames, and the rest of the move only spread out from there.
+      const left = 1 - easeOut(u) // 0 from u = 1: the move's last step lands on the framing
+      const s0 = glide.from
+      const v = s * (s0 / s) ** left
+      const at = (a: number, b: number) => (Math.abs(s - s0) < 1e-4 ? b + (a - b) * left : ((b * s - a * s0) / (s - s0)) * (1 - s0 / v) + (a * s0) / v)
+      next.splice(0, 3, at(c.x + glide.off[0], c.x), at(c.y + glide.off[1], c.y), v)
+    }
+    for (let i = 0; i < 3; i++) target[i] = next[i]
 
-    if (cut) {
-      // First frame, or an instant zoom cutting in or out: jump, no animation.
-      if (k > 0) jumps.set(k - 1, seg ? seg.a : prev!.b)
-      for (let i = 0; i < 3; i++) (pos[i] = target[i]), (vel[i] = 0)
+    if (cut || glide) {
+      // First frame, or an instant zoom cutting in or out: jump, no animation. A move is the curve's alone.
+      // The curve comes to rest on the framing, so the springs take over at the framing's own speed;
+      // the speed of the move's last step instead carries the view past it and back.
+      if (cut && k > 0) jumps.set(k - 1, seg ? seg.a : prev!.b)
+      for (let i = 0; i < 3; i++) (vel[i] = cut ? 0 : step[i] / DT), (pos[i] = target[i])
     }
     const now = follow ? cursorPt(t, shown) : null
     if (now) {
       // Never let the cursor out of view once it is in: a fast flick drags the view along. A view that
-      // starts following from a framing elsewhere glides to the cursor instead of snapping to it.
+      // starts following from a framing elsewhere glides to the cursor instead of snapping to it. Mid
+      // move the view may still show past the screen's edge, on its way in or out.
       const v = pos[2]
       const rx = (WALL_ZONE * vp.w) / (2 * v)
       const ry = (WALL_ZONE * vp.h) / (2 * v)
       caught ||= Math.abs(now.x - pos[0]) <= rx && Math.abs(now.y - pos[1]) <= ry
-      const p = { x: pos[0], y: pos[1] }
-      const w = clampCenter(caught ? keep(p, now, rx, ry) : p, bounds, v, vp)
+      const p = caught ? keep({ x: pos[0], y: pos[1] }, now, rx, ry) : { x: pos[0], y: pos[1] }
+      const w = glide ? p : clampCenter(p, bounds, v, vp)
       pos[0] = w.x
       pos[1] = w.y
     } else caught = false
     for (let i = 0; i < 3; i++) {
       data[3 * k + i] = pos[i]
+      if (glide) continue
       const d = pos[i] - target[i]
       pos[i] = target[i] + d * h + vel[i] * g
       vel[i] = d * dh + vel[i] * dg
     }
+    if (u >= 1) glide = null
     prev = seg
   }
   return { n, data, jumps }
@@ -688,9 +724,9 @@ export function loupesAcross(z: ReturnType<typeof prepareZoom>, t: number, ts: n
 
 function lensAt(lens: ReturnType<typeof prepareZoom>['loupes'][number], t: number): Loupe | null {
   const { a, b, path } = lens
-  if (t < a || t >= b + (lens.last.instant ? 0 : LOUPE_OUT)) return null
-  const fadeIn = lens.first.instant || a < AT_START ? 1 : springProgress(t - a, LOUPE_OPEN)
-  const fadeOut = t < b ? 0 : springProgress(t - b, LOUPE_CLOSE)
+  if (t < a || t >= b + lens.close) return null
+  const fadeIn = lens.open ? easeOut((t - a) / lens.open) : 1
+  const fadeOut = t < b ? 0 : lens.close ? easeOut((t - b) / lens.close) : 1
   const p = fadeIn * (1 - fadeOut)
   const n = path.length / LENS
   const x = clamp((t - a) / DT, 0, n - 1)
@@ -705,7 +741,7 @@ function lensAt(lens: ReturnType<typeof prepareZoom>['loupes'][number], t: numbe
   const stretch = e > 0 ? { x: (vx / speed) * e, y: (vy / speed) * e } : { x: 0, y: 0 }
   // The glass grows with the magnification: a full-size lens that magnifies in a few frames shows up at
   // once, and the motion blur swirls what it shows.
-  return { x: at(0), y: at(1), radius: radius * mix(LOUPE_SEED, 1, p), scale: mix(1, at(4), p), opacity: p, stretch }
+  return { x: at(0), y: at(1), radius: radius * mix(LOUPE_SEED, 1, p), scale: at(4) ** p, opacity: p, stretch }
 }
 
 /** Auto zooms (source time) from clicks and typing: merge activity close in time, start LEAD before
@@ -737,12 +773,13 @@ export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZo
   }
   const D = sources.duration
   const shape = lookOf(look)
+  const out = zoomTime(level, PACE.smooth) // an auto zoom ending closer than this to the recording's end holds to it, so the video never ends mid-move
   const kept = groups
-    .map((g) => ({ ...g, done: g.end - HOLD, start: Math.max(0, g.start), end: g.end > D - ZOOM_OUT ? D : g.end }))
+    .map((g) => ({ ...g, done: g.end - HOLD, start: Math.max(0, g.start), end: g.end > D - out ? D : g.end }))
     .filter((g) => g.end - g.start >= MIN_AUTO && !erratic(g))
     .map((g) => {
-      const out = Math.max(g.done + OUT, g.points[0].t0 + MIN_HOLD)
-      return { ...g, end: out > D - ZOOM_OUT ? D : out }
+      const end = Math.max(g.done + OUT, g.points[0].t0 + MIN_HOLD)
+      return { ...g, end: end > D - out ? D : end }
     })
   const zooms = kept.map((g): Zoom => ({ id: uid(), start: g.start, end: g.end, level: autoLevel(level, shape.mode), target: { kind: 'cursor' }, auto: true, enabled: true, ...shape }))
 
@@ -767,7 +804,7 @@ export function generateAutoZooms(events: InputEvent[], sources: Sources, autoZo
       const b = Math.min(start + POINT.hold, next)
       const shown = at.x >= 0 && at.y >= 0 && at.x <= screen.width && at.y <= screen.height
       if (start - off > HOLD || !shown || b - a < MIN_AUTO) return []
-      return [{ id: uid(), start: a, end: b > D - LOUPE_OUT ? D : b, level: autoLevel(level, 'loupe'), target: { kind: 'cursor' }, auto: true, enabled: true, ...lens, size: lens.size ?? POINT.size }]
+      return [{ id: uid(), start: a, end: b > D - lensOut(autoLevel(level, 'loupe')) ? D : b, level: autoLevel(level, 'loupe'), target: { kind: 'cursor' }, auto: true, enabled: true, ...lens, size: lens.size ?? POINT.size }]
     }
     return []
   })
@@ -827,6 +864,7 @@ export function zoomProblems(p: Project, m: TimeMap, layout: ReturnType<typeof p
   const D = m.duration
   const jumps = m.clips.flatMap((c, i) => (i && Math.abs(m.clips[i - 1].end - c.start) > 1e-6 ? [m.outStarts[i]] : []))
   const spring = SPRINGS[p.style.screenAnimation] ?? SPRINGS.focused
+  const pace = PACE[p.style.screenAnimation] ?? PACE.focused
   const lead = 6 / Math.sqrt(spring.stiffness / spring.mass)
   const on = p.zooms.filter((z) => z.enabled)
   for (const z of on) {
@@ -842,8 +880,9 @@ export function zoomProblems(p: Project, m: TimeMap, layout: ReturnType<typeof p
       } else acc.push({ a: s.a, b: s.b, first: s.zoom, last: s.zoom, lastA: s.a })
       return acc
     }, [])
-  const camera = stretches(pieces(on.filter((z) => z.mode !== 'loupe'), m), BRIDGE).map((r) => ({ ...r, what: 'zooms', early: lead - LEAD, settle: LEAD, leave: lead }))
-  const glass = stretches(pieces(on.filter((z) => z.mode === 'loupe'), m), 0).map((r) => ({ ...r, what: 'loupe', early: 0, settle: LOUPE_IN, leave: LOUPE_OUT }))
+  // ponytail: a zoom's move in and out is timed by its level alone; one that also pans from the rest framing moves a little longer.
+  const camera = stretches(pieces(on.filter((z) => z.mode !== 'loupe'), m), BRIDGE).map((r) => ({ ...r, what: 'zooms', early: lead - LEAD, settle: zoomTime(r.first.level, pace) - (lead - LEAD), leave: zoomTime(r.last.level, pace) }))
+  const glass = stretches(pieces(on.filter((z) => z.mode === 'loupe'), m), 0).map((r) => ({ ...r, what: 'loupe', early: 0, settle: lensIn(r.first.level), leave: lensOut(r.last.level) }))
 
   // The glides inside the camera's stretches, timed the way simulate times them.
   const framed = (zs: Zoom[], t: number) => {
@@ -861,7 +900,7 @@ export function zoomProblems(p: Project, m: TimeMap, layout: ReturnType<typeof p
     const from = framed(prev.zooms, g.a)
     const to = framed(g.zooms, g.a)
     if (!from || !to) return []
-    const dur = glideTime([from.c.x - to.c.x, from.c.y - to.c.y], from.s, to.s, to.vp)
+    const dur = pace * glideTime([from.c.x - to.c.x, from.c.y - to.c.y], from.s, to.s, to.vp)
     return [{ a: g.a, b: Math.min(g.b, D), dur, zoom: g.zooms[0], prev: prev.zooms[0], prevA: prev.a, last: segs[i + 1]?.a !== g.b }]
   })
 
