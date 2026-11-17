@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createProject, type Project, type Rect } from '../shared/project.ts'
 import { mapRange, timeMap } from '../shared/timemap.ts'
-import { outputSize } from './scene.ts'
+import { nativeHeight, outputSize } from './scene.ts'
 import { prepareLayout, layoutAt, fitScreen, deviceGeometry, deviceBounds, cameraCrop, faceAt, silentRanges, voiceRanges, coverRatio } from './layout.ts'
 import { easeOut } from './motion/spring.ts'
 
@@ -177,6 +177,18 @@ test('a crop fits only its part of the recording; recording px still map through
   close(l.masks[0].rect, s.visible, 1e-6) // a mask over the cropped part covers what shows
   const wide = project((p) => (p.crop = { x: 0, y: 0, w: 1, h: 0.05 }))
   assert.deepEqual(outputSize(wide, 1080), { width: 5400, height: 1080 }, 'auto stops at 5:1')
+})
+
+test('a still renders at its own pixels: one image px to one output px, padded, cropped, or in any aspect, under 8000 px', () => {
+  for (const edit of [(p: Project) => p, (p: Project) => (p.style.padding = 120), (p: Project) => (p.crop = { x: 0.2, y: 0.1, w: 0.5, h: 0.5 }), (p: Project) => (p.style.aspect = '9:16')]) {
+    const p = project((p) => (delete p.sources.camera, edit(p)))
+    const out = outputSize(p, nativeHeight(p))
+    const s = at(p, 0, out.width, out.height).screen!
+    assert.ok(Math.abs(s.rect.w - 2880) < 4 && Math.abs(s.rect.h - 1800) < 4, `${JSON.stringify(s.rect)} at ${out.width} x ${out.height}`)
+  }
+  const huge = project((p) => (delete p.sources.camera, (p.sources.screen!.width = 16000), (p.sources.screen!.height = 9000)))
+  const out = outputSize(huge, nativeHeight(huge))
+  assert.ok(Math.max(out.width, out.height) <= 8000, `${out.width} x ${out.height}`)
 })
 
 test('auto hugs the framed recording with even padding; a cover crop fills a fixed shape up to its padding', () => {

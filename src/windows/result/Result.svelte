@@ -4,7 +4,8 @@
      under 20 MB or a GIF under 10 MB, ready to paste anywhere, or shares as a link, each styled like
      the project (plain by default, as it was on screen); or it opens in the editor. Exports keep
      running if the card closes. A new screenshot is already on the clipboard (or on the Desktop) and
-     the card leaves by itself. Drag the picture into another app to drop the file. -->
+     the card leaves by itself; Edit styles it in the editor, with a background or a preset, for a post.
+     Drag the picture into another app to drop the file. -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
   import { invoke, on } from '../../lib/ipc.ts'
@@ -18,6 +19,8 @@
   const bundle = query.get('bundle') ?? ''
   let shot = $state(query.get('shot') ?? '')
   let saved = $state(query.has('saved')) // the file is on the Desktop
+  let finder = $state('') // Finder's own icon, on Open
+  if (query.has('shot')) invoke('shell:finder-icon').then((url: string) => (finder = url))
   /** What the card did, checked next to the title: a new screenshot is copied or saved already. */
   let did = $state<'copied' | 'saved' | ''>(query.has('reopened') ? '' : query.has('saved') ? 'saved' : 'copied')
 
@@ -82,6 +85,11 @@
 
   async function edit() {
     await invoke('shell:open-project', bundle)
+    close()
+  }
+
+  async function editShot() {
+    await invoke('shell:shot-edit', shot)
     close()
   }
 
@@ -164,10 +172,11 @@
         <button class="btn" onclick={copyShot}><Icon name="copy" size={16} />Copy</button>
       {/if}
       {#if saved}
-        <button class="btn" onclick={() => invoke('shell:reveal', shot)}><Icon name="folder" size={16} />Show in Finder</button>
+        <button class="btn" onclick={() => invoke('shell:reveal', shot)} title="Show in Finder"><img class="app" src={finder || undefined} alt="" />Open</button>
       {:else}
         <button class="btn" onclick={saveShot}><Icon name="download" size={16} />Save to Desktop</button>
       {/if}
+      <button class="btn" onclick={editShot} title="Style it in the editor: a background, a preset, a shape for posts"><Icon name="edit" size={16} />Edit</button>
     </div>
   {:else if job}
     <div class="status" class:failed={job.state === 'failed'} role="status">
@@ -272,6 +281,11 @@
     height: 30px;
     padding: 0 8px;
     gap: 5px;
+  }
+  .app {
+    flex: none;
+    width: 16px;
+    height: 16px;
   }
   .overlay {
     position: absolute;

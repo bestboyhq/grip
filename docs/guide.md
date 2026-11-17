@@ -68,6 +68,12 @@ Every recording ends in a small result card:
 Drag the preview straight into another app to drop the file.
 **Recent Captures** in the menu bar reopens your last five screenshots and recordings.
 
+A screenshot's card has **Edit** too, to dress it up for a post.
+It opens the screenshot in the editor with the look new recordings start with.
+Pick a preset, a wallpaper, padding, corners, a shadow, and a shape: 16:9, 4:5, 1:1, or 9:16.
+**⌘C** copies the image and **⌘S** saves it to the Desktop, with every pixel of the screenshot.
+Drop any PNG on Grip to do the same.
+
 ## Polished by default
 
 <p align="center">
@@ -233,6 +239,7 @@ Updates download in the background and install themselves while you're away, nev
 | **⌘C** / **⌘V** / **⌘D** | Copy / paste at the playhead / duplicate |
 | **⌘=** / **⌘-** / **⌘0** | Zoom the timeline in / out / to fit |
 | **⌘E** | Export |
+| **⌘C** / **⌘S** | A screenshot: copy the image / save it to the Desktop |
 | **⌘K** | Command menu: every action, searchable |
 
 Automate Grip from Raycast, Shortcuts, or a script with `grip://` links:

@@ -3,7 +3,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { doc, edit, selection } from '../../lib/doc.svelte.ts'
-  import { defaultStyle } from '../../shared/project.ts'
+  import { defaultStyle, isStill } from '../../shared/project.ts'
   import Icon, { type IconName } from '../../ui/Icon.svelte'
   import Section from '../../ui/Section.svelte'
   import Slider from '../../ui/Slider.svelte'
@@ -19,7 +19,7 @@
   import TranscriptPanel from './transcript/TranscriptPanel.svelte'
   import Presets from './Presets.svelte'
 
-  const tabs = [
+  const all = [
     { id: 'presets', label: 'Presets', icon: 'sparkle' },
     { id: 'background', label: 'Background', icon: 'frame' },
     { id: 'cursor', label: 'Cursor', icon: 'cursor' },
@@ -31,11 +31,15 @@
     { id: 'keystrokes', label: 'Keystrokes', icon: 'command' },
     { id: 'motion', label: 'Animation', icon: 'motion' },
   ] as const satisfies ReadonlyArray<{ id: string; label: string; icon: IconName }>
-  type Tab = (typeof tabs)[number]['id']
+  type Tab = (typeof all)[number]['id']
+  // A still (a screenshot) has no cursor, camera, sound, or time: only its look. It remembers its own tab.
+  const still = isStill(doc.project!.sources)
+  const tabs = still ? all.filter((t) => t.id === 'presets' || t.id === 'background') : all
+  const key = still ? 'editor.stillTab' : 'editor.tab'
 
-  const saved = localStorage.getItem('editor.tab')
-  let tab = $state<Tab>(tabs.some((t) => t.id === saved) ? (saved as Tab) : 'background')
-  $effect(() => localStorage.setItem('editor.tab', tab))
+  const saved = localStorage.getItem(key)
+  let tab = $state<Tab>(tabs.some((t) => t.id === saved) ? (saved as Tab) : still ? 'presets' : 'background')
+  $effect(() => localStorage.setItem(key, tab))
 
   // A newly selected zoom or voiceover brings up its settings.
   $effect(() => {

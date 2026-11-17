@@ -9,6 +9,7 @@
 // timestamp <= t < the next frame's, which is what variable frame rate (ScreenCaptureKit) needs.
 
 import { ALL_FORMATS, EncodedPacketSink, Input, UrlSource, VideoSampleSink, type VideoSample } from 'mediabunny'
+import { STILL_FILE } from '../../shared/project.ts'
 
 export interface FrameSource {
   readonly width: number
@@ -44,6 +45,7 @@ export const fileLabel = (url: string) => decodeURIComponent(url.replace(/^media
 
 export async function openVideo(url: string): Promise<FrameSource> {
   const name = fileLabel(url)
+  if (STILL_FILE.test(name)) return openStill(url, name)
   const input = new Input({ source: urlSource(url), formats: ALL_FORMATS })
   try {
     const track = await input.getPrimaryVideoTrack()
@@ -63,6 +65,35 @@ export async function openVideo(url: string): Promise<FrameSource> {
   } catch (e) {
     input.dispose()
     throw e instanceof Error && e.message.startsWith(name) ? e : readError(`Could not open ${name}`, name, e)
+  }
+}
+
+/** A still's image (a screenshot) as a source with the same frame at every time, decoded once and color
+ *  managed into sRGB the way a page shows the image.
+ *  ponytail: sRGB, as the compositor draws video; Display P3 colors past sRGB clip. Upgrade: a display-p3
+ *  canvas and PNG for stills. */
+async function openStill(url: string, name: string): Promise<FrameSource> {
+  let frame: VideoFrame
+  try {
+    const r = await fetch(url)
+    if (!r.ok) throw new Error(`${r.status}`)
+    const bitmap = await createImageBitmap(await r.blob())
+    frame = new VideoFrame(bitmap, { timestamp: 0 })
+    bitmap.close()
+  } catch (e) {
+    throw readError(`Could not open ${name}`, name, e)
+  }
+  let closed = false
+  return {
+    width: frame.displayWidth,
+    height: frame.displayHeight,
+    duration: Infinity,
+    frameAt: async () => (closed ? null : frame.clone()),
+    prefetch() {},
+    close() {
+      closed = true
+      frame.close()
+    },
   }
 }
 

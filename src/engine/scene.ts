@@ -232,3 +232,12 @@ export function layoutOf(project: Project, map: TimeMap, transcript: Transcript 
   const input: SceneInput = { project, events: [], transcript, ...outputSize(project, 1080) }
   return prepareLayout(input, map, unitOf(input))
 }
+
+/** The `outputSize` height at which the screen keeps its own pixels, one to one: a still's image renders as
+ *  sharp as it was captured, at most 8000 px on its long side (every GPU takes 8192). */
+export function nativeHeight(project: Project): number {
+  const s = project.sources.screen
+  const rect = s && layoutAt(layoutOf(project, timeMap(project.clips)), 0).screen?.rect
+  const { width, height } = outputSize(project, 1080)
+  return Math.max(2, Math.floor(1080 * Math.min(rect ? s.width / rect.w : 1, 8000 / Math.max(width, height))))
+}

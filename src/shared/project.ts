@@ -47,6 +47,12 @@ export interface Sources {
   takes?: Take[] // voiceovers recorded in the editor, oldest first; deleting one from the timeline keeps it here
 }
 
+/** A still project: its screen is one image, a screenshot ("sources/screen.png"), the same at every time of a
+ *  nominal STILL_DURATION. Its editor styles it without a timeline and copies or saves it as an image. */
+export const isStill = (s: Sources): boolean => !!s.screen && STILL_FILE.test(s.screen.file)
+export const STILL_FILE = /\.png$/i
+export const STILL_DURATION = 1
+
 /** A voiceover take: the mic recorded in the editor while the video played (electron/voiceover.ts). */
 export interface Take extends AudioSource {
   id: string

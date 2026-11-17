@@ -1,11 +1,12 @@
 // Stills of the open project, rendered by the same compositor as preview and export: the project's
 // Finder, Quick Look, and recent-projects thumbnail (handed to the main process as PNG bytes,
-// projects:thumbnail), the Presets tab's view of this project in each preset, and agents' get_frame.
+// projects:thumbnail), the Presets tab's view of this project in each preset, agents' get_frame, and a
+// still's image (Copy and Save).
 import { doc } from '../../lib/doc.svelte.ts'
 import { loadedExtras, pathsOffThread } from '../../lib/player.svelte.ts'
 import { invoke } from '../../lib/ipc.ts'
 import type { Project, Style } from '../../shared/project.ts'
-import { outputSize, prepare } from '../../engine/scene.ts'
+import { nativeHeight, outputSize, prepare } from '../../engine/scene.ts'
 import { renderFrame, type Media } from '../../engine/compose.ts'
 import { Renderer } from '../../engine/gpu/renderer.ts'
 import { fileUrl, openVideo } from '../../engine/media/index.ts'
@@ -57,4 +58,12 @@ export async function sendThumbnail(): Promise<void> {
   await renderStills([JSON.parse(JSON.stringify(project.style))], 360, t, async (_, png) => {
     await invoke('projects:thumbnail', path, new Uint8Array(await png.arrayBuffer()))
   })
+}
+
+/** The open still (a screenshot) in its look as PNG bytes, at the screenshot's own pixels. */
+export async function stillPng(): Promise<Uint8Array> {
+  const project = doc.project
+  let png = new Uint8Array()
+  if (project) await renderStills([JSON.parse(JSON.stringify(project.style))], nativeHeight(project), 0, async (_, b) => (png = new Uint8Array(await b.arrayBuffer())))
+  return png
 }

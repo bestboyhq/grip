@@ -17,6 +17,9 @@ Project files, presets, and their lifecycle.
   A crash, a power loss, or a window closed mid-take loses at most its last second: the next open makes the file whole and places it where it was recorded.
 - A new project with a taken name gets a unique name, and Remove moves the project to the Trash.
 - Import any .mp4 or .mov as a project; features that need event data degrade gracefully.
+- A screenshot (.png) becomes a still project: its screen is the image, the same at every time of a nominal second (`isStill`).
+  Its editor shows only Presets and Background, no timeline, and Copy and Save render the look at the screenshot's own pixels (`nativeHeight`).
+  A screenshot card's Edit makes its project once and opens that one again after, since a second project per Edit read as lost edits.
 - Presets are portable files that bundle their assets, with a default fallback for a missing asset.
 - A preset is shown on the project's own frame before it is applied: thumbnails and a hover preview, through the one compositor.
 - A preset carries the look: a new recording starts with its camera corner, and applying one to a project keeps the corner the project has.

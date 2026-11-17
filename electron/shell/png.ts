@@ -26,6 +26,22 @@ export function withScale(png: Uint8Array, scale: number): Buffer {
   return Buffer.concat(chunks)
 }
 
+/** A PNG's pixel size and density as a display scale (its pHYs chunk: 144 dpi is 2x, as withScale and macOS
+ *  write it; none is 1x), or null when `png` is no PNG. */
+export function pngInfo(png: Uint8Array): { width: number; height: number; scale: number } | null {
+  const b = Buffer.from(png.buffer, png.byteOffset, png.byteLength)
+  if (b.length < 33 || b.readUInt32BE(0) !== 0x89504e47 || b.toString('latin1', 12, 16) !== 'IHDR') return null
+  let dpi = 72
+  for (let i = 8; i + 12 <= b.length; ) {
+    const n = b.readUInt32BE(i)
+    const type = b.toString('latin1', i + 4, i + 8)
+    if (type === 'pHYs' && n === 9 && b[i + 16] === 1) dpi = b.readUInt32BE(i + 8) * 0.0254
+    if (type === 'IDAT') break // pHYs comes before the pixels
+    i += 12 + n
+  }
+  return { width: b.readUInt32BE(16), height: b.readUInt32BE(20), scale: Math.min(Math.max(Math.round((dpi / 72) * 100) / 100, 1), 4) }
+}
+
 /** The menu bar's export ring, `px` pixels square on the 18 pt icon grid: a faint track, the done part
  *  from 12 o'clock clockwise with round ends, and the record dot of the app mark inside. Raw BGRA,
  *  black with alpha, for a template image (macOS tints it like the menu bar's own icons). */

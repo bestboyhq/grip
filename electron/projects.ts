@@ -28,13 +28,14 @@ import { EventEmitter } from 'node:events'
 import { constants, existsSync } from 'node:fs'
 import { access, copyFile, mkdir, open, readFile, readdir, rename, rm, rmdir, stat } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path'
-import { createProject, type Project, type Sources, type ZoomLook } from '../src/shared/project.ts'
+import { createProject, isStill, STILL_DURATION, type Project, type Sources, type ZoomLook } from '../src/shared/project.ts'
 import { migrate, newerError, validateProject } from '../src/shared/migrate.ts'
 import { parseEvents } from '../src/shared/events.ts'
 import { generateAutoZooms } from '../src/engine/zoom/index.ts'
 import { applyPreset, registerPresets } from './presets.ts'
 import { plainError } from './shell/errors.ts'
 import { moveCapture } from './shell/captures.ts'
+import { pngInfo } from './shell/png.ts'
 
 export interface Recovered {
   path: string
@@ -47,7 +48,7 @@ export const projectEvents = new EventEmitter()
 export interface RecentProject {
   path: string
   name: string
-  duration: number // source seconds
+  duration: number // source seconds; 0 for a still, which has no length
   modified: number // ms since epoch, last save
   thumbnail: string | null // absolute path to thumbnail.png
 }
@@ -310,6 +311,27 @@ export async function importVideo(file: string, dir = projectsDir()): Promise<st
   return bundle
 }
 
+/** A screenshot (.png) as a new still project (isStill), its look `preset`'s like a new recording's: the image
+ *  is copied in as sources/screen.png, at the display scale its density says. Returns the bundle path. */
+export async function importImage(file: string, dir = projectsDir(), preset?: string | null): Promise<string> {
+  const label = `“${basename(file)}”`
+  const png = await readFile(file).catch((e) => {
+    throw e.code === 'ENOENT' ? new Error(`${label} was not found.`) : e
+  })
+  const info = pngInfo(png)
+  if (!info?.width || !info.height) throw new Error(`Grip can't read ${label}. Grip opens screenshots saved as PNG.`)
+  const bundle = await createBundle(basename(file, extname(file)), dir)
+  try {
+    const screen = { file: 'sources/screen.png', width: info.width, height: info.height, fps: 1, scale: info.scale }
+    await writeFileAtomic(join(bundle, screen.file), png)
+    await writeNewRecording(bundle, { duration: STILL_DURATION, screen }, { preset })
+  } catch (e) {
+    await rm(bundle, { recursive: true, force: true })
+    throw (e as { code?: string }).code === 'ENOSPC' ? new Error(`Not enough free disk space to import ${label}.`) : e
+  }
+  return bundle
+}
+
 /** Codecs the editor decodes (WebCodecs, or mediabunny itself for PCM). */
 const PLAYABLE_VIDEO = ['avc', 'hevc', 'vp8', 'vp9', 'av1']
 const PLAYABLE_AUDIO = /^(aac|mp3|opus|vorbis|flac|ulaw|alaw|pcm-.+)$/
@@ -399,7 +421,7 @@ export async function recentProjects(file = recentFile()): Promise<RecentProject
     try {
       const json = join(path, 'project.json')
       const [p, s, thumb] = await Promise.all([readFile(json, 'utf8').then(JSON.parse), stat(json), exists(join(path, 'thumbnail.png'))])
-      out.push({ path, name: basename(path, '.grip'), duration: p.sources.duration, modified: s.mtimeMs, thumbnail: thumb ? join(path, 'thumbnail.png') : null })
+      out.push({ path, name: basename(path, '.grip'), duration: isStill(p.sources) ? 0 : p.sources.duration, modified: s.mtimeMs, thumbnail: thumb ? join(path, 'thumbnail.png') : null })
     } catch {}
   }
   return out

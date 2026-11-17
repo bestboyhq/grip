@@ -81,6 +81,14 @@
         "name": "Video",
         "role": "Viewer",
         "rank": "Alternate"
+      },
+      {
+        "ext": [
+          "png"
+        ],
+        "name": "Screenshot",
+        "role": "Viewer",
+        "rank": "Alternate"
       }
     ],
     "mac": {
