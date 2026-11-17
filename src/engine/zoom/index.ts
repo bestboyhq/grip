@@ -55,7 +55,7 @@ const PACE: Record<Style['screenAnimation'], number> = { focused: 1, smooth: 2 }
 const BRIDGE = 1 // s: a shorter gap between zooms pans across instead of zooming out and back in
 /** A change of framing (zooming in or out, one zoom into the next, re-centering) moves the camera there
  *  on the ease-out curve: this long, plus this much per view it moves, at most this. */
-const GLIDE = { min: 0.4, perView: 0.4, max: 1.5 } // s
+const GLIDE = { min: 0.3, perView: 0.3, max: 1.5 } // s
 const moveTime = (views: number) => Math.min(GLIDE.min + GLIDE.perView * views, GLIDE.max)
 /** s the camera takes to zoom in to `level` from rest, or out to rest from it, at `pace`. */
 const zoomTime = (level: number, pace: number) => pace * moveTime(Math.abs(Math.log2(Math.max(level, 1e-3))) / 2)
@@ -912,7 +912,7 @@ export function zoomProblems(p: Project, m: TimeMap, layout: ReturnType<typeof p
     const endAt = (end: number): Edit[] => {
       if (r.last !== r.first && end < r.b && end < r.lastA + MIN_HOLD) return [{ type: 'remove_zoom', id: r.last.id }]
       const e: Edit = { type: 'set_zoom', id: r.last.id, end }
-      if (r.last === r.first && end - inEnd < MIN_HOLD) e.start = Math.max(0, floor2(end - MIN_HOLD - r.settle))
+      if (r.last === r.first && end - inEnd < MIN_HOLD - 1e-6) e.start = Math.max(0, floor2(end - MIN_HOLD - r.settle))
       return [e]
     }
     const into = jumps.find((c) => c > r.a - early + ON_CUT && c < inEnd)

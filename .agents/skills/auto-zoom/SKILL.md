@@ -60,7 +60,8 @@ Turning clicks and typing into camera direction.
 - A loupe appears by growing its magnification from 1 with its content opaque; fading its content in shows the screen twice, magnified over unmagnified.
 - Zooms may overlap, and none of them wins: overlapping zooms combine.
   The camera takes the deepest level on and keeps every targeted point, and the followed cursor, in frame; it backs out to fit them, never past the shallowest zoom on.
-- Every camera move, in, out, or to a new framing, runs on the ease-out curve (the `motion` skill), longer the further the framing moves: 0.6 s for a 2x zoom in or out at Focused, twice that at Smooth.
+- Every camera move, in, out, or to a new framing, runs on the ease-out curve (the `motion` skill), longer the further the framing moves: 0.45 s for a 2x zoom in or out at Focused, twice that at Smooth.
+  A third longer, the move is still under way well after the click it serves, and the video reads as slow.
   A spring as stiff as a snappy zoom in, given a change of framing as one step, whips a pan across the zoomed screen half way in a tenth of a second, which reads as a jump.
 - A camera move is one zoom about the point that stays put on screen, in log scale, so the screen flows under the camera.
   Every view on the way lies between the first and the last, so none needs clamping to the screen.

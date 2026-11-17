@@ -71,19 +71,19 @@ test('a zoom at output 0 starts zoomed in; a later one moves in and out on the e
   near(view(0).scale, 2, 1e-4)
   ;({ view } = setup([zoom({ start: 2, end: 6, target: point(0.5, 0.5) })]))
   near(view(0).scale, 1, 1e-6)
-  // 2x moves the frame's edges half a view: 0.6 s each way, in log scale, in as out.
+  // 2x moves the frame's edges half a view: 0.45 s each way, in log scale, in as out.
   for (const u of [0, 0.1, 0.25, 0.5, 0.75, 0.9]) {
-    near(Math.log2(view(2 + 0.6 * u).scale), easeOut(u), 2e-3, `in at ${u}`)
-    near(Math.log2(view(6 + 0.6 * u).scale), 1 - easeOut(u), 2e-3, `out at ${u}`)
+    near(Math.log2(view(2 + 0.45 * u).scale), easeOut(u), 2e-3, `in at ${u}`)
+    near(Math.log2(view(6 + 0.45 * u).scale), 1 - easeOut(u), 2e-3, `out at ${u}`)
   }
   // Each move comes to rest where it lands: no carry past it and back.
-  for (const t of frames(2.62, 4, 60)) near(view(t).scale, 2, 1e-6, `held in at ${t}`)
-  for (const t of frames(6.62, 8, 60)) near(view(t).scale, 1, 1e-6, `held out at ${t}`)
+  for (const t of frames(2.47, 4, 60)) near(view(t).scale, 2, 1e-6, `held in at ${t}`)
+  for (const t of frames(6.47, 8, 60)) near(view(t).scale, 1, 1e-6, `held out at ${t}`)
   // The smooth style takes twice as long.
   const project = createProject('t', { duration: 12, screen: SCREEN, events: 'sources/events.jsonl' })
   project.style.screenAnimation = 'smooth'
   ;({ view } = setup([zoom({ start: 4, end: 8, target: point(0.5, 0.5) })], [], { project }))
-  near(Math.log2(view(8 + 0.6).scale), 1 - easeOut(0.5), 2e-3, 'smooth: half the way out at 0.6 s')
+  near(Math.log2(view(8 + 0.45).scale), 1 - easeOut(0.5), 2e-3, 'smooth: half the way out at 0.45 s')
 })
 
 test('pure: any frame alone equals the same frame rendered in sequence', () => {
@@ -162,13 +162,12 @@ test('a click away from the framing re-centers the view on it and the clicks aft
   }
   // Centered between them (left where it was, the first field would sit at the zone's 0.4 edge) from the first click on.
   for (const t of [3.3, 4.5, 5.6, 7]) assert.ok(off(t, at(1606, 788.5)) < 0.06, `the dialog is ${off(t, at(1606, 788.5))} of the half view off center at ${t} s`)
-  // The corner button stays framed through its click, and the pan eases in and out like a change of
-  // zooms: a spring alone whips it 10% to 90% of the way in 0.24 s.
+  // The corner button stays framed through its click, and the pan runs on the curve like a change of zooms.
   assert.ok(view(1.7).center.x >= view(1.5).center.x - 0.5, 'the pan leaves the corner button before its click')
   const x0 = view(1.5).center.x
   const x1 = view(3.4).center.x
   const when = (share: number) => frames(1.5, 3.4, 240).find((t) => (view(t).center.x - x0) / (x1 - x0) >= share)!
-  assert.ok(when(0.9) - when(0.1) >= 0.3, `the pan takes ${when(0.9) - when(0.1)} s`)
+  assert.ok(when(0.9) - when(0.1) >= 0.2, `the pan takes ${when(0.9) - when(0.1)} s`)
   // The cursor leads and the pan lands through the click. There by the click, the view moves with the
   // cursor and everything then stands still until the click.
   assert.ok(Math.abs(when(0.01) - 2.72) < 0.02, `the pan sets off at ${when(0.01)} s for the click at 3 s`)
@@ -380,8 +379,8 @@ test('a loupe opens out of what it shows as the camera zooms in, and closes back
   const events = moves([[0, 1000, 800], [10, 1000, 800]])
   const { p, view } = setup([zoom({ start: 2, end: 5, mode: 'loupe', level: 3 }), zoom({ start: 7, end: 9, level: 3 })], events, { duration: 10 })
   const R = loupeAt(p.zoom, 3.5)!.radius
-  // 3x takes the camera 0.4 + 0.4 * log2(3) / 2 s to zoom in, on the ease-out curve in log scale.
-  const time = 0.4 + 0.2 * Math.log2(3)
+  // 3x takes the camera 0.3 + 0.3 * log2(3) / 2 s to zoom in, on the ease-out curve in log scale.
+  const time = 0.3 + 0.15 * Math.log2(3)
   for (const u of [0.1, 0.25, 0.5, 0.75]) {
     const l = loupeAt(p.zoom, 2 + time * u)!
     near(Math.log(l.scale) / Math.log(3), easeOut(u), 2e-3, `in at ${u}...`)
@@ -711,16 +710,16 @@ test('zoom problems: each fix leaves nothing to fix, and the camera then holds s
   const pt = (x: number, y: number) => ({ kind: 'point' as const, x, y })
   // The last: a time at which the camera holds still once fixed.
   const cases: Array<[string, Zoom[], RegExp, object | object[], number?]> = [
-    ['out over the cut', [zoom({ id: 'z', start: 1, end: 4.9 })], /moves out over 4.9-5.5 s, and the cut at 5 s/, { type: 'set_zoom', id: 'z', end: 4.4 }],
-    ['in over the cut', [zoom({ id: 'z', start: 4.8, end: 12 })], /moves in over 4.8-5.4 s, and the cut at 5 s/, { type: 'set_zoom', id: 'z', start: 5 }],
-    ['a flinch', [zoom({ id: 'z', start: 10, end: 10.5 })], /in at 7.6 s and leaves at 7.5 s, so it holds only 0 s/, { type: 'set_zoom', id: 'z', end: 8.6 }],
-    ['a flinch at the end', [zoom({ id: 'z', start: 19.8, end: 20 })], /holds only 0 s/, { type: 'set_zoom', id: 'z', end: 17, start: 15.4 }],
+    ['out over the cut', [zoom({ id: 'z', start: 1, end: 4.9 })], /moves out over 4.9-5.35 s, and the cut at 5 s/, { type: 'set_zoom', id: 'z', end: 4.55 }],
+    ['in over the cut', [zoom({ id: 'z', start: 4.8, end: 12 })], /moves in over 4.8-5.25 s, and the cut at 5 s/, { type: 'set_zoom', id: 'z', start: 5 }],
+    ['a flinch', [zoom({ id: 'z', start: 10, end: 10.5 })], /in at 7.45 s and leaves at 7.5 s, so it holds only 0.05 s/, { type: 'set_zoom', id: 'z', end: 8.45 }],
+    ['a flinch at the end', [zoom({ id: 'z', start: 19.8, end: 20 })], /holds only 0 s/, { type: 'set_zoom', id: 'z', end: 17, start: 15.55 }],
     ['the end mid zoom-out', [zoom({ id: 'z', start: 15, end: 19.8 })], /the video ends at 17 s while the camera is still moving out/, { type: 'set_zoom', id: 'z', end: 17 }],
     ['cut out', [zoom({ id: 'z', start: 5.5, end: 7.5 })], /never plays/, { type: 'remove_zoom', id: 'z' }],
-    ['a stretch out over the cut', [zoom({ id: 'y', start: 1, end: 3 }), zoom({ id: 'z', start: 3.3, end: 4.9 })], /Zooms y to z/, { type: 'set_zoom', id: 'z', end: 4.4 }],
-    ['a loupe out over the cut', [zoom({ id: 'z', start: 1, end: 4.95, mode: 'loupe' })], /the loupe moves out over 4.95-5.43 s/, { type: 'set_zoom', id: 'z', end: 4.52 }],
-    ['a glide that never lands', [zoom({ id: 'y', start: 9, end: 12, target: pt(0.2, 0.25) }), zoom({ id: 'z', start: 12.2, end: 13, target: pt(0.8, 0.75) })], /glides to it from zoom y over 9.2-10.17 s and moves on at 10 s/, { type: 'set_zoom', id: 'z', end: 10.67 }, 10.55],
-    ['a glide into the end', [zoom({ id: 'y', start: 15, end: 19, target: pt(0.2, 0.25) }), zoom({ id: 'z', start: 19.2, end: 20, target: pt(0.8, 0.75) })], /holds only 0 s. Hold it at least 0.5 s/, [{ type: 'set_zoom', id: 'y', end: 15.53 }, { type: 'set_zoom', id: 'z', start: 15.53 }], 16.9],
+    ['a stretch out over the cut', [zoom({ id: 'y', start: 1, end: 3 }), zoom({ id: 'z', start: 3.3, end: 4.9 })], /Zooms y to z/, { type: 'set_zoom', id: 'z', end: 4.55 }],
+    ['a loupe out over the cut', [zoom({ id: 'z', start: 1, end: 4.95, mode: 'loupe' })], /the loupe moves out over 4.95-5.31 s/, { type: 'set_zoom', id: 'z', end: 4.64 }],
+    ['a glide that never lands', [zoom({ id: 'y', start: 9, end: 12, target: pt(0.2, 0.25) }), zoom({ id: 'z', start: 12.2, end: 13, target: pt(0.8, 0.75) })], /glides to it from zoom y over 9.2-9.92 s and moves on at 10 s/, { type: 'set_zoom', id: 'z', end: 10.43 }, 10.3],
+    ['a glide into the end', [zoom({ id: 'y', start: 15, end: 19, target: pt(0.2, 0.25) }), zoom({ id: 'z', start: 19.2, end: 20, target: pt(0.8, 0.75) })], /holds only 0.08 s. Hold it at least 0.5 s/, [{ type: 'set_zoom', id: 'y', end: 15.77 }, { type: 'set_zoom', id: 'z', start: 15.77 }], 16.9],
   ]
   for (const [name, zooms, message, fix, holds] of cases) {
     const project = createProject('t', { duration: 20, screen: SCREEN, events: 'sources/events.jsonl' })
