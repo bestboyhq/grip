@@ -398,6 +398,15 @@ export function resizeItem<T extends Item>(items: T[], id: string, side: 'start'
   })
 }
 
+/** Split every item that plays on both sides of output time `t` there, the part after it under a new
+ *  id; the same array when none does. An item whose source at `t` is cut out on one side stays whole,
+ *  so no part is left that never plays. A voiceover's parts keep its knots: they play as it did. */
+export function splitItems<T extends Item>(items: T[], m: TimeMap, t: number): T[] {
+  const s = toSource(m, t)
+  const hit = (x: T) => s - x.start > EPS && x.end - s > EPS && mapRange(m, x.start, x.end).some(([a, b]) => t - a > EPS && b - t > EPS)
+  return items.some(hit) ? items.flatMap((x) => (hit(x) ? [{ ...x, end: s }, { ...x, id: uid(), start: s }] : [x])) : items
+}
+
 /** Add copies shifted by `delta` source seconds, each fitted into free space; ones that do not fit are dropped. */
 export function placeCopies<T extends Item>(items: T[], copies: T[], delta: number, duration: number, overlap = false): { items: T[]; added: string[] } {
   const next = items.slice()

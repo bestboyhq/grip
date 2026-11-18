@@ -28,6 +28,9 @@ The editor where users cut, speed up, and direct the video.
   ⌘K moves the selected clip a place earlier or later.
 - Keyboard-first: ⌘B (or C) cuts at the playhead, Q and W delete the clip under the playhead before or after it, X ripple-deletes, holding ⌥ arms the split tool, arrows step 0.5 s (1 s with Shift), 0-9 set zoom level, and ⌘K reaches every action.
   People bring these keys from other editors: the bar shows Cut with ⌘B, and ⌘K finds it by "split".
+- Cut splits the tracks of the selected items, so part of a voiceover cuts out without cutting the video under it.
+  With nothing selected it splits the video and the voiceover over it; zooms, layouts, and masks split only when selected.
+  The split tool cuts the track it clicks, and a part that would never play (its source cut out on one side of the playhead) is never made.
   ⌫ and ⌦ do what X does, as in any Mac app: either one doing nothing reads as an editor that ignores its own platform.
   Shortcuts stay inactive while a text field has focus.
 - Undo and redo cover every edit and return the playhead to the source moment it was on at that step, an edit made while playing included.

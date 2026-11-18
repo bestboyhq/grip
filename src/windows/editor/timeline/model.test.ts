@@ -120,6 +120,19 @@ test('the edge between the parts of a split moves the split: the other part give
   assert.deepEqual(M.trimLimits(swapped, 0, 20), { lo: 10, hi: 20 })
 })
 
+test('a cut splits the item under the playhead, never into a part that plays nothing', () => {
+  const m = timeMap([clip(0, 5), clip(8, 20, 2)]) // source 5..8 is cut out; the 2× clip plays over output 5..11
+  const items = [vo('a', 1, 4, 1, 4), vo('b', 6, 12, 6, 12)]
+  const at7 = M.splitItems(items, m, 7) // output 7 is source 12: b's end, nothing to split
+  assert.equal(at7, items)
+  const at6 = M.splitItems(items, m, 6) // source 10, inside b
+  assert.deepEqual(at6.map((v) => [v.id === 'b', v.start, v.end]), [[false, 1, 4], [true, 6, 10], [false, 10, 12]])
+  assert.deepEqual(at6[2].knots, items[1].knots, 'both parts play the take as it was')
+  // At the cut, source 8 sits inside b, but b's part before it is cut out: splitting there leaves a part that never plays.
+  assert.equal(M.splitItems(items, m, 5), items)
+  assert.equal(M.splitItems(items, m, 0), items)
+})
+
 test('clip edits', () => {
   const clips = [clip(0, 10), clip(10, 20), clip(25, 30)]
   assert.equal(M.removeClips(clips, new Set(clips.map((c) => c.id))), clips, 'never removes every clip')

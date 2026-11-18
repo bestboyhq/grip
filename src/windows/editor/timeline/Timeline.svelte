@@ -91,6 +91,8 @@
   const waves = $derived(new Waveforms(peaks, requestDraw))
   const armed = () => splitTool || alt
   const isItem = (t: M.TrackId): t is M.ItemTrack => t === 'zooms' || t === 'layouts' || t === 'masks' || t === 'voiceovers'
+  /** The track the split tool cuts under the pointer: the clips, or the item it is over. */
+  const blade = (h: Hit) => (armed() && (h.kind === 'block' || (h.kind === 'lane' && h.track === 'clips')) && (h.track === 'clips' || isItem(h.track)) ? h.track : null)
 
   // ---- Inputs from the document ----
 
@@ -426,7 +428,8 @@
     let select: string | undefined
     const marquee = (): Gesture => ({ kind: 'marquee', t: timeOf(view, p.x), y: p.y, keep: add ? [...selection.ids] : [] })
 
-    if (armed() && (h.kind === 'block' || h.kind === 'lane') && h.track === 'clips') return A.cut(t)
+    const track = blade(h)
+    if (track) return A.cut(t, [track])
     if (h.kind === 'ruler') {
       seek(t)
       g = { kind: 'scrub' }
@@ -716,7 +719,7 @@
   }
 
   function hoverCursor(h: Hit): string {
-    if (armed() && (h.kind === 'block' || h.kind === 'lane') && h.track === 'clips') return SCISSORS
+    if (blade(h)) return SCISSORS
     if (h.kind === 'block') return h.edge ? 'ew-resize' : isItem(h.track) || (h.track === 'clips' && model!.clips.items.length > 1) ? 'grab' : 'default'
     return h.kind === 'cut' || h.kind === 'ruler' ? 'pointer' : 'default'
   }

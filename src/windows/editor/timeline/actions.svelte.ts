@@ -78,8 +78,16 @@ const ids = (k: Kind) => new Set(selected(k).map((x) => x.id))
 
 // ---- Clips ----
 
-export function cut(t = player.time) {
-  set('clips', splitAt(project().clips, t))
+/** Split `tracks` at output time t: the tracks of the selected items, so a voiceover cuts without the
+ *  video under it; with nothing selected, the video and the voiceover over it. */
+export function cut(t = player.time, tracks = KINDS.filter(has)) {
+  const p = project()
+  const m = mapNow()
+  const next = (tracks.length ? tracks : (['clips', 'voiceovers'] as const)).map((k) => [k, k === 'clips' ? splitAt(p.clips, t) : M.splitItems(list(k), m, t)] as const)
+  if (next.every(([k, xs]) => xs === p[k])) return
+  edit((q) => {
+    for (const [k, xs] of next) (q[k] as M.Item[]) = xs
+  })
 }
 
 /** Q and W: ripple-delete the clip under the playhead before it (-1) or after it (1). */
@@ -324,7 +332,7 @@ export function timelineCommands(view: { zoom: (f: number) => void; fit: () => v
 
     c('undo', 'Edit', 'Undo', () => restoring(undo), () => open() && canUndo(), ['⌘Z'], { repeat: true }),
     c('redo', 'Edit', 'Redo', () => restoring(redo), () => open() && canRedo(), ['⇧⌘Z'], { repeat: true }),
-    c('cut', 'Edit', 'Cut at playhead', () => cut(), open, ['⌘B', 'C'], { hint: 'split the clip' }),
+    c('cut', 'Edit', 'Cut at playhead', () => cut(), open, ['⌘B', 'C'], { hint: 'split the selected track, or the video and voiceover' }),
     c('trimBefore', 'Edit', 'Delete before playhead', () => trimToPlayhead(-1), open, ['Q'], { hint: 'in the clip under it' }),
     c('trimAfter', 'Edit', 'Delete after playhead', () => trimToPlayhead(1), open, ['W'], { hint: 'in the clip under it' }),
     c('split', 'Edit', 'Split tool', view.split, open, ['S'], { hint: 'or hold ⌥' }),
