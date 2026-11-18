@@ -28,6 +28,8 @@ Turning clicks and typing into camera direction.
 - Manual zooms set target, level, and duration, animated or instant.
 - A zoom that starts on the first frame starts zoomed in.
 - Vertical output follows the cursor continuously, since the frame is narrower than the source.
+  Only square and portrait outputs fill their height this way; a landscape one shows the whole recording at rest.
+  Cut to the height, a wide recording on 16:9 lost its sides and left no room for the background a preset puts around it.
 - Glass loupe magnifies a region in place when a full zoom would move too much of the screen.
   It has no outline; its rim is the edge: the magnification holds almost to it, then the content slows to a stop short of the rim and turns back, so the outer bevel mirrors what lies just inside.
   In the last part of the bevel the content curls back several times faster, so every line that reaches the rim ends in a hook, the way it does in thick glass.

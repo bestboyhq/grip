@@ -22,6 +22,8 @@ The native macOS app around everything else.
   A frozen screen nobody asked for reads as a hung Mac to a new user.
   The end of onboarding opens the picker like the shortcut does: Continue asked for it, and a new user facing the toolbar alone does not know what comes next.
   A recording or screenshot ends in a small result card (copy as a video under 20 MB, GIF, link, edit), not in the editor.
+  The card leaves by itself 4 s after it shows or its copy is done, held while the pointer rests on it, an export runs, or a failure shows.
+  A recording's card that stayed until closed sat over the user's work after every take.
   Its copy, GIF, and link use the project's style, which starts plain (see compositor).
   Recent Captures (menu bar menu and the toolbar's gear) reopens the last five cards, across restarts; their screenshots stay in Grip's own folder, since `$TMPDIR` gets purged.
   Recent Projects, with thumbnails, sit in both menus too: a closed editor is one click back, and the editor's title bar says its edits are saved.

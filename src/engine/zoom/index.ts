@@ -16,8 +16,9 @@
 // the recording sits, in unzoomed output px, and .visible the part of it that shows (all of it, or
 // the crop). They may change over time and may be larger than the output. Zoomed views stay inside
 // the visible part, so they never show background past the screen edge or past the crop.
-// On outputs narrower than that rect (9:16, or 1:1 from a landscape screen) the rest view scales up
-// until the screen covers the output height and follows the cursor. If the layout already makes the
+// On square and portrait outputs narrower than that rect (9:16, or 1:1 from a landscape screen) the
+// rest view scales up until the screen covers the output height and follows the cursor. A landscape
+// output (16:9 from a wider recording) shows the whole screen at rest. If the layout already makes the
 // screen cover the output, that base scale is 1 and the camera only pans.
 // A zoom level is magnification of the whole screen (2 = the screen twice as big as when it is shown
 // whole), so on those narrow outputs a zoom only adds what the base view does not already give:
@@ -228,13 +229,15 @@ function cutsTo(from: Zoom[], to: Zoom[]): boolean {
   return on.length ? on.some((z) => z.instant) : from.some((z) => !to.includes(z) && z.instant)
 }
 
-/** Scale at which the screen `r` covers a viewport narrower than it (cut to `b`, the part clear of the
- *  rounded corners); 1 otherwise. Narrower takes two tests. The aspect test uses the screen itself: a
- *  large corner radius must not make a screen as wide as the output look wider. The room test uses the
- *  frame `f` around it (inset, device): an output shaped to its even padding, as Auto and a Cover crop
- *  make it, has as much room above and below as at the sides, and keeps that padding. */
+/** Scale at which the screen `r` covers a square or portrait viewport narrower than it (cut to `b`, the
+ *  part clear of the rounded corners); 1 otherwise. A landscape output always shows the whole screen,
+ *  however much wider the recording is: cut to the height, a wide recording on 16:9 lost its sides and
+ *  left no room for the background around it. Narrower takes two tests. The aspect test uses the screen
+ *  itself: a large corner radius must not make a screen as wide as the output look wider. The room test
+ *  uses the frame `f` around it (inset, device): an output shaped to its even padding, as Auto and a
+ *  Cover crop make it, has as much room above and below as at the sides, and keeps that padding. */
 function baseScale(vp: Rect, r: Rect, f: Rect, b: Rect): number {
-  const narrower = vp.w / vp.h < (r.w / r.h) * 0.98 && vp.h - f.h - (vp.w - f.w) > 0.02 * vp.h
+  const narrower = vp.w <= vp.h && vp.w / vp.h < (r.w / r.h) * 0.98 && vp.h - f.h - (vp.w - f.w) > 0.02 * vp.h
   return narrower ? Math.max(1, vp.h / b.h) : 1
 }
 
