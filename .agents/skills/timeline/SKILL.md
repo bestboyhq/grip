@@ -31,6 +31,7 @@ The editor where users cut, speed up, and direct the video.
 - Cut splits the tracks of the selected items, so part of a voiceover cuts out without cutting the video under it.
   With nothing selected it splits the video and the voiceover over it; zooms, layouts, and masks split only when selected.
   The split tool cuts the track it clicks, and a part that would never play (its source cut out on one side of the playhead) is never made.
+  Q and W follow the same tracks: with items selected they delete only those items' part before or after the playhead, with no ripple; with nothing selected they ripple in the clip under it, and the voiceover over that part goes with it.
   ⌫ and ⌦ do what X does, as in any Mac app: either one doing nothing reads as an editor that ignores its own platform.
   Shortcuts stay inactive while a text field has focus.
 - Undo and redo cover every edit and return the playhead to the source moment it was on at that step, an edit made while playing included.

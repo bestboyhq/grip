@@ -131,6 +131,10 @@ test('a cut splits the item under the playhead, never into a part that plays not
   // At the cut, source 8 sits inside b, but b's part before it is cut out: splitting there leaves a part that never plays.
   assert.equal(M.splitItems(items, m, 5), items)
   assert.equal(M.splitItems(items, m, 0), items)
+  // Q and W keep what that split and a delete leave, under the item's own id.
+  assert.deepEqual(M.trimItems(items, m, 6, -1).map((v) => [v.id, v.start, v.end]), [['a', 1, 4], ['b', 10, 12]])
+  assert.deepEqual(M.trimItems(items, m, 6, 1).map((v) => [v.id, v.start, v.end]), [['a', 1, 4], ['b', 6, 10]])
+  assert.equal(M.trimItems(items, m, 5, -1), items)
 })
 
 test('clip edits', () => {
