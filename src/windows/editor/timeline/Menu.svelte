@@ -144,7 +144,7 @@
       {@render submenu(sources.mic ? 'System audio volume' : 'Volume', volumes, systemVolume, A.setSystemVolume)}
     {/if}
     <hr />
-    {@render item('Split here', () => A.cut(t), '⌘B')}
+    {@render item('Split here', () => A.cut(t, ['clips']), '⌘B')}
     {@render item(many ? 'Duplicate clips' : 'Duplicate clip', A.duplicate, '⌘D')}
     {@render item('Copy', A.copy, '⌘C')}
     {@render item('Reset trim', A.resetTrim, '', !A.canResetTrim())}
@@ -185,6 +185,7 @@
   {:else if target.kind === 'voiceovers'}
     {@render item('Record again', A.recordAgain, '', !A.canRecordAgain())}
     {@render item(voiceovers.every((v) => v.muted) ? 'Unmute' : 'Mute', A.toggleVoiceovers, 'M')}
+    {@render item('Split here', () => A.cut(t, ['voiceovers']), '⌘B')}
     {@render item('Duplicate', A.duplicate, '⌘D')}
     {@render item('Copy', A.copy, '⌘C')}
     <hr />

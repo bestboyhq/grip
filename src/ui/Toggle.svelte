@@ -22,7 +22,8 @@
   .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; padding: 2px 0; }
   .row:has(small) { padding: 5px 0; }
   .row.disabled { opacity: 0.4; }
-  label { display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; color: var(--fg-default); }
+  /* min-width and overflow-wrap: a hint with a long path wraps, and never pushes the switch out of the row */
+  label { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow-wrap: anywhere; font-size: 12.5px; color: var(--fg-default); }
   small { font-size: 11.5px; line-height: 1.35; color: var(--fg-faint); }
   input {
     flex: none; position: relative; width: 28px; height: 16px; margin: 0; border-radius: 8px; appearance: none;
