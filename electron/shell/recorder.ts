@@ -620,13 +620,14 @@ async function finishShot(png: Uint8Array, scale: number, save: boolean) {
   showResult(`shot=${encodeURIComponent(file)}${save ? '&saved' : ''}`)
 }
 
-/** A recent capture's card again (menu bar and gear menus), saying nothing was copied or saved yet.
- *  The picker's overlays float above everything: it closes first. */
+/** A recent capture's card again (menu bar and gear menus), saying nothing was copied or saved yet,
+ *  and staying until used or closed: the user asked for it. The picker's overlays float above
+ *  everything: it closes first. */
 export function reopenCapture(path: string) {
   const c = captures().find((c) => c.path === path)
   if (!c) return
   if (picking) closePicker()
-  if (c.kind === 'recording') return showResult(`bundle=${encodeURIComponent(c.path)}`)
+  if (c.kind === 'recording') return showResult(`bundle=${encodeURIComponent(c.path)}&reopened`)
   shots.add(c.path)
   showResult(`shot=${encodeURIComponent(c.path)}${dirname(c.path) === shotsDir() ? '' : '&saved'}&reopened`)
 }

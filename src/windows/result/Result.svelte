@@ -1,10 +1,11 @@
 <!-- The card after a recording or a screenshot, bottom right of the display (#/result?bundle=<path>
-     or ?shot=<path>[&saved][&reopened], electron/shell/recorder.ts showResult), and again from
+     or ?shot=<path>[&saved], then [&reopened], electron/shell/recorder.ts showResult), and again from
      Recent Captures (reopened: nothing copied or saved yet). A recording copies as an MP4 that fits
      under 20 MB or a GIF under 10 MB, ready to paste anywhere, or shares as a link, each styled like
      the project (plain by default, as it was on screen); or it opens in the editor. Exports keep
-     running if the card closes. A new screenshot is already on the clipboard (or on the Desktop) and
-     the card leaves by itself; Edit styles it in the editor, with a background or a preset, for a post.
+     running if the card closes. A new screenshot is already on the clipboard (or on the Desktop);
+     Edit styles it in the editor, with a background or a preset, for a post. Either card leaves by
+     itself a few seconds after it shows or its copy is done; a reopened one stays until used.
      Drag the picture into another app to drop the file. -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
@@ -64,10 +65,14 @@
     }
   })
 
-  // A screenshot's card leaves a few seconds after it copied or saved, unless the pointer rests on it.
+  // The card leaves a few seconds after it has nothing left to do: a screenshot once it is copied or
+  // saved, a recording once it shows (unless reopened) or its copy or link is done. The pointer on it,
+  // an export under way, or a failure to read holds it. A recording's card that stayed until closed
+  // sat over the user's work after every take.
+  const settled = $derived(shot ? !!did : job ? ['done', 'canceled'].includes(job.state) : !query.has('reopened'))
   $effect(() => {
-    if (!shot || !did || hovered) return
-    const t = setTimeout(close, 6000)
+    if (!settled || hovered) return
+    const t = setTimeout(close, 4000)
     return () => clearTimeout(t)
   })
 

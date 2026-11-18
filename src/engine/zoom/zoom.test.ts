@@ -287,6 +287,17 @@ test('vertical output: the screen covers the frame and the camera follows the cu
   assert.ok(view(4.5).center.x > view(0).center.x + 500, 'follows the cursor across')
 })
 
+test('a recording wider than a landscape output shows whole at rest; a square output still fills its height', () => {
+  const project = createProject('t', { duration: 10, screen: { ...SCREEN, width: 3648, height: 1228 } }) // ~3:1
+  for (const padding of [0, 80]) {
+    project.style.padding = padding
+    const wide = setup([], moves([[0, 100, 600], [10, 3500, 600]]), { project, width: 1920, height: 1080, duration: 10 })
+    for (const t of [0, 5, 10]) near(wide.view(t).scale, 1, 1e-6, `16:9 padding ${padding}`)
+    const square = setup([], moves([[0, 100, 600], [10, 3500, 600]]), { project, width: 1080, height: 1080, duration: 10 })
+    assert.ok(square.view(5).scale > 2, `1:1 padding ${padding}: ${square.view(5).scale}`)
+  }
+})
+
 test('a device with big rounded corners on a screen as wide as the output does not zoom in', () => {
   const project = createProject('t', { duration: 10, screen: SCREEN })
   project.style.device = 'iphone' // a large display radius: the part clear of the corners is wider than the screen
