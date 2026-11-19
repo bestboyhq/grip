@@ -6,7 +6,9 @@
 // On until it is turned off in Settings; onboarding's shortcut step says so in its description. Turning it off sends
 // one last count, with no account and no install ID, so the numbers know how many people they leave out, and forgets
 // the install ID, so turning it back on starts a new one. DO_NOT_TRACK sends nothing.
-// Dev runs send only to a local platform (STUDIO_SHARE_URL).
+// Dev runs send only to a local platform (STUDIO_SHARE_URL), and a build whose package.json says
+// `usageCounts: false` sends nothing: a test build runs packaged on fresh user data, so each run would count as
+// an install (scripts/update-e2e.ts).
 //
 // The journey (first open, each onboarding step, first recording, first export, coming back) is one marker each,
 // sent once: a marker waits in <userData>/usage.json until the platform takes it, and is retried at each launch.
@@ -147,9 +149,21 @@ function weekStart(day: string) {
   return d.toISOString().slice(0, 10)
 }
 
+let built: boolean | undefined
+/** False in a build made with `usageCounts: false` in its package.json. It holds for every launch of that build, whatever its environment. */
+function buildCounts() {
+  try {
+    built ??= JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')).usageCounts !== false
+  } catch {
+    built = true
+  }
+  return built
+}
+
 /** True once the platform took it. */
 async function send(name: string, props?: Props, token = ''): Promise<boolean> {
   if (process.env.DO_NOT_TRACK && process.env.DO_NOT_TRACK !== '0') return false
+  if (!buildCounts()) return false
   if (!app.isPackaged && !process.env.STUDIO_SHARE_URL) return false
   // The account or this install, never both; the last count before stats turn off carries neither.
   const s = load()
