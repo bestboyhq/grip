@@ -4,7 +4,8 @@
 <script lang="ts">
 	import { asset } from '$app/paths';
 	import Arrow from '#lib/Arrow.svelte';
-	import { CHECKED, FACTS, RECORDERS, SECONDS, type Platform } from '#lib/benchmark.ts';
+	import { SvelteSet } from 'svelte/reactivity';
+	import { CHECKED, FACTS, RECORDERS, SECONDS, SHOWN, type Platform } from '#lib/benchmark.ts';
 	import Head from '#lib/Head.svelte';
 	import { GITHUB_URL } from '#lib/links.ts';
 	import Media from '#lib/Media.svelte';
@@ -19,8 +20,13 @@
 	});
 	const SCRIPT = `${GITHUB_URL}/tree/main/scripts/benchmark`;
 
+	// The recorders in the table, one a column. Every recorder is in the page; the rest only hide, and the last one
+	// shown stays.
+	const shown = new SvelteSet(SHOWN);
+	const pick = (id: string) => (shown.has(id) ? shown.delete(id) : shown.add(id));
+
 	// The row and the column of the cell under the mouse or holding the focus, as the table counts them: row 0 is the
-	// head, column 0 the names. A finger lights nothing; it only scrolls.
+	// head, column 0 the facts. A finger lights nothing; it only scrolls.
 	let hot = $state<Readonly<{ row: number; col: number }>>();
 	function aim(event: Event) {
 		if (event instanceof PointerEvent && event.pointerType === 'touch') return;
@@ -100,21 +106,34 @@
 <section id="facts" class="wrap part" aria-labelledby="facts-title">
 	<h2 id="facts-title">The facts</h2>
 	<p class="sub">Read from each maker’s own pages on {checked}.</p>
+	<div class="pick" role="group" aria-label="Recorders to compare">
+		{#each RECORDERS as { id, name } (id)}
+			<button
+				class="chip"
+				type="button"
+				aria-pressed={shown.has(id)}
+				disabled={shown.size === 1 && shown.has(id)}
+				onclick={() => pick(id)}>{name}</button
+			>
+		{/each}
+	</div>
 	<div class="scroll">
-		<table onpointerover={aim} onpointerleave={cool} onfocusin={aim} onfocusout={cool}>
+		<table style:--n={shown.size} onpointerover={aim} onpointerleave={cool} onfocusin={aim} onfocusout={cool}>
 			<thead>
 				<tr>
 					<td></td>
-					{#each FACTS as { key, label }, col (key)}
-						<th scope="col" class:hot={hot?.col === col + 1}>{label}</th>
+					{#each RECORDERS as { id, name, url }, col (id)}
+						<th scope="col" hidden={!shown.has(id)} class:hot={hot?.col === col + 1}
+							><a href={url} rel="noopener">{name}</a></th
+						>
 					{/each}
 				</tr>
 			</thead>
 			<tbody>
-				{#each RECORDERS as { id, name, url, facts }, row (id)}
+				{#each FACTS as { key, label, kind, good, bad }, row (key)}
 					<tr class:hot={hot?.row === row + 1}>
-						<th scope="row"><a href={url} rel="noopener">{name}</a></th>
-						{#each FACTS as { key, label, kind, good, bad }, col (key)}
+						<th scope="row">{label}</th>
+						{#each RECORDERS as { id, name, facts }, col (id)}
 							{@const { value, note, source } = facts[key]}
 							<!-- The arrow to the source ends the cell's last line. -->
 							{#snippet link()}
@@ -125,7 +144,7 @@
 									aria-label="Source: {name}, {label.toLowerCase()}"><Arrow /></a
 								>
 							{/snippet}
-							<td class={kind} class:hot={hot?.col === col + 1}>
+							<td class={kind} hidden={!shown.has(id)} class:hot={hot?.col === col + 1}>
 								{#if typeof value === 'string'}
 									<span class="value" class:good={good?.includes(value)} class:bad={bad?.includes(value)}
 										>{whole(value)}{#if !note}{@render link()}{/if}</span
@@ -291,23 +310,57 @@
 		font-weight: 550;
 	}
 
+	/* One toggle a recorder: pressed, its column is in the table. Instant, as every hover here. */
+	.pick {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: 24px;
+	}
+
+	.chip {
+		height: 28px;
+		padding: 0 11px;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		box-shadow: inset 0 0 0 1px var(--border-subtle);
+		color: var(--fg-muted);
+		font: inherit;
+		font-size: 13px;
+		font-weight: 500;
+		cursor: pointer;
+	}
+
+	.chip[aria-pressed='true'] {
+		background: var(--surface-hover);
+		box-shadow: none;
+		color: var(--fg-default);
+	}
+
+	.chip:disabled {
+		cursor: default;
+	}
+
 	/* The table scrolls sideways inside its own box where the column is too narrow for it, out to the page's edges,
-	   each recorder's name held at the left. Its columns share the width by how much each has to say. Each cell
-	   pads both sides, so a lit row or column has room around its text, and the table reaches past the column by
-	   that much to keep its text on the column's edges. */
+	   each fact's name held at the left. The recorders share the rest evenly, none narrower than it reads well, and a
+	   few of them no wider either. Each cell pads both sides, so a lit row or column has room around its text, and
+	   the table reaches past the column by that much to keep its text on the column's edges. */
 	.scroll {
 		--cell: 10px;
-		margin: 32px calc(-1 * var(--pad)) 0;
+		margin: 20px calc(-1 * var(--pad)) 0;
 		padding-inline: var(--pad);
 		overflow-x: auto;
 		isolation: isolate;
 	}
 
 	table {
-		width: calc(100% + 2 * var(--cell));
-		min-width: 1024px;
+		--label: 150px;
+		width: min(calc(100% + 2 * var(--cell)), calc(var(--label) + var(--n) * 240px));
+		min-width: calc(var(--label) + var(--n) * 150px);
 		margin-inline: calc(-1 * var(--cell));
 		border-collapse: collapse;
+		table-layout: fixed;
 	}
 
 	th,
@@ -324,24 +377,27 @@
 		padding-top: 10px;
 	}
 
-	thead th {
-		color: var(--fg-secondary);
-		font-family: var(--mono);
-		font-size: 12px;
-		font-weight: 400;
-		line-height: 16px;
+	thead th a {
+		color: var(--fg-default);
+		font-size: 15px;
+		font-weight: 550;
+		line-height: 20px;
+		text-decoration: none;
 	}
 
 	/* Above the source links, which are positioned too, and solid out to the box's edge, so nothing that scrolls
-	   under the names shows in the padding beside them; the box isolates them, so the page's rails stay on top. As
-	   narrow as the longest name. */
+	   under the facts' names shows in the padding beside them; the box isolates them, so the page's rails stay on
+	   top. */
 	thead td,
 	tbody th {
 		position: sticky;
 		z-index: 1;
 		left: calc(-1 * var(--cell));
-		width: 1px;
 		background: var(--surface-root);
+	}
+
+	thead td {
+		width: var(--label);
 	}
 
 	thead td::before,
@@ -352,16 +408,16 @@
 		background: var(--surface-root);
 	}
 
-	tbody th a {
-		color: var(--fg-default);
-		font-size: 15px;
-		font-weight: 550;
+	/* A fact's name on the line of its values' first. */
+	tbody th {
+		color: var(--fg-secondary);
+		font-family: var(--mono);
+		font-size: 12px;
+		font-weight: 400;
 		line-height: 20px;
-		text-decoration: none;
-		white-space: nowrap;
 	}
 
-	/* Every cell of a column shows its fact one way (src/lib/benchmark.ts): the value on top, read at a glance, and
+	/* Every cell of a row shows its fact one way (src/lib/benchmark.ts): the value on top, read at a glance, and
 	   under it a quieter note. */
 	tbody td {
 		color: var(--fg-prose);
@@ -375,8 +431,10 @@
 		text-wrap: pretty;
 	}
 
+	/* A note that takes two lines splits them evenly, so no word is left alone on the second. */
 	.note {
 		margin-top: 2px;
+		text-wrap: balance;
 		color: var(--fg-muted);
 		font-size: 12px;
 		line-height: 18px;
@@ -441,12 +499,11 @@
 
 	/* The row and the column in hand, and brightest the cell where they cross. Instant, as every hover here. */
 	.hot,
-	tr.hot > * {
+	tbody tr.hot > * {
 		background: var(--surface-elevated);
 	}
 
-	thead .hot,
-	tr.hot > th a {
+	tr.hot > th {
 		color: var(--fg-default);
 	}
 
@@ -502,9 +559,14 @@
 	}
 
 	@media (hover: hover) and (pointer: fine) {
-		tbody th a:hover,
+		thead th a:hover,
 		.source:hover {
 			color: var(--brand);
+		}
+
+		.chip:enabled:hover {
+			box-shadow: inset 0 0 0 1px var(--border-default);
+			color: var(--fg-default);
 		}
 
 		/* An arrow in every cell is noise: a mouse finds the one in the cell it points at, and a finger sees them all. */
@@ -538,6 +600,10 @@
 		.takes,
 		.rules {
 			grid-template-columns: minmax(0, 1fr);
+		}
+
+		table {
+			--label: 120px;
 		}
 	}
 </style>

@@ -9,15 +9,16 @@ export const CHECKED = '2026-11-19';
 // How long take.swift runs.
 export const SECONDS = 15;
 
-// The columns, one fact each, and how its cells show it, the same way in every row: a price leads with its
-// headline, a mark is a short answer after a dot, green on the answers in `good`, red on those in `bad`, and gray on
-// the rest, a year is set in mono, and platforms stand one a line, each after its glyph.
-// A value stays a few words. A note says only what its value leaves out, and a column's notes all say the same kind
+// The rows, one fact each, from what a recorder costs to what it does, and how its cells show it, the same way for
+// every recorder: a price leads with its headline, a mark is a short answer after a dot, green on the answers in
+// `good`, red on those in `bad`, and gray on the rest, a year is set in mono, and platforms stand one a line, each
+// after its glyph.
+// A value stays a few words. A note says only what its value leaves out, and a row's notes all say the same kind
 // of thing: a price's the other ways to pay, a platform's the macOS it needs, a license's name, an account's what it
 // is needed for, share links' limits, screenshots' extras, support's the other ways to reach the maker. A value that
 // says it all has no note.
 // The price is what recording for work costs with no limits, since most recordings are made for work: a free plan
-// that is only for personal use, or that caps the videos, is in its own column.
+// that is only for personal use, or that caps the videos, is in its own row.
 type Key =
 	| 'price'
 	| 'source'
@@ -38,13 +39,10 @@ export const FACTS: readonly Readonly<{
 	bad?: readonly string[];
 }>[] = [
 	{ key: 'price', label: 'Price for work', kind: 'price' },
-	{ key: 'source', label: 'Source code', kind: 'mark', good: ['Open'], bad: ['Closed'] },
-	{ key: 'since', label: 'First release', kind: 'year' },
-	{ key: 'platforms', label: 'Runs on', kind: 'platforms' },
-	{ key: 'account', label: 'Account', kind: 'mark', good: ['None'], bad: ['Required'] },
 	{ key: 'free', label: 'Free plan or trial', kind: 'mark', good: ['Everything'], bad: ['None'] },
+	{ key: 'account', label: 'Account', kind: 'mark', good: ['None'], bad: ['Required'] },
+	{ key: 'platforms', label: 'Runs on', kind: 'platforms' },
 	{ key: 'where', label: 'Where it works', kind: 'mark', good: ['On device'], bad: ['Cloud'] },
-	{ key: 'links', label: 'Share links', kind: 'mark', good: ['Included'], bad: ['None'] },
 	{
 		key: 'zoom',
 		label: 'Automatic zoom',
@@ -53,7 +51,10 @@ export const FACTS: readonly Readonly<{
 		bad: ['None', 'Coming soon'],
 	},
 	{ key: 'screenshots', label: 'Screenshots', kind: 'mark', good: ['Yes'], bad: ['No'] },
+	{ key: 'links', label: 'Share links', kind: 'mark', good: ['Included'], bad: ['None'] },
+	{ key: 'source', label: 'Source code', kind: 'mark', good: ['Open'], bad: ['Closed'] },
 	{ key: 'support', label: 'Support', kind: 'mark', bad: ['Paid plans only'] },
+	{ key: 'since', label: 'First release', kind: 'year' },
 ];
 
 // The platforms a recorder can run on; the page draws a glyph for each.
@@ -73,6 +74,10 @@ export type Recorder = Readonly<{
 		| { id: Filmed; take: Readonly<{ version: string; width: number; height: number }> }
 		| { id: string; take?: undefined }
 	>;
+
+// The recorders the table shows until a visitor picks others: Grip and four more, one a column. The rest are a press
+// away, and in the page all along.
+export const SHOWN: readonly string[] = ['grip', 'cap', 'cleanshot', 'loom', 'screen-studio'];
 
 // Spelled out, not taken from links.ts, so the site's tests can read this file without SvelteKit.
 const GITHUB_URL = 'https://github.com/bestboyhq/grip';
@@ -114,7 +119,7 @@ export const RECORDERS: readonly Recorder[] = [
 			free: { value: 'Personal use', note: '25 links/mo, 5 min each', source: 'https://cap.so/pricing' },
 			where: { value: 'On device', note: 'Or live upload', source: 'https://cap.so/docs/recording/studio-mode' },
 			links: { value: 'Included', note: '25/mo, 5 min each', source: 'https://cap.so/pricing' },
-			zoom: { value: 'On request', note: 'From clicks, in the editor', source: 'https://cap.so/docs/recording/studio-mode' },
+			zoom: { value: 'On request', note: 'In the editor, from clicks', source: 'https://cap.so/docs/recording/studio-mode' },
 			screenshots: { value: 'Yes', note: 'With backgrounds', source: 'https://cap.so/' },
 			support: { value: 'Discord', note: 'Or email, GitHub\u00a0issues', source: 'https://cap.so/support' },
 		},

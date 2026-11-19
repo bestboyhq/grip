@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fingerprint, HASH, IMAGE, RENDER } from '../og.ts';
 import editor from '../src/lib/editor.json' with { type: 'json' };
-import { CHECKED, FACTS, RECORDERS } from '../src/lib/benchmark.ts';
+import { CHECKED, FACTS, RECORDERS, SHOWN } from '../src/lib/benchmark.ts';
 import { RELEASES } from '../src/lib/changelog.ts';
 import { LOGDASH_SITE } from '../src/lib/logdash.ts';
 import worker, { type Env } from '../worker/index.ts';
@@ -146,6 +146,8 @@ test('the benchmark gives every fact a short value and a source on the web, and 
 	assert.match(benchmark, new RegExp(`<link rel="canonical" href="${SITE}/benchmark"`, 'u'));
 	assert.match(CHECKED, /^\d{4}-\d{2}-\d{2}$/u);
 	assert.equal(new Set(RECORDERS.map((recorder) => recorder.id)).size, RECORDERS.length);
+	// A column shown from the start that names no recorder leaves the table a column short.
+	for (const id of SHOWN) assert.ok(RECORDERS.some((recorder) => recorder.id === id), `${id} is no recorder`);
 	// A green or red answer that no recorder gives is a typo, and the dot it was meant for stays gray.
 	for (const { key, good = [], bad = [] } of FACTS)
 		for (const value of [...good, ...bad])
