@@ -47,21 +47,28 @@ export function springDuration(c: SpringConfig = SPRING_DEFAULT, eps = 1e-3): nu
 
 export const mix = (a: number, b: number, p: number) => a + (b - a) * p
 
-/** CSS `ease-out`, cubic-bezier(0, 0, 0.58, 1): progress 0 -> 1 at u of a move's duration (clamped). Every
- *  timed move and fade the renderer draws runs on it, so the camera, loupes, cursor, overlays, and layout
- *  move as one: it sets off at 1.72 times the mean speed, is 90% there at 0.74, and lands with no speed left.
- *  Springs stay only on what follows something moving (the camera and a loupe on the cursor, the tilt). */
-export function easeOut(u: number): number {
+/** CSS `cubic-bezier(x1, y1, x2, y2)`: progress 0 -> 1 at u of a move's duration (clamped). Its x(s) rises
+ *  steadily, so halving finds the s at u, and y(s) is the progress. */
+const cubic = (x1: number, y1: number, x2: number, y2: number) => (u: number): number => {
   if (!(u > 0)) return 0
   if (u >= 1) return 1
-  // x(s) = s²(1.74 - 0.74 s) rises steadily, so halving finds the s at u; y(s) = s²(3 - 2 s) is the progress.
+  const at = (a: number, b: number, s: number) => 3 * (1 - s) * (1 - s) * s * a + 3 * (1 - s) * s * s * b + s * s * s
   let lo = 0
   let hi = 1
   for (let i = 0; i < 24; i++) {
     const s = (lo + hi) / 2
-    if (s * s * (1.74 - 0.74 * s) < u) lo = s
+    if (at(x1, x2, s) < u) lo = s
     else hi = s
   }
-  const s = (lo + hi) / 2
-  return s * s * (3 - 2 * s)
+  return at(y1, y2, (lo + hi) / 2)
 }
+
+/** CSS `ease-out`, cubic-bezier(0, 0, 0.58, 1). Every timed move and fade the renderer draws runs on it, so
+ *  the camera, cursor, overlays, and layout move as one: it sets off at 1.72 times the mean speed, is 90%
+ *  there at 0.74, and lands with no speed left. Springs stay only on what follows something moving (the
+ *  camera and a loupe on the cursor, the tilt). */
+export const easeOut = cubic(0, 0, 0.58, 1)
+
+/** `--ease-glide` of the app's windows, cubic-bezier(0.32, 0.72, 0, 1): a loupe picked up off the screen and
+ *  put back down. It is two thirds there at a fifth of the move, then lands long and soft, as a hand lifts glass. */
+export const easeGlide = cubic(0.32, 0.72, 0, 1)

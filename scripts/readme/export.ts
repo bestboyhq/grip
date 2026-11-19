@@ -1,16 +1,16 @@
-// Exports the README demos through the running app: each demo's animated WebPs into .github/readme, and the
+// Exports the README demos through the running app: each demo's animated AVIFs into .github/readme, and the
 // landing page's clips into .context/readme for site/media.sh. The page frames every clip in a card,
 // so hero, loupe, and captions leave out their wallpaper, padding, corners, and shadow; the MacBook
 // keeps its frame, and the formats clip is the 16:9, 1:1, and 9:16 exports side by side (formats/strip.html).
-// The README follows its reader's theme, so each WebP comes as <name>.webp and <name>-light.webp, from make.ts's
+// The README follows its reader's theme, so each AVIF comes as <name>.avif and <name>-light.avif, from make.ts's
 // two takes of the scene. The page shows the light take in either theme, as <name>-light.mp4; the formats strip
-// renders in both, for its two WebPs. Every clip runs at 60 fps: a GIF cannot, since it keeps whole hundredths
+// renders in both, for its two AVIFs. Every clip runs at 60 fps: a GIF cannot, since it keeps whole hundredths
 // of a second per frame, and GitHub drops a README's <video>.
-// Run after make.ts, with the app up (STUDIO_CDP_PORT=9333 npm run dev), with ffmpeg and img2webp (brew install webp):
+// Run after make.ts, with the app up (STUDIO_CDP_PORT=9333 npm run dev), with an ffmpeg built with libsvtav1 (Homebrew's is):
 // npx electron scripts/readme/export.ts [demo...]   (all six by default)
 import { app, BrowserWindow, nativeTheme } from 'electron'
 import { execFile, spawn } from 'node:child_process'
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -53,15 +53,16 @@ async function evaluate(expr: string): Promise<any> {
 const invoke = (channel: string, ...args: unknown[]) => evaluate(`window.studio.invoke(${JSON.stringify(channel)}, ...${JSON.stringify(args)})`)
 const run = promisify(execFile)
 
-/** A README WebP of every frame of a FPS clip, at most 1660 px wide, twice the README's column. It is lossy at q80,
- *  where text stays as sharp as in the clip: q90 is half again the bytes for no visible gain, and method 6 saves 3%
- *  at 17 times the time. WebP keeps whole ms per frame, so the frames take 17, 16, and 17 ms in turn to stay on time. */
-async function webp(src: string, dest: string) {
-  const dir = mkdtempSync(join(tmpdir(), 'grip-webp-'))
-  await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', src, '-vf', "scale='min(1660,iw)':-2:flags=lanczos", join(dir, '%05d.png')])
-  const frames = readdirSync(dir).sort().flatMap((f, i) => ['-d', String(Math.round(((i + 1) * 1000) / FPS) - Math.round((i * 1000) / FPS)), join(dir, f)])
-  await run('img2webp', ['-loop', '0', '-lossy', '-q', '80', '-m', '4', ...frames, '-o', dest])
-  rmSync(dir, { recursive: true })
+/** A README AVIF of a FPS clip, at most 1660 px wide, twice the README's column. Lossy WebP left blocks and streaks
+ *  that built up over each loop on still wallpapers and dark sidebars. AV1 in screen content mode at crf 24 keeps
+ *  every frame within 48 dB PSNR of the clip, its text as sharp, at a quarter of the WebP's bytes; crf 30 looks the
+ *  same on the loupe demo for a third fewer bytes, with no margin for the others. The scale drops the clip's sRGB
+ *  transfer, and a browser reads the untagged AV1 as BT.709, which lifts dark UI, so setparams tags it again. */
+async function avif(src: string, dest: string) {
+  const vf = "scale='min(1660,iw)':-2:flags=lanczos:out_color_matrix=bt709:out_range=tv,format=yuv420p10le," +
+    'setparams=colorspace=bt709:color_primaries=bt709:color_trc=iec61966-2-1:range=tv'
+  await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', src, '-an', '-vf', vf, '-c:v', 'libsvtav1', '-crf', '24', '-preset', '4',
+    '-svtav1-params', 'scm=1', '-movie_timescale', String(FPS), dest])
 }
 
 /** The formats clip in each theme: strip.html stepped through every frame of the three exports, at twice its size. */
@@ -88,14 +89,14 @@ async function strip(duration: number, fps = FPS, scale = 2) {
   win.destroy()
 }
 
-app.on('window-all-closed', () => {}) // the strip's window closing must not quit before the WebPs are done
+app.on('window-all-closed', () => {}) // the strip's window closing must not quit before the AVIFs are done
 app.whenReady().then(async () => {
   const names = process.argv.filter((a) => a in SITE)
   const demos: Record<string, Demo> = {}
   const requests: object[] = []
   const tmp = mkdtempSync(join(tmpdir(), 'grip-readme-'))
-  // The README's WebPs: [clip, WebP]. A demo's clip is its framed take; the formats clip is the strip.
-  const webps: Array<[string, string]> = []
+  // The README's AVIFs: [clip, AVIF]. A demo's clip is its framed take; the formats clip is the strip.
+  const avifs: Array<[string, string]> = []
   for (const name of names.length ? names : Object.keys(SITE)) {
     const demo: Demo = (demos[name] = (await import(join(import.meta.dirname, name, 'demo.ts'))).default)
     const bundle = join(OUT, `${demo.name}.grip`)
@@ -106,12 +107,12 @@ app.whenReady().then(async () => {
     const add = (style: object, options: object, path: string, file = SCREENS.dark) =>
       requests.push({ bundle, project: { ...p, sources: { ...p.sources, screen: { ...p.sources.screen, file } }, style: { ...p.style, ...style } }, options, dest: 'file', path, quiet: true })
     for (const [theme, file] of Object.entries(SCREENS)) {
-      const dest = join(README, `${name}${theme === 'light' ? '-light' : ''}.webp`)
-      if (name === 'formats') webps.push([join(OUT, `formats-${theme}.mp4`), dest])
+      const dest = join(README, `${name}${theme === 'light' ? '-light' : ''}.avif`)
+      if (name === 'formats') avifs.push([join(OUT, `formats-${theme}.mp4`), dest])
       else {
         const take = join(tmp, `${name}-${theme}.mp4`)
         add({}, mp4(1080), take, file)
-        webps.push([take, dest])
+        avifs.push([take, dest])
       }
     }
     const themes: Array<[string, string]> = name === 'formats' ? Object.entries(SCREENS) : [['light', SCREENS.light]]
@@ -127,7 +128,7 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 2000))
   }
   if (demos.formats) await strip(demos.formats.duration)
-  await Promise.all(webps.map(([src, dest]) => webp(src, dest)))
+  for (const [src, dest] of avifs) await avif(src, dest) // one at a time: each encoder already takes every core
   rmSync(tmp, { recursive: true })
   app.quit()
 }).catch((e) => {
