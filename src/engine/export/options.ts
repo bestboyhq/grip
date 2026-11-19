@@ -141,7 +141,12 @@ export const gifDelay = (i: number, fps: number) => Math.round(((i + 1) * 100) /
 
 // Bits per pixel per frame at 30 fps. Screen content is mostly static, so the encoder lands well
 // under these averages; they bound text sharpness during fast motion (scrolls, zoom transitions).
-const BPP: Record<Quality, number> = { studio: 0.2, social: 0.1, web: 0.05, small: 0.025 }
+// Social, the default, spends what YouTube asks of an upload: 12 Mbps at 1080p60, 24 at 1440p60, 53-68
+// at 4K60. Measured on a zoomed, loupe-heavy 1440p60 export against its lossless frames: 0.1 bpp gave
+// 49.9 dB PSNR (Y), 0.15 gave 51.1, 0.2 gave 52.3, each doubling about 2.4 dB, while the file grew in
+// step. Its text looked the same at 0.1, at 0.2, and lossless: a soft export is an upscaled source,
+// not too few bits.
+const BPP: Record<Quality, number> = { studio: 0.2, social: 0.15, web: 0.05, small: 0.025 }
 
 export function videoBitrate(width: number, height: number, o: Pick<ExportOptions, 'fps' | 'quality' | 'codec'>): number {
   return Math.round(BPP[o.quality] * width * height * 30 * (o.fps / 30) ** 0.6 * (o.codec === 'hevc' ? 0.65 : 1))
