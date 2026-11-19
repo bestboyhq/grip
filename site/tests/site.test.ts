@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fingerprint, HASH, IMAGE, RENDER } from '../og.ts';
 import editor from '../src/lib/editor.json' with { type: 'json' };
+import { CHECKED, FACTS, RECORDERS } from '../src/lib/benchmark.ts';
 import { RELEASES } from '../src/lib/changelog.ts';
 import { LOGDASH_SITE } from '../src/lib/logdash.ts';
 import worker, { type Env } from '../worker/index.ts';
@@ -15,6 +16,7 @@ const page = readFileSync(join(build, 'index.html'), 'utf8');
 const card = readFileSync(join(build, 'og.html'), 'utf8');
 const changelog = readFileSync(join(build, 'changelog.html'), 'utf8');
 const agents = readFileSync(join(build, 'agents.html'), 'utf8');
+const benchmark = readFileSync(join(build, 'benchmark.html'), 'utf8');
 // The Open Graph image, named by a hash of its content.
 const SHARED =
 	/<meta property="og:image" content="https:\/\/bestboy\.dev\/grip\/(_app\/immutable\/assets\/og\.[\w-]+\.jpg)"/u;
@@ -42,7 +44,7 @@ test('every page that shares the image names it by its content, with its size an
 		.replace(/\s+/gu, ' ')
 		.trim();
 	assert.ok(headline);
-	for (const file of ['index.html', '404.html', 'changelog.html', 'agents.html']) {
+	for (const file of ['index.html', '404.html', 'changelog.html', 'agents.html', 'benchmark.html']) {
 		const html = readFileSync(join(build, file), 'utf8');
 		const image = SHARED.exec(html)?.[1];
 		assert.ok(image, `${file} shares no content-named image`);
@@ -140,6 +142,26 @@ test('the agents page hands agents its playbook, and every way in starts the sam
 	for (const name of stills) assert.ok(existsSync(join(build, `${name}.webp`)), name);
 });
 
+test('the benchmark gives every fact a source on the web, and every take its silent clip', () => {
+	assert.match(benchmark, new RegExp(`<link rel="canonical" href="${SITE}/benchmark"`, 'u'));
+	assert.match(CHECKED, /^\d{4}-\d{2}-\d{2}$/u);
+	assert.equal(new Set(RECORDERS.map((recorder) => recorder.id)).size, RECORDERS.length);
+	for (const { id, name, url, take, facts } of RECORDERS) {
+		assert.ok(benchmark.includes(`href="${url}"`), `${name} is not on the page`);
+		for (const [key] of FACTS) {
+			const [text, source] = facts[key];
+			assert.ok(text.trim(), `${name} says nothing for ${key}`);
+			assert.match(source, /^https:\/\/[^\s]+$/u, `${name}'s ${key} has no source`);
+		}
+		const clip = `media/benchmark-${id}.mp4`;
+		assert.equal(benchmark.includes(`src="/grip/${clip}"`), Boolean(take), `${name}'s take`);
+		if (!take) continue;
+		assert.ok(existsSync(join(build, `media/benchmark-${id}.webp`)), `${name}'s still`);
+		const handlers = tracks(readFileSync(join(build, clip)));
+		assert.ok(handlers.includes('vide') && !handlers.includes('soun'), `${clip} has ${handlers.join(', ')}`);
+	}
+});
+
 test('the page loads Logdash from the Grip site and reports to it', () => {
 	assert.match(page, /<script defer="" src="\/grip\/_ld\/script\.js"/u);
 	assert.match(page, new RegExp(`data-site="${LOGDASH_SITE}"`, 'u'));
@@ -147,7 +169,7 @@ test('the page loads Logdash from the Grip site and reports to it', () => {
 });
 
 test('every section and button has a name to report its views and presses by (src/lib/track.ts)', () => {
-	for (const html of [page, agents]) {
+	for (const html of [page, agents, benchmark]) {
 		for (const [section] of html.matchAll(/<section\b[^>]*>/gu))
 			assert.match(section, /\s(?:id|data-place)="[^"]+"/u, section);
 		for (const [button, attributes = '', inner = ''] of html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gu))

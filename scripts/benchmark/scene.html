@@ -1,0 +1,78 @@
+<!doctype html>
+<!-- The page every recorder films for the benchmark at bestboy.dev/grip/benchmark: a deployments dashboard that
+     only real input changes. take.swift plays the same clicks, typing, and scroll on it for each recorder.
+     Nothing here reads a clock or a random number, so two takes differ only by the recorder that filmed them. -->
+<html lang="en"><head><meta charset="utf-8"><title>Acme deployments</title><style>
+  :root{color-scheme:light dark;--bg:light-dark(#fafafa,#0b0b0c);--card:light-dark(#fff,#141416);--line:light-dark(#ebebeb,#26262a);--fg:light-dark(#171717,#ededef);--dim:light-dark(#666,#9a9aa2);--ok:light-dark(#10b36b,#1fbf78);--busy:#f5a623}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);font:15px/1.3 -apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased;user-select:none}
+  header{display:flex;align-items:center;gap:12px;height:64px;padding:0 36px;background:var(--card);border-bottom:1px solid var(--line);font-weight:500}
+  header i{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#ff9a56,#ff5c5c)}
+  header span{color:var(--dim);font-weight:400}
+  main{padding:32px 36px}
+  .bar{display:flex;gap:12px;margin-bottom:20px}
+  h1{flex:1;margin:0;font-size:28px;font-weight:600;letter-spacing:-.5px}
+  input,button{height:44px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--fg);font:inherit}
+  input{width:320px;padding:0 14px;outline:0;user-select:text}
+  input:focus{border-color:var(--fg)}
+  button{padding:0 18px;font-weight:500;cursor:pointer}
+  #deploy{background:var(--fg);border-color:var(--fg);color:var(--bg)}
+  #table{background:var(--card);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .row{display:grid;grid-template-columns:1fr 180px 2fr 120px;align-items:center;height:76px;padding:0 28px;border-top:1px solid var(--line);cursor:pointer}
+  .row[hidden]{display:none}
+  .row:not([hidden],.row:not([hidden])~.row){border-top:0}
+  .row:hover{background:light-dark(#f6f6f6,#1a1a1d)}
+  .row b{display:block;font-weight:600}
+  .row small,.when{color:var(--dim);font-size:14px}
+  .st{display:flex;align-items:center;gap:8px;font-weight:500}
+  .st::before{content:'';width:10px;height:10px;border-radius:50%;background:var(--ok)}
+  .st.busy::before{background:var(--busy)}
+  .msg{font:13.5px ui-monospace,Menlo,monospace;color:var(--dim)}
+  #panel{position:fixed;inset:64px 0 0 auto;width:560px;display:flex;flex-direction:column;background:var(--card);border-left:1px solid var(--line);translate:100% 0;transition:translate .28s cubic-bezier(.22,1,.36,1)}
+  #panel.open{translate:0 0}
+  #panel div{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--line);font-weight:600}
+  #log{flex:1;margin:0;padding:16px 24px;overflow:auto;font:11px/1.7 ui-monospace,Menlo,monospace;color:var(--dim);user-select:text}
+</style></head><body>
+<header><i></i>Acme <span>/</span> storefront <span>/ Deployments</span></header>
+<main>
+  <div class="bar"><h1>Deployments</h1><input id="search" placeholder="Search branches" autocomplete="off" spellcheck="false"><button id="deploy">Deploy</button></div>
+  <div id="table"></div>
+</main>
+<aside id="panel"><div><span id="title"></span><button id="close">Close</button></div><pre id="log"></pre></aside>
+<script>
+  const BUILDS = [
+    ['storefront-9f2c1ab', 'main', 'Fix rounding in the cart total', '2m ago'],
+    ['storefront-4d81e07', 'checkout-v2', 'Add the express checkout button', '14m ago'],
+    ['storefront-b07a3d5', 'main', 'Bump the image cache to 30 days', '1h ago'],
+    ['storefront-c1e99f0', 'search-filters', 'Filter products by size and color', '3h ago'],
+    ['storefront-71aa2c4', 'checkout-v2', 'Validate postcodes before payment', '5h ago'],
+    ['storefront-0e5d6b8', 'main', 'Remove the summer sale banner', '1d ago'],
+  ]
+  const $ = (id) => document.getElementById(id)
+  $('table').innerHTML = BUILDS.map(([id, branch, msg, when], i) =>
+    `<div class="row" data-i="${i}"><div><b>${id}</b><small>Production</small></div><div class="st">Ready</div><div class="msg">${branch} · ${msg}</div><div class="when">${when}</div></div>`).join('')
+  const rows = [...document.querySelectorAll('.row')]
+  // Deploy rebuilds the newest build in place: twelve steps, 150 ms each, then Ready.
+  $('deploy').onclick = () => {
+    const st = rows[0].querySelector('.st')
+    let step = 0
+    st.classList.add('busy')
+    const tick = () => {
+      if (++step > 12) return st.classList.remove('busy'), (st.textContent = 'Ready')
+      st.textContent = `Building ${Math.round((step / 12) * 100)}%`
+      setTimeout(tick, 150)
+    }
+    tick()
+  }
+  $('search').oninput = (e) => rows.forEach((row, i) => (row.hidden = !BUILDS[i][1].includes(e.target.value.trim().toLowerCase())))
+  // A build's log: 120 small mono lines, the text a zoom has to keep sharp.
+  rows.forEach((row, i) => (row.onclick = () => {
+    $('title').textContent = BUILDS[i][0]
+    $('log').textContent = Array.from({ length: 120 }, (_, n) =>
+      `${String(n + 1).padStart(3, '0')}  ${['info', 'info', 'warn', 'info'][n % 4]}  ${['Resolving packages', 'Compiling routes', 'Unused export in cart.ts', 'Uploading build output'][n % 4]} (${BUILDS[i][1]}, step ${n + 1} of 120)`).join('\n')
+    $('log').scrollTop = 0
+    $('panel').classList.add('open')
+  }))
+  $('close').onclick = () => $('panel').classList.remove('open')
+</script>
+</body></html>

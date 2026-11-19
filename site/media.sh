@@ -18,3 +18,14 @@ for clip in hero:0.1 loupe:1.3 captions:7.1 macbook:9.9 formats:7.6; do
 	cwebp -quiet -q 88 "static/media/$name.png" -o "static/media/$name.webp"
 	rm "static/media/$name.png"
 done
+# The benchmark's takes (src/routes/(site)/benchmark): each recorder's own export of scripts/benchmark/take.swift,
+# saved as .context/benchmark/<id>.mp4 or .mov with the ends of the take cut off, at 1280 px wide at most.
+for src in ../.context/benchmark/*.m[po][4v]; do
+	[ -e "$src" ] || continue
+	name=benchmark-$(basename "${src%.*}")
+	ffmpeg -v error -y -i "$src" -an -c:v libx264 -preset veryslow -crf 26 -level:v 5.1 -pix_fmt yuv420p \
+		-vf "scale='trunc(min(1280,iw)/2)*2':-2" -movflags +faststart "static/media/$name.mp4"
+	ffmpeg -v error -y -ss 4 -i "static/media/$name.mp4" -frames:v 1 "static/media/$name.png"
+	cwebp -quiet -q 88 "static/media/$name.png" -o "static/media/$name.webp"
+	rm "static/media/$name.png"
+done
