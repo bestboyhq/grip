@@ -142,16 +142,24 @@ test('the agents page hands agents its playbook, and every way in starts the sam
 	for (const name of stills) assert.ok(existsSync(join(build, `${name}.webp`)), name);
 });
 
-test('the benchmark gives every fact a source on the web, and every take its silent clip', () => {
+test('the benchmark gives every fact a short value and a source on the web, and every take its silent clip', () => {
 	assert.match(benchmark, new RegExp(`<link rel="canonical" href="${SITE}/benchmark"`, 'u'));
 	assert.match(CHECKED, /^\d{4}-\d{2}-\d{2}$/u);
 	assert.equal(new Set(RECORDERS.map((recorder) => recorder.id)).size, RECORDERS.length);
+	for (const { key, good = [] } of FACTS)
+		for (const value of good)
+			assert.ok(
+				RECORDERS.some(({ facts }) => facts[key].value === value),
+				`no recorder answers ${value} for ${key}`,
+			);
 	for (const { id, name, url, take, facts } of RECORDERS) {
 		assert.ok(benchmark.includes(`href="${url}"`), `${name} is not on the page`);
-		for (const [key] of FACTS) {
-			const [text, source] = facts[key];
-			assert.ok(text.trim(), `${name} says nothing for ${key}`);
-			assert.match(source, /^https:\/\/[^\s]+$/u, `${name}'s ${key} has no source`);
+		for (const { key } of FACTS) {
+			const { value, source } = facts[key];
+			// A value is read at a glance in its column; more words go in its note.
+			for (const words of [value].flat()) assert.match(words, /^\S+(?: \S+){0,2}$/u, `${name}'s ${key}: ${words}`);
+			assert.match(source, /^https:\/\/[^\s"&<>]+$/u, `${name}'s ${key} has no source`);
+			assert.ok(benchmark.includes(`href="${source}"`), `${name}'s ${key} links nowhere`);
 		}
 		const clip = `media/benchmark-${id}.mp4`;
 		assert.equal(benchmark.includes(`src="/grip/${clip}"`), Boolean(take), `${name}'s take`);

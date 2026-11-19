@@ -32,6 +32,10 @@
 				: undefined;
 	}
 	const cool = () => (hot = undefined);
+
+	// A hyphen holds its line together, so AGPL-3.0 never breaks after AGPL, and a number keeps the word after it, so
+	// 5 min never ends one line and starts the next.
+	const whole = (text: string) => text.replaceAll('-', '\u2011').replace(/(\d) /gu, '$1\u00a0');
 </script>
 
 <Head
@@ -86,7 +90,7 @@
 			<thead>
 				<tr>
 					<td></td>
-					{#each FACTS as [key, label], col (key)}
+					{#each FACTS as { key, label }, col (key)}
 						<th scope="col" class:hot={hot?.col === col + 1}>{label}</th>
 					{/each}
 				</tr>
@@ -95,16 +99,30 @@
 				{#each RECORDERS as { id, name, url, facts }, row (id)}
 					<tr class:hot={hot?.row === row + 1}>
 						<th scope="row"><a href={url} rel="noopener">{name}</a></th>
-						{#each FACTS as [key, label], col (key)}
-							{@const [text, source] = facts[key]}
-							<!-- A hyphen holds its line together, so AGPL-3.0 never breaks after AGPL. -->
-							<td class:hot={hot?.col === col + 1}>
-								{text.replaceAll('-', '\u2011')}&NoBreak;<a
+						{#each FACTS as { key, label, kind, good }, col (key)}
+							{@const { value, note, source } = facts[key]}
+							<!-- The arrow to the source ends the cell's last line. -->
+							{#snippet link()}
+								&NoBreak;<a
 									class="source"
 									href={source}
 									rel="noopener"
 									aria-label="Source: {name}, {label.toLowerCase()}"><Arrow /></a
 								>
+							{/snippet}
+							<td class={kind} class:hot={hot?.col === col + 1}>
+								{#if typeof value === 'string'}
+									<span class="value" class:good={good?.includes(value)}
+										>{whole(value)}{#if !note}{@render link()}{/if}</span
+									>
+								{:else}
+									<span class="value"
+										>{#each value as chip (chip)}<span class="chip">{chip}</span>{/each}{#if !note}{@render link()}{/if}</span
+									>
+								{/if}
+								{#if note}
+									<span class="note">{whole(note)}{@render link()}</span>
+								{/if}
 							</td>
 						{/each}
 					</tr>
@@ -135,8 +153,8 @@
 		{/if}
 		<li>
 			<b>First-hand facts.</b>
-			Each one comes from the maker’s own page where there is one, and its arrow opens the page it was read
-			from.
+			Each one comes from the maker’s own page where there is one: point at a fact, and its arrow opens the
+			page it was read from.
 		</li>
 		<li>
 			<b>Made by Grip’s makers.</b>
@@ -260,7 +278,7 @@
 	   pads both sides, so a lit row or column has room around its text, and the table reaches past the column by
 	   that much to keep its text on the column's edges. */
 	.scroll {
-		--cell: 12px;
+		--cell: 11px;
 		margin: 32px calc(-1 * var(--pad)) 0;
 		padding-inline: var(--pad);
 		overflow-x: auto;
@@ -325,11 +343,88 @@
 		white-space: nowrap;
 	}
 
+	/* Every cell of a column shows its fact one way (src/lib/benchmark.ts): the value on top, read at a glance, and
+	   under it a quieter note. */
 	tbody td {
-		color: var(--fg-muted);
+		color: var(--fg-prose);
 		font-size: 13px;
 		line-height: 20px;
+	}
+
+	.value,
+	.note {
+		display: block;
 		text-wrap: pretty;
+	}
+
+	.note {
+		margin-top: 2px;
+		color: var(--fg-muted);
+		font-size: 12px;
+		line-height: 18px;
+	}
+
+	.price .value {
+		color: var(--fg-default);
+		font-size: 15px;
+		font-weight: 550;
+	}
+
+	.year .value {
+		color: var(--fg-secondary);
+		font-family: var(--mono);
+	}
+
+	/* A mark's dot sits on its first line, and its note lines up with its words. */
+	.mark .value,
+	.mark .note {
+		position: relative;
+		padding-left: 14px;
+	}
+
+	.mark .value {
+		white-space: nowrap;
+	}
+
+	.mark .value::before {
+		content: '';
+		position: absolute;
+		top: 7px;
+		left: 0;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--fg-faint);
+	}
+
+	.mark .good::before {
+		background: var(--success);
+	}
+
+	/* Wide enough for two chips a line, so no platform list stands in a tower, and for a price's note to take two
+	   lines, not four. */
+	td.chips {
+		min-width: 150px;
+	}
+
+	td.price {
+		min-width: 118px;
+	}
+
+	.chips .value {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		align-items: center;
+	}
+
+	.chip {
+		padding: 0 6px;
+		border: 1px solid var(--border-default);
+		border-radius: 6px;
+		color: var(--fg-secondary);
+		font-size: 12px;
+		line-height: 18px;
 	}
 
 	/* The row and the column in hand, and brightest the cell where they cross. Instant, as every hover here. */
@@ -398,6 +493,16 @@
 		tbody th a:hover,
 		.source:hover {
 			color: var(--brand);
+		}
+
+		/* An arrow in every cell is noise: a mouse finds the one in the cell it points at, and a finger sees them all. */
+		.source {
+			opacity: 0;
+		}
+
+		tr.hot > td.hot .source,
+		.source:focus-visible {
+			opacity: 1;
 		}
 	}
 

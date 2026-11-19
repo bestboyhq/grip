@@ -8,18 +8,27 @@ export const CHECKED = '2026-11-19';
 // How long take.swift runs.
 export const SECONDS = 15;
 
-export const FACTS = [
-	['price', 'Price'],
-	['source', 'Source code'],
-	['since', 'First release'],
-	['platforms', 'Runs on'],
-	['account', 'Account'],
-	['free', 'Free plan or trial'],
-	['where', 'Where it works'],
-	['zoom', 'Automatic zoom'],
-] as const;
+// The columns, one fact each, and how its cells show it, the same way in every row: a price leads with its
+// headline, a mark is a short answer after a dot that turns green on the answers in `good`, a year is set in mono,
+// and chips list platforms. A value stays a few words; the rest goes in its note.
+type Key = 'price' | 'source' | 'since' | 'platforms' | 'account' | 'free' | 'where' | 'zoom';
+export const FACTS: readonly Readonly<{
+	key: Key;
+	label: string;
+	kind: 'price' | 'mark' | 'year' | 'chips';
+	good?: readonly string[];
+}>[] = [
+	{ key: 'price', label: 'Price', kind: 'price' },
+	{ key: 'source', label: 'Source code', kind: 'mark', good: ['Open'] },
+	{ key: 'since', label: 'First release', kind: 'year' },
+	{ key: 'platforms', label: 'Runs on', kind: 'chips' },
+	{ key: 'account', label: 'Account', kind: 'mark', good: ['None', 'Only to share'] },
+	{ key: 'free', label: 'Free plan or trial', kind: 'mark', good: ['Everything'] },
+	{ key: 'where', label: 'Where it works', kind: 'mark', good: ['On device'] },
+	{ key: 'zoom', label: 'Automatic zoom', kind: 'mark', good: ['Clicks and typing', 'Clicks'] },
+];
 
-type Fact = readonly [text: string, source: string];
+type Fact = Readonly<{ value: string | readonly string[]; note?: string; source: string }>;
 
 // The ids of the recorders with a take, so the page asks only for clips that ship: none yet.
 export type Filmed = never;
@@ -27,7 +36,7 @@ export type Filmed = never;
 export type Recorder = Readonly<{
 	name: string;
 	url: string;
-	facts: Readonly<Record<(typeof FACTS)[number][0], Fact>>;
+	facts: Readonly<Record<Key, Fact>>;
 }> &
 	Readonly<
 		| { id: Filmed; take: Readonly<{ version: string; width: number; height: number }> }
@@ -44,14 +53,14 @@ export const RECORDERS: readonly Recorder[] = [
 		name: 'Grip',
 		url: 'https://bestboy.dev/grip',
 		facts: {
-			price: ['Free', README],
-			source: ['Open, AGPL-3.0', `${GITHUB_URL}/blob/main/LICENSE`],
-			since: ['2026', `${GITHUB_URL}/releases/tag/v0.1.0`],
-			platforms: ['macOS 15 or later, Apple silicon', README],
-			account: ['None to record or export. One to share a link.', README],
-			free: ['Everything, with no watermark', README],
-			where: ['On your Mac. A share link uploads the video.', README],
-			zoom: ['On clicks and typing', README],
+			price: { value: 'Free', source: README },
+			source: { value: 'Open', note: 'AGPL-3.0', source: `${GITHUB_URL}/blob/main/LICENSE` },
+			since: { value: '2026', source: `${GITHUB_URL}/releases/tag/v0.1.0` },
+			platforms: { value: ['macOS'], note: 'macOS 15+, Apple\u00a0silicon', source: README },
+			account: { value: 'Only to share', note: 'None to record or export', source: README },
+			free: { value: 'Everything', note: 'No watermark', source: README },
+			where: { value: 'On device', note: 'Share links upload', source: README },
+			zoom: { value: 'Clicks and typing', source: README },
 		},
 	},
 	{
@@ -59,20 +68,22 @@ export const RECORDERS: readonly Recorder[] = [
 		name: 'Cap',
 		url: 'https://cap.so',
 		facts: {
-			price: [
-				'Free for personal use. For work, $58 once or $29 a year. Pro is $8.16 a user a month, billed yearly.',
-				'https://cap.so/pricing',
-			],
-			source: ['Open, AGPL-3.0 with MIT parts', 'https://github.com/CapSoftware/Cap'],
-			since: ['2024', 'https://github.com/CapSoftware/Cap/releases'],
-			platforms: ['macOS, Windows, Linux, Chrome', 'https://cap.so/download'],
-			account: ['One to share a link', 'https://cap.so/docs/recording/studio-mode'],
-			free: ['No time limit on local recordings. 25 share links a month, 5 minutes each.', 'https://cap.so/pricing'],
-			where: [
-				'On your computer in Studio Mode. Instant Mode uploads as it records.',
-				'https://cap.so/docs/recording/studio-mode',
-			],
-			zoom: ['On clicks, when you ask for it in the editor', 'https://cap.so/docs/recording/studio-mode'],
+			price: {
+				value: 'Free',
+				note: 'For work: $29/yr or $58 once',
+				source: 'https://cap.so/pricing',
+			},
+			source: { value: 'Open', note: 'AGPL-3.0, MIT', source: 'https://github.com/CapSoftware/Cap' },
+			since: { value: '2024', source: 'https://github.com/CapSoftware/Cap/releases' },
+			platforms: { value: ['macOS', 'Windows', 'Linux', 'Chrome'], source: 'https://cap.so/download' },
+			account: { value: 'Only to share', source: 'https://cap.so/docs/recording/studio-mode' },
+			free: { value: 'Personal use', note: '25 links/mo, 5 min each', source: 'https://cap.so/pricing' },
+			where: {
+				value: 'On device',
+				note: 'Or live upload',
+				source: 'https://cap.so/docs/recording/studio-mode',
+			},
+			zoom: { value: 'On request', note: 'From clicks, in the editor', source: 'https://cap.so/docs/recording/studio-mode' },
 		},
 	},
 	{
@@ -80,17 +91,18 @@ export const RECORDERS: readonly Recorder[] = [
 		name: 'CleanShot X',
 		url: 'https://cleanshot.com',
 		facts: {
-			price: [
-				'$35 once, with a year of updates. Pro is $10 a user a month, billed yearly.',
-				'https://cleanshot.com/pricing',
-			],
-			source: ['Closed', 'https://cleanshot.com/eula'],
-			since: ['2018', 'https://cleanshot.com/changelog'],
-			platforms: ['macOS 13 or later', 'https://cleanshot.com/pricing'],
-			account: ['An email or a license key to download it', 'https://licenses.cleanshot.com/download/cleanshotx'],
-			free: ['No trial. Money back within 30 days.', 'https://cleanshot.com/pricing'],
-			where: ['Records an MP4 or a GIF. A cloud upload is optional.', 'https://cleanshot.com/features'],
-			zoom: ['Follows the cursor', 'https://cleanshot.com/features'],
+			price: { value: '$35 once', note: 'With a year of updates', source: 'https://cleanshot.com/pricing' },
+			source: { value: 'Closed', source: 'https://cleanshot.com/eula' },
+			since: { value: '2018', source: 'https://cleanshot.com/changelog' },
+			platforms: { value: ['macOS'], note: 'macOS 13+', source: 'https://cleanshot.com/pricing' },
+			account: {
+				value: 'To download',
+				note: 'An email or a license key',
+				source: 'https://licenses.cleanshot.com/download/cleanshotx',
+			},
+			free: { value: 'None', note: 'Money back in 30 days', source: 'https://cleanshot.com/pricing' },
+			where: { value: 'On device', note: 'Optional cloud', source: 'https://cleanshot.com/features' },
+			zoom: { value: 'Follows the cursor', source: 'https://cleanshot.com/features' },
 		},
 	},
 	{
@@ -98,14 +110,22 @@ export const RECORDERS: readonly Recorder[] = [
 		name: 'FocuSee',
 		url: 'https://focusee.ai',
 		facts: {
-			price: ['$49.99 a year or $19.99 a month. $199.99 once for version 2.', 'https://focusee.ai/pricing.htm'],
-			source: ['Closed', 'https://www.imobie.com/company/end-user-license-agreement.htm'],
-			since: ['2023', 'https://focusee.ai/news/focusee-v2-release.htm'],
-			platforms: ['macOS 10.15 or later, Windows 10 or later', 'https://focusee.ai/specs.htm'],
-			account: ['Not stated on its site', 'https://focusee.ai/faq/presales-and-billing.htm'],
-			free: ['A trial with one export, watermarked', 'https://focusee.ai/faq/presales-and-billing.htm'],
-			where: ['A desktop app, with 5 GB of cloud storage to share from', 'https://focusee.ai/pricing.htm'],
-			zoom: ['On clicks and typing', 'https://focusee.ai/'],
+			price: {
+				value: '$19.99/mo',
+				note: 'Or $49.99/yr, or $199.99 once',
+				source: 'https://focusee.ai/pricing.htm',
+			},
+			source: { value: 'Closed', source: 'https://www.imobie.com/company/end-user-license-agreement.htm' },
+			since: { value: '2023', source: 'https://focusee.ai/news/focusee-v2-release.htm' },
+			platforms: {
+				value: ['macOS', 'Windows'],
+				note: 'macOS 10.15+, Windows 10+',
+				source: 'https://focusee.ai/specs.htm',
+			},
+			account: { value: 'Not stated', source: 'https://focusee.ai/faq/presales-and-billing.htm' },
+			free: { value: 'Trial', note: 'One export, watermarked', source: 'https://focusee.ai/faq/presales-and-billing.htm' },
+			where: { value: 'On device', note: '5 GB cloud to share', source: 'https://focusee.ai/pricing.htm' },
+			zoom: { value: 'Clicks and typing', source: 'https://focusee.ai/' },
 		},
 	},
 	{
@@ -113,20 +133,21 @@ export const RECORDERS: readonly Recorder[] = [
 		name: 'Loom',
 		url: 'https://www.loom.com',
 		facts: {
-			price: ['A free plan. Business is $18 a user a month.', 'https://www.loom.com/pricing'],
-			source: ['Closed', 'https://www.atlassian.com/legal/atlassian-customer-agreement'],
-			since: ['2016', 'https://en.wikipedia.org/wiki/Loom,_Inc.'],
-			platforms: [
-				'macOS, Windows, Chrome, iOS, Android',
-				'https://support.atlassian.com/loom/docs/loom-device-compatibility/',
-			],
-			account: ['Required', 'https://www.atlassian.com/software/loom/screen-recorder'],
-			free: ['25 videos, 5 minutes each, with Loom branding', 'https://www.loom.com/pricing'],
-			where: [
-				'In the cloud: each recording uploads to your account.',
-				'https://www.atlassian.com/software/loom/screen-recorder',
-			],
-			zoom: ['Listed as coming soon', 'https://www.atlassian.com/software/loom/editing'],
+			price: { value: 'Free', note: 'Business is $18/user/mo', source: 'https://www.loom.com/pricing' },
+			source: { value: 'Closed', source: 'https://www.atlassian.com/legal/atlassian-customer-agreement' },
+			since: { value: '2016', source: 'https://en.wikipedia.org/wiki/Loom,_Inc.' },
+			platforms: {
+				value: ['macOS', 'Windows', 'Chrome', 'iOS', 'Android'],
+				source: 'https://support.atlassian.com/loom/docs/loom-device-compatibility/',
+			},
+			account: { value: 'Required', source: 'https://www.atlassian.com/software/loom/screen-recorder' },
+			free: { value: '25 videos', note: '5 min each, branded', source: 'https://www.loom.com/pricing' },
+			where: {
+				value: 'Cloud',
+				note: 'Each video uploads',
+				source: 'https://www.atlassian.com/software/loom/screen-recorder',
+			},
+			zoom: { value: 'Coming soon', source: 'https://www.atlassian.com/software/loom/editing' },
 		},
 	},
 	{
@@ -134,14 +155,21 @@ export const RECORDERS: readonly Recorder[] = [
 		name: 'QuickTime',
 		url: 'https://support.apple.com/guide/quicktime-player/welcome/mac',
 		facts: {
-			price: ['Comes with macOS', 'https://support.apple.com/guide/quicktime-player/welcome/mac'],
-			source: ['Closed', 'https://www.apple.com/legal/sla/'],
-			since: ['1991', 'https://en.wikipedia.org/wiki/QuickTime'],
-			platforms: ['macOS', 'https://support.apple.com/guide/quicktime-player/welcome/mac'],
-			account: ['None', 'https://support.apple.com/en-us/102618'],
-			free: ['No limit, no watermark', 'https://support.apple.com/en-us/102618'],
-			where: ['On your Mac', 'https://support.apple.com/en-us/102618'],
-			zoom: ['None', 'https://support.apple.com/guide/quicktime-player/record-your-screen-qtp97b08e666/mac'],
+			price: {
+				value: 'Free',
+				note: 'Comes with macOS',
+				source: 'https://support.apple.com/guide/quicktime-player/welcome/mac',
+			},
+			source: { value: 'Closed', source: 'https://www.apple.com/legal/sla/' },
+			since: { value: '1991', source: 'https://en.wikipedia.org/wiki/QuickTime' },
+			platforms: { value: ['macOS'], source: 'https://support.apple.com/guide/quicktime-player/welcome/mac' },
+			account: { value: 'None', source: 'https://support.apple.com/en-us/102618' },
+			free: { value: 'Everything', note: 'No watermark', source: 'https://support.apple.com/en-us/102618' },
+			where: { value: 'On device', source: 'https://support.apple.com/en-us/102618' },
+			zoom: {
+				value: 'None',
+				source: 'https://support.apple.com/guide/quicktime-player/record-your-screen-qtp97b08e666/mac',
+			},
 		},
 	},
 	{
@@ -149,17 +177,22 @@ export const RECORDERS: readonly Recorder[] = [
 		name: 'Screen Studio',
 		url: 'https://screen.studio',
 		facts: {
-			price: ['$29 a month, or $108 a year', 'https://screen.studio/pricing'],
-			source: ['Closed', 'https://screen.studio/legal/terms-of-service'],
-			since: ['2022', 'https://www.producthunt.com/products/screen-studio'],
-			platforms: ['macOS', 'https://screen.studio/'],
-			account: ['A code sent to your email activates it', 'https://screen.studio/guide/activating-screen-studio'],
-			free: ['No free plan. Without a plan, everything works but export.', 'https://screen.studio/download'],
-			where: [
-				'Exports a file on your Mac. Share links are hosted.',
-				'https://screen.studio/guide/exporting-the-video',
-			],
-			zoom: ['On clicks', 'https://screen.studio/'],
+			price: { value: '$29/mo', note: 'Or $108/yr', source: 'https://screen.studio/pricing' },
+			source: { value: 'Closed', source: 'https://screen.studio/legal/terms-of-service' },
+			since: { value: '2022', source: 'https://www.producthunt.com/products/screen-studio' },
+			platforms: { value: ['macOS'], source: 'https://screen.studio/' },
+			account: {
+				value: 'To activate',
+				note: 'A code sent to your email',
+				source: 'https://screen.studio/guide/activating-screen-studio',
+			},
+			free: { value: 'None', note: 'All but export works', source: 'https://screen.studio/download' },
+			where: {
+				value: 'On device',
+				note: 'Share links upload',
+				source: 'https://screen.studio/guide/exporting-the-video',
+			},
+			zoom: { value: 'Clicks', source: 'https://screen.studio/' },
 		},
 	},
 ];
