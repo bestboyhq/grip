@@ -146,8 +146,9 @@ test('the benchmark gives every fact a short value and a source on the web, and 
 	assert.match(benchmark, new RegExp(`<link rel="canonical" href="${SITE}/benchmark"`, 'u'));
 	assert.match(CHECKED, /^\d{4}-\d{2}-\d{2}$/u);
 	assert.equal(new Set(RECORDERS.map((recorder) => recorder.id)).size, RECORDERS.length);
-	for (const { key, good = [] } of FACTS)
-		for (const value of good)
+	// A green or red answer that no recorder gives is a typo, and the dot it was meant for stays gray.
+	for (const { key, good = [], bad = [] } of FACTS)
+		for (const value of [...good, ...bad])
 			assert.ok(
 				RECORDERS.some(({ facts }) => facts[key].value === value),
 				`no recorder answers ${value} for ${key}`,

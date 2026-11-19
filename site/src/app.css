@@ -52,6 +52,7 @@
 	--cross: rgb(128 128 128 / 0.7);
 	--brand: light-dark(oklch(51.51% 0.2399 257.85), oklch(51.51% 0.2307 257.85));
 	--success: light-dark(oklch(51.56% 0.1507 147.5), oklch(63.31% 0.1776 147.5));
+	--error-content: light-dark(oklch(53.19% 0.2158 25.15), oklch(67.76% 0.2104 25.12));
 	--stage-ink: light-dark(#181817, #fafaf8);
 	--painting: linear-gradient(
 		100deg,
