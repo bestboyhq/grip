@@ -4,6 +4,7 @@
 // into `static/media/benchmark-<id>.mp4` (media.sh), with the version that made it and the clip's size.
 // Read a recorder's license before filming with it: FocuSee's lets a licensee publish nothing about it without
 // written consent, and Loom's lets no one publish a comparison made on its free plan, so neither has a take.
+// Recordly's own download asks for a Cloud subscription for any commercial use, a take included.
 export const CHECKED = '2026-11-19';
 // How long take.swift runs.
 export const SECONDS = 15;
@@ -12,11 +13,11 @@ export const SECONDS = 15;
 // headline, a mark is a short answer after a dot, green on the answers in `good`, red on those in `bad`, and gray on
 // the rest, a year is set in mono, and platforms stand one a line, each after its glyph.
 // A value stays a few words. A note says only what its value leaves out, and a column's notes all say the same kind
-// of thing: a price's the other ways to pay, a platform's the macOS it needs, a license's name. A value that says it
-// all has no note.
+// of thing: a price's the other ways to pay, a platform's the macOS it needs, a license's name, support's the other
+// ways to reach the maker. A value that says it all has no note.
 // The price is what recording for work costs with no limits, since most recordings are made for work: a free plan
 // that is only for personal use, or that caps the videos, is in its own column.
-type Key = 'price' | 'source' | 'since' | 'platforms' | 'account' | 'free' | 'where' | 'zoom';
+type Key = 'price' | 'source' | 'since' | 'platforms' | 'account' | 'free' | 'where' | 'zoom' | 'support';
 export const FACTS: readonly Readonly<{
 	key: Key;
 	label: string;
@@ -28,16 +29,17 @@ export const FACTS: readonly Readonly<{
 	{ key: 'source', label: 'Source code', kind: 'mark', good: ['Open'], bad: ['Closed'] },
 	{ key: 'since', label: 'First release', kind: 'year' },
 	{ key: 'platforms', label: 'Runs on', kind: 'platforms' },
-	{ key: 'account', label: 'Account', kind: 'mark', good: ['None', 'Only to share'], bad: ['Required'] },
+	{ key: 'account', label: 'Account', kind: 'mark', good: ['None', 'To share'], bad: ['Required'] },
 	{ key: 'free', label: 'Free plan or trial', kind: 'mark', good: ['Everything'], bad: ['None'] },
 	{ key: 'where', label: 'Where it works', kind: 'mark', good: ['On device'], bad: ['Cloud'] },
 	{
 		key: 'zoom',
 		label: 'Automatic zoom',
 		kind: 'mark',
-		good: ['Clicks and typing', 'Clicks'],
+		good: ['Clicks, typing', 'Clicks'],
 		bad: ['None', 'Coming soon'],
 	},
+	{ key: 'support', label: 'Support', kind: 'mark', bad: ['Paid plans only'] },
 ];
 
 // The platforms a recorder can run on; the page draws a glyph for each.
@@ -71,11 +73,12 @@ export const RECORDERS: readonly Recorder[] = [
 			price: { value: 'Free', source: README },
 			source: { value: 'Open', note: 'AGPL-3.0', source: `${GITHUB_URL}/blob/main/LICENSE` },
 			since: { value: '2026', source: `${GITHUB_URL}/releases/tag/v0.1.0` },
-			platforms: { value: ['macOS'], note: 'macOS 15+, Apple\u00a0silicon', source: README },
-			account: { value: 'Only to share', source: README },
+			platforms: { value: ['macOS'], note: 'macOS 15+, M1 or later', source: README },
+			account: { value: 'To share', source: README },
 			free: { value: 'Everything', source: README },
 			where: { value: 'On device', source: README },
-			zoom: { value: 'Clicks and typing', source: README },
+			zoom: { value: 'Clicks, typing', source: README },
+			support: { value: 'GitHub issues', source: `${GITHUB_URL}/issues` },
 		},
 	},
 	{
@@ -91,10 +94,11 @@ export const RECORDERS: readonly Recorder[] = [
 				note: 'macOS 13.1+',
 				source: 'https://cap.so/download',
 			},
-			account: { value: 'Only to share', source: 'https://cap.so/docs/recording/studio-mode' },
+			account: { value: 'To share', source: 'https://cap.so/docs/recording/studio-mode' },
 			free: { value: 'Personal use', note: '25 links/mo, 5 min each', source: 'https://cap.so/pricing' },
 			where: { value: 'On device', note: 'Or live upload', source: 'https://cap.so/docs/recording/studio-mode' },
 			zoom: { value: 'On request', note: 'From clicks, in the editor', source: 'https://cap.so/docs/recording/studio-mode' },
+			support: { value: 'Discord', note: 'Or email, GitHub\u00a0issues', source: 'https://cap.so/support' },
 		},
 	},
 	{
@@ -113,7 +117,8 @@ export const RECORDERS: readonly Recorder[] = [
 			},
 			free: { value: 'None', note: 'Money back in 30 days', source: 'https://cleanshot.com/pricing' },
 			where: { value: 'On device', source: 'https://cleanshot.com/features' },
-			zoom: { value: 'Follows the cursor', source: 'https://cleanshot.com/features' },
+			zoom: { value: 'Manual', note: 'They follow the cursor', source: 'https://cleanshot.com/features' },
+			support: { value: 'Email', source: 'https://cleanshot.com/contact' },
 		},
 	},
 	{
@@ -123,7 +128,7 @@ export const RECORDERS: readonly Recorder[] = [
 		facts: {
 			price: {
 				value: '$19.99/mo',
-				note: 'Or $49.99/yr, or $199.99 once',
+				note: 'Or $49.99/yr, $199.99 once',
 				source: 'https://focusee.ai/pricing.htm',
 			},
 			source: { value: 'Closed', source: 'https://www.imobie.com/company/end-user-license-agreement.htm' },
@@ -132,7 +137,8 @@ export const RECORDERS: readonly Recorder[] = [
 			account: { value: 'Not stated', source: 'https://focusee.ai/faq/presales-and-billing.htm' },
 			free: { value: 'Trial', note: 'One export, watermarked', source: 'https://focusee.ai/faq/presales-and-billing.htm' },
 			where: { value: 'On device', source: 'https://focusee.ai/pricing.htm' },
-			zoom: { value: 'Clicks and typing', source: 'https://focusee.ai/' },
+			zoom: { value: 'Clicks, typing', source: 'https://focusee.ai/' },
+			support: { value: 'Live chat', note: 'Or email', source: 'https://focusee.ai/pricing.htm' },
 		},
 	},
 	{
@@ -152,6 +158,31 @@ export const RECORDERS: readonly Recorder[] = [
 			free: { value: '25 videos', note: '5 min each, branded', source: 'https://www.loom.com/pricing' },
 			where: { value: 'Cloud', source: 'https://www.atlassian.com/software/loom/screen-recorder' },
 			zoom: { value: 'Coming soon', source: 'https://www.atlassian.com/software/loom/editing' },
+			support: {
+				value: 'Paid plans only',
+				note: 'Or community forum',
+				source: 'https://www.atlassian.com/enterprise/support-services',
+			},
+		},
+	},
+	{
+		id: 'openscreen',
+		name: 'OpenScreen',
+		url: 'https://getopenscreen.com',
+		facts: {
+			price: { value: 'Free', source: 'https://getopenscreen.com/docs/faq/' },
+			source: { value: 'Open', note: 'MIT', source: 'https://github.com/getopenscreen/openscreen' },
+			since: { value: '2025', source: 'https://github.com/siddharthvaddem/openscreen/releases' },
+			platforms: {
+				value: ['macOS', 'Windows', 'Linux'],
+				note: 'macOS 13+',
+				source: 'https://getopenscreen.com/docs/installation/',
+			},
+			account: { value: 'None', source: 'https://getopenscreen.com/' },
+			free: { value: 'Everything', source: 'https://getopenscreen.com/' },
+			where: { value: 'On device', source: 'https://getopenscreen.com/docs/faq/' },
+			zoom: { value: 'Clicks', source: 'https://getopenscreen.com/features/auto-zoom/' },
+			support: { value: 'GitHub issues', note: 'Or Discord', source: 'https://getopenscreen.com/docs/faq/' },
 		},
 	},
 	{
@@ -174,6 +205,46 @@ export const RECORDERS: readonly Recorder[] = [
 				value: 'None',
 				source: 'https://support.apple.com/guide/quicktime-player/record-your-screen-qtp97b08e666/mac',
 			},
+			support: { value: 'Apple Support', note: 'Chat or phone', source: 'https://support.apple.com/contact' },
+		},
+	},
+	{
+		id: 'recordly',
+		name: 'Recordly',
+		url: 'https://recordly.dev',
+		facts: {
+			price: {
+				value: '$9/mo',
+				note: 'Early bird, regular $15/mo',
+				source: 'https://videos.recordly.dev/api/billing/catalog',
+			},
+			source: { value: 'Open', note: 'AGPL-3.0', source: 'https://github.com/webadderallorg/Recordly' },
+			since: { value: '2026', source: 'https://github.com/webadderallorg/Recordly/releases' },
+			platforms: {
+				value: ['macOS', 'Windows', 'Linux'],
+				note: 'macOS 14+',
+				source: 'https://github.com/webadderallorg/Recordly#readme',
+			},
+			account: {
+				value: 'Required',
+				source: 'https://github.com/webadderallorg/Recordly/blob/main/docs/authentication.md',
+			},
+			free: {
+				value: 'Personal use',
+				note: '5 cloud links, 1 GB each',
+				source: 'https://github.com/webadderallorg/Recordly/blob/main/src/i18n/locales/en/billing.json',
+			},
+			where: { value: 'On device', source: 'https://videos.recordly.dev/privacy' },
+			zoom: {
+				value: 'Suggested',
+				note: 'From the cursor, in the editor',
+				source: 'https://github.com/webadderallorg/Recordly#readme',
+			},
+			support: {
+				value: 'GitHub issues',
+				note: 'Or Discord, email',
+				source: 'https://github.com/webadderallorg/Recordly#readme',
+			},
 		},
 	},
 	{
@@ -187,12 +258,13 @@ export const RECORDERS: readonly Recorder[] = [
 			platforms: { value: ['macOS'], note: 'macOS 13.1+', source: 'https://screen.studio/download' },
 			account: {
 				value: 'To activate',
-				note: 'A code sent to your email',
+				note: 'A code by email',
 				source: 'https://screen.studio/guide/activating-screen-studio',
 			},
-			free: { value: 'All but export', source: 'https://screen.studio/download' },
+			free: { value: 'Trial', note: 'Everything but export', source: 'https://screen.studio/download' },
 			where: { value: 'On device', source: 'https://screen.studio/guide/exporting-the-video' },
 			zoom: { value: 'Clicks', source: 'https://screen.studio/' },
+			support: { value: 'Email', note: 'Or Telegram group', source: 'https://screen.studio/guide' },
 		},
 	},
 ];

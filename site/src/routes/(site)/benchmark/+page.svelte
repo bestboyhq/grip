@@ -296,7 +296,7 @@
 	   pads both sides, so a lit row or column has room around its text, and the table reaches past the column by
 	   that much to keep its text on the column's edges. */
 	.scroll {
-		--cell: 11px;
+		--cell: 10px;
 		margin: 32px calc(-1 * var(--pad)) 0;
 		padding-inline: var(--pad);
 		overflow-x: auto;
