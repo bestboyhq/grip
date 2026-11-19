@@ -17,6 +17,7 @@ const GUIDE_MD = 'https://raw.githubusercontent.com/bestboyhq/grip/main/docs/gui
 export const HOME = resolve('/(site)').replace(/\/$/u, '');
 export const CHANGELOG = resolve('/(site)/changelog');
 export const AGENTS = resolve('/(site)/agents');
+export const BENCHMARK = resolve('/(site)/benchmark');
 
 export type Link = Readonly<{
 	title: string;
@@ -125,6 +126,7 @@ export const MENUS: readonly Menu[] = [
 				label: 'Project',
 				plain: true,
 				links: [
+					{ title: 'Benchmark', href: BENCHMARK },
 					{ title: 'Releases', href: `${GITHUB_URL}/releases` },
 					{ title: 'Issues', href: `${GITHUB_URL}/issues` },
 				],
@@ -164,6 +166,7 @@ export const SITEMAP: readonly Readonly<{ label: string; links: readonly Link[] 
 		links: [
 			{ title: 'Source code', href: GITHUB_URL },
 			{ title: 'Changelog', href: CHANGELOG },
+			{ title: 'Benchmark', href: BENCHMARK },
 			{ title: 'Releases', href: `${GITHUB_URL}/releases` },
 			{ title: 'Issues', href: `${GITHUB_URL}/issues` },
 			{ title: 'bestboy.dev', href: BESTBOY_URL },

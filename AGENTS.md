@@ -16,6 +16,7 @@ Their gotchas are bugs and limits that shipped in real products; design each one
 
 Describe every behavior on its own terms in everything that lands in git: code, comments, skills, docs, commit messages, branch names, and PR titles and bodies.
 Competing products stay unnamed there, even when one inspired the work or shipped the bug a gotcha records.
+The one exception is the benchmark at bestboy.dev/grip/benchmark (`site/src/lib/benchmark.ts`, its page, and `scripts/benchmark/`): it names the recorders it compares, as plain text without their logos, and says nothing about them but a fact with its source or a recording of the shared take at default settings.
 
 Every domain obeys these invariants:
 

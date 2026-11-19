@@ -186,7 +186,7 @@
 		{
 			question: 'Can I use it for commercial work?',
 			answer:
-				'Yes. The license lets you use Grip for any work, and the videos and screenshots you make are yours.',
+				'Yes, for free. There is no commercial license or business edition to buy: the Grip you download records, edits, and exports for work exactly as it does for anything else. The videos and screenshots you make are yours.',
 		},
 		{
 			question: 'How is Grip different from other screen recorders?',
