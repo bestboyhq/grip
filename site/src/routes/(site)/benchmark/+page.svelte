@@ -18,6 +18,20 @@
 		timeZone: 'UTC',
 	});
 	const SCRIPT = `${GITHUB_URL}/tree/main/scripts/benchmark`;
+
+	// The row and the column of the cell under the mouse or holding the focus, as the table counts them: row 0 is the
+	// head, column 0 the names. A finger lights nothing; it only scrolls.
+	let hot = $state<Readonly<{ row: number; col: number }>>();
+	function aim(event: Event) {
+		if (event instanceof PointerEvent && event.pointerType === 'touch') return;
+		const cell = event.target instanceof Element ? event.target.closest('th, td') : null;
+		const row = cell?.parentElement;
+		hot =
+			cell instanceof HTMLTableCellElement && row instanceof HTMLTableRowElement
+				? { row: row.rowIndex, col: cell.cellIndex }
+				: undefined;
+	}
+	const cool = () => (hot = undefined);
 </script>
 
 <Head
@@ -68,23 +82,23 @@
 	<h2 id="facts-title">The facts</h2>
 	<p class="sub">Read from each maker’s own pages on {checked}.</p>
 	<div class="scroll">
-		<table>
+		<table onpointerover={aim} onpointerleave={cool} onfocusin={aim} onfocusout={cool}>
 			<thead>
 				<tr>
 					<td></td>
-					{#each FACTS as [key, label] (key)}
-						<th scope="col">{label}</th>
+					{#each FACTS as [key, label], col (key)}
+						<th scope="col" class:hot={hot?.col === col + 1}>{label}</th>
 					{/each}
 				</tr>
 			</thead>
 			<tbody>
-				{#each RECORDERS as { id, name, url, facts } (id)}
-					<tr>
+				{#each RECORDERS as { id, name, url, facts }, row (id)}
+					<tr class:hot={hot?.row === row + 1}>
 						<th scope="row"><a href={url} rel="noopener">{name}</a></th>
-						{#each FACTS as [key, label] (key)}
+						{#each FACTS as [key, label], col (key)}
 							{@const [text, source] = facts[key]}
 							<!-- A hyphen holds its line together, so AGPL-3.0 never breaks after AGPL. -->
-							<td>
+							<td class:hot={hot?.col === col + 1}>
 								{text.replaceAll('-', '\u2011')}&NoBreak;<a
 									class="source"
 									href={source}
@@ -242,8 +256,11 @@
 	}
 
 	/* The table scrolls sideways inside its own box where the column is too narrow for it, out to the page's edges,
-	   each recorder's name held at the left. Its columns share the width by how much each has to say. */
+	   each recorder's name held at the left. Its columns share the width by how much each has to say. Each cell
+	   pads both sides, so a lit row or column has room around its text, and the table reaches past the column by
+	   that much to keep its text on the column's edges. */
 	.scroll {
+		--cell: 12px;
 		margin: 32px calc(-1 * var(--pad)) 0;
 		padding-inline: var(--pad);
 		overflow-x: auto;
@@ -251,14 +268,15 @@
 	}
 
 	table {
-		width: 100%;
-		min-width: 1000px;
+		width: calc(100% + 2 * var(--cell));
+		min-width: 1024px;
+		margin-inline: calc(-1 * var(--cell));
 		border-collapse: collapse;
 	}
 
 	th,
 	td {
-		padding: 14px 20px 14px 0;
+		padding: 14px var(--cell);
 		border-top: 1px solid var(--border-subtle);
 		text-align: left;
 		vertical-align: top;
@@ -267,7 +285,7 @@
 	thead th,
 	thead td {
 		border-top: 0;
-		padding-top: 0;
+		padding-top: 10px;
 	}
 
 	thead th {
@@ -285,7 +303,7 @@
 	tbody th {
 		position: sticky;
 		z-index: 1;
-		left: 0;
+		left: calc(-1 * var(--cell));
 		width: 1px;
 		background: var(--surface-root);
 	}
@@ -294,7 +312,7 @@
 	tbody th::before {
 		content: '';
 		position: absolute;
-		inset: -1px 100% 0 calc(-1 * var(--pad));
+		inset: -1px 100% 0 calc(var(--cell) - var(--pad));
 		background: var(--surface-root);
 	}
 
@@ -312,6 +330,22 @@
 		font-size: 13px;
 		line-height: 20px;
 		text-wrap: pretty;
+	}
+
+	/* The row and the column in hand, and brightest the cell where they cross. Instant, as every hover here. */
+	.hot,
+	tr.hot > * {
+		background: var(--surface-elevated);
+	}
+
+	thead .hot,
+	tr.hot > th a {
+		color: var(--fg-default);
+	}
+
+	tr.hot > td.hot {
+		background: var(--surface-hover);
+		color: var(--fg-prose);
 	}
 
 	.source {

@@ -149,7 +149,7 @@ export const RECORDERS: readonly Recorder[] = [
 		name: 'Screen Studio',
 		url: 'https://screen.studio',
 		facts: {
-			price: ['$9 a month billed yearly, or $29 a month', 'https://screen.studio/pricing'],
+			price: ['$29 a month, or $108 a year', 'https://screen.studio/pricing'],
 			source: ['Closed', 'https://screen.studio/legal/terms-of-service'],
 			since: ['2022', 'https://www.producthunt.com/products/screen-studio'],
 			platforms: ['macOS', 'https://screen.studio/'],
