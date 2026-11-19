@@ -1,7 +1,7 @@
 import { afterEach, mock, test, type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import { register } from 'node:module'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -9,7 +9,7 @@ import { join } from 'node:path'
 const g = globalThis as any
 const stub = (code: string) => `data:text/javascript,${encodeURIComponent(code)}`
 const modules = {
-  electron: stub(`export const app = { getPath: () => globalThis.userData, isPackaged: true, getVersion: () => '1.0.0' }
+  electron: stub(`export const app = { getPath: () => globalThis.userData, getAppPath: () => globalThis.appPath ?? globalThis.userData, isPackaged: true, getVersion: () => '1.0.0' }
     export const ipcMain = { handle: (channel, fn) => (globalThis.ipc[channel] = fn) }`),
   './account.ts': stub(`export const SERVER = 'https://platform', USER_AGENT = 'Grip', accountToken = () => globalThis.token ?? ''`),
   './shell/settings.ts': stub(`export const settings = () => globalThis.settings, settingsListeners = []`),
@@ -22,8 +22,10 @@ register(
 )
 
 let up = true // whether the platform takes events
+let requests = 0
 let sent: Array<{ name: string; props?: Record<string, unknown>; install?: string; signed: boolean }> = []
 g.fetch = async (_url: string, init: { body: string; headers: Record<string, string> }) => {
+  requests++
   const { install, events } = JSON.parse(init.body)
   if (up) for (const e of events) sent.push({ ...e, install, signed: 'authorization' in init.headers })
   return { ok: up }
@@ -148,4 +150,25 @@ test('an install older than the journey has none', async (t) => {
     sent.map((e) => e.name),
     ['grip_launched', 'grip_day', 'grip_recorded'],
   )
+})
+
+test('a build made with usageCounts: false sends nothing, at its first launch or any later one', async (t) => {
+  g.userData = scratch(t)
+  g.appPath = scratch(t)
+  t.after(() => delete g.appPath)
+  writeFileSync(join(g.appPath, 'package.json'), '{"usageCounts":false}')
+  g.settings = { usageCounts: true, onboarded: false }
+  mock.timers.enable({ apis: ['Date'] })
+  requests = 0
+  let usage = await launch('2026-11-12T09:00') // a fresh install: first_open is due
+  g.ipc['usage:setup']({}, 'welcome')
+  usage.count('recorded')
+  const off = { ...g.settings, usageCounts: false }
+  for (const l of settingsListeners) l(off, g.settings) // not even the last count
+  await settle()
+  usage = await launch('2026-11-13T09:00') // relaunched, as after an update: the due markers stay
+  usage.count('exported')
+  await settle()
+  assert.equal(requests, 0)
+  assert.equal(JSON.parse(readFileSync(join(g.userData, 'usage.json'), 'utf8')).install ?? null, null)
 })

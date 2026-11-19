@@ -104,7 +104,9 @@ for (const v of ['0.0.1', '0.0.2', '0.0.3', '0.0.4']) {
     ...base,
     appId: ID,
     productName: NAME,
-    extraMetadata: { ...base.extraMetadata, name: NAME.toLowerCase(), productName: NAME, version: v }, // own name: own updater cache
+    // Own name: own updater cache. No usage counts: each run is a fresh install, which must not count as a user's,
+    // and the switch is in the build since a relaunched app has none of this script's environment.
+    extraMetadata: { ...base.extraMetadata, name: NAME.toLowerCase(), productName: NAME, version: v, usageCounts: false },
     directories: { ...base.directories, output: join(dir, v) },
     protocols: [],
     fileAssociations: [],
@@ -167,6 +169,10 @@ try {
   const back = sh('osascript', ['-e', `tell application "System Events" to get name of windows of process "${NAME}"`])
   if (back !== title) throw new Error(`0.0.4 came back with windows “${back}”, not the editor of “${title}” alone`)
   console.log(`ok: 0.0.3 updated itself to ${version()} while away and came back to its editor only`)
+  // An install ID is made only for a count that goes out, and a marker is `sent` only once the platform took it.
+  const usage = JSON.parse(readFileSync(join(homedir(), `Library/Application Support/${NAME}/usage.json`), 'utf8'))
+  if (usage.install || usage.sent.length || usage.day) throw new Error(`the test builds sent usage counts: ${JSON.stringify(usage)}`)
+  console.log('ok: no build sent a usage count')
 } catch (e) {
   // Why it did not install or relaunch, before cleanup deletes the evidence.
   for (const p of [`Library/Caches/${ID}.ShipIt/ShipIt_stderr.log`, `Library/Caches/${ID}.ShipIt/ShipIt_stdout.log`, `Library/Logs/${NAME}/main.log`])
