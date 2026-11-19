@@ -27,7 +27,8 @@
         quality,
         keyFrameInterval: 2,
         hardwareAcceleration: 'prefer-hardware',
-        // The page is sRGB; tagged as such, as the recorder and the export tag theirs.
+        // The page is sRGB; tagged as such, as the recorder tags a screen track. Only Grip reads this
+        // source: the video it ships comes out of the export, tagged BT.709.
         onEncodedPacket: (_, meta) => {
           if (meta?.decoderConfig?.colorSpace) meta.decoderConfig.colorSpace.transfer = 'iec61966-2-1'
         },

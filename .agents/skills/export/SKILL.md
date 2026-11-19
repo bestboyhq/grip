@@ -9,8 +9,11 @@ Encoding, muxing, and delivery of the final video.
 
 - Hardware encoding through VideoToolbox (H.264, HEVC, ProRes), muxed with AVFoundation.
 - The file is complete: every frame through the last keyframe, audio as long as video, playable in QuickTime, browsers, and social uploads.
-- Colors match the screen in QuickTime, Safari, and Chrome alike: the file is tagged sRGB.
-  Tagged BT.709, Apple's players lift every midtone, and so does WebGPU's import of a hardware-decoded BT.709 frame, which the compositor undoes for older recordings.
+- The pixels are the screen's sRGB values, tagged BT.709 in the stream and in the colr box alike, as every upload expects.
+  A file whose box says sRGB is converted to BT.709 by sites that read the box: its shadows sink toward black (17 comes out 7).
+  Its stream cannot say sRGB either: ffmpeg-based sites read the stream, and YouTube converts it.
+  The cost: macOS players lift a BT.709 midtone (136 shows as 146), QuickTime and Safari from the box and Chrome from the stream, as they do for every web video.
+  WebGPU's import of a hardware-decoded BT.709 frame lifts it too, which the compositor undoes.
 - Progress is truthful from 0 to 100, finalization included.
   An export stuck at 95% is the classic failure, and long static stretches must still advance the encoder.
 - No step of an export may hang: each one runs under a watchdog (`STALL_MS`), and a hardware encoder that stops answering restarts the export in software.

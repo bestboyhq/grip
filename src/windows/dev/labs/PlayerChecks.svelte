@@ -100,9 +100,9 @@
     await check('frameAt is exact on variable frame rate H.264 with B-frames', () => frames('vfr.mp4', vfr, (i) => Math.round(1.164 * 8 * i)))
     const cfr = Array.from({ length: 60 }, (_, i) => i / 30)
     await check('frameAt is exact on HEVC', () => frames('hevc.mp4', cfr, (i) => Math.round(1.164 * 3 * i)))
-    // macOS shows a BT.709-tagged frame through its BT.709 curve (128 -> 139), and so does Chrome's WebGPU
-    // for hardware decodes: an export must keep the recorded pixels and say they are sRGB.
-    await check('an export keeps the recorded colors, tagged sRGB', async () => {
+    // An export keeps the recorded pixels and tags them BT.709 in the colr box as in the stream: sites
+    // that read an sRGB box convert the file to BT.709 and sink every shadow toward black.
+    await check('an export keeps the recorded colors, tagged BT.709', async () => {
       const got: string[] = []
       for (const trc of ['bt709', 'iec61966-2-1']) {
         const file = `gray-${trc}.mp4`
@@ -119,7 +119,7 @@
         f.close()
         sample.close()
         const tag = (await track.getColorSpace()).transfer
-        assert(Math.abs(g - 128) <= 2 && tag === 'iec61966-2-1', `${file}: gray ${g} tagged ${tag}, want 128 tagged iec61966-2-1`)
+        assert(Math.abs(g - 128) <= 2 && tag === 'bt709', `${file}: gray ${g} tagged ${tag}, want 128 tagged bt709`)
         got.push(`${trc} -> ${g}`)
       }
       return got.join(', ')
