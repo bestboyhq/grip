@@ -155,13 +155,10 @@ async function mp4Pass(job: JobSpec, input: Input, media: Media, io: ExportIO, {
       keyFrameInterval: 2,
       latencyMode: 'quality',
       hardwareAcceleration: hardware ? 'prefer-hardware' : 'prefer-software',
-      onEncodedPacket: (_, meta) => {
-        // The canvas is sRGB, but the encoder tags its output BT.709, which QuickTime, Safari, and
-        // iOS play through macOS's BT.709 curve, every midtone lifted. The muxer writes the colr box
-        // from this config after this callback; Apple's players and browsers read the box first.
-        if (meta?.decoderConfig?.colorSpace) meta.decoderConfig.colorSpace.transfer = 'iec61966-2-1'
-        io.progress((0.99 * ++encoded) / n, phase)
-      },
+      // The canvas is sRGB, and the encoder tags its stream BT.709, as every upload expects; the muxer
+      // copies that tag into the colr box. A box that disagrees with the stream gets a file converted
+      // from sRGB to BT.709 by sites that read the box: every shadow sinks toward black.
+      onEncodedPacket: () => io.progress((0.99 * ++encoded) / n, phase),
     })
     // Starting at -priming makes mediabunny write an edit list that skips the encoder's priming.
     const audio = new AudioBufferSource({ codec: 'aac', quality: new Quality({ bitrate: audioBitrate }) }, { startTimestamp: -AAC_PRIMING / SAMPLE_RATE })
