@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fingerprint, HASH, IMAGE, RENDER } from '../og.ts';
 import editor from '../src/lib/editor.json' with { type: 'json' };
-import { CHECKED, FACTS, RECORDERS, SHOWN } from '../src/lib/benchmark.ts';
+import { CHECKED, compare, compared, FACTS, RECORDERS, SHOWN } from '../src/lib/benchmark.ts';
 import { RELEASES } from '../src/lib/changelog.ts';
 import { LOGDASH_SITE } from '../src/lib/logdash.ts';
 import worker, { type Env } from '../worker/index.ts';
@@ -148,6 +148,11 @@ test('the benchmark gives every fact a short value and a source on the web, and 
 	assert.equal(new Set(RECORDERS.map((recorder) => recorder.id)).size, RECORDERS.length);
 	// A column shown from the start that names no recorder leaves the table a column short.
 	for (const id of SHOWN) assert.ok(RECORDERS.some((recorder) => recorder.id === id), `${id} is no recorder`);
+	// A pick goes through the address and back, the rest of the query kept, and the first pick leaves no trace.
+	assert.equal(compare(new Set(SHOWN), '?ref=x&compare=cap'), '?ref=x');
+	assert.equal(compare(new Set(['loom', 'grip']), '?ref=x'), '?ref=x&compare=grip+loom');
+	assert.deepEqual(compared('?ref=x&compare=grip+loom+nope'), ['grip', 'loom']);
+	assert.equal(compared('?compare=nope'), SHOWN);
 	// A green or red answer that no recorder gives is a typo, and the dot it was meant for stays gray.
 	for (const { key, good = [], bad = [] } of FACTS)
 		for (const value of [...good, ...bad])

@@ -2,10 +2,12 @@
      public facts, each linked to the maker's page it was read from, then how both were made. The one page that
      names other recorders, in plain text; a recorder with no take yet shows in the table alone. -->
 <script lang="ts">
+	import { replaceState } from '$app/navigation';
 	import { asset } from '$app/paths';
 	import Arrow from '#lib/Arrow.svelte';
+	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { CHECKED, FACTS, RECORDERS, SECONDS, SHOWN, type Platform } from '#lib/benchmark.ts';
+	import { CHECKED, compare, compared, FACTS, RECORDERS, SECONDS, SHOWN, type Platform } from '#lib/benchmark.ts';
 	import Head from '#lib/Head.svelte';
 	import { GITHUB_URL } from '#lib/links.ts';
 	import Media from '#lib/Media.svelte';
@@ -20,10 +22,19 @@
 	});
 	const SCRIPT = `${GITHUB_URL}/tree/main/scripts/benchmark`;
 
-	// The recorders in the table, one a column. Every recorder is in the page; the rest only hide, and the last one
-	// shown stays.
+	// The recorders in the table, one a column, kept in the address. Every recorder is in the page; the rest only
+	// hide, and the last one shown stays. The page is built before anyone asks for it, so a shared pick is read once
+	// it runs.
 	const shown = new SvelteSet(SHOWN);
-	const pick = (id: string) => (shown.has(id) ? shown.delete(id) : shown.add(id));
+	onMount(() => {
+		shown.clear();
+		for (const id of compared(location.search)) shown.add(id);
+	});
+	function pick(id: string) {
+		if (shown.has(id)) shown.delete(id);
+		else shown.add(id);
+		replaceState(`${location.pathname}${compare(shown, location.search)}${location.hash}`, {});
+	}
 
 	// The row and the column of the cell under the mouse or holding the focus, as the table counts them: row 0 is the
 	// head, column 0 the facts. A finger lights nothing; it only scrolls.

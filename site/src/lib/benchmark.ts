@@ -79,6 +79,21 @@ export type Recorder = Readonly<{
 // away, and in the page all along.
 export const SHOWN: readonly string[] = ['grip', 'cap', 'cleanshot', 'loom', 'screen-studio'];
 
+// A visitor's pick lives in the page's address, ?compare=grip+cap, so a comparison can be shared. A name that is no
+// recorder is dropped, and the pick the page starts with leaves the address clean.
+export function compared(search: string): readonly string[] {
+	const ids = new URLSearchParams(search).get('compare')?.split(' ') ?? [];
+	const known = RECORDERS.filter(({ id }) => ids.includes(id)).map(({ id }) => id);
+	return known.length ? known : SHOWN;
+}
+
+export function compare(shown: ReadonlySet<string>, search: string): string {
+	const params = new URLSearchParams(search);
+	if (shown.size === SHOWN.length && SHOWN.every((id) => shown.has(id))) params.delete('compare');
+	else params.set('compare', RECORDERS.filter(({ id }) => shown.has(id)).map(({ id }) => id).join(' '));
+	return params.size ? `?${params}` : '';
+}
+
 // Spelled out, not taken from links.ts, so the site's tests can read this file without SvelteKit.
 const GITHUB_URL = 'https://github.com/bestboyhq/grip';
 const README = `${GITHUB_URL}#readme`;
