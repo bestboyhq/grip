@@ -61,8 +61,8 @@ export interface Motion {
 const A = 0, VIEWT = 1, SCR = 2, SCR2 = 3, SCR3 = 4, DEV = 5, SH = 6, VIEWS = 10, PARTS = 26, MASKS = 74
 const CUR = 106, CURIMG = 107, CURTEX = 108, CURBOX = 109, CURS = 110
 const CAM = 126, CAM1 = 127, CAM2 = 128, CAM3 = 129, CAM4 = 130, LUTMIN = 131, LUTMAX = 132, FIN = 133, VP = 134, VIS = 135
-const CLK = 136, LOUPES = 140, LOUPE_S = 148, INS = 220
-const FRAME_SLOTS = 221
+const CLK = 136, LOUPES = 140, LOUPE_S = 148, INS = 220, LIFT = 221
+const FRAME_SLOTS = 222
 const PASS_SLOTS = 51 // `struct Pass`
 const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12, MAX_CLICKS = 4, MAX_LOUPES = 4, LOUPE_SAMPLES = 9
 const MASK_KIND = { blur: 0, pixelate: 1, highlight: 2 } as const
@@ -464,6 +464,7 @@ export class Renderer {
     lenses.slice(-MAX_LOUPES).forEach(({ l, path }, i) => {
       const ps = path.length > 1 ? even(path, LOUPE_SAMPLES) : []
       lens(LOUPES + 2 * i, l, Math.max(ps.length, 1))
+      u[4 * LIFT + i] = l.lift
       ps.forEach((s, k) => lens(LOUPE_S + 2 * (i * LOUPE_SAMPLES + k), s, 0))
       has.loupe = true
     })

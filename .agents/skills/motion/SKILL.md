@@ -8,10 +8,13 @@ description: Animation engine: the one ease-out curve, springs for followers, cu
 The animation engine behind cursor, zoom, layout, and overlay movement.
 
 - Every timed move and fade on screen runs on one curve, CSS ease-out, `cubic-bezier(0, 0, 0.58, 1)` (`easeOut` in `spring.ts`).
-  That covers camera zooms and pans, loupes, the cursor's press, fades, cut, and loop, layout changes, masks, click effects, keystrokes, captions, and drawings.
+  That covers camera zooms and pans, a loupe gliding into the next, the cursor's press, fades, cut, and loop, layout changes, masks, click effects, keystrokes, captions, and drawings.
   A fade out runs the same curve toward its end, as CSS does, so it leaves fast and settles.
-  Mixed curves make one video feel like several: a zoom that snaps in and drifts out, or a lens on a clock of its own.
+  Mixed curves make one video feel like several: a zoom that snaps in and drifts out.
   The onboarding preview of a setting plays the same curve as the video it shows.
+- One move has a curve of its own: a loupe picked up off the screen and put back down runs on the glide curve, `cubic-bezier(0.32, 0.72, 0, 1)` (`easeGlide`, the windows' `--ease-glide`).
+  It is two thirds there at a fifth of the move, then lands long and soft, the way a hand lifts glass.
+  On ease-out, the lens is half open after 10 frames, and the pick-up reads as sluggish.
 - Springs move only followers, which have no start or end: the camera tracking the cursor, a loupe riding it, and the cursor's tilt.
   A follower that takes over from a timed move starts at the move's speed, so the hand-off never kinks.
   Springs are physically based (mass, stiffness, damping) and evaluated in closed form at time t.
