@@ -52,8 +52,10 @@ export function staircase(px: Uint8Array, w: number, h: number): Stairs | null {
 
 if (import.meta.main) {
   const [file, at = '0'] = process.argv.slice(2)
-  const [w, h] = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', file]).toString().trim().split(',').map(Number)
-  const px = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-ss', at, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'gray', '-'], { maxBuffer: 1 << 28 })
+  // The last video stream: an animated AVIF's first is its still image, and its last the animation.
+  const streams = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', file]).toString().trim().split('\n')
+  const [w, h] = streams.at(-1)!.split(',').map(Number)
+  const px = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-map', `0:v:${streams.length - 1}`, '-ss', at, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'gray', '-'], { maxBuffer: 1 << 28 })
   const found = staircase(px, w, h)
   console.log(found ? `Stepped: ${found.bands.length} flat bands of ${found.bands.join(', ')} px along the ${found.along} from (${found.x}, ${found.y})` : 'Smooth: no stepped ramp')
   process.exit(found ? 1 : 0)
