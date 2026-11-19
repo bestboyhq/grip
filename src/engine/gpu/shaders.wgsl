@@ -35,6 +35,7 @@ struct Frame {
                            // opacity, samples in loupeS (1: still), stretch (along the motion, length = elongation). Radius 0: none
   loupeS: array<vec4f, 72>, // each lens across the shutter: LENS_SAMPLES samples of two slots, laid out like loupes
   ins: vec4f,      // the inset band: rgb (r < 0: the recording's edge, stretched), opacity
+  lift: vec4f,     // per lens in loupes: how far it is picked up off the screen, 0 to 1
 }
 
 @group(0) @binding(0) var<uniform> F: Frame;
@@ -643,7 +644,7 @@ fn lensAt(L: Lens, u: vec2f, vt: vec3f, aa: f32, cs: vec4f, count: i32) -> vec4f
   g += vec3f(0.07 * pow(clamp((toward - 0.788) / 0.212, 0.0, 1.0), 0.178)) * (1.0 - smoothstep(0.5 * line, line, px));
 
   // Appearing, the magnification grows from 1, where the lens shows exactly what lies under it, so
-  // the content stays opaque and swells in place while only the glass and its shadow fade in. Fading
+  // the content stays opaque and swells in place while only the glass fades in and its shadow drops. Fading
   // the content too would show it twice, magnified over unmagnified, and so would a rim that lets the
   // screen under it through.
   col = mix(col, g, op);
@@ -675,18 +676,22 @@ fn lensesAt(p: vec2f, f: f32, count: i32) -> vec4f {
 // wide. So the shadow's reach follows what it falls on, SHADOW_STEP units of blur for each level it
 // darkens: wide and soft on a light page, a contact shadow at the rim on a dark one, where the wide
 // one showed only as its rings.
+// A lens lying flat on the screen casts none: picked up, its shadow darkens with the square of its lift,
+// so it lands last, and drops away from under the rim as it softens. A shadow that shows at full
+// strength while the glass is still flat reads as a dark ring around it.
 @fragment fn fs_lensshadow(v: VO) -> @location(0) vec4f {
   let vt = F.viewT.xyz;
   let u = unview(v.pos.xy, vt);
-  let off = normalize(KEY.xy) * SHADOW_SHIFT;
   var levels = -1.0; // the 8-bit luma under this pixel, read once a shadow reaches it
   var sh = 0.0;
   for (var i = 0u; i < LENSES; i++) {
     let L = F.loupes[2u * i];
     if (L.z <= 0.0) { continue; }
     let b = F.loupes[2u * i + 1u];
-    let s = SHADOW * b.x;
-    let sigma = SHADOW_BLUR * L.z;
+    let lift = F.lift[i];
+    let s = SHADOW * lift * lift;
+    let sigma = SHADOW_BLUR * L.z * mix(0.15, 1.0, lift);
+    let off = normalize(KEY.xy) * SHADOW_SHIFT * mix(0.05, 1.0, lift);
     // The wide shadow first: the tight one is the same at the lens's edge and weaker everywhere past it.
     let wide = s * (0.5 - 0.5 * erf2(vec2f((length(drop(u - L.xy + off * L.z, b.zw)) - L.z) * 0.70710678 / sigma)).x);
     if (wide < 1.0 / 1020.0) { continue; }

@@ -43,4 +43,4 @@ A soft ramp bands when it spreads a few 8-bit levels over many pixels: each leve
    A hit is a place to look.
    A gradient inside the recorded page and a wallpaper in a GIF's palette also hit, and they are not the ramp you drew.
 
-Done when `scripts/bands.ts` finds no staircase in the ramp you drew, on dark and on light content, in the MP4 at web quality, in the README's WebP, and in the GIF.
+Done when `scripts/bands.ts` finds no staircase in the ramp you drew, on dark and on light content, in the MP4 at web quality, in the README's AVIF, and in the GIF.
