@@ -4,6 +4,8 @@
 //
 // Passes per frame (shaders.wgsl):
 //   small      screen frame -> quarter-res mip pyramid, only while blur/pixelate masks show
+//   upscale    compute: the part of the screen frame shown past its pixel density, redrawn 2x or 4x denser by
+//              the UI-text network (upscale.wgsl), which the screen samples read there instead
 //   main       background, shadow, device mockup, screen with click effects, blur/pixelate masks; motion blur over
 //              the shutter's view samples
 //   cursor     swept quad, motion blur over the shutter's cursor samples
@@ -23,7 +25,9 @@ import { CLICK_FX, drawOverlays } from '../overlays/index.ts'
 import { oklab, parseColor, wallpaper, DEFAULT_WALLPAPER } from '../backgrounds/index.ts'
 import { CURSORS, CURSOR_RES, type BuiltinName } from '../../assets/cursors.ts'
 import { GRADE, gradeLut, parseCube, type Lut } from './lut.ts'
+import { MODELS, upRegion, type UpRegion } from './upscale.ts'
 import shaders from './shaders.wgsl?raw'
+import upscale from './upscale.wgsl?raw'
 
 // Wallpaper styles: one file per style defining wp_<style>(uv, wh) -> encoded sRGB, joined to the
 // main module behind a generated dispatch, so adding a style is adding a file.
@@ -31,6 +35,7 @@ const styleCode = import.meta.glob<string>('./wallpapers/*.wgsl', { query: '?raw
 const STYLES = Object.keys(styleCode).sort().map((k) => k.slice('./wallpapers/'.length, -'.wgsl'.length))
 const shaderCode = (styles: string[]) => [
   shaders,
+  upscale,
   ...styles.map((s) => styleCode[`./wallpapers/${s}.wgsl`]),
   `fn wallpaper(uv: vec2f, wh: vec2f, style: i32) -> vec3f {
   var c = vec3f(0.0);
@@ -61,8 +66,8 @@ export interface Motion {
 const A = 0, VIEWT = 1, SCR = 2, SCR2 = 3, SCR3 = 4, DEV = 5, SH = 6, VIEWS = 10, PARTS = 26, MASKS = 74
 const CUR = 106, CURIMG = 107, CURTEX = 108, CURBOX = 109, CURS = 110
 const CAM = 126, CAM1 = 127, CAM2 = 128, CAM3 = 129, CAM4 = 130, LUTMIN = 131, LUTMAX = 132, FIN = 133, VP = 134, VIS = 135
-const CLK = 136, LOUPES = 140, LOUPE_S = 148, INS = 220, LIFT = 221
-const FRAME_SLOTS = 222
+const CLK = 136, LOUPES = 140, LOUPE_S = 148, INS = 220, LIFT = 221, UP = 222, UP2 = 223, UP3 = 224
+const FRAME_SLOTS = 225
 const PASS_SLOTS = 51 // `struct Pass`
 const MAX_SAMPLES = 16, MAX_PARTS = 12, MAX_MASKS = 16, MAX_STOPS = 12, MAX_CLICKS = 4, MAX_LOUPES = 4, LOUPE_SAMPLES = 9
 const MASK_KIND = { blur: 0, pixelate: 1, highlight: 2 } as const
@@ -70,8 +75,8 @@ const CLICK_KIND = { swell: 1, wave: 2, circle: 3, focus: 4 } as const // fin.y 
 
 // WebGPU flag values (the TS DOM lib has the types but not these namespaces).
 const STAGE = { VERTEX: 1, FRAGMENT: 2 }
-const BUF = { COPY_DST: 8, UNIFORM: 64 }
-const TEX = { COPY_DST: 2, TEXTURE_BINDING: 4, RENDER_ATTACHMENT: 16 }
+const BUF = { COPY_DST: 8, UNIFORM: 64, STORAGE: 128 }
+const TEX = { COPY_DST: 2, TEXTURE_BINDING: 4, STORAGE_BINDING: 8, RENDER_ATTACHMENT: 16 }
 
 const HDR: GPUTextureFormat = 'rgba16float'
 const LDR: GPUTextureFormat = 'rgba8unorm'
@@ -93,6 +98,20 @@ interface Small {
   target: GPUTextureView
   mips: Array<{ view: GPUTextureView; group: GPUBindGroup }>
 }
+
+/** A network of the upscaler: its passes in order, each with its weights. */
+type UpNet = Array<{ pipe: GPUComputePipeline; weights: GPUBuffer; screen: boolean }>
+
+/** The upscaler's textures: features of one tile ping-pong between a and b, and out holds the whole region,
+ *  grown as regions need and kept. */
+interface UpTextures {
+  a: GPUTextureView
+  b: GPUTextureView
+  out?: GPUTexture
+  view?: GPUTextureView
+}
+const UP_TILE = 512 // recording px a run of the upscaler's passes covers, so its features stay this size
+const UP_TILES = (8192 / 2 / UP_TILE) ** 2 // the most a region upscale.ts allows takes
 
 const mipCount = (w: number, h: number) => Math.floor(Math.log2(Math.max(w, h))) + 1
 
@@ -128,6 +147,9 @@ export class Renderer {
   private noCursor!: GPUBindGroup
   private smallG0!: GPUBindGroup
   private placeholder!: VideoFrame
+  private nets = new Map<number, UpNet>() // by scale
+  private up!: UpTextures
+  private upTiles!: GPUBuffer // struct UpTile per tile, 256 bytes apart
 
   // Bound to the output size.
   private w = 0
@@ -148,6 +170,8 @@ export class Renderer {
   private lutKey = ''
   private lutTex?: GPUTexture
   private lut: Lut | null = null
+  private upFrame: VideoFrame | null = null // what the upscaler last redrew: this frame, at upLast
+  private upLast = ''
   private g0?: GPUBindGroup
 
   private readonly cursors = new Map<string, Promise<CursorTex>>()
@@ -168,7 +192,9 @@ export class Renderer {
     if (!gpu) throw new Error('This Mac cannot render video: WebGPU is not available.')
     const adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' })
     if (!adapter) throw new Error('This Mac cannot render video: no GPU is available.')
-    const device = await adapter.requestDevice()
+    // The compositor's fragment stage samples 5 textures and 3 video frames, which count 4 each: past WebGPU's
+    // default 16. Every Mac GPU has 48.
+    const device = await adapter.requestDevice({ requiredLimits: { maxSampledTexturesPerShaderStage: adapter.limits.maxSampledTexturesPerShaderStage } })
     const ctx = canvas.getContext('webgpu') as GPUCanvasContext | null
     if (!ctx) throw new Error('Could not start GPU rendering on this canvas.')
     const format = gpu.getPreferredCanvasFormat()
@@ -214,7 +240,7 @@ export class Renderer {
         entries: [
           { binding: 0, visibility: STAGE.VERTEX | F, buffer: { type: 'uniform' } },
           { binding: 1, visibility: F, sampler: { type: 'filtering' } },
-          tex(2), tex(3), tex(4, '3d'),
+          tex(2), tex(3), tex(4, '3d'), tex(5),
         ],
       }),
       g1: d.createBindGroupLayout({ entries: [0, 1, 2].map((binding) => ({ binding, visibility: F, externalTexture: {} })) }),
@@ -256,6 +282,23 @@ export class Renderer {
     this.noCursor = d.createBindGroup({ layout: this.groups.g2, entries: [{ binding: 0, resource: this.dummy2d }] })
     this.smallG0 = d.createBindGroup({ layout: small.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: this.frameU } }, { binding: 1, resource: this.sampler }] })
     this.placeholder = new VideoFrame(new Uint8Array(16), { format: 'RGBA', codedWidth: 2, codedHeight: 2, timestamp: 0 })
+    for (const [scale, layers] of Object.entries(MODELS)) {
+      const n = layers.length
+      this.nets.set(Number(scale), await Promise.all(layers.map(async (l, i) => {
+        const data = new Float32Array([...l.w, ...l.b])
+        const weights = d.createBuffer({ size: data.byteLength, usage: BUF.STORAGE | BUF.COPY_DST })
+        d.queue.writeBuffer(weights, 0, data)
+        const entryPoint = i === 0 ? 'up_first' : i === n - 1 ? 'up_last' : 'up_hidden'
+        const pipe = await d.createComputePipelineAsync({ layout: 'auto', compute: { module, entryPoint, constants: { IN: l.in, OUT: l.out, SCALE: Number(scale) } } })
+        return { pipe, weights, screen: i === 0 || i === n - 1 }
+      })))
+    }
+    // A tile's box reaches a halo of a px per layer past what it writes, so it computes what the whole region would.
+    const side = UP_TILE + 2 * Math.max(0, ...Object.values(MODELS).map((l) => l.length))
+    // GROUPS in upscale.wgsl: the most channel groups of 4 a layer has.
+    const feature = () => d.createTexture({ size: [side, side, 4], format: HDR, usage: TEX.TEXTURE_BINDING | TEX.STORAGE_BINDING }).createView({ dimension: '2d-array' })
+    this.up = { a: feature(), b: feature() }
+    this.upTiles = d.createBuffer({ size: UP_TILES * 256, usage: BUF.UNIFORM | BUF.COPY_DST })
   }
 
   /** Draw one frame. Assets (cursor images, background image, LUT) load on first use and are
@@ -277,6 +320,8 @@ export class Renderer {
     const screen = frames.screen
     const needSmall = !!screen && !!scene.screen && scene.masks.some((m) => m.kind !== 'highlight')
     if (needSmall) this.ensureSmall(screen.displayWidth, screen.displayHeight)
+    const up = screen ? upRegion(scene, screen.displayWidth, screen.displayHeight, motion?.loupes) : null
+    if (up) this.ensureUp(up)
     this.g0 ??= d.createBindGroup({
       layout: this.groups.g0,
       entries: [
@@ -285,6 +330,7 @@ export class Renderer {
         { binding: 2, resource: this.bgView! },
         { binding: 3, resource: this.small?.all ?? this.dummy2d },
         { binding: 4, resource: this.lutTex?.createView({ dimension: '3d' }) ?? this.dummy3d },
+        { binding: 5, resource: this.up.view ?? this.dummy2d },
       ],
     })
     const has = this.pack(scene, frames, motion, cursor)
@@ -293,13 +339,17 @@ export class Renderer {
     // Hardware decodes (NV12; software ones are I420) of a BT.709-tagged recording come through
     // macOS's curve for BT.709, which screenTap undoes.
     this.u[FIN * 4 + 2] = screen?.format === 'NV12' && screen.colorSpace.transfer === 'bt709' ? 1 : 0
+    if (up) {
+      this.u.set([up.x, up.y, up.w, up.h, ...up.valid, up.scale], UP * 4)
+    }
     d.queue.writeBuffer(this.frameU, 0, this.u)
 
     const ext = (f: VideoFrame | null | undefined) => d.importExternalTexture({ source: f ?? this.placeholder })
+    const screenExt = ext(screen)
     const media = d.createBindGroup({
       layout: this.groups.g1,
       entries: [
-        { binding: 0, resource: ext(screen) },
+        { binding: 0, resource: screenExt },
         { binding: 1, resource: ext(has.camera ? frames.camera : null) },
         { binding: 2, resource: ext(has.camera ? frames.matte : null) },
       ],
@@ -310,6 +360,7 @@ export class Renderer {
       this.blit(enc, this.pipes.small, this.small!.target, this.smallG0, group)
       for (const m of this.small!.mips) this.blit(enc, this.pipes.mipLDR, m.view, m.group)
     }
+    if (up && screen) this.upscale(enc, up, screen, screenExt)
     // A moving view renders the zoomed layer once, then motion-blurs it by reprojection into the frame.
     const groups = [this.g0, media, cursor?.group ?? this.noCursor]
     const z = has.moving ? this.zoomTarget() : null
@@ -656,6 +707,59 @@ export class Renderer {
     const mips = Array.from({ length: tex.mipLevelCount - 1 }, (_, i) => ({ view: this.level(tex, i + 1), group: this.srcGroup(this.pipes.mipLDR, this.level(tex, i)) }))
     this.small = { w, h, tex, all: tex.createView(), target: this.level(tex, 0), mips }
     this.g0 = undefined
+  }
+
+  /** upTex, fit for `up`: grown in steps of 256 px, so a zoom does not reallocate it every frame, and kept. */
+  private ensureUp(up: UpRegion) {
+    const was = this.up.out
+    const w = up.w * up.scale, h = up.h * up.scale
+    if (was && was.width >= w && was.height >= h) return
+    const step = (n: number, has = 0) => Math.min(8192, Math.max(has, Math.ceil(n / 256) * 256))
+    was?.destroy()
+    const out = this.device.createTexture({ size: [step(w, was?.width), step(h, was?.height)], format: LDR, usage: TEX.TEXTURE_BINDING | TEX.STORAGE_BINDING })
+    Object.assign(this.up, { out, view: out.createView() })
+    this.upLast = ''
+    this.g0 = undefined
+  }
+
+  /** Redraw `up` of the screen frame into upTex through the network for its scale, unless upTex holds it already. */
+  private upscale(enc: GPUCommandEncoder, up: UpRegion, screen: VideoFrame, screenExt: GPUExternalTexture) {
+    const key = [up.x, up.y, up.w, up.h, up.scale, this.u[FIN * 4 + 2]].join()
+    if (screen === this.upFrame && key === this.upLast) return // a still frame redrawn: a paused preview, a 30 fps recording at 60
+    this.upFrame = screen
+    this.upLast = key
+    const d = this.device
+    const t = this.up
+    const net = this.nets.get(up.scale)!
+    const halo = net.length
+    const tiles = new Float32Array(UP_TILES * 64)
+    let n = 0
+    for (let y = 0; y < up.h; y += UP_TILE) {
+      for (let x = 0; x < up.w; x += UP_TILE) {
+        const x0 = Math.max(0, x - halo), y0 = Math.max(0, y - halo)
+        const x1 = Math.min(up.w, x + UP_TILE + halo), y1 = Math.min(up.h, y + UP_TILE + halo)
+        tiles.set([up.x + x0, up.y + y0, x1 - x0, y1 - y0, x - x0, y - y0, Math.min(x + UP_TILE, up.w) - x0, Math.min(y + UP_TILE, up.h) - y0], n++ * 64)
+      }
+    }
+    d.queue.writeBuffer(this.upTiles, 0, tiles, 0, n * 64)
+    const media = net.map((l) => l.screen && d.createBindGroup({ layout: l.pipe.getBindGroupLayout(1), entries: [{ binding: 0, resource: screenExt }] }))
+    const pass = enc.beginComputePass()
+    for (let k = 0; k < n; k++) {
+      const tile = { buffer: this.upTiles, offset: k * 256, size: 32 }
+      net.forEach((l, i) => {
+        const [src, dst] = i % 2 ? [t.a, t.b] : [t.b, t.a] // layer 0 writes a, layer 1 reads a and writes b, ...
+        const entries: GPUBindGroupEntry[] = [{ binding: 41, resource: { buffer: l.weights } }, { binding: 45, resource: tile }]
+        if (l.screen) entries.push({ binding: 0, resource: { buffer: this.frameU } }) // recorded() reads F.fin
+        if (i > 0) entries.push({ binding: 42, resource: src })
+        if (i < net.length - 1) entries.push({ binding: 43, resource: dst })
+        else entries.push({ binding: 1, resource: this.sampler }, { binding: 44, resource: t.view! })
+        pass.setPipeline(l.pipe)
+        pass.setBindGroup(0, d.createBindGroup({ layout: l.pipe.getBindGroupLayout(0), entries }))
+        if (media[i]) pass.setBindGroup(1, media[i])
+        pass.dispatchWorkgroups(Math.ceil(tiles[k * 64 + 2]! / 8), Math.ceil(tiles[k * 64 + 3]! / 8))
+      })
+    }
+    pass.end()
   }
 
   private ensureLut(key: string, lut: Lut | null) {

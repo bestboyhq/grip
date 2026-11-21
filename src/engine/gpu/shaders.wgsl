@@ -36,6 +36,9 @@ struct Frame {
   loupeS: array<vec4f, 72>, // each lens across the shutter: LENS_SAMPLES samples of two slots, laid out like loupes
   ins: vec4f,      // the inset band: rgb (r < 0: the recording's edge, stretched), opacity
   lift: vec4f,     // per lens in loupes: how far it is picked up off the screen, 0 to 1
+  up: vec4f,       // region of the recording the upscaler redrew into upTex (recording px): x, y, w, h; w 0: none
+  up2: vec4f,      // where its redraw holds (recording px): x0, y0, x1, y1
+  up3: vec4f,      // upTex px per recording px
 }
 
 @group(0) @binding(0) var<uniform> F: Frame;
@@ -43,6 +46,7 @@ struct Frame {
 @group(0) @binding(2) var bgTex: texture_2d<f32>;
 @group(0) @binding(3) var smallTex: texture_2d<f32>;
 @group(0) @binding(4) var lutTex: texture_3d<f32>;
+@group(0) @binding(5) var upTex: texture_2d<f32>;
 @group(1) @binding(0) var screenTex: texture_external;
 @group(1) @binding(1) var camTex: texture_external;
 @group(1) @binding(2) var matteTex: texture_external;
@@ -175,21 +179,55 @@ fn part(c: vec3f, u: vec2f, i: i32, aa: f32) -> vec3f {
   return mix(c, col.rgb, k * col.a);
 }
 
-// One bilinear tap of the recording, as recorded. A screen recording's pixels are sRGB, but older
-// ones are tagged BT.709, and a hardware-decoded BT.709 frame arrives through macOS's display curve
-// for it (gamma 1.961, then sRGB), every midtone lifted (128 -> 139): fin.z undoes that curve.
-fn screenTap(uv: vec2f) -> vec3f {
-  let c = textureSampleBaseClampToEdge(screenTex, samp, uv).rgb;
+// A color of the recording as recorded. A screen recording's pixels are sRGB, but older ones are
+// tagged BT.709, and a hardware-decoded BT.709 frame arrives through macOS's display curve for it
+// (gamma 1.961, then sRGB), every midtone lifted (128 -> 139): fin.z undoes that curve.
+fn recorded(c: vec3f) -> vec3f {
   if (F.fin.z < 0.5) { return c; }
   let s = clamp(c, vec3f(0.0), vec3f(1.0));
   let linear = select(pow((s + 0.055) / 1.055, vec3f(2.4)), s / 12.92, s <= vec3f(0.04045));
   return pow(linear, vec3f(1.0 / 1.961));
 }
 
+// One bilinear tap of the recording.
+fn screenTap(uv: vec2f) -> vec3f { return recorded(textureSampleBaseClampToEdge(screenTex, samp, uv).rgb); }
+
+// Past the recording's pixel density (m < 1), the upscaler's redraw of it (upscale.wgsl) shows
+// instead, coming in from UP_FROM to UP_FULL, so a zoom passing through 1:1 shows no step.
+const UP_FROM = 1.0;
+const UP_FULL = 0.85;
+fn upShare(uv: vec2f, m: f32) -> f32 {
+  let p = uv * F.scr3.xy;
+  if (F.up.z <= 0.0 || any(p < F.up2.xy) || any(p > F.up2.zw)) { return 0.0; }
+  return clamp((UP_FROM - m) / (UP_FROM - UP_FULL), 0.0, 1.0);
+}
+
+// The redraw at uv, box-filtered like screenSample where it shows denser than the output.
+fn upSample(uv: vec2f, m: f32) -> vec3f {
+  let tex = vec2f(textureDimensions(upTex));
+  let at = clamp((uv * F.scr3.xy - F.up.xy) * F.up3.x, vec2f(0.5), F.up.zw * F.up3.x - 0.5) / tex; // upTex can be larger than what it holds
+  let n = m * F.up3.x; // upTex px per output px
+  if (n <= 1.3) { return textureSampleLevel(upTex, samp, at, 0.0).rgb; }
+  let k = min(ceil(n / 1.5), 4.0);
+  let step = n / k / tex;
+  var c = vec3f(0.0);
+  for (var j = 0.0; j < k; j += 1.0) {
+    for (var i = 0.0; i < k; i += 1.0) {
+      c += textureSampleLevel(upTex, samp, at + (vec2f(i, j) - 0.5 * (k - 1.0)) * step, 0.0).rgb;
+    }
+  }
+  return c / (k * k);
+}
+
 // Box-filtered screen sample: m = source px per output px. Minified video gets k x k bilinear
 // taps so text does not shimmer or alias in small previews.
 fn screenSample(uv: vec2f, m: f32) -> vec3f {
-  if (m <= 1.3) { return screenTap(uv); }
+  if (m <= 1.3) {
+    let c = screenTap(uv);
+    let k = upShare(uv, m);
+    if (k > 0.0) { return mix(c, upSample(uv, m), k); }
+    return c;
+  }
   let k = min(ceil(m / 1.5), 4.0);
   let step = m / k / F.scr3.xy;
   var c = vec3f(0.0);
