@@ -21,8 +21,8 @@
 </script>
 
 <Head
-	title="Changelog - Grip"
-	description="What changed in each Grip release, newest first."
+	title="Grip changelog: every release of the Mac screen recorder"
+	description="What changed in each release of Grip, the free, open source screen recorder for the Mac, newest first. Each update installs in the app, free."
 	path="/changelog"
 />
 
@@ -32,7 +32,7 @@
 
 <section class="wrap head" data-place="changelog">
 	<p class="kicker">Changelog</p>
-	<h1>What’s new in Grip<span>Every release, newest first.</span></h1>
+	<h1>What’s new in Grip <span>Every release, newest first.</span></h1>
 </section>
 
 <div class="wrap" data-place="releases">

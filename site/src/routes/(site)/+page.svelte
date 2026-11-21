@@ -20,7 +20,16 @@
 	import { reveal } from '#lib/reveal.ts';
 	import SectionHeading from '#lib/SectionHeading.svelte';
 	import StageLight from '#lib/StageLight.svelte';
-	import { AGENTS, docHref, DOWNLOAD_URL, GITHUB_URL, SITE_DESCRIPTION } from '#lib/links.ts';
+	import {
+		AGENTS,
+		BESTBOY_URL,
+		docHref,
+		DOWNLOAD_URL,
+		GITHUB_URL,
+		LICENSE_URL,
+		SITE_DESCRIPTION,
+		SITE_URL,
+	} from '#lib/links.ts';
 
 	// Each quote is the person's own, published with their permission.
 	const quotes: readonly Quote[] = [
@@ -234,9 +243,37 @@
 				'Grip updates itself. Updates download in the background and install while you’re away, never during a recording or an export.',
 		},
 	];
+
+	// What search engines and assistants read: the app, free, and the questions above word for word. No rating or
+	// review: Grip has none to cite.
+	const jsonld = [
+		{
+			'@type': 'SoftwareApplication',
+			name: 'Grip',
+			description: SITE_DESCRIPTION,
+			url: SITE_URL,
+			downloadUrl: DOWNLOAD_URL,
+			operatingSystem: 'macOS 15 or later',
+			processorRequirements: 'Apple silicon',
+			applicationCategory: 'MultimediaApplication',
+			offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+			license: LICENSE_URL,
+			isAccessibleForFree: true,
+			publisher: { '@type': 'Organization', name: 'Bestboy', url: BESTBOY_URL },
+			sameAs: [GITHUB_URL],
+		},
+		{
+			'@type': 'FAQPage',
+			mainEntity: faqs.map(({ question, answer }) => ({
+				'@type': 'Question',
+				name: question,
+				acceptedAnswer: { '@type': 'Answer', text: answer },
+			})),
+		},
+	];
 </script>
 
-<Head title="Grip: professional recordings and screenshots within seconds" description={SITE_DESCRIPTION} path="" />
+<Head title="Grip: free, open source screen recorder for the Mac" description={SITE_DESCRIPTION} path="" {jsonld} />
 
 <!-- The hero editor's still, which shows until its take plays. -->
 <svelte:head>

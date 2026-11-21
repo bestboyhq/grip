@@ -341,6 +341,7 @@ Grip designs them out from the first commit instead of patching them later.
 
 Recording, editing, transcription, and background removal all run on your Mac.
 Recording and editing need no account; sharing a link signs in to bestboy.dev once.
+Share links are free while Grip is in early access: 25 uploads a month, up to 2 GB each, and each link lasts 90 days.
 Grip shares usage stats, like a finished recording or an export, and never what you record.
 One switch in Settings turns them off, and so does `DO_NOT_TRACK=1`.
 [Exactly what Grip sends](docs/guide.md#private-by-design).

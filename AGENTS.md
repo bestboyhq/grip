@@ -16,7 +16,8 @@ Their gotchas are bugs and limits that shipped in real products; design each one
 
 Describe every behavior on its own terms in everything that lands in git: code, comments, skills, docs, commit messages, branch names, and PR titles and bodies.
 Competing products stay unnamed there, even when one inspired the work or shipped the bug a gotcha records.
-The one exception is the benchmark at bestboy.dev/grip/benchmark (`site/src/lib/benchmark.ts`, its page, and `scripts/benchmark/`): it names the recorders it compares, as plain text without their logos, and says nothing about them but a fact with its source or a recording of the shared take at default settings.
+The one exception is the site's comparison pages: the benchmark at bestboy.dev/grip/benchmark, the page for each recorder under `/grip/vs/`, and the guides under `/grip/guides/` (`site/src/lib/benchmark.ts`, `versus.ts`, `guides.ts`, and `questions.ts`, their pages, and `scripts/benchmark/`).
+They name the recorders they compare, as plain text without their logos, and say nothing about them but a fact with its source or a recording of the shared take at default settings.
 
 Every domain obeys these invariants:
 
@@ -65,6 +66,8 @@ Every domain obeys these invariants:
 - `native/`: Rust addon, one module per domain; `clock.rs` is the master clock.
 - `site/`: the landing page at bestboy.dev/grip, its own npm package: SvelteKit prerendered behind a Cloudflare worker (`site/worker/index.ts`) on the `bestboy.dev/grip*` route.
   Its look is the Bestboy family's, from the platform's `docs/design.md`, and its claims and numbers come from the README.
+  `site/seo.ts` runs after `vite build`: it writes `sitemap.xml` and `llms.txt` from each built page's own title, description, and canonical link, skipping `noindex` pages, and `benchmark.md` from `benchmark.ts`.
+  A new page needs no registry: `site/tests/site.test.ts` checks every built page's H1, title, description, canonical link, and JSON-LD.
 
 Share links, accounts, and teams are hosted by the Bestboy platform at bestboy.dev (the private `bestboyhq/platform` repo, whose `docs/api.md` is the contract).
 Grip's side is `electron/upload.ts` and `electron/account.ts`; `STUDIO_SHARE_URL=http://localhost:8787` points a dev run at a local platform.
@@ -76,7 +79,8 @@ Grip's side is `electron/upload.ts` and `electron/account.ts`; `STUDIO_SHARE_URL
   One instance runs per worktree: a second launch hands its arguments to the running one and exits, so agents share it and its CDP port.
   `npm run dev -- --lab <Name>` opens `src/windows/dev/labs/<Name>.svelte`; the `Wallpapers` lab renders wallpapers for review.
 - `npm run build:native` builds the Rust addon.
-- `cd site && npm run dev` serves the landing page at `localhost:5173/grip`, and `npm test` there builds it and tests the worker.
+- `cd site && npm run dev` serves the landing page at `localhost:5173/grip`, and `npm test` there builds it and tests its pages and the worker.
+  `npm run build` there writes `build/grip`, its `sitemap.xml`, `llms.txt`, and `benchmark.md` included; the dev server serves none of the three.
   `npx electron scripts/readme/make.ts <demo>` renders a README demo into a project, `npx electron scripts/readme/export.ts` exports every demo through the running app (`STUDIO_CDP_PORT=9333`) as the README's 60 fps animated AVIFs and the page's frameless clips in its dark and light themes, and `sh site/media.sh` encodes those clips for the page.
   The page's hero is the editor itself: `node scripts/readme/editor.ts` captures it from the running app, one take per wallpaper a visitor can pick.
   `npx electron scripts/og.ts` renders its Open Graph image from the hero, and the site's tests ask for a re-render whenever what the image shows changes.

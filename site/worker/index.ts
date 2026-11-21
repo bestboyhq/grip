@@ -10,6 +10,15 @@ const LOGDASH_SCRIPT = '/grip/_ld/script.js';
 const LOGDASH_EVENTS = '/grip/_ld/events';
 const MEDIA_PREFIX = '/grip/media/';
 const MAX_EVENTS_BYTES = 32768;
+// The files written for search engines and agents (`seo.ts`, `static/agents.md`), typed here with their charset so
+// that no client guesses it: they carry curly quotes.
+const TEXT: Readonly<Record<string, string>> = {
+	md: 'text/markdown; charset=utf-8',
+	txt: 'text/plain; charset=utf-8',
+	xml: 'application/xml; charset=utf-8',
+};
+// The Markdown copy of a page points search engines to the page.
+const COPIES: Readonly<Record<string, string>> = { '/grip/benchmark.md': 'https://bestboy.dev/grip/benchmark' };
 const EDGE_HOUR: RequestInit & { cf: object } = {
 	cf: { cacheEverything: true, cacheTtlByStatus: { '200-299': 3600 } },
 };
@@ -86,10 +95,12 @@ async function logdashEvents(request: Request): Promise<Response> {
 	});
 }
 
+const extension = (pathname: string): string | undefined => /\.(\w+)$/u.exec(pathname)?.[1];
+
 function cacheControl(pathname: string): string | null {
 	if (pathname.startsWith(IMMUTABLE_PREFIX)) return IMMUTABLE;
 	const file = pathname.slice(pathname.lastIndexOf('/') + 1);
-	return file === '__data.json' || !file.includes('.') ? PAGE : null;
+	return file === '__data.json' || !file.includes('.') || TEXT[extension(file) ?? ''] ? PAGE : null;
 }
 
 function withPolicy(response: Response, url: URL): Response {
@@ -98,6 +109,10 @@ function withPolicy(response: Response, url: URL): Response {
 	if (url.hostname !== CANONICAL_HOST) headers.set('X-Robots-Tag', 'noindex');
 	const policy = cacheControl(url.pathname);
 	if (policy && (response.ok || response.status === 304)) headers.set('Cache-Control', policy);
+	const type = TEXT[extension(url.pathname) ?? ''];
+	if (type && response.ok) headers.set('Content-Type', type);
+	const page = COPIES[url.pathname];
+	if (page) headers.set('Link', `<${page}>; rel="canonical"`);
 	return new Response(response.body, {
 		status: response.status,
 		statusText: response.statusText,
