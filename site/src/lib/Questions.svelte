@@ -14,7 +14,7 @@
 
 <section id="faq" class="wrap page-part" aria-labelledby="faq-title">
 	<div class="faq">
-		<h2 id="faq-title">Questions</h2>
+		<h2 id="faq-title">Good questions.</h2>
 		<div>
 			{#each faqs as { question, answer, link }, i (question)}
 				<details open={i === 0}>

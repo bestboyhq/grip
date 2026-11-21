@@ -15,7 +15,7 @@
 		<BeatLabel {...beat} />
 		<div class="faq">
 			<div class="faq-intro rise">
-				<h2 id="faq-title">Questions</h2>
+				<h2 id="faq-title">Good questions.</h2>
 				<p>
 					Another question? <a href="{GITHUB_URL}/issues">Ask on GitHub</a>
 				</p>
