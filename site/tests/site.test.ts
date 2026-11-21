@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fingerprint, HASH, IMAGE, RENDER } from '../og.ts';
+import { pages, text } from '../seo.ts';
 import editor from '../src/lib/editor.json' with { type: 'json' };
 import { CHECKED, compare, compared, FACTS, RECORDERS, SHOWN } from '../src/lib/benchmark.ts';
 import { RELEASES } from '../src/lib/changelog.ts';
@@ -21,13 +22,71 @@ const benchmark = readFileSync(join(build, 'benchmark.html'), 'utf8');
 const SHARED =
 	/<meta property="og:image" content="https:\/\/bestboy\.dev\/grip\/(_app\/immutable\/assets\/og\.[\w-]+\.jpg)"/u;
 
-test('the page has one canonical URL under bestboy.dev/grip and a description', () => {
-	const canonicals = [...page.matchAll(/<link rel="canonical" href="([^"]+)"/gu)];
-	assert.deepEqual(
-		canonicals.map((match) => match[1]),
-		[SITE],
+// Every built page, read as search engines read it. Pages added later are checked with no list to extend.
+const built = pages();
+const indexed = built.filter((page) => !page.noindex);
+const read = (file: string): string => readFileSync(join(build, file), 'utf8');
+// The URL a built file is served at: index.html at the site's root, every other page without its extension.
+const served = (file: string): string => (file === 'index.html' ? SITE : `${SITE}/${file.replace(/\.html$/u, '')}`);
+
+test('every page has one H1, and every indexed page a short unique title and description and its own canonical URL', () => {
+	assert.ok(indexed.some((page) => page.file === 'index.html'), 'the home page is not indexed');
+	for (const { file, html } of built) assert.equal(html.match(/<h1\b/gu)?.length, 1, `${file} has no single H1`);
+	for (const { file, title, description, canonical, html } of indexed) {
+		assert.ok(title && title.length <= 60, `${file}: its title is ${title.length} characters, “${title}”`);
+		assert.ok(description && description.length <= 160, `${file}: its description is ${description.length} characters`);
+		assert.equal(html.match(/<link rel="canonical"/gu)?.length, 1, `${file} has no single canonical link`);
+		assert.equal(canonical, served(file), file);
+	}
+	for (const key of ['title', 'description'] as const) {
+		const values = indexed.map((page) => page[key]);
+		assert.equal(new Set(values).size, values.length, `two pages share a ${key}`);
+	}
+});
+
+test('the sitemap lists every indexed page once and nothing else', () => {
+	const urls = [...read('sitemap.xml').matchAll(/<loc>([^<]+)<\/loc>/gu)].map((match) => match[1]);
+	assert.deepEqual(urls, indexed.map((page) => page.canonical));
+	assert.equal(new Set(urls).size, urls.length);
+});
+
+test('llms.txt sums Grip up and links every indexed page, each link to the site a file it ships', () => {
+	const llms = read('llms.txt');
+	assert.match(llms, /^# Grip\n\n> .+\n\n## /u);
+	for (const page of indexed) assert.ok(llms.includes(`](${page.canonical}): `), `llms.txt leaves out ${page.file}`);
+	for (const [, url = ''] of llms.matchAll(/\]\((https:\/\/bestboy\.dev\/grip[^)]*)\)/gu)) {
+		const path = url.slice(SITE.length + 1);
+		const file = path === '' ? 'index.html' : path.includes('.') ? path : `${path}.html`;
+		assert.ok(existsSync(join(build, file)), `llms.txt links ${url}, which is not built`);
+	}
+});
+
+test('every page’s structured data parses, and the home page’s questions are the ones it shows', () => {
+	for (const { file, html } of built)
+		for (const [, data = ''] of html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/gu))
+			assert.equal(JSON.parse(data)['@context'], 'https://schema.org', file);
+	const graph: { '@type': string; mainEntity?: { name: string; acceptedAnswer: { text: string } }[] }[] = JSON.parse(
+		/<script type="application\/ld\+json">([\s\S]*?)<\/script>/u.exec(page)?.[1] ?? '{}',
+	)['@graph'];
+	assert.ok(graph.some((node) => node['@type'] === 'SoftwareApplication'));
+	assert.doesNotMatch(JSON.stringify(graph), /"(?:aggregateRating|review)"/u, 'Grip has no rating or review to cite');
+	const shown = [...page.matchAll(/<span class="q[ "][^>]*>([\s\S]*?)<\/span>[\s\S]*?<\/summary>\s*<p[^>]*>([\s\S]*?)<\/p>/gu)].map(
+		([, question = '', answer = '']) => [text(question), text(answer)],
 	);
-	assert.match(page, /<meta name="description" content="[^"]+"/u);
+	const faq = graph.find((node) => node['@type'] === 'FAQPage')?.mainEntity ?? [];
+	assert.ok(shown.length > 0);
+	assert.deepEqual(
+		faq.map((entry) => [entry.name, entry.acceptedAnswer.text]),
+		shown,
+	);
+});
+
+test('benchmark.md holds every fact of the benchmark with its source and the day it was checked', () => {
+	const markdown = read('benchmark.md');
+	for (const { name, facts } of RECORDERS)
+		for (const { key } of FACTS) assert.ok(markdown.includes(`](${facts[key].source})`), `${name}'s ${key}`);
+	const day = new Date(`${CHECKED}T00:00:00Z`).toLocaleDateString('en-US', { dateStyle: 'long', timeZone: 'UTC' });
+	assert.ok(markdown.includes(day), `benchmark.md leaves out ${day}, the day its facts were checked`);
 });
 
 test('the Open Graph image shows the hero as it is built', () => {
@@ -44,8 +103,8 @@ test('every page that shares the image names it by its content, with its size an
 		.replace(/\s+/gu, ' ')
 		.trim();
 	assert.ok(headline);
-	for (const file of ['index.html', '404.html', 'changelog.html', 'agents.html', 'benchmark.html']) {
-		const html = readFileSync(join(build, file), 'utf8');
+	// The card is the image's source, and shares nothing.
+	for (const { file, html } of built.filter((page) => page.file !== 'og.html')) {
 		const image = SHARED.exec(html)?.[1];
 		assert.ok(image, `${file} shares no content-named image`);
 		assert.deepEqual(readFileSync(join(build, image)), readFileSync(IMAGE), file);
@@ -214,6 +273,26 @@ test('the worker marks every host but bestboy.dev noindex and never sets cookies
 	assert.equal(canonical.headers.get('Set-Cookie'), null);
 	const preview = await get('https://grip-site.bestboy.workers.dev/grip');
 	assert.equal(preview.headers.get('X-Robots-Tag'), 'noindex');
+});
+
+test('the worker serves the files for search engines and agents as typed text that revalidates', async () => {
+	for (const [path, type] of [
+		['/sitemap.xml', 'application/xml; charset=utf-8'],
+		['/llms.txt', 'text/plain; charset=utf-8'],
+		['/benchmark.md', 'text/markdown; charset=utf-8'],
+		['/agents.md', 'text/markdown; charset=utf-8'],
+	] as const) {
+		const response = await get(`${SITE}${path}`);
+		assert.equal(response.headers.get('Content-Type'), type, path);
+		assert.equal(response.headers.get('Cache-Control'), 'public, max-age=0, stale-while-revalidate=86400', path);
+		assert.equal(response.headers.get('X-Robots-Tag'), null, path);
+	}
+	assert.equal((await get(`${SITE}/benchmark.md`)).headers.get('Link'), `<${SITE}/benchmark>; rel="canonical"`);
+	const preview = await get('https://grip-site.bestboy.workers.dev/grip/llms.txt');
+	assert.equal(preview.headers.get('X-Robots-Tag'), 'noindex');
+	const slash = await get(`${SITE}/llms.txt/`);
+	assert.equal(slash.status, 301);
+	assert.equal(slash.headers.get('Location'), `${SITE}/llms.txt`);
 });
 
 test('the worker drops trailing slashes with a permanent redirect', async () => {

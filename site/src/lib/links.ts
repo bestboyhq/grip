@@ -2,7 +2,8 @@ import { asset, resolve } from '$app/paths';
 
 export const SITE_URL = 'https://bestboy.dev/grip';
 export const SITE_DESCRIPTION =
-	'Grip is a free, open source screen recorder for the Mac: professional recordings and screenshots within seconds. It zooms where you click, glides your cursor, and captions your voice.';
+	'Grip is a free, open source screen recorder and screenshot tool for the Mac, with no account or watermark. It zooms where you click and captions your voice.';
+export const LICENSE_URL = 'https://github.com/bestboyhq/grip/blob/main/LICENSE';
 
 // The DMG's name carries its version, so bestboy.dev looks up the latest release's and redirects to it.
 export const DOWNLOAD_URL = 'https://bestboy.dev/download/grip';
@@ -18,6 +19,8 @@ export const HOME = resolve('/(site)').replace(/\/$/u, '');
 export const CHANGELOG = resolve('/(site)/changelog');
 export const AGENTS = resolve('/(site)/agents');
 export const BENCHMARK = resolve('/(site)/benchmark');
+export const GUIDES = resolve('/(site)/guides');
+const versus = (id: string): string => resolve('/(site)/vs/[id]', { id });
 
 export type Link = Readonly<{
 	title: string;
@@ -38,7 +41,9 @@ export type Menu = Readonly<{
 
 export const isExternal = (link: Link): boolean => link.href.startsWith('http');
 
-const LLMS: Link = { title: 'llms.txt', href: `${BESTBOY_URL}/llms.txt` };
+// `seo.ts` writes it into the build after the prerender, so it is linked by its full URL, which the prerender's link
+// check skips.
+const LLMS: Link = { title: 'llms.txt', href: `${SITE_URL}/llms.txt` };
 
 // The brand's switcher: one line each, read top to bottom as one story.
 export const APPS: Menu = {
@@ -118,7 +123,7 @@ export const MENUS: readonly Menu[] = [
 				label: 'For agents',
 				links: [
 					{ title: 'Grip for agents', href: AGENTS, line: 'A video of every change your agent ships' },
-					{ ...LLMS, line: 'Every app’s docs, as markdown' },
+					{ ...LLMS, line: 'Grip’s pages and docs, for an agent' },
 					{ title: 'Grip in one file', href: GUIDE_MD, line: 'All its docs at once, for an agent’s context' },
 				],
 			},
@@ -127,6 +132,7 @@ export const MENUS: readonly Menu[] = [
 				plain: true,
 				links: [
 					{ title: 'Benchmark', href: BENCHMARK },
+					{ title: 'Guides', href: GUIDES },
 					{ title: 'Releases', href: `${GITHUB_URL}/releases` },
 					{ title: 'Issues', href: `${GITHUB_URL}/issues` },
 				],
@@ -162,11 +168,21 @@ export const SITEMAP: readonly Readonly<{ label: string; links: readonly Link[] 
 		links: [{ title: 'Grip for agents', href: AGENTS }, LLMS, { title: 'Docs as markdown', href: GUIDE_MD }],
 	},
 	{
+		label: 'Compare',
+		links: [
+			{ title: 'Benchmark', href: BENCHMARK },
+			{ title: 'Grip vs Screen Studio', href: versus('screen-studio') },
+			{ title: 'Grip vs CleanShot X', href: versus('cleanshot') },
+			{ title: 'Grip vs Loom', href: versus('loom') },
+			{ title: 'Grip vs Cap', href: versus('cap') },
+			{ title: 'Guides', href: GUIDES },
+		],
+	},
+	{
 		label: 'Project',
 		links: [
 			{ title: 'Source code', href: GITHUB_URL },
 			{ title: 'Changelog', href: CHANGELOG },
-			{ title: 'Benchmark', href: BENCHMARK },
 			{ title: 'Releases', href: `${GITHUB_URL}/releases` },
 			{ title: 'Issues', href: `${GITHUB_URL}/issues` },
 			{ title: 'bestboy.dev', href: BESTBOY_URL },

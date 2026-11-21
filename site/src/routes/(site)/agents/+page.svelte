@@ -202,8 +202,8 @@
 </script>
 
 <Head
-	title="Grip for agents: a video of every change your agent ships"
-	description="Your coding agent records each UI change it makes, and Grip polishes it into a video for the pull request. Your team comments on the frame, and the agent reads every thread."
+	title="Grip for agents: an MCP server that films every UI change"
+	description="An MCP server and a CLI for any coding agent on the Mac. Your agent records each UI change it ships, and Grip polishes it into a video for the pull request."
 	path="/agents"
 />
 

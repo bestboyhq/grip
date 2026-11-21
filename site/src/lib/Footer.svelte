@@ -73,7 +73,7 @@
 
 	.map {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) repeat(4, 10rem);
+		grid-template-columns: minmax(0, 1fr) repeat(5, minmax(0, 10rem));
 		gap: 48px 24px;
 		padding: 72px max(var(--pad), env(safe-area-inset-right)) 0
 			max(var(--pad), env(safe-area-inset-left));

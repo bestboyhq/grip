@@ -514,6 +514,298 @@
 	}
 }
 
+/* The pages that read as a document (the benchmark, each page beside Grip, and the guides): a head, then parts, each
+   under a line of crosses. Each template keeps only what is its own. Every rule hangs off a class no other page
+   uses, so the scoped `.lede`, `.sub`, `.chip`, and `.source` of the other pages and components stay their own. */
+.page-head {
+	padding-block: 96px 64px;
+}
+
+/* The crumbs keep each name whole and wrap as a row; the rule after them fills what the last line leaves. */
+.page-head .kicker {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 12px;
+	margin-bottom: 28px;
+	color: var(--fg-secondary);
+	font-family: var(--mono);
+	font-size: 12px;
+	line-height: 16px;
+}
+
+.page-head .kicker > * {
+	white-space: nowrap;
+}
+
+.page-head .kicker a {
+	text-decoration: none;
+}
+
+.page-head .kicker i {
+	color: var(--fg-faint);
+	font-style: normal;
+}
+
+.page-head .kicker::after {
+	content: '';
+	flex: 1;
+	min-width: 24px;
+	height: 1px;
+	background: var(--border-default);
+}
+
+.page-head h1 {
+	font-size: clamp(34px, 4.6vw, 52px);
+	font-weight: 550;
+	line-height: 1.06;
+	letter-spacing: -0.035em;
+	text-wrap: balance;
+}
+
+.page-head h1 span {
+	display: block;
+	color: var(--fg-faint);
+}
+
+.page-head .lede {
+	max-width: 680px;
+	margin-top: 24px;
+	color: var(--fg-muted);
+	font-size: 19px;
+	line-height: 1.55;
+	text-wrap: pretty;
+}
+
+.page-head .lede b {
+	color: var(--fg-default);
+	font-weight: 500;
+}
+
+.page-cta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px 24px;
+	margin-top: 32px;
+}
+
+.checked {
+	margin-top: 28px;
+	color: var(--fg-faint);
+	font-family: var(--mono);
+	font-size: 12px;
+	line-height: 16px;
+}
+
+.page-cta .checked {
+	margin: 0;
+}
+
+.page-part {
+	position: relative;
+	padding-block: 56px;
+}
+
+.page-part::before {
+	content: '';
+	position: absolute;
+	z-index: 1;
+	top: -4px;
+	left: 50%;
+	width: 100vw;
+	height: 9px;
+	margin-left: -50vw;
+	background: var(--crosses);
+	background-repeat: no-repeat;
+	pointer-events: none;
+}
+
+.page-part h2 {
+	font-size: 24px;
+	font-weight: 550;
+	line-height: 30px;
+	letter-spacing: -0.02em;
+	text-wrap: balance;
+}
+
+.page-part .sub {
+	max-width: 600px;
+	margin-top: 8px;
+	color: var(--fg-muted);
+	font-size: 16px;
+	line-height: 1.65;
+	text-wrap: pretty;
+}
+
+.page-part .sub + .sub {
+	margin-top: 12px;
+}
+
+.page-part .sub a {
+	color: var(--fg-default);
+	text-underline-offset: 3px;
+}
+
+/* A fact's arrow opens the page it was read from, on the end of its sentence's last line. */
+.source-arrow {
+	position: relative;
+	display: inline-flex;
+	margin-left: 4px;
+	color: var(--fg-faint);
+}
+
+.source-arrow svg {
+	width: 10px;
+	height: 10px;
+}
+
+.source-arrow::after {
+	content: '';
+	position: absolute;
+	inset: -8px;
+}
+
+/* A row of toggles. Instant, as every hover here. */
+.pick {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 24px;
+}
+
+.pick button {
+	height: 28px;
+	padding: 0 11px;
+	border: 0;
+	border-radius: 999px;
+	background: transparent;
+	box-shadow: inset 0 0 0 1px var(--border-subtle);
+	color: var(--fg-muted);
+	font: inherit;
+	font-size: 13px;
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+	cursor: pointer;
+}
+
+.pick button[aria-pressed='true'] {
+	background: var(--surface-hover);
+	box-shadow: none;
+	color: var(--fg-default);
+}
+
+.pick button:disabled {
+	cursor: default;
+}
+
+/* A list a line, each after a dot, as the benchmark draws a mark. */
+.lines {
+	display: grid;
+	gap: 10px;
+	max-width: 640px;
+	margin-top: 20px;
+	color: var(--fg-muted);
+	font-size: 15px;
+	line-height: 1.6;
+	list-style: none;
+}
+
+.lines li {
+	position: relative;
+	padding-left: 16px;
+	text-wrap: pretty;
+}
+
+.lines li::before {
+	content: '';
+	position: absolute;
+	top: 10px;
+	left: 0;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--fg-faint);
+}
+
+.fine-print {
+	max-width: 640px;
+	margin-top: 16px;
+	color: var(--fg-faint);
+	font-size: 13px;
+	line-height: 1.6;
+	text-wrap: pretty;
+}
+
+.sources {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 6px 48px;
+	margin-top: 20px;
+	color: var(--fg-muted);
+	font-size: 13px;
+	line-height: 1.6;
+	list-style: none;
+	counter-reset: n;
+}
+
+.sources li {
+	display: grid;
+	grid-template-columns: 28px minmax(0, 1fr);
+	counter-increment: n;
+}
+
+.sources li::before {
+	content: counter(n, decimal-leading-zero);
+	color: var(--fg-faint);
+	font-family: var(--mono);
+	font-size: 12px;
+	line-height: 21px;
+}
+
+.sources a {
+	overflow-wrap: anywhere;
+	text-decoration-color: var(--border-strong);
+	text-underline-offset: 3px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.page-head .kicker a:hover,
+	.source-arrow:hover,
+	.sources a:hover {
+		color: var(--fg-default);
+	}
+
+	.pick button:enabled:hover {
+		box-shadow: inset 0 0 0 1px var(--border-default);
+		color: var(--fg-default);
+	}
+
+	.pick button[aria-pressed='true']:hover {
+		box-shadow: none;
+	}
+}
+
+@media (max-width: 1023px) {
+	.sources {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+@media (max-width: 859px) {
+	.page-head {
+		padding-block: 72px 48px;
+	}
+
+	.page-head .lede {
+		font-size: 17px;
+	}
+
+	.page-part {
+		padding-block: 44px;
+	}
+}
+
 @property --tip-armed {
 	syntax: '<number>';
 	inherits: true;

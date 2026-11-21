@@ -3,23 +3,22 @@
      names other recorders, in plain text; a recorder with no take yet shows in the table alone. -->
 <script lang="ts">
 	import { replaceState } from '$app/navigation';
-	import { asset } from '$app/paths';
+	import { asset, resolve } from '$app/paths';
 	import Arrow from '#lib/Arrow.svelte';
 	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { CHECKED, compare, compared, FACTS, RECORDERS, SECONDS, SHOWN, type Platform } from '#lib/benchmark.ts';
+	import { CHECKED_ON, compare, compared, FACTS, GROUPS, RECORDERS, SECONDS, SHOWN } from '#lib/benchmark.ts';
+	import Cost from '#lib/Cost.svelte';
+	import Facts from '#lib/Facts.svelte';
+	import Ending from '#lib/Ending.svelte';
 	import Head from '#lib/Head.svelte';
-	import { GITHUB_URL } from '#lib/links.ts';
+	import { GITHUB_URL, GUIDES, SITE_URL } from '#lib/links.ts';
+	import { READING } from '#lib/questions.ts';
+	import { VERSUS } from '#lib/versus.ts';
 	import Media from '#lib/Media.svelte';
 
 	const takes = RECORDERS.filter((recorder) => recorder.take);
 	const count = RECORDERS.length;
-	const checked = new Date(`${CHECKED}T00:00:00Z`).toLocaleDateString('en-US', {
-		month: 'long',
-		day: 'numeric',
-		year: 'numeric',
-		timeZone: 'UTC',
-	});
 	const SCRIPT = `${GITHUB_URL}/tree/main/scripts/benchmark`;
 
 	// The recorders in the table, one a column, kept in the address. Every recorder is in the page; the rest only
@@ -30,64 +29,76 @@
 		shown.clear();
 		for (const id of compared(location.search)) shown.add(id);
 	});
+	const keep = () => replaceState(`${location.pathname}${compare(shown, location.search)}${location.hash}`, {});
 	function pick(id: string) {
 		if (shown.has(id)) shown.delete(id);
 		else shown.add(id);
-		replaceState(`${location.pathname}${compare(shown, location.search)}${location.hash}`, {});
+		keep();
 	}
 
-	// The row and the column of the cell under the mouse or holding the focus, as the table counts them: row 0 is the
-	// head, column 0 the facts. A finger lights nothing; it only scrolls.
-	let hot = $state<Readonly<{ row: number; col: number }>>();
-	function aim(event: Event) {
-		if (event instanceof PointerEvent && event.pointerType === 'touch') return;
-		const cell = event.target instanceof Element ? event.target.closest('th, td') : null;
-		const row = cell?.parentElement;
-		hot =
-			cell instanceof HTMLTableCellElement && row instanceof HTMLTableRowElement
-				? { row: row.rowIndex, col: cell.cellIndex }
-				: undefined;
+	// A quick pick shows exactly its group, and is pressed while the table shows that group and no other recorder.
+	const quick = [
+		{ id: 'all', label: `All ${count}`, ids: RECORDERS.map(({ id }) => id) },
+		...GROUPS.map(({ id, label, has }) => ({ id, label, ids: RECORDERS.filter(has).map(({ id }) => id) })),
+	];
+	const only = (ids: readonly string[]) => ids.length === shown.size && ids.every((id) => shown.has(id));
+	function show(ids: readonly string[]) {
+		shown.clear();
+		for (const id of ids) shown.add(id);
+		keep();
 	}
-	const cool = () => (hot = undefined);
 
-	// A hyphen holds its line together, so AGPL-3.0 never breaks after AGPL, and a number keeps the word after it, so
-	// 5 min never ends one line and starts the next.
-	const whole = (text: string) => text.replaceAll('-', '\u2011').replace(/(\d) /gu, '$1\u00a0');
+	// The cost chart follows the table: the recorders shown, in the table's order, with the fine print of their plans.
+	const costed = $derived(RECORDERS.filter(({ id }) => shown.has(id)));
+	const fine = $derived(costed.flatMap(({ plans }) => plans.flatMap(({ fine }) => (fine ? [fine] : []))));
 
-	// Each platform's glyph on a 24-unit grid, from Simple Icons (CC0), so a column of them reads at a glance. Apple's
-	// marks both of its systems; the word beside it tells them apart.
-	const APPLE = 'M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701';
-	const GLYPHS: Readonly<Record<Platform, string>> = {
-		macOS: APPLE,
-		iOS: APPLE,
-		Windows: 'M0 0h11.377v11.372H0zm12.623 0H24v11.372H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623',
-		Linux:
-			'M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2zm1.37 1.706c.332 0 .733.065 1.216.399.293.2.523.269 1.052.468h.003c.255.136.405.266.478.399v-.131a.571.571 0 01.016.47c-.123.31-.516.643-1.063.842v.002c-.268.135-.501.333-.775.465-.276.135-.588.292-1.012.267a1.139 1.139 0 01-.448-.067 3.566 3.566 0 01-.322-.198c-.195-.135-.363-.332-.612-.465v-.005h-.005c-.4-.246-.616-.512-.686-.71-.07-.268-.005-.47.193-.6.224-.135.38-.271.483-.336.104-.074.143-.102.176-.131h.002v-.003c.169-.202.436-.47.839-.601.139-.036.294-.065.466-.065zm2.8 2.142c.358 1.417 1.196 3.475 1.735 4.473.286.534.855 1.659 1.102 3.024.156-.005.33.018.513.064.646-1.671-.546-3.467-1.089-3.966-.22-.2-.232-.335-.123-.335.59.534 1.365 1.572 1.646 2.757.13.535.16 1.104.021 1.67.067.028.135.06.205.067 1.032.534 1.413.938 1.23 1.537v-.043c-.06-.003-.12 0-.18 0h-.016c.151-.467-.182-.825-1.065-1.224-.915-.4-1.646-.336-1.77.465-.008.043-.013.066-.018.135-.068.023-.139.053-.209.064-.43.268-.662.669-.793 1.187-.13.533-.17 1.156-.205 1.869v.003c-.02.334-.17.838-.319 1.35-1.5 1.072-3.58 1.538-5.348.334a2.645 2.645 0 00-.402-.533 1.45 1.45 0 00-.275-.333c.182 0 .338-.03.465-.067a.615.615 0 00.314-.334c.108-.267 0-.697-.345-1.163-.345-.467-.931-.995-1.788-1.521-.63-.4-.986-.87-1.15-1.396-.165-.534-.143-1.085-.015-1.645.245-1.07.873-2.11 1.274-2.763.107-.065.037.135-.408.974-.396.751-1.14 2.497-.122 3.854a8.123 8.123 0 01.647-2.876c.564-1.278 1.743-3.504 1.836-5.268.048.036.217.135.289.202.218.133.38.333.59.465.21.201.477.335.876.335.039.003.075.006.11.006.412 0 .73-.134.997-.268.29-.134.52-.334.74-.4h.005c.467-.135.835-.402 1.044-.7zm2.185 8.958c.037.6.343 1.245.882 1.377.588.134 1.434-.333 1.791-.765l.211-.01c.315-.007.577.01.847.268l.003.003c.208.199.305.53.391.876.085.4.154.78.409 1.066.486.527.645.906.636 1.14l.003-.007v.018l-.003-.012c-.015.262-.185.396-.498.595-.63.401-1.746.712-2.457 1.57-.618.737-1.37 1.14-2.036 1.191-.664.053-1.237-.2-1.574-.898l-.005-.003c-.21-.4-.12-1.025.056-1.69.176-.668.428-1.344.463-1.897.037-.714.076-1.335.195-1.814.12-.465.308-.797.641-.984l.045-.022zm-10.814.049h.01c.053 0 .105.005.157.014.376.055.706.333 1.023.752l.91 1.664.003.003c.243.533.754 1.064 1.189 1.637.434.598.77 1.131.729 1.57v.006c-.057.744-.48 1.148-1.125 1.294-.645.135-1.52.002-2.395-.464-.968-.536-2.118-.469-2.857-.602-.369-.066-.61-.2-.723-.4-.11-.2-.113-.602.123-1.23v-.004l.002-.003c.117-.334.03-.752-.027-1.118-.055-.401-.083-.71.043-.94.16-.334.396-.4.69-.533.294-.135.64-.202.915-.47h.002v-.002c.256-.268.445-.601.668-.838.19-.201.38-.336.663-.336zm7.159-9.074c-.435.201-.945.535-1.488.535-.542 0-.97-.267-1.28-.466-.154-.134-.28-.268-.373-.335-.164-.134-.144-.333-.074-.333.109.016.129.134.199.2.096.066.215.2.36.333.292.2.68.467 1.167.467.485 0 1.053-.267 1.398-.466.195-.135.445-.334.648-.467.156-.136.149-.267.279-.267.128.016.034.134-.147.332a8.097 8.097 0 01-.69.468zm-1.082-1.583V5.64c-.006-.02.013-.042.029-.05.074-.043.18-.027.26.004.063 0 .16.067.15.135-.006.049-.085.066-.135.066-.055 0-.092-.043-.141-.068-.052-.018-.146-.008-.163-.065zm-.551 0c-.02.058-.113.049-.166.066-.047.025-.086.068-.14.068-.05 0-.13-.02-.136-.068-.01-.066.088-.133.15-.133.08-.031.184-.047.259-.005.019.009.036.03.03.05v.02h.003z',
-		Chrome:
-			'M12 0C8.21 0 4.831 1.757 2.632 4.501l3.953 6.848A5.454 5.454 0 0 1 12 6.545h10.691A12 12 0 0 0 12 0zM1.931 5.47A11.943 11.943 0 0 0 0 12c0 6.012 4.42 10.991 10.189 11.864l3.953-6.847a5.45 5.45 0 0 1-6.865-2.29zm13.342 2.166a5.446 5.446 0 0 1 1.45 7.09l.002.001h-.002l-5.344 9.257c.206.01.413.016.621.016 6.627 0 12-5.373 12-12 0-1.54-.29-3.011-.818-4.364zM12 16.364a4.364 4.364 0 1 1 0-8.728 4.364 4.364 0 0 1 0 8.728Z',
-		Android:
-			'M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z',
-	};
+	// Each recorder but Grip has its own page beside Grip, and the list names them in the table's order.
+	const pages = RECORDERS.flatMap((recorder) => {
+		const versus = VERSUS.find(({ id }) => id === recorder.id);
+		return versus ? [{ ...versus, name: recorder.name, href: resolve('/(site)/vs/[id]', { id: versus.id }) }] : [];
+	});
+	const jsonld = [
+		{
+			'@type': 'BreadcrumbList',
+			itemListElement: [
+				{ '@type': 'ListItem', position: 1, name: 'Grip', item: SITE_URL },
+				{ '@type': 'ListItem', position: 2, name: 'Benchmark', item: `${SITE_URL}/benchmark` },
+			],
+		},
+		{
+			'@type': 'ItemList',
+			name: 'Mac screen recorders compared',
+			numberOfItems: count,
+			itemListElement: RECORDERS.map(({ id, name }, i) => ({
+				'@type': 'ListItem',
+				position: i + 1,
+				name,
+				url: id === 'grip' ? SITE_URL : `${SITE_URL}/vs/${id}`,
+			})),
+		},
+	];
 </script>
 
 <Head
-	title="Screen recorders for the Mac, side by side - Grip"
-	description="{count} screen recorders for the Mac compared: price, license, platforms, and limits, each fact linked to its source."
+	title="Mac screen recorders compared, with sources - Grip"
+	description="{count} Mac screen recorders compared on price, updates, license, platforms, account, and limits, from Grip to Screen Studio, each fact linked to its source."
 	path="/benchmark"
+	{jsonld}
 />
 
-<section class="wrap head" data-place="benchmark">
+<section class="wrap page-head" data-place="benchmark">
 	<p class="kicker">Benchmark</p>
-	<h1>Screen recorders for the Mac, side by side<span>Every fact links to its source.</span></h1>
+	<h1>Mac screen recorders compared <span>Every fact links to its source.</span></h1>
 	<p class="lede">
-		Does the world need another screen recorder? Judge for yourself. Here are {count} of them: what each
-		costs, where it runs, and what it asks of you{#if takes.length}, and what each makes of the same
-			{SECONDS} seconds{/if}.
+		{count} screen recorders for the Mac, side by side on {FACTS.length} public facts: what each costs, how long
+		its updates last, its license, where it runs, and what it asks of you. Each fact is read from its maker’s
+		own pages on {CHECKED_ON}, and links to them. {#if takes.length}Each recorder also films the same
+			{SECONDS} seconds.{:else}It holds no measurements and no recordings: only what the makers publish.{/if}
 	</p>
 </section>
 
 {#if takes.length}
-	<section id="takes" class="wrap part" aria-labelledby="takes-title">
+	<section id="takes" class="wrap page-part" aria-labelledby="takes-title">
 		<h2 id="takes-title">One take, {takes.length} recorders</h2>
 		<p class="sub">
 			A script plays the same clicks, typing, and scroll on the same page. Each recorder films it at the
@@ -114,13 +125,18 @@
 	</section>
 {/if}
 
-<section id="facts" class="wrap part" aria-labelledby="facts-title">
+<section id="facts" class="wrap page-part" aria-labelledby="facts-title">
 	<h2 id="facts-title">The facts</h2>
-	<p class="sub">Read from each maker’s own pages on {checked}.</p>
+	<p class="sub">Read from each maker’s own pages on {CHECKED_ON}.</p>
+	<div class="pick quick" role="group" aria-label="Recorders to show">
+		<span>Show</span>
+		{#each quick as { id, label, ids } (id)}
+			<button type="button" aria-pressed={only(ids)} onclick={() => show(ids)}>{label}</button>
+		{/each}
+	</div>
 	<div class="pick" role="group" aria-label="Recorders to compare">
 		{#each RECORDERS as { id, name } (id)}
 			<button
-				class="chip"
 				type="button"
 				aria-pressed={shown.has(id)}
 				disabled={shown.size === 1 && shown.has(id)}
@@ -128,59 +144,48 @@
 			>
 		{/each}
 	</div>
-	<div class="scroll">
-		<table style:--n={shown.size} onpointerover={aim} onpointerleave={cool} onfocusin={aim} onfocusout={cool}>
-			<thead>
-				<tr>
-					<td></td>
-					{#each RECORDERS as { id, name, url }, col (id)}
-						<th scope="col" hidden={!shown.has(id)} class:hot={hot?.col === col + 1}
-							><a href={url} rel="noopener">{name}</a></th
-						>
-					{/each}
-				</tr>
-			</thead>
-			<tbody>
-				{#each FACTS as { key, label, kind, good, bad }, row (key)}
-					<tr class:hot={hot?.row === row + 1}>
-						<th scope="row">{label}</th>
-						{#each RECORDERS as { id, name, facts }, col (id)}
-							{@const { value, note, source } = facts[key]}
-							<!-- The arrow to the source ends the cell's last line. -->
-							{#snippet link()}
-								&NoBreak;<a
-									class="source"
-									href={source}
-									rel="noopener"
-									aria-label="Source: {name}, {label.toLowerCase()}"><Arrow /></a
-								>
-							{/snippet}
-							<td class={kind} hidden={!shown.has(id)} class:hot={hot?.col === col + 1}>
-								{#if typeof value === 'string'}
-									<span class="value" class:good={good?.includes(value)} class:bad={bad?.includes(value)}
-										>{whole(value)}{#if !note}{@render link()}{/if}</span
-									>
-								{:else}
-									<span class="value"
-										>{#each value as platform, i (platform)}<span class="platform"
-													><svg viewBox="0 0 24 24" aria-hidden="true"><path d={GLYPHS[platform]} /></svg
-													>{platform}{#if !note && i === value.length - 1}{@render link()}{/if}</span
-												>{/each}</span
-									>
-								{/if}
-								{#if note}
-									<span class="note">{whole(note)}{@render link()}</span>
-								{/if}
-							</td>
-						{/each}
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<Facts recorders={RECORDERS} {shown} />
 </section>
 
-<section id="method" class="wrap part" aria-labelledby="method-title">
+<section id="cost" class="wrap page-part" aria-labelledby="cost-title">
+	<h2 id="cost-title">What the next years cost</h2>
+	<p class="sub">
+		Recording for work from today, every way each recorder in the table lists to pay. Pick recorders above, and
+		move the slider to change the years.
+	</p>
+	<Cost ids={costed.map(({ id }) => id)} scale={RECORDERS.map(({ id }) => id)} />
+	{#each fine as line (line)}
+		<p class="fine-print">{line}</p>
+	{/each}
+</section>
+
+<section id="versus" class="wrap page-part" aria-labelledby="versus-title">
+	<h2 id="versus-title">Grip beside each one</h2>
+	<p class="sub">One page a recorder: both side by side, who should pick which, and the questions people ask.</p>
+	<ul class="versus">
+		{#each pages as { id, name, faint, href } (id)}
+			<li>
+				<a class="arrow-link" {href}>Grip vs {name}<Arrow class="ahead" /></a>
+				<p>{faint}</p>
+			</li>
+		{/each}
+	</ul>
+</section>
+
+<section id="guides" class="wrap page-part" aria-labelledby="guides-title">
+	<h2 id="guides-title">Guides</h2>
+	<p class="sub">One question each, answered from these facts. <a href={GUIDES}>Every guide</a></p>
+	<ul class="versus reading">
+		{#each READING as { slug, h1, line } (slug)}
+			<li>
+				<a class="arrow-link" href="{GUIDES}/{slug}">{h1}<Arrow class="ahead" /></a>
+				<p>{line}</p>
+			</li>
+		{/each}
+	</ul>
+</section>
+
+<section id="method" class="wrap page-part" aria-labelledby="method-title">
 	<h2 id="method-title">How this is made</h2>
 	<ul class="rules">
 		{#if takes.length}
@@ -212,90 +217,12 @@
 	</ul>
 </section>
 
+<Ending
+	title="Record the next one in Grip."
+	sub="Free for work, with no account and no watermark. Every update is free too."
+/>
+
 <style>
-	.head {
-		padding-block: 96px 64px;
-	}
-
-	.kicker {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		margin-bottom: 28px;
-		color: var(--fg-secondary);
-		font-family: var(--mono);
-		font-size: 12px;
-		line-height: 16px;
-	}
-
-	.kicker::after {
-		content: '';
-		flex: 1;
-		height: 1px;
-		background: var(--border-default);
-	}
-
-	h1 {
-		font-size: clamp(34px, 4.6vw, 52px);
-		font-weight: 550;
-		line-height: 1.06;
-		letter-spacing: -0.035em;
-		text-wrap: balance;
-	}
-
-	h1 span {
-		display: block;
-		color: var(--fg-faint);
-	}
-
-	.lede {
-		max-width: 640px;
-		margin-top: 24px;
-		color: var(--fg-muted);
-		font-size: 19px;
-		line-height: 1.55;
-		text-wrap: pretty;
-	}
-
-	.part {
-		position: relative;
-		padding-block: 56px;
-	}
-
-	.part:last-child {
-		padding-bottom: 96px;
-	}
-
-	.part::before {
-		content: '';
-		position: absolute;
-		z-index: 1;
-		top: -4px;
-		left: 50%;
-		width: 100vw;
-		height: 9px;
-		margin-left: -50vw;
-		background: var(--crosses);
-		background-repeat: no-repeat;
-		pointer-events: none;
-	}
-
-	h2 {
-		font-size: 24px;
-		font-weight: 550;
-		line-height: 30px;
-		letter-spacing: -0.02em;
-	}
-
-	.sub {
-		max-width: 560px;
-		margin-top: 8px;
-		color: var(--fg-muted);
-		font-size: 16px;
-		line-height: 1.65;
-		text-wrap: pretty;
-	}
-
 	.takes {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -321,226 +248,50 @@
 		font-weight: 550;
 	}
 
-	/* One toggle a recorder: pressed, its column is in the table. Instant, as every hover here. */
-	.pick {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		margin-top: 24px;
+	/* The quick picks: a second, lighter row above the recorders, with no ring until one is in hand. */
+	.quick {
+		align-items: center;
+		gap: 4px;
 	}
 
-	.chip {
-		height: 28px;
-		padding: 0 11px;
-		border: 0;
-		border-radius: 999px;
-		background: transparent;
-		box-shadow: inset 0 0 0 1px var(--border-subtle);
-		color: var(--fg-muted);
-		font: inherit;
-		font-size: 13px;
-		font-weight: 500;
-		cursor: pointer;
+	.quick + .pick {
+		margin-top: 12px;
 	}
 
-	.chip[aria-pressed='true'] {
-		background: var(--surface-hover);
-		box-shadow: none;
-		color: var(--fg-default);
-	}
-
-	.chip:disabled {
-		cursor: default;
-	}
-
-	/* The table scrolls sideways inside its own box where the column is too narrow for it, out to the page's edges,
-	   each fact's name held at the left. The recorders share the rest evenly, none narrower than it reads well, and a
-	   few of them no wider either. Each cell pads both sides, so a lit row or column has room around its text, and
-	   the table reaches past the column by that much to keep its text on the column's edges. */
-	.scroll {
-		--cell: 10px;
-		margin: 20px calc(-1 * var(--pad)) 0;
-		padding-inline: var(--pad);
-		overflow-x: auto;
-		isolation: isolate;
-	}
-
-	table {
-		--label: 150px;
-		width: min(calc(100% + 2 * var(--cell)), calc(var(--label) + var(--n) * 240px));
-		min-width: calc(var(--label) + var(--n) * 150px);
-		margin-inline: calc(-1 * var(--cell));
-		border-collapse: collapse;
-		table-layout: fixed;
-	}
-
-	th,
-	td {
-		padding: 14px var(--cell);
-		border-top: 1px solid var(--border-subtle);
-		text-align: left;
-		vertical-align: top;
-	}
-
-	thead th,
-	thead td {
-		border-top: 0;
-		padding-top: 10px;
-	}
-
-	thead th a {
-		color: var(--fg-default);
-		font-size: 15px;
-		font-weight: 550;
-		line-height: 20px;
-		text-decoration: none;
-	}
-
-	/* Above the source links, which are positioned too, and solid out to the box's edge, so nothing that scrolls
-	   under the facts' names shows in the padding beside them; the box isolates them, so the page's rails stay on
-	   top. */
-	thead td,
-	tbody th {
-		position: sticky;
-		z-index: 1;
-		left: calc(-1 * var(--cell));
-		background: var(--surface-root);
-	}
-
-	thead td {
-		width: var(--label);
-	}
-
-	thead td::before,
-	tbody th::before {
-		content: '';
-		position: absolute;
-		inset: -1px 100% 0 calc(var(--cell) - var(--pad));
-		background: var(--surface-root);
-	}
-
-	/* A fact's name on the line of its values' first. */
-	tbody th {
-		color: var(--fg-secondary);
+	.quick span {
+		margin-right: 6px;
+		color: var(--fg-faint);
 		font-family: var(--mono);
 		font-size: 12px;
-		font-weight: 400;
-		line-height: 20px;
+		line-height: 16px;
 	}
 
-	/* Every cell of a row shows its fact one way (src/lib/benchmark.ts): the value on top, read at a glance, and
-	   under it a quieter note. */
-	tbody td {
-		color: var(--fg-prose);
-		font-size: 13px;
-		line-height: 20px;
+	.quick button {
+		height: 24px;
+		padding: 0 9px;
+		box-shadow: none;
+		font-size: 12px;
 	}
 
-	.value,
-	.note {
-		display: block;
+	.versus {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 28px 32px;
+		margin-top: 24px;
+		list-style: none;
+	}
+
+	.versus p {
+		margin-top: 4px;
+		color: var(--fg-muted);
+		font-size: 14px;
+		line-height: 1.55;
 		text-wrap: pretty;
 	}
 
-	/* A note that takes two lines splits them evenly, so no word is left alone on the second. */
-	.note {
-		margin-top: 2px;
-		text-wrap: balance;
-		color: var(--fg-muted);
-		font-size: 12px;
-		line-height: 18px;
-	}
-
-	.price .value {
-		color: var(--fg-default);
-		font-size: 15px;
-		font-weight: 550;
-	}
-
-	.year .value {
-		color: var(--fg-secondary);
-		font-family: var(--mono);
-	}
-
-	/* A mark's dot sits on its first line, and its note lines up with its words. */
-	.mark .value,
-	.mark .note {
-		position: relative;
-		padding-left: 14px;
-	}
-
-	.mark .value {
-		white-space: nowrap;
-	}
-
-	.mark .value::before {
-		content: '';
-		position: absolute;
-		top: 7px;
-		left: 0;
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background: var(--fg-faint);
-	}
-
-	.mark .good::before {
-		background: var(--success);
-	}
-
-	.mark .bad::before {
-		background: var(--error-content);
-	}
-
-	/* One platform a line, its glyph and its name with no box around them: the glyphs set the platforms apart, and a
-	   column of them reads at a glance, where a box around each was one more line to read past. */
-	.platform {
-		display: flex;
-		gap: 5px;
-		align-items: center;
-		white-space: nowrap;
-	}
-
-	.platform svg {
-		flex: none;
-		width: 12px;
-		height: 12px;
-		fill: var(--fg-secondary);
-	}
-
-	/* The row and the column in hand, and brightest the cell where they cross. Instant, as every hover here. */
-	.hot,
-	tbody tr.hot > * {
-		background: var(--surface-elevated);
-	}
-
-	tr.hot > th {
-		color: var(--fg-default);
-	}
-
-	tr.hot > td.hot {
-		background: var(--surface-hover);
-		color: var(--fg-prose);
-	}
-
-	.source {
-		position: relative;
-		display: inline-flex;
-		margin-left: 5px;
-		color: var(--fg-faint);
-		vertical-align: 1px;
-	}
-
-	.source :global(svg) {
-		width: 9px;
-		height: 9px;
-	}
-
-	/* A pointer or a finger gets more of the link than its 9px arrow. */
-	.source::after {
-		content: '';
-		position: absolute;
-		inset: -8px;
+	/* A guide's name is a sentence, so three to a row. */
+	.versus.reading {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 
 	.rules {
@@ -569,52 +320,22 @@
 		text-underline-offset: 3px;
 	}
 
-	@media (hover: hover) and (pointer: fine) {
-		thead th a:hover,
-		.source:hover {
-			color: var(--brand);
-		}
-
-		.chip:enabled:hover {
-			box-shadow: inset 0 0 0 1px var(--border-default);
-			color: var(--fg-default);
-		}
-
-		/* An arrow in every cell is noise: a mouse finds the one in the cell it points at, and a finger sees them all. */
-		.source {
-			opacity: 0;
-		}
-
-		tr.hot > td.hot .source,
-		.source:focus-visible {
-			opacity: 1;
-		}
-	}
-
 	@media (max-width: 859px) {
-		.head {
-			padding-block: 72px 48px;
-		}
-
-		.lede {
-			font-size: 17px;
-		}
-
-		.part {
-			padding-block: 44px;
-		}
-
-		.part:last-child {
-			padding-bottom: 72px;
-		}
-
 		.takes,
 		.rules {
 			grid-template-columns: minmax(0, 1fr);
 		}
 
-		table {
-			--label: 120px;
+		.versus,
+		.versus.reading {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+
+	@media (max-width: 559px) {
+		.versus,
+		.versus.reading {
+			grid-template-columns: minmax(0, 1fr);
 		}
 	}
 </style>

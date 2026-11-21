@@ -4,11 +4,22 @@
 	// cache an image by its URL, so a new image is never served from an old one's cache.
 	import og from './og.jpg';
 
-	type Props = { title: string; description: string; path: string; noindex?: boolean };
+	// `jsonld` is the page's structured data, schema.org objects without their `@context`.
+	type Props = {
+		title: string;
+		description: string;
+		path: string;
+		noindex?: boolean;
+		jsonld?: readonly Readonly<Record<string, unknown>>[];
+	};
 
-	let { title, description, path, noindex = false }: Props = $props();
+	let { title, description, path, noindex = false, jsonld = [] }: Props = $props();
 
 	const canonical = $derived(`${SITE_URL}${path}`);
+	// "<" is escaped so that no text in the data can close the script element.
+	const data = $derived(
+		JSON.stringify({ '@context': 'https://schema.org', '@graph': jsonld }).replaceAll('<', '\\u003c'),
+	);
 </script>
 
 <svelte:head>
@@ -32,4 +43,7 @@
 		content="Grip's page: Professional recordings and screenshots within seconds. Below, Grip's editor playing a take of a deployments dashboard, its glass loupe over a build that is Ready."
 	/>
 	<meta name="twitter:card" content="summary_large_image" />
+	{#if jsonld.length}
+		{@html `<script type="application/ld+json">${data}</script>`}
+	{/if}
 </svelte:head>
