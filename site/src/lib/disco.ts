@@ -1,14 +1,14 @@
 // The strip's mirror ball and the light it throws, drawn every frame from one model: two spotlights on a turning ball
 // of mirror tiles, each tilted a hair. The ball shows what each tile reflects toward you: the strip it hangs from, its
-// colors flowing as the strip's do, over a neon grid. The light shows where each tile sends a spotlight: a shaft through
-// haze to a spot on the page, or to the hero's seam, which stops it and lights up. Each shaft and spot takes the seam's
+// colors flowing as the strip's do, over a neon grid. The light shows where each tile sends a spotlight: a laser beam to
+// a spot on the page, or to the hero's seam, which stops it and lights up. Each shaft and spot takes the seam's
 // color under where it lands, so the light is the seam's gradient fanned out.
 // The light sits behind the hero's text and buttons and in front of what is above the hero, or in front of all of it
 // while the page is dimmed behind a dialog; the seam's light and the ball's glints sit in front of everything.
 
 type RGB = number[];
 
-// The look, tuned by eye: the ball's tiles, its turn in ms, and the light's strength, shafts, fan, and haze.
+// The look, tuned by eye: the ball's tiles, its turn in ms, and the light's strength, beams, and fan.
 export type Tuning = Readonly<{
 	rows: number;
 	grout: number;
@@ -273,7 +273,7 @@ export function disco(parts: Parts, V: Tuning): () => void {
 		g.fillRect(0, 0, 64, 64);
 		return el;
 	})();
-	// A shaft of light in haze: thin at the ball, a little wider and fainter where it lands. Drawn once in white, then
+	// A laser beam: thin at the ball, a little wider and fainter where it lands. Drawn once in white, then
 	// once in each color.
 	const SHAFT = (() => {
 		const [w, h] = [256, 64];
@@ -304,40 +304,9 @@ export function disco(parts: Parts, V: Tuning): () => void {
 		g.fillRect(0, 0, el.width, el.height);
 		return el;
 	});
-	// The haze the shafts shine through: tileable smoke, drifting.
-	const SMOKE = (() => {
-		const S = 128;
-		const el = canvas(S, S);
-		const g = context(el);
-		const im = g.createImageData(S, S);
-		const lerp = (a: number, b: number, k: number): number => a + (b - a) * k;
-		const val = (x: number, y: number, f: number): number => {
-			const [xi, yi] = [Math.floor(x), Math.floor(y)];
-			const [xf, yf] = [x - xi, y - yi];
-			const h = (a: number, b: number): number => hash((a % f) + f * 97, (b % f) + f * 31);
-			const [sx, sy] = [xf * xf * (3 - 2 * xf), yf * yf * (3 - 2 * yf)];
-			return lerp(lerp(h(xi, yi), h(xi + 1, yi), sx), lerp(h(xi, yi + 1), h(xi + 1, yi + 1), sx), sy);
-		};
-		for (let j = 0; j < S; j++)
-			for (let i = 0; i < S; i++) {
-				let n = 0;
-				let amp = 0.5;
-				for (const f of [4, 8, 16]) {
-					n += val((i / S) * f, (j / S) * f, f) * amp;
-					amp /= 2;
-				}
-				const k = (j * S + i) * 4;
-				im.data[k] = im.data[k + 1] = im.data[k + 2] = 255;
-				im.data[k + 3] = 255 * (0.3 + 0.7 * Math.min(1, Math.max(0, (n / 0.875 - 0.28) / 0.5)) ** 1.4);
-			}
-		g.putImageData(im, 0, 0);
-		return el;
-	})();
-
 	const front = context(frontEl);
 	const back = context(backEl);
 	const light = context(canvas(1, 1));
-	const smoke = light.createPattern(SMOKE, 'repeat');
 	const SCALE = DPR;
 	let W = 0;
 	let H = 0;
@@ -494,18 +463,10 @@ export function disco(parts: Parts, V: Tuning): () => void {
 				light.globalAlpha = Math.min(1, a * V.beamAlpha * glow);
 				toward(light, SHAFTS[hue(ex)], x0, y0, ex, ey, len, V.width[0] + len * V.width[1]);
 			}
-		// The haze around the ball, lit by all of it.
+		// The glow around the ball, lit by all of it.
 		light.globalAlpha = Math.min(1, V.halo * glow);
 		light.drawImage(HALO, cx - rad * 3, cy - rad * 2, rad * 6, rad * 6);
-		// The smoke drifts up and across; a shaft shows only where it is. The spots land on the page, past the smoke.
-		light.globalCompositeOperation = 'destination-in';
-		smoke?.setTransform(new DOMMatrix().scale(SCALE).translate(t / 90, -t / 60).scale(3.2));
-		light.setTransform(1, 0, 0, 1, 0, 0);
-		light.globalAlpha = 1;
-		if (smoke) light.fillStyle = smoke;
-		light.fillRect(0, 0, light.canvas.width, light.canvas.height);
-		light.setTransform(SCALE, 0, 0, SCALE, 0, 0);
-		light.globalCompositeOperation = 'lighter';
+		// The spots land on the page.
 		for (const s of seen) spot(...s);
 		// Above the hero the light is in front; in the hero it is behind the text and buttons, unless all of it is in
 		// front. Each copy is whole: the seam's last hit left its own strength on `front`.
