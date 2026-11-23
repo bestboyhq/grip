@@ -28,6 +28,8 @@ export type Tuning = Readonly<{
 	// A shaft's softness across, in px of its 64 px sprite: at the ball, and how much more where it lands.
 	sigma: readonly [number, number];
 	halo: number;
+	// How long the spotlights take to come on once the ball is down, in ms; they go off in 160.
+	rise: number;
 }>;
 
 export type Parts = Readonly<{
@@ -179,8 +181,8 @@ export function disco(parts: Parts, V: Tuning): () => void {
 	const all = rows.flatMap((row) => row.tiles);
 	const GAIN = V.gain * Math.sqrt(150 / all.length); // about the same light, whatever the tile count
 
-	// Each tile's normal as you see it, and its color, at turn `theta`.
-	const turn = (theta: number, t: number, g: number): void => {
+	// Each tile's normal as you see it, and its color, at turn `theta`, with the spotlights at `lit` of their strength.
+	const turn = (theta: number, t: number, g: number, lit: number): void => {
 		const [c, s, ct, st] = [Math.cos(theta), Math.sin(theta), Math.cos(TILT), Math.sin(TILT)];
 		for (const f of all) {
 			const cl = Math.cos(f.lat);
@@ -195,7 +197,7 @@ export function disco(parts: Parts, V: Tuning): () => void {
 			const e = env(R, t, g);
 			const d = Math.max(...LIGHTS.map((L) => R[0] * L[0] + R[1] * L[1] + R[2] * L[2]), 0);
 			f.spec = d ** V.specPow;
-			const hot = f.spec * 900 + d ** 40 * 50;
+			const hot = (f.spec * 900 + d ** 40 * 50) * lit; // the spotlights' glare, only while they are on
 			f.color = [e[0] * f.shade + hot, e[1] * f.shade + hot, e[2] * f.shade + hot];
 		}
 	};
@@ -399,22 +401,33 @@ export function disco(parts: Parts, V: Tuning): () => void {
 		front.drawImage(STAR, x - z / 2, y - z / 2, z, z);
 	};
 
-	// The shafts show only while the strip has the class `on` (hovered, or focused from the keyboard): `level` eases to
-	// 1 then, and back to 0 after.
+	// The party: while the strip has the class `on`, the ball comes down, and once it is down the spotlights come on
+	// (`level` to 1); without it, they go off and the ball goes back up.
 	let level = 0;
 	let last = 0;
-	const draw = (t: number): void => {
-		const on = strip.classList.contains('on') ? 1 : 0;
+	const place = (): { gone: boolean; down: boolean } => {
+		const s = strip.getBoundingClientRect();
+		const b = ballEl.getBoundingClientRect();
+		[cx, cy] = [b.left - s.left + b.width / 2, b.top - s.top + b.height / 2];
+		return { gone: b.bottom <= s.top, down: b.top - s.top >= ballEl.offsetTop - 3 };
+	};
+	// Draws the moment `t`, and says whether there is nothing more to draw until the strip turns on again.
+	const draw = (t: number): boolean => {
+		const { gone, down } = place();
+		const on = strip.classList.contains('on');
+		const want = on && down ? 1 : 0;
 		level = still
-			? on
-			: level + (on - level) * (1 - Math.exp(-Math.min(100, Math.max(0, t - last)) / (on ? 180 : 360)));
+			? want
+			: level + (want - level) * (1 - Math.exp(-Math.min(100, Math.max(0, t - last)) / (want ? V.rise : 160)));
 		last = t;
-		const glow = 0.7 + 0.3 * level;
-		const theta = (t / V.turn) * TAU;
-		turn(theta, t, phase());
-		paint(theta);
+		const glow = level;
 		reset(front);
 		reset(back, backTop);
+		if (gone) return !on && level < 0.002; // the ball is up and the light is out
+		const theta = (t / V.turn) * TAU;
+		turn(theta, t, phase(), glow);
+		paint(theta);
+		if (glow < 0.002) return false;
 		reset(light);
 		const seen: [number, number, number, number, number][] = [];
 		for (const L of LIGHTS)
@@ -446,7 +459,7 @@ export function disco(parts: Parts, V: Tuning): () => void {
 				const a = power / (1 + Math.hypot(ex - cx, ey - cy) / 650);
 				if (seam) hit(ex, ey, a * glow, Math.abs((px - sx) / (py - sy)), f.tint);
 				else seen.push([px, py, 1.6 + dist * 0.008, f.tint, a * glow]);
-				if (level < 0.01 || f.beam <= V.beams) continue;
+				if (f.beam <= V.beams) continue;
 				// A tile on the far side of the ball sends its shaft from behind it: the ball hides the shaft until it
 				// clears the outline.
 				let [x0, y0] = [sx, sy];
@@ -459,11 +472,11 @@ export function disco(parts: Parts, V: Tuning): () => void {
 					[x0, y0] = [sx + ux * out, sy + uy * out];
 				}
 				const len = Math.hypot(ex - x0, ey - y0);
-				light.globalAlpha = Math.min(1, a * V.beamAlpha * level);
+				light.globalAlpha = Math.min(1, a * V.beamAlpha * glow);
 				toward(light, SHAFTS[f.tint], x0, y0, ex, ey, len, V.width[0] + len * V.width[1]);
 			}
 		// The haze around the ball, lit by all of it.
-		light.globalAlpha = V.halo * (0.4 + 0.6 * level);
+		light.globalAlpha = Math.min(1, V.halo * glow);
 		light.drawImage(HALO, cx - rad * 3, cy - rad * 2, rad * 6, rad * 6);
 		// The smoke drifts up and across; a shaft shows only where it is. The spots land on the page, past the smoke.
 		light.globalCompositeOperation = 'destination-in';
@@ -498,41 +511,46 @@ export function disco(parts: Parts, V: Tuning): () => void {
 				(H - from) * k,
 			);
 		// The tiles that flash a spotlight straight at you.
-		for (const f of all) if (f.spec > 0.2 && f.n[2] > 0.2) sparkle(cx + f.n[0] * rad, cy - f.n[1] * rad, f.spec);
+		for (const f of all)
+			if (f.spec * glow > 0.2 && f.n[2] > 0.2)
+				sparkle(cx + f.n[0] * rad, cy - f.n[1] * rad, Math.min(1, f.spec * glow));
 		front.globalAlpha = 1;
+		return false;
 	};
 
-	// The seam and the hero move as the page lays out; with reduced motion, the light holds still at one moment, and
-	// redraws when the strip turns on or off.
-	let raf = 0;
+	// The seam and the hero move as the page lays out. With reduced motion the light holds still at one moment, drawn
+	// again when the strip turns on or off. Otherwise it runs a frame at a time while the party is on, and stops once
+	// the ball is up.
 	const sizes = new ResizeObserver(() => {
 		measure();
 		if (still) draw(4000);
 	});
 	sizes.observe(document.body);
 	measure();
-	if (still) {
-		const toggles = new MutationObserver(() => draw(4000));
-		toggles.observe(strip, { attributes: true, attributeFilter: ['class'] });
-		draw(4000);
-		return () => {
-			sizes.disconnect();
-			toggles.disconnect();
-		};
-	}
+	let raf = 0;
+	let shown = false;
 	const frame = (now: number): void => {
-		raf = requestAnimationFrame(frame);
-		draw(now);
+		raf = draw(now) ? 0 : requestAnimationFrame(frame);
 	};
+	const wake = (): void => {
+		if (still) draw(4000);
+		else if (shown && !raf) raf = requestAnimationFrame(frame);
+	};
+	const toggles = new MutationObserver(wake);
+	toggles.observe(strip, { attributes: true, attributeFilter: ['class'] });
 	// Nothing to draw while none of it is on screen.
-	const shown = new IntersectionObserver(([e]) => {
+	const seen = new IntersectionObserver(([e]) => {
+		shown = e.isIntersecting;
 		cancelAnimationFrame(raf);
-		if (e.isIntersecting) raf = requestAnimationFrame(frame);
+		raf = 0;
+		wake();
 	});
-	shown.observe(frontEl);
+	if (still) draw(4000);
+	else seen.observe(frontEl);
 	return () => {
 		sizes.disconnect();
-		shown.disconnect();
+		toggles.disconnect();
+		seen.disconnect();
 		cancelAnimationFrame(raf);
 	};
 }
