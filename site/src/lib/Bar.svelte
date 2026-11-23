@@ -365,6 +365,7 @@
 		top: 0;
 		background: color-mix(in srgb, var(--surface-root) 82%, transparent);
 		backdrop-filter: blur(12px) saturate(1.4);
+		anchor-name: --bar;
 	}
 
 	.topbar::after {
@@ -823,6 +824,18 @@
 		.sheet:popover-open {
 			opacity: 0;
 			scale: 0.935;
+		}
+	}
+
+	/* The sheet is in the top layer, out of the bar's box, so it hangs from wherever the bar is: lower while something
+	   sits over the bar at the top of the page, like the contest's strip (`Disco.svelte`). */
+	@supports (position-area: bottom) {
+		.sheet {
+			position-anchor: --bar;
+			position-area: bottom span-all;
+			inset: 8px max(8px, env(safe-area-inset-right)) auto max(8px, env(safe-area-inset-left));
+			justify-self: stretch;
+			max-height: calc(100% - 16px);
 		}
 	}
 

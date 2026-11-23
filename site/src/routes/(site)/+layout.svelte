@@ -2,6 +2,7 @@
 	import { dev } from '$app/env';
 	import { page } from '$app/state';
 	import Bar from '#lib/Bar.svelte';
+	import Disco from '#lib/Disco.svelte';
 	import Footer from '#lib/Footer.svelte';
 	import { HOME } from '#lib/links.ts';
 	import { LOGDASH_SITE } from '#lib/logdash.ts';
@@ -40,6 +41,7 @@
 
 <div class="site">
 	<a class="skip" href="#main">Skip to content</a>
+	<Disco />
 	<Bar />
 	<main id="main">
 		{@render children()}

@@ -39,7 +39,7 @@
 			<div class="pitch">{@render children()}</div>
 		{/if}
 	</div>
-	<div class="plate beat">
+	<div class="plate beat" data-seam>
 		<!-- The light's CSS version, gone once the WebGL one draws over it: blurred, masked, and growing, it would cost
 		     every frame of the intro and of the clip in front of it for nothing. -->
 		{#if !lit}
