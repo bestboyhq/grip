@@ -261,7 +261,7 @@
 			<span>Any MCP client</span>
 		</p>
 	</div>
-	<div class="plate beat">
+	<div class="plate beat" data-seam>
 		<div class="gl" aria-hidden="true">
 			<Glow layers={HORIZON} opacity={0.85} />
 		</div>
