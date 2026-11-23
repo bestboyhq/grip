@@ -1,11 +1,9 @@
 <!-- Disco December, the demo contest on bestboy.dev, as a strip over every page until it closes: its facts rolling by
      with a countdown. Hovered, or focused from the keyboard, it throws a party: a mirror ball comes down into it and
      lights the page (`disco.ts`), and the line says what a click does, from the ball out. A touch screen has no hover,
-     so there the party runs a few seconds every ten. A press opens the platform's sending dialog over the page: framed
-     where the platform's origin is this page's, and the platform's own page anywhere else. -->
+     so there the party runs a few seconds every ten. A press opens the sending dialog over the page (`Send.svelte`). -->
 <script module lang="ts">
 	import { disco, type Tuning } from './disco.ts';
-	import { BESTBOY_URL } from './links.ts';
 
 	const CLOSES = Date.UTC(2026, 11, 1);
 	const FACTS = [
@@ -41,9 +39,6 @@
 	// The change runs out from the ball at SPEED px a second, and each letter takes RISE ms.
 	const SPEED = 1100;
 	const RISE = 550;
-	// The dialog's page, framed only on its own origin, and how long it may take to say it opened.
-	const SHOWCASE = `${BESTBOY_URL}/showcase`;
-	const WAIT = 6000;
 
 	type Letter = { el: HTMLElement; from: number; to: number; seen: boolean; d: number };
 </script>
@@ -52,6 +47,7 @@
 	import { browser } from '$app/env';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
+	import Send from './Send.svelte';
 
 	let now = $state(Date.now());
 	let on = $state(false);
@@ -63,6 +59,7 @@
 	let sky = $state<HTMLCanvasElement>();
 	let back = $state<HTMLCanvasElement>();
 	let msg = $state<HTMLElement>();
+	let send = $state<ReturnType<typeof Send>>();
 
 	const two = (n: number): string => String(n).padStart(2, '0');
 	// Left blank in the built page, which would show the time it was built.
@@ -178,58 +175,19 @@
 		};
 	});
 
-	// The sending dialog is the platform's own, framed over this page: hidden until it says it opened, gone once it
-	// closed. Off the platform's origin, or when it does not open in time, the platform's page opens instead.
-	let frame: HTMLIFrameElement | undefined;
-	let wait = 0;
-	const away = (hash: string): void => location.assign(`${SHOWCASE}${hash}`);
-	const shut = (): void => {
-		clearTimeout(wait);
-		busy = false;
-		frame?.remove();
-		frame = undefined;
-		document.documentElement.style.overflow = '';
-	};
-	const open = (hash = ''): void => {
-		if (frame) return;
-		if (location.origin !== new URL(SHOWCASE).origin) return away(hash);
+	// The dialog opens once it knows who is signed in, which takes a moment.
+	const open = async (last = false): Promise<void> => {
 		busy = true;
-		frame = document.createElement('iframe');
-		frame.title = 'Submit your demo';
-		frame.src = `/showcase?from=${encodeURIComponent(location.pathname)}${hash}`;
-		frame.style.cssText =
-			'position:fixed;inset:0;width:100%;height:100%;border:0;z-index:100;visibility:hidden';
-		document.body.append(frame);
-		wait = window.setTimeout(() => {
-			shut();
-			away(hash);
-		}, WAIT);
-	};
-	const onmessage = (e: MessageEvent): void => {
-		if (!frame || e.origin !== location.origin || e.source !== frame.contentWindow) return;
-		if (e.data === 'showcase:open') {
-			clearTimeout(wait);
-			busy = false;
-			frame.style.visibility = 'visible';
-			document.documentElement.style.overflow = 'hidden';
-			frame.focus();
-		} else if (e.data === 'showcase:closed') {
-			shut();
-			strip?.focus({ preventScroll: true });
-		}
+		await send?.open(last);
+		busy = false;
 	};
 
 	onMount(() => {
 		touch = matchMedia('(hover: none)').matches;
-		// Sign-in comes back to `#submit`, where the dialog opens on its third step.
-		if (now < CLOSES && location.hash === '#submit') open('#submit');
-		return () => {
-			if (frame) shut();
-		};
+		// Sign-in comes back to `#submit`, where the dialog opens on its last step.
+		if (now < CLOSES && location.hash === '#submit') void open(true);
 	});
 </script>
-
-<svelte:window {onmessage} />
 
 {#if now < CLOSES}
 	<button
@@ -273,6 +231,7 @@
 	</button>
 	<!-- The light in the hero, behind its text and buttons: under the page's own layers, over its background. -->
 	<canvas class="light" bind:this={back} aria-hidden="true"></canvas>
+	<Send bind:this={send} />
 {/if}
 
 <style>
