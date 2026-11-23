@@ -49,6 +49,7 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import Send from './Send.svelte';
+	import { track } from './track.ts';
 
 	let now = $state(Date.now());
 	// The party is on while a pointer is over the strip, keyboard focus is on it, or its dialog is open; the line says
@@ -172,6 +173,23 @@
 		hover = next;
 		say(hover && !opened);
 	};
+	// A hover counts once a page, once it lasts long enough to see the ball come down: a pointer on its way past the
+	// strip, to the browser's tabs, does not count.
+	let counted = '';
+	let dwell = 0;
+	const noticed = (via: 'pointer' | 'keyboard'): void => {
+		if (counted === path) return;
+		counted = path;
+		track('grip_web_disco_hovered', { via });
+	};
+	const enter = (): void => {
+		party(true);
+		dwell = window.setTimeout(() => noticed('pointer'), 600);
+	};
+	const leave = (): void => {
+		clearTimeout(dwell);
+		party(false);
+	};
 	const toggle = (open: boolean): void => {
 		opened = open;
 		say(hover && !opened);
@@ -214,9 +232,13 @@
 		aria-label="Disco December, a demo contest: submit your demo by Nov 30"
 		aria-busy={busy || undefined}
 		onclick={() => open()}
-		onpointerenter={() => touch === false && party(true)}
-		onpointerleave={() => touch === false && party(false)}
-		onfocus={() => strip?.matches(':focus-visible') && party(true)}
+		onpointerenter={() => touch === false && enter()}
+		onpointerleave={() => touch === false && leave()}
+		onfocus={() => {
+			if (!strip?.matches(':focus-visible')) return;
+			party(true);
+			noticed('keyboard');
+		}}
 		onblur={() => party(false)}
 	>
 		<span class="roll" aria-hidden="true">

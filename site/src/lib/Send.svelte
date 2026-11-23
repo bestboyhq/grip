@@ -1,7 +1,8 @@
 <!-- Disco December's sending dialog: three steps, get Grip, record, send the link in, which takes signing in, and a
      sender can take a demo out again here. The platform keeps the demos in, behind its showcase API on this site's own
      origin in production (the platform's docs/api.md, "The showcase"). Anywhere else nobody reads as signed in, so the
-     last step signs in. -->
+     last step signs in. It reports to Logdash, as `grip_web_disco_*`, each step a person reaches and how each send
+     ends; the platform counts what follows, up to each vote. -->
 <script module lang="ts">
 	import { asset } from '$app/paths';
 	import { BESTBOY_URL, DOWNLOAD_URL } from './links.ts';
@@ -11,9 +12,9 @@
 	const MOST = 3;
 	// The guide's steps, the one a person is on open and the ones behind them ticked.
 	const STEPS = [
-		{ title: 'Download Grip', done: 'On your Mac' },
-		{ title: 'Record a stunning demo', done: 'Recorded' },
-		{ title: 'Submit your link', done: '' },
+		{ id: 'download', title: 'Download Grip', done: 'On your Mac' },
+		{ id: 'record', title: 'Record a stunning demo', done: 'Recorded' },
+		{ id: 'submit', title: 'Submit your link', done: '' },
 	];
 
 	type Demo = { id: string; title: string; host: string | null; counts: boolean };
@@ -25,6 +26,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { tick } from 'svelte';
+	import { track } from './track.ts';
 
 	// Told when the dialog opens and closes.
 	let { ontoggle }: { ontoggle?: (open: boolean) => void } = $props();
@@ -38,6 +40,10 @@
 	let signedIn = $state(false);
 	let mine = $state<Demo[]>([]);
 	let answer = $state<Answer>({});
+	// The step last reported, and when this opening started and how many demos it sent in, for the report on close.
+	let reported = -1;
+	let since = 0;
+	let sent = 0;
 
 	// Signing in comes back to this page at `#submit`, where the dialog opens on the link.
 	const signIn = $derived(`${BESTBOY_URL}/login?next=${encodeURIComponent(`${page.url.pathname}#submit`)}`);
@@ -55,6 +61,10 @@
 	// A step's way on takes the focus, since the button that led there folds away.
 	async function go(to: number): Promise<void> {
 		step = to;
+		if (reported !== to) {
+			reported = to;
+			track('grip_web_disco_step_viewed', { step: STEPS[to].id, signed_in: signedIn });
+		}
 		await tick();
 		send?.querySelector<HTMLElement>(`[data-step="${to}"] .body :is(input, .primary)`)?.focus();
 	}
@@ -67,6 +77,14 @@
 		step = last || mine.length ? 2 : 0;
 		downloading = false;
 		answer = {};
+		[reported, since, sent] = [-1, Date.now(), 0];
+		// Sign-in comes back through `#submit`, the only other way in.
+		track('grip_web_disco_opened', {
+			step: STEPS[step].id,
+			signed_in: signedIn,
+			demos: mine.length,
+			from: last ? 'submit_link' : 'strip',
+		});
 		shown = true;
 		await tick();
 		ontoggle?.(true);
@@ -98,8 +116,21 @@
 						body: JSON.stringify(Object.fromEntries(new FormData(form))),
 					},
 		).catch(() => null);
-		if (r?.status === 401) return location.assign(signIn);
+		if (r?.status === 401) {
+			track('grip_web_disco_sign_in_started', { why: 'expired' });
+			return location.assign(signIn);
+		}
 		const reply: Reply = (await r?.json().catch(() => null)) ?? {};
+		// A refusal is the platform's 4xx with its reason; anything else that is not ok failed on the way.
+		const refused = !!r && r.status >= 400 && r.status < 500;
+		const result = r?.ok ? (demo ? 'withdrawn' : reply.again ? 'updated' : 'entered') : refused ? 'refused' : 'failed';
+		if (result === 'entered') sent++;
+		track(demo ? 'grip_web_disco_withdrawn' : 'grip_web_disco_submitted', {
+			result,
+			status: r?.status,
+			field: refused ? reply.field : undefined,
+			reason: refused ? reply.error : undefined,
+		});
 		if (r?.ok) {
 			form.reset();
 			await refresh();
@@ -127,7 +158,14 @@
 		bind:this={send}
 		data-place="disco"
 		aria-labelledby="send-title"
-		onclose={() => ontoggle?.(false)}
+		onclose={() => {
+			track('grip_web_disco_closed', {
+				step: STEPS[step].id,
+				entered: sent,
+				seconds: Math.round((Date.now() - since) / 1000),
+			});
+			ontoggle?.(false);
+		}}
 		onclick={(e) => {
 			if (e.target === e.currentTarget) send?.close();
 		}}
@@ -276,7 +314,12 @@
 										right back here.
 									</p>
 									<div class="acts">
-										<a class="button primary" href={signIn}>Sign in to submit</a>
+										<a
+											class="button primary"
+											href={signIn}
+											onclick={() => track('grip_web_disco_sign_in_started', { why: 'signed_out' })}
+											>Sign in to submit</a
+										>
 									</div>
 								{/if}
 							</div>
