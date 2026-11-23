@@ -26,6 +26,9 @@
 	import { page } from '$app/state';
 	import { tick } from 'svelte';
 
+	// Told when the dialog opens and closes.
+	let { ontoggle }: { ontoggle?: (open: boolean) => void } = $props();
+
 	let send = $state<HTMLDialogElement>();
 	// Drawn once first opened, so no page carries it in its HTML.
 	let shown = $state(false);
@@ -66,6 +69,7 @@
 		answer = {};
 		shown = true;
 		await tick();
+		ontoggle?.(true);
 		send?.showModal();
 		await go(step);
 	}
@@ -123,6 +127,7 @@
 		bind:this={send}
 		data-place="disco"
 		aria-labelledby="send-title"
+		onclose={() => ontoggle?.(false)}
 		onclick={(e) => {
 			if (e.target === e.currentTarget) send?.close();
 		}}
@@ -315,8 +320,9 @@
 		}
 	}
 
+	/* The page's dim is the strip's (`Disco.svelte`): under the strip, so its ball shines on over it. */
 	dialog::backdrop {
-		background: rgb(0 0 0 / 0.28);
+		background: none;
 	}
 
 	/* The page stays put under the open dialog; its gutter is stable, so nothing shifts. */

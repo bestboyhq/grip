@@ -1,7 +1,9 @@
 <!-- Disco December, the demo contest on bestboy.dev, as a strip over every page until it closes: its facts rolling by
      with a countdown. Hovered, or focused from the keyboard, it throws a party: a mirror ball comes down into it and
      lights the page (`disco.ts`), and the line says what a click does, from the ball out. A touch screen has no hover,
-     so there the party runs a few seconds every ten. A press opens the sending dialog over the page (`Send.svelte`). -->
+     so there the party runs a few seconds every ten. A press opens the sending dialog over the page (`Send.svelte`),
+     which dims all of the page but the strip: the party goes on over the dim while the dialog is open, with the
+     contest's facts on the line, since the click is made. -->
 <script module lang="ts">
 	import { disco, type Tuning } from './disco.ts';
 
@@ -25,7 +27,6 @@
 		specPow: 260,
 		turn: 45000,
 		gain: 2.6,
-		tints: ['#ff3db4', '#00e5ff', '#ff9a3c', '#b478ff', '#ffffff'],
 		beams: 0.6,
 		beamAlpha: 1.1,
 		spread: 0.55,
@@ -50,7 +51,12 @@
 	import Send from './Send.svelte';
 
 	let now = $state(Date.now());
-	let on = $state(false);
+	// The party is on while a pointer is over the strip, keyboard focus is on it, or its dialog is open; the line says
+	// what a click does only for the first two.
+	let hover = $state(false);
+	let opened = $state(false);
+	const on = $derived(hover || opened);
+	let talk = $state(false);
 	let busy = $state(false);
 	// Whether the screen has no hover, known once the page runs: the line that says what a click does waits for it.
 	let touch = $state<boolean>();
@@ -93,6 +99,7 @@
 				// A page with no hero has its light in front of the top bar too, and behind all its content.
 				hero: document.querySelector('[data-place="hero"]') ?? document.getElementById('main'),
 				phase: () => Number(sweep?.currentTime ?? 0) / SWEEP,
+				above: () => opened,
 				still: matchMedia('(prefers-reduced-motion: reduce)').matches,
 			},
 			V,
@@ -127,8 +134,8 @@
 		void document.fonts.ready.then(pace);
 	});
 
-	const set = (next: boolean): void => {
-		if (!strip || on === next) return;
+	const say = (next: boolean): void => {
+		if (!strip || talk === next) return;
 		const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
 		const t = performance.now();
 		const box = strip.getBoundingClientRect();
@@ -159,18 +166,26 @@
 			word.style.transition = its.some(({ seen }) => seen) ? '' : 'none';
 			word.style.setProperty('--w', `${Math.round(Math.min(...its.map(({ d }) => d)))}ms`);
 		}
-		on = next;
+		talk = next;
+	};
+	const party = (next: boolean): void => {
+		hover = next;
+		say(hover && !opened);
+	};
+	const toggle = (open: boolean): void => {
+		opened = open;
+		say(hover && !opened);
 	};
 
 	$effect(() => {
 		if (!touch) return;
 		let off = 0;
-		const party = setInterval(() => {
-			set(true);
-			off = window.setTimeout(() => set(false), 3500);
+		const every = setInterval(() => {
+			party(true);
+			off = window.setTimeout(() => party(false), 3500);
 		}, 10000);
 		return () => {
-			clearInterval(party);
+			clearInterval(every);
 			clearTimeout(off);
 		};
 	});
@@ -192,17 +207,17 @@
 {#if now < CLOSES}
 	<button
 		bind:this={strip}
-		class={['disco', { on }]}
+		class={['disco', { on, talk }]}
 		type="button"
 		data-place="disco"
 		aria-haspopup="dialog"
 		aria-label="Disco December, a demo contest: submit your demo by Nov 30"
 		aria-busy={busy || undefined}
 		onclick={() => open()}
-		onpointerenter={() => touch === false && set(true)}
-		onpointerleave={() => touch === false && set(false)}
-		onfocus={() => strip?.matches(':focus-visible') && set(true)}
-		onblur={() => set(false)}
+		onpointerenter={() => touch === false && party(true)}
+		onpointerleave={() => touch === false && party(false)}
+		onfocus={() => strip?.matches(':focus-visible') && party(true)}
+		onblur={() => party(false)}
 	>
 		<span class="roll" aria-hidden="true">
 			<span class="track facts">
@@ -231,7 +246,8 @@
 	</button>
 	<!-- The light in the hero, behind its text and buttons: under the page's own layers, over its background. -->
 	<canvas class="light" bind:this={back} aria-hidden="true"></canvas>
-	<Send bind:this={send} />
+	<div class={['dim', { opened }]} aria-hidden="true"></div>
+	<Send bind:this={send} ontoggle={toggle} />
 {/if}
 
 <style>
@@ -366,20 +382,20 @@
 			visibility 0.55s var(--w, 0s);
 	}
 
-	.on .facts .c {
+	.talk .facts .c {
 		transform: translateY(-55%);
 		opacity: 0;
 		visibility: hidden;
 	}
 
-	.disco:not(.on) .msg .c {
+	.disco:not(.talk) .msg .c {
 		transform: translateY(55%);
 		opacity: 0;
 		visibility: hidden;
 	}
 
-	.on .facts > *,
-	.disco:not(.on) .msg > * {
+	.talk .facts > *,
+	.disco:not(.talk) .msg > * {
 		filter: blur(4px);
 		visibility: hidden;
 	}
@@ -418,6 +434,25 @@
 
 	.light {
 		z-index: -1;
+	}
+
+	/* The dim behind the dialog, over the page and its top bar, under the strip. A flat dim, so it never bands. */
+	.dim {
+		position: fixed;
+		inset: 0;
+		z-index: 29;
+		background: rgb(0 0 0 / 0.5);
+		opacity: 0;
+		visibility: hidden;
+		pointer-events: none;
+		transition:
+			opacity 200ms var(--ease),
+			visibility 200ms;
+	}
+
+	.dim.opened {
+		opacity: 1;
+		visibility: visible;
 	}
 
 	/* The light is made for a dark page: on a light one, deeper colors keep it from washing out. */

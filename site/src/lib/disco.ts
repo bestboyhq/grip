@@ -1,9 +1,10 @@
 // The strip's mirror ball and the light it throws, drawn every frame from one model: two spotlights on a turning ball
 // of mirror tiles, each tilted a hair. The ball shows what each tile reflects toward you: the strip it hangs from, its
 // colors flowing as the strip's do, over a neon grid. The light shows where each tile sends a spotlight: a shaft through
-// haze to a spot on the page, or to the hero's seam, which stops it and lights up in its own color.
-// The light sits behind the hero's text and buttons and in front of what is above the hero; the seam's light and the
-// ball's glints sit in front of everything.
+// haze to a spot on the page, or to the hero's seam, which stops it and lights up. Each shaft and spot takes the seam's
+// color under where it lands, so the light is the seam's gradient fanned out.
+// The light sits behind the hero's text and buttons and in front of what is above the hero, or in front of all of it
+// while the page is dimmed behind a dialog; the seam's light and the ball's glints sit in front of everything.
 
 type RGB = number[];
 
@@ -15,7 +16,6 @@ export type Tuning = Readonly<{
 	specPow: number;
 	turn: number;
 	gain: number;
-	tints: readonly string[];
 	// The share of tiles that send no shaft, and the shafts' strength.
 	beams: number;
 	beamAlpha: number;
@@ -44,6 +44,8 @@ export type Parts = Readonly<{
 	hero: Element | null;
 	// Where the strip's gradient is in its sweep, in sweeps.
 	phase: () => number;
+	// Whether all the light is in front of the page, as over the dim behind a dialog.
+	above: () => boolean;
 	// Reduced motion: one still frame.
 	still: boolean;
 }>;
@@ -72,7 +74,7 @@ const ramp = (stops: Stops, x: number): RGB => {
 			return mix(stops[i - 1][1], stops[i][1], (x - stops[i - 1][0]) / (stops[i][0] - stops[i - 1][0]));
 	return stops[stops.length - 1][1];
 };
-// The strip's gradient and the seam's, as their CSS draws them.
+// The strip's gradient and the seam's, as their CSS draws them: the seam's across the page's column.
 const STRIP: Stops = ['#1d4ed8', '#7c3aed', '#c2410c', '#7c3aed', '#1d4ed8'].map((h, i) => [i / 4, hex(h)]);
 const SEAM: Stops = (
 	[
@@ -84,6 +86,9 @@ const SEAM: Stops = (
 		[0.82, '#fb8400'],
 	] as const
 ).map(([p, h]) => [p, hex(h)]);
+// The light's colors: the seam's, in steps across it.
+const HUES = 24;
+const COLORS = Array.from({ length: HUES }, (_, i) => ramp(SEAM, (i + 0.5) / HUES));
 const ZENITH = [30, 12, 70];
 const GROUND = [16, 8, 38];
 const SUNSET: Stops = [
@@ -145,16 +150,14 @@ const glow = (c: RGB): HTMLCanvasElement => {
 
 // Starts drawing, and returns what stops it.
 export function disco(parts: Parts, V: Tuning): () => void {
-	const { strip, ball: ballEl, front: frontEl, back: backEl, seam: floorEl, hero: heroEl, phase, still } = parts;
+	const { strip, ball: ballEl, front: frontEl, back: backEl, seam: floorEl, hero: heroEl, phase, above, still } = parts;
 	const DPR = Math.min(2, devicePixelRatio || 1);
 
 	// The tiles: rows of near-square ones from pole to pole, each row offset from the last.
-	const TINTS = V.tints.map(hex);
 	type Tile = {
 		lat: number;
 		lon: number;
 		shade: number;
-		tint: number;
 		beam: number;
 		n: RGB;
 		color: RGB;
@@ -170,7 +173,6 @@ export function disco(parts: Parts, V: Tuning): () => void {
 				lat: lat + (hash(r, c) - 0.5) * 0.09,
 				lon: ((c + 0.5) / cols) * TAU - r * 0.37 + (hash(c, r + 50) - 0.5) * 0.09,
 				shade: 0.5 + hash(r + 9, c) * 0.95,
-				tint: Math.floor(hash(r, c + 21) * TINTS.length),
 				beam: hash(r + 3, c + 7),
 				n: [0, 0, 1],
 				color: [0, 0, 0],
@@ -248,9 +250,8 @@ export function disco(parts: Parts, V: Tuning): () => void {
 	};
 
 	// The light: soft sprites drawn once, added up every frame.
-	const SPOTS = TINTS.map(glow);
+	const SPOTS = COLORS.map(glow);
 	const HALO = glow(hex('#9b5cff'));
-	const SEAM_GLOWS = Array.from({ length: 12 }, (_, i) => glow(ramp(SEAM, (i + 0.5) / 12)));
 	const STAR = (() => {
 		const el = canvas(64, 64);
 		const g = context(el);
@@ -272,8 +273,9 @@ export function disco(parts: Parts, V: Tuning): () => void {
 		g.fillRect(0, 0, 64, 64);
 		return el;
 	})();
-	// A shaft of light in haze: thin at the ball, a little wider and fainter where it lands.
-	const SHAFTS = TINTS.map((c) => {
+	// A shaft of light in haze: thin at the ball, a little wider and fainter where it lands. Drawn once in white, then
+	// once in each color.
+	const SHAFT = (() => {
 		const [w, h] = [256, 64];
 		const el = canvas(w, h);
 		const g = context(el);
@@ -283,7 +285,7 @@ export function disco(parts: Parts, V: Tuning): () => void {
 				const u = (i + 0.5) / w;
 				const dy = j + 0.5 - h / 2;
 				const k = (j * w + i) * 4;
-				[im.data[k], im.data[k + 1], im.data[k + 2]] = c;
+				im.data[k] = im.data[k + 1] = im.data[k + 2] = 255;
 				im.data[k + 3] =
 					255 *
 					Math.min(1, u * 14) *
@@ -291,6 +293,15 @@ export function disco(parts: Parts, V: Tuning): () => void {
 					Math.exp(-((dy / (V.sigma[0] + u * V.sigma[1])) ** 2));
 			}
 		g.putImageData(im, 0, 0);
+		return el;
+	})();
+	const SHAFTS = COLORS.map((c) => {
+		const el = canvas(SHAFT.width, SHAFT.height);
+		const g = context(el);
+		g.drawImage(SHAFT, 0, 0);
+		g.globalCompositeOperation = 'source-in';
+		g.fillStyle = `rgb(${rgb(c)})`;
+		g.fillRect(0, 0, el.width, el.height);
 		return el;
 	});
 	// The haze the shafts shine through: tileable smoke, drifting.
@@ -336,6 +347,9 @@ export function disco(parts: Parts, V: Tuning): () => void {
 	let cx = 0;
 	let cy = 0;
 	let rad = 0;
+	// The page's column, which the seam's gradient spans as `.wrap` does.
+	let colX = 0;
+	let colW = 1;
 	const measure = (): void => {
 		const s = strip.getBoundingClientRect();
 		const b = ballEl.getBoundingClientRect();
@@ -345,6 +359,8 @@ export function disco(parts: Parts, V: Tuning): () => void {
 		band = heroEl ? heroEl.getBoundingClientRect().top - s.top : 0;
 		backTop = backEl.getBoundingClientRect().top - s.top;
 		W = strip.clientWidth;
+		const col = (floorEl ?? heroEl)?.querySelector('.wrap')?.getBoundingClientRect();
+		[colX, colW] = col?.width ? [col.left - s.left, col.width] : [0, W];
 		H = Number.isFinite(floor) ? floor + 60 : innerHeight;
 		for (const el of [frontEl, backEl]) {
 			el.style.height = `${H}px`;
@@ -377,23 +393,26 @@ export function disco(parts: Parts, V: Tuning): () => void {
 		ctx.drawImage(sprite, 0, -w / 2, len, w);
 		ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
 	};
-	const spot = (x: number, y: number, r: number, tint: number, a: number): void => {
+	// The color under `x`, of the seam's at that point across the column.
+	const hue = (x: number): number => Math.max(0, Math.min(HUES - 1, Math.floor(((x - colX) / colW) * HUES)));
+	const spot = (x: number, y: number, r: number, a: number): void => {
 		light.globalAlpha = Math.min(1, a);
-		light.drawImage(SPOTS[tint], x - r * 3, y - r * 3, r * 6, r * 6);
+		light.drawImage(SPOTS[hue(x)], x - r * 3, y - r * 3, r * 6, r * 6);
 	};
-	// A shaft the seam stops: a streak along the seam in its own color, a hot core, and light thrown back up.
-	const hit = (x: number, y: number, a: number, slope: number, tint: number): void => {
-		const k = x / W;
+	// A shaft the seam stops: a streak along the seam, a hot core, and light thrown back up, all in the seam's color
+	// there, fading out where the seam does.
+	const hit = (x: number, y: number, a: number, slope: number): void => {
+		const k = (x - colX) / colW;
 		const edge = Math.max(0, Math.min(1, (k - 0.04) / 0.14, (0.96 - k) / 0.14));
-		const i = Math.max(0, Math.min(11, Math.floor(k * 12)));
+		const lit = SPOTS[hue(x)];
 		a *= 0.3 + 0.7 * edge;
 		const w = Math.min(280, 80 + slope * 80);
 		front.globalAlpha = Math.min(1, a * 1.4);
-		front.drawImage(SEAM_GLOWS[i], x - w / 2, y - 6, w, 12);
+		front.drawImage(lit, x - w / 2, y - 6, w, 12);
 		front.globalAlpha = Math.min(1, a * 0.4);
-		front.drawImage(SEAM_GLOWS[i], x - 26, y - 44, 52, 70);
+		front.drawImage(lit, x - 26, y - 44, 52, 70);
 		front.globalAlpha = Math.min(1, a * 1.1);
-		front.drawImage(SPOTS[tint], x - 8, y - 8, 16, 16);
+		front.drawImage(lit, x - 8, y - 8, 16, 16);
 	};
 	const sparkle = (x: number, y: number, s: number): void => {
 		const z = (12 + s * 26) * (rad / 30);
@@ -429,7 +448,7 @@ export function disco(parts: Parts, V: Tuning): () => void {
 		paint(theta);
 		if (glow < 0.002) return false;
 		reset(light);
-		const seen: [number, number, number, number, number][] = [];
+		const seen: [number, number, number, number][] = [];
 		for (const L of LIGHTS)
 			for (const f of all) {
 				const n = f.n;
@@ -457,8 +476,8 @@ export function disco(parts: Parts, V: Tuning): () => void {
 				const seam = py > floor;
 				const [ex, ey] = seam ? [sx + ((px - sx) * (floor - sy)) / (py - sy), floor] : [px, py];
 				const a = power / (1 + Math.hypot(ex - cx, ey - cy) / 650);
-				if (seam) hit(ex, ey, a * glow, Math.abs((px - sx) / (py - sy)), f.tint);
-				else seen.push([px, py, 1.6 + dist * 0.008, f.tint, a * glow]);
+				if (seam) hit(ex, ey, a * glow, Math.abs((px - sx) / (py - sy)));
+				else seen.push([px, py, 1.6 + dist * 0.008, a * glow]);
 				if (f.beam <= V.beams) continue;
 				// A tile on the far side of the ball sends its shaft from behind it: the ball hides the shaft until it
 				// clears the outline.
@@ -473,7 +492,7 @@ export function disco(parts: Parts, V: Tuning): () => void {
 				}
 				const len = Math.hypot(ex - x0, ey - y0);
 				light.globalAlpha = Math.min(1, a * V.beamAlpha * glow);
-				toward(light, SHAFTS[f.tint], x0, y0, ex, ey, len, V.width[0] + len * V.width[1]);
+				toward(light, SHAFTS[hue(ex)], x0, y0, ex, ey, len, V.width[0] + len * V.width[1]);
 			}
 		// The haze around the ball, lit by all of it.
 		light.globalAlpha = Math.min(1, V.halo * glow);
@@ -488,9 +507,9 @@ export function disco(parts: Parts, V: Tuning): () => void {
 		light.setTransform(SCALE, 0, 0, SCALE, 0, 0);
 		light.globalCompositeOperation = 'lighter';
 		for (const s of seen) spot(...s);
-		// Above the hero the light is in front; in the hero it is behind the text and buttons. Each copy is whole: the
-		// seam's last hit left its own strength on `front`.
-		const cut = Math.max(0, Math.min(H, band));
+		// Above the hero the light is in front; in the hero it is behind the text and buttons, unless all of it is in
+		// front. Each copy is whole: the seam's last hit left its own strength on `front`.
+		const cut = above() ? H : Math.max(0, Math.min(H, band));
 		const k = SCALE;
 		front.setTransform(1, 0, 0, 1, 0, 0);
 		front.globalAlpha = 1;
