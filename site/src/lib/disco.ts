@@ -399,7 +399,17 @@ export function disco(parts: Parts, V: Tuning): () => void {
 		front.drawImage(STAR, x - z / 2, y - z / 2, z, z);
 	};
 
+	// The shafts show only while the strip has the class `on` (hovered, or focused from the keyboard): `level` eases to
+	// 1 then, and back to 0 after.
+	let level = 0;
+	let last = 0;
 	const draw = (t: number): void => {
+		const on = strip.classList.contains('on') ? 1 : 0;
+		level = still
+			? on
+			: level + (on - level) * (1 - Math.exp(-Math.min(100, Math.max(0, t - last)) / (on ? 180 : 360)));
+		last = t;
+		const glow = 0.7 + 0.3 * level;
 		const theta = (t / V.turn) * TAU;
 		turn(theta, t, phase());
 		paint(theta);
@@ -414,32 +424,46 @@ export function disco(parts: Parts, V: Tuning): () => void {
 				if (ln < 0.08) continue;
 				const r = [2 * ln * n[0] - L[0], 2 * ln * n[1] - L[1], 2 * ln * n[2] - L[2]];
 				if (r[2] > -0.1) continue; // toward you, not the page
-				const dist = WALL / -r[2];
+				// The ray leaves from the tile itself, on the ball's surface, and meets the page `WALL` px behind the ball's
+				// center.
+				const [sx, sy, sz] = [cx + n[0] * rad, cy - n[1] * rad, n[2] * rad];
+				const dist = (WALL + sz) / -r[2];
 				// The light fans out less sideways than it would off a real wall, so it falls mostly below the ball.
-				const [px, py] = [cx + r[0] * dist * V.spread, cy - r[1] * dist];
+				const [px, py] = [sx + r[0] * dist * V.spread, sy - r[1] * dist];
 				if (py < cy) continue; // up past the top of the page
-				// Past `V.fan[0]` from straight down the light fades out, and past `V.fan[1]` it is gone, so the fan
+				// Past `V.fan[0]` radians from straight down the light fades out, and past `V.fan[1]` it is gone, so the fan
 				// stays narrow.
 				const fan =
 					1 -
 					Math.min(1, Math.max(0, (Math.atan2(Math.abs(px - cx), py - cy) - V.fan[0]) / (V.fan[1] - V.fan[0])));
 				if (!fan) continue;
 				const power = GAIN * ln * (0.5 + 0.5 * f.beam) * fan * fan * (3 - 2 * fan);
-				const [sx, sy] = [cx + n[0] * rad * 0.85, cy - n[1] * rad * 0.85];
-				// The seam stops it: its light goes only as far as the seam, and is that much brighter for it.
+				// The seam is the top of a shelf that runs from you to the page: a ray stops where it meets that plane,
+				// which seen from the front is where its line crosses the seam. Its light goes no further, and is that much
+				// brighter.
 				const seam = py > floor;
-				const [ex, ey] = seam ? [cx + ((px - cx) * (floor - cy)) / (py - cy), floor] : [px, py];
+				const [ex, ey] = seam ? [sx + ((px - sx) * (floor - sy)) / (py - sy), floor] : [px, py];
 				const a = power / (1 + Math.hypot(ex - cx, ey - cy) / 650);
-				if (seam) hit(ex, ey, a, Math.abs((px - cx) / (py - cy)), f.tint);
-				else seen.push([px, py, 1.6 + dist * 0.008, f.tint, a]);
-				if (f.beam > V.beams) {
-					const len = Math.hypot(ex - sx, ey - sy);
-					light.globalAlpha = Math.min(1, a * V.beamAlpha);
-					toward(light, SHAFTS[f.tint], sx, sy, ex, ey, len, V.width[0] + len * V.width[1]);
+				if (seam) hit(ex, ey, a * glow, Math.abs((px - sx) / (py - sy)), f.tint);
+				else seen.push([px, py, 1.6 + dist * 0.008, f.tint, a * glow]);
+				if (level < 0.01 || f.beam <= V.beams) continue;
+				// A tile on the far side of the ball sends its shaft from behind it: the ball hides the shaft until it
+				// clears the outline.
+				let [x0, y0] = [sx, sy];
+				if (n[2] < 0) {
+					const span = Math.hypot(ex - sx, ey - sy);
+					const [ux, uy] = [(ex - sx) / span, (ey - sy) / span];
+					const b = (sx - cx) * ux + (sy - cy) * uy;
+					const out = -b + Math.sqrt(Math.max(0, b * b - ((sx - cx) ** 2 + (sy - cy) ** 2 - rad * rad)));
+					if (out >= span) continue;
+					[x0, y0] = [sx + ux * out, sy + uy * out];
 				}
+				const len = Math.hypot(ex - x0, ey - y0);
+				light.globalAlpha = Math.min(1, a * V.beamAlpha * level);
+				toward(light, SHAFTS[f.tint], x0, y0, ex, ey, len, V.width[0] + len * V.width[1]);
 			}
 		// The haze around the ball, lit by all of it.
-		light.globalAlpha = V.halo;
+		light.globalAlpha = V.halo * (0.4 + 0.6 * level);
 		light.drawImage(HALO, cx - rad * 3, cy - rad * 2, rad * 6, rad * 6);
 		// The smoke drifts up and across; a shaft shows only where it is. The spots land on the page, past the smoke.
 		light.globalCompositeOperation = 'destination-in';
@@ -460,7 +484,6 @@ export function disco(parts: Parts, V: Tuning): () => void {
 		if (cut > 0) front.drawImage(light.canvas, 0, 0, W * k, cut * k, 0, 0, W * k, cut * k);
 		front.setTransform(k, 0, 0, k, 0, 0);
 		back.setTransform(1, 0, 0, 1, 0, 0);
-		back.globalAlpha = 1;
 		const from = Math.max(cut, backTop);
 		if (from < H)
 			back.drawImage(
@@ -479,7 +502,8 @@ export function disco(parts: Parts, V: Tuning): () => void {
 		front.globalAlpha = 1;
 	};
 
-	// The seam and the hero move as the page lays out; with reduced motion, the light holds still at one moment.
+	// The seam and the hero move as the page lays out; with reduced motion, the light holds still at one moment, and
+	// redraws when the strip turns on or off.
 	let raf = 0;
 	const sizes = new ResizeObserver(() => {
 		measure();
@@ -488,22 +512,27 @@ export function disco(parts: Parts, V: Tuning): () => void {
 	sizes.observe(document.body);
 	measure();
 	if (still) {
+		const toggles = new MutationObserver(() => draw(4000));
+		toggles.observe(strip, { attributes: true, attributeFilter: ['class'] });
 		draw(4000);
-		return () => sizes.disconnect();
+		return () => {
+			sizes.disconnect();
+			toggles.disconnect();
+		};
 	}
 	const frame = (now: number): void => {
 		raf = requestAnimationFrame(frame);
 		draw(now);
 	};
 	// Nothing to draw while none of it is on screen.
-	const seen = new IntersectionObserver(([e]) => {
+	const shown = new IntersectionObserver(([e]) => {
 		cancelAnimationFrame(raf);
 		if (e.isIntersecting) raf = requestAnimationFrame(frame);
 	});
-	seen.observe(frontEl);
+	shown.observe(frontEl);
 	return () => {
 		sizes.disconnect();
-		seen.disconnect();
+		shown.disconnect();
 		cancelAnimationFrame(raf);
 	};
 }
