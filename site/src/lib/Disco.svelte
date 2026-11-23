@@ -8,15 +8,13 @@
 	import { disco, type Tuning } from './disco.ts';
 
 	const CLOSES = Date.UTC(2026, 11, 1);
+	// The contest as its steps, then the prize and how long is left.
 	const FACTS = [
 		'Disco December',
-		'Demo contest',
-		'3 categories',
-		'9 winners',
-		'31 days on bestboy.dev',
-		'Record in Grip',
-		'Submit your demo',
+		'Record a demo in Grip',
+		'Send in the link',
 		'Get votes',
+		'Win a month on Grip’s home page',
 		'Closes in ',
 	].map((fact) => Array.from(fact));
 	// The look, tuned by eye on the landing page.
@@ -75,7 +73,7 @@
 		const s = Math.max(0, Math.floor((CLOSES - now) / 1000));
 		return `${Math.floor(s / 86400)}d ${two(Math.floor(s / 3600) % 24)}:${two(Math.floor(s / 60) % 60)}:${two(s % 60)}`;
 	});
-	const message = $derived(Array.from(`${touch ? 'Tap' : 'Click'} to enter the demo contest`));
+	const message = $derived(Array.from(`${touch ? 'Tap' : 'Click'} to enter, free, in 3 steps`));
 
 	$effect(() => {
 		const clock = setInterval(() => (now = Date.now()), 1000);
@@ -229,7 +227,7 @@
 		type="button"
 		data-place="disco"
 		aria-haspopup="dialog"
-		aria-label="Disco December, a demo contest: submit your demo by Nov 30"
+		aria-label="Disco December: make a demo of your product in Grip by Nov 30. The best ones play on Grip’s home page all December."
 		aria-busy={busy || undefined}
 		onclick={() => open()}
 		onpointerenter={() => touch === false && enter()}
@@ -269,7 +267,7 @@
 	<!-- The light in the hero, behind its text and buttons: under the page's own layers, over its background. -->
 	<canvas class="light" bind:this={back} aria-hidden="true"></canvas>
 	<div class={['dim', { opened }]} aria-hidden="true"></div>
-	<Send bind:this={send} ontoggle={toggle} />
+	<Send bind:this={send} ontoggle={toggle} {left} />
 {/if}
 
 <style>

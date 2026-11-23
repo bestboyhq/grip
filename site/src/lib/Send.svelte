@@ -1,5 +1,6 @@
-<!-- Disco December's sending dialog: three steps, get Grip, record, send the link in, which takes signing in, and a
-     sender can take a demo out again here. The platform keeps the demos in, behind its showcase API on this site's own
+<!-- Disco December's sending dialog: the contest and its prize in one sentence, how winners are picked under it, and
+     three steps between, get Grip, record, send the link in, which takes signing in. A sender can take a demo out
+     again here. The platform keeps the demos in, behind its showcase API on this site's own
      origin in production (the platform's docs/api.md, "The showcase"). Anywhere else nobody reads as signed in, so the
      last step signs in. It reports to Logdash, as `grip_web_disco_*`, each step a person reaches and how each send
      ends; the platform counts what follows, up to each vote. -->
@@ -28,8 +29,8 @@
 	import { tick } from 'svelte';
 	import { track } from './track.ts';
 
-	// Told when the dialog opens and closes.
-	let { ontoggle }: { ontoggle?: (open: boolean) => void } = $props();
+	// Told when the dialog opens and closes, and the time left to enter, from the strip's clock.
+	let { ontoggle, left = '' }: { ontoggle?: (open: boolean) => void; left?: string } = $props();
 
 	let send = $state<HTMLDialogElement>();
 	// Drawn once first opened, so no page carries it in its HTML.
@@ -170,7 +171,13 @@
 			if (e.target === e.currentTarget) send?.close();
 		}}
 	>
-		<h2 id="send-title">Send in your demo</h2>
+		<!-- What it is and what it wins, in one sentence, for someone who clicked the strip not knowing. -->
+		<div class="intro">
+			<h2 id="send-title">
+				Make a demo of your product in Grip. <span>The best ones play on Grip’s home page all December.</span>
+			</h2>
+			<p class="meta"><span>Disco December</span><span>Free</span><span>Closes in <b>{left}</b></span></p>
+		</div>
 		<ol class="steps">
 			{#each STEPS as { title, done }, k (k)}
 				{@const at = k < step ? 'done' : k === step ? 'now' : 'next'}
@@ -328,6 +335,10 @@
 				</li>
 			{/each}
 		</ol>
+		<p class="foot">
+			<b>Best</b> means the most votes in Best idea, Best craft, or Best demo, from anyone signed in. The top 3 in
+			each win.
+		</p>
 		<!-- Last, so the dialog opens on a step and not on this. -->
 		<button type="button" class="close" aria-label="Close" onclick={() => send?.close()}
 			><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg></button
@@ -373,12 +384,64 @@
 		overflow: hidden;
 	}
 
+	/* Its first line centers on the close button's. */
+	.intro {
+		padding: 14px 20px 6px;
+	}
+
 	h2 {
 		margin: 0;
-		padding: 15px 52px 15px 20px;
-		font-size: 15px;
-		font-weight: 600;
-		line-height: 26px;
+		padding-right: 40px;
+		font-size: 21px;
+		font-weight: 650;
+		line-height: 28px;
+		letter-spacing: -0.015em;
+		text-wrap: balance;
+	}
+
+	h2 span {
+		color: var(--fg-muted);
+	}
+
+	/* A dot in each gap, clipped where a line wraps, so no line starts with one. */
+	.meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px 20px;
+		margin: 12px 0 0;
+		overflow: clip;
+		color: var(--fg-faint);
+		font: 12px/16px var(--mono);
+	}
+
+	.meta span {
+		position: relative;
+	}
+
+	.meta span + span::before {
+		content: '·';
+		position: absolute;
+		left: -14px;
+	}
+
+	.meta b {
+		color: var(--fg-default);
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.foot {
+		margin: 0 20px;
+		padding: 12px 0 16px;
+		border-top: 1px solid var(--border-default);
+		color: var(--fg-faint);
+		font-size: 12.5px;
+		line-height: 1.5;
+	}
+
+	.foot b {
+		color: var(--fg-muted);
+		font-weight: 550;
 	}
 
 	button {
@@ -421,7 +484,7 @@
 	/* Each step a row with its number on a line down to the next; the one a person is on opens under its row. */
 	.steps {
 		margin: 0;
-		padding: 0 20px 12px;
+		padding: 0 20px 4px;
 		list-style: none;
 	}
 
