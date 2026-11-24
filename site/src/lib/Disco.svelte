@@ -1,9 +1,10 @@
-<!-- Disco December, the demo contest on bestboy.dev, as a strip over every page until it closes: its facts rolling by
-     with a countdown. Hovered, or focused from the keyboard, it throws a party: a mirror ball comes down into it and
-     lights the page (`disco.ts`), and the line says what a click does, from the ball out. A touch screen has no hover,
-     so there the party runs a few seconds every ten. A press opens the sending dialog over the page (`Send.svelte`),
-     which dims all of the page but the strip: the party goes on over the dim while the dialog is open, with the
-     contest's facts on the line, since the click is made. -->
+<!-- Disco December, the demo contest on bestboy.dev, as a strip over every page until it closes, at the top of the
+     window as the page scrolls: its facts rolling by with a countdown. Hovered, or focused from the keyboard, it throws
+     a party: a mirror ball comes down into it and lights the page (`disco.ts`), and the line says what a click does,
+     from the ball out. A touch screen has no hover, so there the party runs a few seconds every ten, on the first
+     screen of the page. A press opens the sending dialog over the page (`Send.svelte`), which dims all of the page but
+     the strip: the party goes on over the dim while the dialog is open, with the contest's facts on the line, since
+     the click is made. -->
 <script module lang="ts">
 	import { disco, type Tuning } from './disco.ts';
 
@@ -95,6 +96,7 @@
 				front: sky,
 				back,
 				seam: document.querySelector('[data-seam]'),
+				bar: document.querySelector('[data-place="bar"]'),
 				// A page with no hero has its light in front of the top bar too, and behind all its content.
 				hero: document.querySelector('[data-place="hero"]') ?? document.getElementById('main'),
 				phase: () => Number(sweep?.currentTime ?? 0) / SWEEP,
@@ -196,7 +198,9 @@
 	$effect(() => {
 		if (!touch) return;
 		let off = 0;
+		// Only on the first screen: further down the page, it would flash behind what the visitor reads.
 		const every = setInterval(() => {
+			if (scrollY > innerHeight) return;
 			party(true);
 			off = window.setTimeout(() => party(false), 3500);
 		}, 10000);
@@ -277,19 +281,25 @@
 		initial-value: 0;
 	}
 
+	/* The strip stays over the page as it scrolls, with the top bar under it. */
+	:global(:root:has([data-place='disco'])) {
+		--strip: 40px;
+	}
+
 	.disco {
 		all: unset;
 		box-sizing: border-box;
-		position: relative;
+		position: sticky;
+		top: 0;
 		z-index: 30;
 		display: block;
 		width: 100%;
-		height: 40px;
+		height: var(--strip);
 		cursor: pointer;
 		color: #fff;
 		background: linear-gradient(90deg, #1d4ed8, #7c3aed, #c2410c, #7c3aed, #1d4ed8) 0 0 / 200% 100%;
 		animation: disco-sweep 12s linear infinite;
-		font: 500 12px/40px var(--mono);
+		font: 500 12px/var(--strip) var(--mono);
 		-webkit-tap-highlight-color: transparent;
 		--ball: 88px;
 		--cut: -0.32;
@@ -420,7 +430,8 @@
 		visibility: hidden;
 	}
 
-	/* The ball waits above the page, out of sight, and comes down for the party. */
+	/* The ball waits above the page, hidden too, so a page pulled down past its top shows nothing over the strip, and
+	   comes down for the party. */
 	.ball {
 		position: absolute;
 		left: 50%;
@@ -434,12 +445,18 @@
 			0 0 48px 10px rgb(124 58 237 / 0.3),
 			0 6px 30px 6px rgb(0 229 255 / 0.12);
 		translate: 0 calc(var(--ball) * (-1 - var(--cut)) - 56px);
-		transition: translate 0.45s cubic-bezier(0.55, 0, 0.8, 0.2);
+		visibility: hidden;
+		transition:
+			translate 0.45s cubic-bezier(0.55, 0, 0.8, 0.2),
+			visibility 0.45s;
 	}
 
 	.on .ball {
 		translate: 0 0;
-		transition: translate 1.1s cubic-bezier(0.22, 1, 0.36, 1);
+		visibility: visible;
+		transition:
+			translate 1.1s cubic-bezier(0.22, 1, 0.36, 1),
+			visibility 1.1s;
 	}
 
 	.sky,
@@ -452,7 +469,9 @@
 		pointer-events: none;
 	}
 
+	/* The light behind the page stays with the strip as the page scrolls. */
 	.light {
+		position: fixed;
 		z-index: -1;
 	}
 

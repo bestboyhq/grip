@@ -4,8 +4,9 @@
 // light shows where each tile sends a spotlight: a laser beam to a spot on the page, or to the hero's seam, which stops
 // it and lights up. Each shaft and spot takes the seam's color under where it lands, so the light is the seam's
 // gradient fanned out.
-// The light sits behind the hero's text and buttons and in front of what is above the hero, or in front of all of it
-// while the page is dimmed behind a dialog; the seam's light and the ball's glints sit in front of everything.
+// The light covers the window, which the strip stays at the top of as the page scrolls under it. It sits behind the
+// hero's text and buttons and in front of the top bar and what is above the hero, or in front of all of it while the
+// page is dimmed behind a dialog; the seam's light and the ball's glints sit in front of everything.
 
 type RGB = number[];
 
@@ -40,8 +41,9 @@ export type Parts = Readonly<{
 	// The light above the hero, over everything, and in the hero, behind its text and buttons.
 	front: HTMLCanvasElement;
 	back: HTMLCanvasElement;
-	// The line that stops the light, and where the light goes behind the page.
+	// The line that stops the light, and where the light goes behind the page, never above the top bar's bottom.
 	seam: Element | null;
+	bar: Element | null;
 	hero: Element | null;
 	// Where the strip's gradient is in its sweep, in sweeps.
 	phase: () => number;
@@ -126,7 +128,7 @@ const glow = (c: RGB): HTMLCanvasElement => {
 
 // Starts drawing, and returns what stops it.
 export function disco(parts: Parts, V: Tuning): () => void {
-	const { strip, ball: ballEl, front: frontEl, back: backEl, seam: floorEl, hero: heroEl, phase, above, still } = parts;
+	const { strip, ball: ballEl, front: frontEl, back: backEl, seam: floorEl, bar, hero, phase, above, still } = parts;
 	const DPR = Math.min(2, devicePixelRatio || 1);
 
 	// The tiles: rows of near-square ones from pole to pole, each row offset from the last.
@@ -307,7 +309,7 @@ export function disco(parts: Parts, V: Tuning): () => void {
 	let W = 0;
 	let H = 0;
 	let floor = Infinity;
-	let band = 0; // where the hero starts: above it the light is in front, below it behind
+	let band = 0; // where the hero or the top bar ends: above it the light is in front, below it behind
 	let backTop = 0;
 	let cx = 0;
 	let cy = 0;
@@ -319,14 +321,11 @@ export function disco(parts: Parts, V: Tuning): () => void {
 		const s = strip.getBoundingClientRect();
 		const b = ballEl.getBoundingClientRect();
 		if (Math.round(b.width * DPR) !== N) setup(b.width);
-		[cx, cy, rad] = [b.left - s.left + b.width / 2, b.top - s.top + b.height / 2, b.width / 2];
-		floor = floorEl ? floorEl.getBoundingClientRect().top - s.top : Infinity;
-		band = heroEl ? heroEl.getBoundingClientRect().top - s.top : 0;
-		backTop = backEl.getBoundingClientRect().top - s.top;
-		W = strip.clientWidth;
-		const col = (floorEl ?? heroEl)?.querySelector('.wrap')?.getBoundingClientRect();
-		[colX, colW] = col?.width ? [col.left - s.left, col.width] : [0, W];
-		H = Number.isFinite(floor) ? floor + 60 : innerHeight;
+		rad = b.width / 2;
+		const col = (floorEl ?? hero)?.querySelector('.wrap')?.getBoundingClientRect();
+		[colX, colW] = col?.width ? [col.left - s.left, col.width] : [0, strip.clientWidth];
+		if (W === strip.clientWidth && H === innerHeight) return;
+		[W, H] = [strip.clientWidth, innerHeight];
 		for (const el of [frontEl, backEl]) {
 			el.style.height = `${H}px`;
 			el.width = Math.ceil(W * SCALE);
@@ -389,10 +388,16 @@ export function disco(parts: Parts, V: Tuning): () => void {
 	// (`level` to 1); without it, they go off and the ball goes back up.
 	let level = 0;
 	let last = 0;
+	// The ball, and the page as it scrolls under the strip: the seam stops the light only while it is below the ball.
 	const place = (): { gone: boolean; down: boolean } => {
 		const s = strip.getBoundingClientRect();
 		const b = ballEl.getBoundingClientRect();
 		[cx, cy] = [b.left - s.left + b.width / 2, b.top - s.top + b.height / 2];
+		const seam = floorEl ? floorEl.getBoundingClientRect().top - s.top : Infinity;
+		floor = seam > cy + rad ? seam : Infinity;
+		const top = hero?.getBoundingClientRect().top ?? s.top;
+		band = Math.max(top, bar?.getBoundingClientRect().bottom ?? top) - s.top;
+		backTop = backEl.getBoundingClientRect().top - s.top;
 		return { gone: b.bottom <= s.top, down: b.top - s.top >= ballEl.offsetTop - 3 };
 	};
 	// Draws the moment `t`, and says whether there is nothing more to draw until the strip turns on again.
@@ -500,39 +505,37 @@ export function disco(parts: Parts, V: Tuning): () => void {
 		return false;
 	};
 
-	// The seam and the hero move as the page lays out. With reduced motion the light holds still at one moment, drawn
-	// again when the strip turns on or off. Otherwise it runs a frame at a time while the party is on, and stops once
-	// the ball is up.
-	const sizes = new ResizeObserver(() => {
+	// The light runs a frame at a time while the party is on, and stops once the ball is up. With reduced motion it
+	// holds still at one moment, drawn again when the strip turns on or off, the window or page changes size, or the
+	// page scrolls under the party.
+	const resized = (): void => {
 		measure();
 		if (still) draw(4000);
-	});
+	};
+	const sizes = new ResizeObserver(resized);
 	sizes.observe(document.body);
+	addEventListener('resize', resized);
+	const scrolled = (): void => {
+		if (still && strip.classList.contains('on')) draw(4000);
+	};
+	addEventListener('scroll', scrolled, { passive: true });
 	measure();
 	let raf = 0;
-	let shown = false;
 	const frame = (now: number): void => {
 		raf = draw(now) ? 0 : requestAnimationFrame(frame);
 	};
 	const wake = (): void => {
 		if (still) draw(4000);
-		else if (shown && !raf) raf = requestAnimationFrame(frame);
+		else if (!raf) raf = requestAnimationFrame(frame);
 	};
 	const toggles = new MutationObserver(wake);
 	toggles.observe(strip, { attributes: true, attributeFilter: ['class'] });
-	// Nothing to draw while none of it is on screen.
-	const seen = new IntersectionObserver(([e]) => {
-		shown = e.isIntersecting;
-		cancelAnimationFrame(raf);
-		raf = 0;
-		wake();
-	});
-	if (still) draw(4000);
-	else seen.observe(frontEl);
+	wake();
 	return () => {
 		sizes.disconnect();
 		toggles.disconnect();
-		seen.disconnect();
+		removeEventListener('resize', resized);
+		removeEventListener('scroll', scrolled);
 		cancelAnimationFrame(raf);
 	};
 }
