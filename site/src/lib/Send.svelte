@@ -1,7 +1,9 @@
-<!-- Disco December's sending dialog: three steps, get Grip, record, send the link in, which takes signing in, and a
-     sender can take a demo out again here. The platform keeps the demos in, behind its showcase API on this site's own
+<!-- Disco December's sending dialog: the contest and its prize in one sentence, how winners are picked under it, and
+     three steps between, get Grip, record, send the link in, which takes signing in. A sender can take a demo out
+     again here. The platform keeps the demos in, behind its showcase API on this site's own
      origin in production (the platform's docs/api.md, "The showcase"). Anywhere else nobody reads as signed in, so the
-     last step signs in. -->
+     last step signs in. It reports to Logdash, as `grip_web_disco_*`, each step a person reaches and how each send
+     ends; the platform counts what follows, up to each vote. -->
 <script module lang="ts">
 	import { asset } from '$app/paths';
 	import { BESTBOY_URL, DOWNLOAD_URL } from './links.ts';
@@ -11,9 +13,9 @@
 	const MOST = 3;
 	// The guide's steps, the one a person is on open and the ones behind them ticked.
 	const STEPS = [
-		{ title: 'Download Grip', done: 'On your Mac' },
-		{ title: 'Record a stunning demo', done: 'Recorded' },
-		{ title: 'Submit your link', done: '' },
+		{ id: 'download', title: 'Download Grip', done: 'On your Mac' },
+		{ id: 'record', title: 'Record a stunning demo', done: 'Recorded' },
+		{ id: 'submit', title: 'Submit your link', done: '' },
 	];
 
 	type Demo = { id: string; title: string; host: string | null; counts: boolean };
@@ -25,6 +27,10 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { tick } from 'svelte';
+	import { track } from './track.ts';
+
+	// Told when the dialog opens and closes, and the time left to enter, from the strip's clock.
+	let { ontoggle, left = '' }: { ontoggle?: (open: boolean) => void; left?: string } = $props();
 
 	let send = $state<HTMLDialogElement>();
 	// Drawn once first opened, so no page carries it in its HTML.
@@ -35,6 +41,10 @@
 	let signedIn = $state(false);
 	let mine = $state<Demo[]>([]);
 	let answer = $state<Answer>({});
+	// The step last reported, and when this opening started and how many demos it sent in, for the report on close.
+	let reported = -1;
+	let since = 0;
+	let sent = 0;
 
 	// Signing in comes back to this page at `#submit`, where the dialog opens on the link.
 	const signIn = $derived(`${BESTBOY_URL}/login?next=${encodeURIComponent(`${page.url.pathname}#submit`)}`);
@@ -52,6 +62,10 @@
 	// A step's way on takes the focus, since the button that led there folds away.
 	async function go(to: number): Promise<void> {
 		step = to;
+		if (reported !== to) {
+			reported = to;
+			track('grip_web_disco_step_viewed', { step: STEPS[to].id, signed_in: signedIn });
+		}
 		await tick();
 		send?.querySelector<HTMLElement>(`[data-step="${to}"] .body :is(input, .primary)`)?.focus();
 	}
@@ -64,8 +78,17 @@
 		step = last || mine.length ? 2 : 0;
 		downloading = false;
 		answer = {};
+		[reported, since, sent] = [-1, Date.now(), 0];
+		// Sign-in comes back through `#submit`, the only other way in.
+		track('grip_web_disco_opened', {
+			step: STEPS[step].id,
+			signed_in: signedIn,
+			demos: mine.length,
+			from: last ? 'submit_link' : 'strip',
+		});
 		shown = true;
 		await tick();
+		ontoggle?.(true);
 		send?.showModal();
 		await go(step);
 	}
@@ -94,8 +117,21 @@
 						body: JSON.stringify(Object.fromEntries(new FormData(form))),
 					},
 		).catch(() => null);
-		if (r?.status === 401) return location.assign(signIn);
+		if (r?.status === 401) {
+			track('grip_web_disco_sign_in_started', { why: 'expired' });
+			return location.assign(signIn);
+		}
 		const reply: Reply = (await r?.json().catch(() => null)) ?? {};
+		// A refusal is the platform's 4xx with its reason; anything else that is not ok failed on the way.
+		const refused = !!r && r.status >= 400 && r.status < 500;
+		const result = r?.ok ? (demo ? 'withdrawn' : reply.again ? 'updated' : 'entered') : refused ? 'refused' : 'failed';
+		if (result === 'entered') sent++;
+		track(demo ? 'grip_web_disco_withdrawn' : 'grip_web_disco_submitted', {
+			result,
+			status: r?.status,
+			field: refused ? reply.field : undefined,
+			reason: refused ? reply.error : undefined,
+		});
 		if (r?.ok) {
 			form.reset();
 			await refresh();
@@ -123,11 +159,25 @@
 		bind:this={send}
 		data-place="disco"
 		aria-labelledby="send-title"
+		onclose={() => {
+			track('grip_web_disco_closed', {
+				step: STEPS[step].id,
+				entered: sent,
+				seconds: Math.round((Date.now() - since) / 1000),
+			});
+			ontoggle?.(false);
+		}}
 		onclick={(e) => {
 			if (e.target === e.currentTarget) send?.close();
 		}}
 	>
-		<h2 id="send-title">Send in your demo</h2>
+		<!-- What it is and what it wins, in one sentence, for someone who clicked the strip not knowing. -->
+		<div class="intro">
+			<h2 id="send-title">
+				Make a demo of your product in Grip. <span>The best ones play on Grip’s home page all December.</span>
+			</h2>
+			<p class="meta"><span>Disco December</span><span>Free</span><span>Closes in <b>{left}</b></span></p>
+		</div>
 		<ol class="steps">
 			{#each STEPS as { title, done }, k (k)}
 				{@const at = k < step ? 'done' : k === step ? 'now' : 'next'}
@@ -271,7 +321,12 @@
 										right back here.
 									</p>
 									<div class="acts">
-										<a class="button primary" href={signIn}>Sign in to submit</a>
+										<a
+											class="button primary"
+											href={signIn}
+											onclick={() => track('grip_web_disco_sign_in_started', { why: 'signed_out' })}
+											>Sign in to submit</a
+										>
 									</div>
 								{/if}
 							</div>
@@ -280,6 +335,10 @@
 				</li>
 			{/each}
 		</ol>
+		<p class="foot">
+			<b>Best</b> means the most votes in Best idea, Best craft, or Best demo, from anyone signed in. The top 3 in
+			each win.
+		</p>
 		<!-- Last, so the dialog opens on a step and not on this. -->
 		<button type="button" class="close" aria-label="Close" onclick={() => send?.close()}
 			><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg></button
@@ -315,8 +374,9 @@
 		}
 	}
 
+	/* The page's dim is the strip's (`Disco.svelte`): under the strip, so its ball shines on over it. */
 	dialog::backdrop {
-		background: rgb(0 0 0 / 0.28);
+		background: none;
 	}
 
 	/* The page stays put under the open dialog; its gutter is stable, so nothing shifts. */
@@ -324,12 +384,64 @@
 		overflow: hidden;
 	}
 
+	/* Its first line centers on the close button's. */
+	.intro {
+		padding: 14px 20px 6px;
+	}
+
 	h2 {
 		margin: 0;
-		padding: 15px 52px 15px 20px;
-		font-size: 15px;
-		font-weight: 600;
-		line-height: 26px;
+		padding-right: 40px;
+		font-size: 21px;
+		font-weight: 650;
+		line-height: 28px;
+		letter-spacing: -0.015em;
+		text-wrap: balance;
+	}
+
+	h2 span {
+		color: var(--fg-muted);
+	}
+
+	/* A dot in each gap, clipped where a line wraps, so no line starts with one. */
+	.meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px 20px;
+		margin: 12px 0 0;
+		overflow: clip;
+		color: var(--fg-faint);
+		font: 12px/16px var(--mono);
+	}
+
+	.meta span {
+		position: relative;
+	}
+
+	.meta span + span::before {
+		content: '·';
+		position: absolute;
+		left: -14px;
+	}
+
+	.meta b {
+		color: var(--fg-default);
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.foot {
+		margin: 0 20px;
+		padding: 12px 0 16px;
+		border-top: 1px solid var(--border-default);
+		color: var(--fg-faint);
+		font-size: 12.5px;
+		line-height: 1.5;
+	}
+
+	.foot b {
+		color: var(--fg-muted);
+		font-weight: 550;
 	}
 
 	button {
@@ -372,7 +484,7 @@
 	/* Each step a row with its number on a line down to the next; the one a person is on opens under its row. */
 	.steps {
 		margin: 0;
-		padding: 0 20px 12px;
+		padding: 0 20px 4px;
 		list-style: none;
 	}
 

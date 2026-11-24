@@ -362,10 +362,9 @@
 	.topbar {
 		position: sticky;
 		z-index: 20;
-		top: 0;
+		top: var(--strip);
 		background: color-mix(in srgb, var(--surface-root) 82%, transparent);
 		backdrop-filter: blur(12px) saturate(1.4);
-		anchor-name: --bar;
 	}
 
 	.topbar::after {
@@ -783,12 +782,13 @@
 		background: var(--surface-hover);
 	}
 
+	/* The sheet is in the top layer, out of the bar's box, so it hangs under the bar and whatever stays over it. */
 	.sheet {
 		position: fixed;
-		inset: calc(var(--bar-h) + 8px) max(8px, env(safe-area-inset-right)) auto
+		inset: calc(var(--strip) + var(--bar-h) + 8px) max(8px, env(safe-area-inset-right)) auto
 			max(8px, env(safe-area-inset-left));
 		width: auto;
-		max-height: calc(100dvh - var(--bar-h) - 16px);
+		max-height: calc(100dvh - var(--strip) - var(--bar-h) - 16px);
 		margin: 0;
 		padding: 6px;
 		overflow: auto;
@@ -824,18 +824,6 @@
 		.sheet:popover-open {
 			opacity: 0;
 			scale: 0.935;
-		}
-	}
-
-	/* The sheet is in the top layer, out of the bar's box, so it hangs from wherever the bar is: lower while something
-	   sits over the bar at the top of the page, like the contest's strip (`Disco.svelte`). */
-	@supports (position-area: bottom) {
-		.sheet {
-			position-anchor: --bar;
-			position-area: bottom span-all;
-			inset: 8px max(8px, env(safe-area-inset-right)) auto max(8px, env(safe-area-inset-left));
-			justify-self: stretch;
-			max-height: calc(100% - 16px);
 		}
 	}
 

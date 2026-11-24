@@ -1,20 +1,21 @@
-<!-- Disco December, the demo contest on bestboy.dev, as a strip over every page until it closes: its facts rolling by
-     with a countdown. Hovered, or focused from the keyboard, it throws a party: a mirror ball comes down into it and
-     lights the page (`disco.ts`), and the line says what a click does, from the ball out. A touch screen has no hover,
-     so there the party runs a few seconds every ten. A press opens the sending dialog over the page (`Send.svelte`). -->
+<!-- Disco December, the demo contest on bestboy.dev, as a strip over every page until it closes, at the top of the
+     window as the page scrolls: its facts rolling by with a countdown. Hovered, or focused from the keyboard, it throws
+     a party: a mirror ball comes down into it and lights the page (`disco.ts`), and the line says what a click does,
+     from the ball out. A touch screen has no hover, so there the party runs a few seconds every ten, on the first
+     screen of the page. A press opens the sending dialog over the page (`Send.svelte`), which dims all of the page but
+     the strip: the party goes on over the dim while the dialog is open, with the contest's facts on the line, since
+     the click is made. -->
 <script module lang="ts">
 	import { disco, type Tuning } from './disco.ts';
 
 	const CLOSES = Date.UTC(2026, 11, 1);
+	// The contest as its steps, then the prize and how long is left.
 	const FACTS = [
 		'Disco December',
-		'Demo contest',
-		'3 categories',
-		'9 winners',
-		'31 days on bestboy.dev',
-		'Record in Grip',
-		'Submit your demo',
+		'Record a demo in Grip',
+		'Send in the link',
 		'Get votes',
+		'Win a month on Grip’s home page',
 		'Closes in ',
 	].map((fact) => Array.from(fact));
 	// The look, tuned by eye on the landing page.
@@ -24,15 +25,14 @@
 		groutColor: '#140a26',
 		specPow: 260,
 		turn: 45000,
-		gain: 2.6,
-		tints: ['#ff3db4', '#00e5ff', '#ff9a3c', '#b478ff', '#ffffff'],
-		beams: 0.6,
-		beamAlpha: 1.1,
-		spread: 0.55,
-		fan: [0.7, 0.96],
-		width: [12, 0.07],
-		sigma: [4, 8],
-		halo: 0.55,
+		gain: 4,
+		beams: 0.2,
+		beamAlpha: 2.4,
+		spread: 0.8,
+		fan: [0.95, 1.25],
+		width: [3.5, 0.004],
+		sigma: [10, 4],
+		halo: 0.3,
 		rise: 420,
 	};
 	const SWEEP = 12000; // ms, the strip's gradient sweep (`disco-sweep`)
@@ -48,9 +48,15 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import Send from './Send.svelte';
+	import { track } from './track.ts';
 
 	let now = $state(Date.now());
-	let on = $state(false);
+	// The party is on while a pointer is over the strip, keyboard focus is on it, or its dialog is open; the line says
+	// what a click does only for the first two.
+	let hover = $state(false);
+	let opened = $state(false);
+	const on = $derived(hover || opened);
+	let talk = $state(false);
 	let busy = $state(false);
 	// Whether the screen has no hover, known once the page runs: the line that says what a click does waits for it.
 	let touch = $state<boolean>();
@@ -68,7 +74,7 @@
 		const s = Math.max(0, Math.floor((CLOSES - now) / 1000));
 		return `${Math.floor(s / 86400)}d ${two(Math.floor(s / 3600) % 24)}:${two(Math.floor(s / 60) % 60)}:${two(s % 60)}`;
 	});
-	const message = $derived(Array.from(`${touch ? 'Tap' : 'Click'} to enter the demo contest`));
+	const message = $derived(Array.from(`${touch ? 'Tap' : 'Click'} to enter, free, in 3 steps`));
 
 	$effect(() => {
 		const clock = setInterval(() => (now = Date.now()), 1000);
@@ -90,9 +96,11 @@
 				front: sky,
 				back,
 				seam: document.querySelector('[data-seam]'),
+				bar: document.querySelector('[data-place="bar"]'),
 				// A page with no hero has its light in front of the top bar too, and behind all its content.
 				hero: document.querySelector('[data-place="hero"]') ?? document.getElementById('main'),
 				phase: () => Number(sweep?.currentTime ?? 0) / SWEEP,
+				above: () => opened,
 				still: matchMedia('(prefers-reduced-motion: reduce)').matches,
 			},
 			V,
@@ -127,8 +135,8 @@
 		void document.fonts.ready.then(pace);
 	});
 
-	const set = (next: boolean): void => {
-		if (!strip || on === next) return;
+	const say = (next: boolean): void => {
+		if (!strip || talk === next) return;
 		const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
 		const t = performance.now();
 		const box = strip.getBoundingClientRect();
@@ -159,18 +167,45 @@
 			word.style.transition = its.some(({ seen }) => seen) ? '' : 'none';
 			word.style.setProperty('--w', `${Math.round(Math.min(...its.map(({ d }) => d)))}ms`);
 		}
-		on = next;
+		talk = next;
+	};
+	const party = (next: boolean): void => {
+		hover = next;
+		say(hover && !opened);
+	};
+	// A hover counts once a page, once it lasts long enough to see the ball come down: a pointer on its way past the
+	// strip, to the browser's tabs, does not count.
+	let counted = '';
+	let dwell = 0;
+	const noticed = (via: 'pointer' | 'keyboard'): void => {
+		if (counted === path) return;
+		counted = path;
+		track('grip_web_disco_hovered', { via });
+	};
+	const enter = (): void => {
+		party(true);
+		dwell = window.setTimeout(() => noticed('pointer'), 600);
+	};
+	const leave = (): void => {
+		clearTimeout(dwell);
+		party(false);
+	};
+	const toggle = (open: boolean): void => {
+		opened = open;
+		say(hover && !opened);
 	};
 
 	$effect(() => {
 		if (!touch) return;
 		let off = 0;
-		const party = setInterval(() => {
-			set(true);
-			off = window.setTimeout(() => set(false), 3500);
+		// Only on the first screen: further down the page, it would flash behind what the visitor reads.
+		const every = setInterval(() => {
+			if (scrollY > innerHeight) return;
+			party(true);
+			off = window.setTimeout(() => party(false), 3500);
 		}, 10000);
 		return () => {
-			clearInterval(party);
+			clearInterval(every);
 			clearTimeout(off);
 		};
 	});
@@ -192,17 +227,21 @@
 {#if now < CLOSES}
 	<button
 		bind:this={strip}
-		class={['disco', { on }]}
+		class={['disco', { on, talk }]}
 		type="button"
 		data-place="disco"
 		aria-haspopup="dialog"
-		aria-label="Disco December, a demo contest: submit your demo by Nov 30"
+		aria-label="Disco December: make a demo of your product in Grip by Nov 30. The best ones play on Grip’s home page all December."
 		aria-busy={busy || undefined}
 		onclick={() => open()}
-		onpointerenter={() => touch === false && set(true)}
-		onpointerleave={() => touch === false && set(false)}
-		onfocus={() => strip?.matches(':focus-visible') && set(true)}
-		onblur={() => set(false)}
+		onpointerenter={() => touch === false && enter()}
+		onpointerleave={() => touch === false && leave()}
+		onfocus={() => {
+			if (!strip?.matches(':focus-visible')) return;
+			party(true);
+			noticed('keyboard');
+		}}
+		onblur={() => party(false)}
 	>
 		<span class="roll" aria-hidden="true">
 			<span class="track facts">
@@ -231,7 +270,8 @@
 	</button>
 	<!-- The light in the hero, behind its text and buttons: under the page's own layers, over its background. -->
 	<canvas class="light" bind:this={back} aria-hidden="true"></canvas>
-	<Send bind:this={send} />
+	<div class={['dim', { opened }]} aria-hidden="true"></div>
+	<Send bind:this={send} ontoggle={toggle} {left} />
 {/if}
 
 <style>
@@ -241,19 +281,25 @@
 		initial-value: 0;
 	}
 
+	/* The strip stays over the page as it scrolls, with the top bar under it. */
+	:global(:root:has([data-place='disco'])) {
+		--strip: 32px;
+	}
+
 	.disco {
 		all: unset;
 		box-sizing: border-box;
-		position: relative;
+		position: sticky;
+		top: 0;
 		z-index: 30;
 		display: block;
 		width: 100%;
-		height: 40px;
+		height: var(--strip);
 		cursor: pointer;
 		color: #fff;
 		background: linear-gradient(90deg, #1d4ed8, #7c3aed, #c2410c, #7c3aed, #1d4ed8) 0 0 / 200% 100%;
 		animation: disco-sweep 12s linear infinite;
-		font: 500 12px/40px var(--mono);
+		font: 500 12px/var(--strip) var(--mono);
 		-webkit-tap-highlight-color: transparent;
 		--ball: 88px;
 		--cut: -0.32;
@@ -366,25 +412,26 @@
 			visibility 0.55s var(--w, 0s);
 	}
 
-	.on .facts .c {
+	.talk .facts .c {
 		transform: translateY(-55%);
 		opacity: 0;
 		visibility: hidden;
 	}
 
-	.disco:not(.on) .msg .c {
+	.disco:not(.talk) .msg .c {
 		transform: translateY(55%);
 		opacity: 0;
 		visibility: hidden;
 	}
 
-	.on .facts > *,
-	.disco:not(.on) .msg > * {
+	.talk .facts > *,
+	.disco:not(.talk) .msg > * {
 		filter: blur(4px);
 		visibility: hidden;
 	}
 
-	/* The ball waits above the page, out of sight, and comes down for the party. */
+	/* The ball waits above the page, hidden too, so a page pulled down past its top shows nothing over the strip, and
+	   comes down for the party. */
 	.ball {
 		position: absolute;
 		left: 50%;
@@ -398,12 +445,18 @@
 			0 0 48px 10px rgb(124 58 237 / 0.3),
 			0 6px 30px 6px rgb(0 229 255 / 0.12);
 		translate: 0 calc(var(--ball) * (-1 - var(--cut)) - 56px);
-		transition: translate 0.45s cubic-bezier(0.55, 0, 0.8, 0.2);
+		visibility: hidden;
+		transition:
+			translate 0.45s cubic-bezier(0.55, 0, 0.8, 0.2),
+			visibility 0.45s;
 	}
 
 	.on .ball {
 		translate: 0 0;
-		transition: translate 1.1s cubic-bezier(0.22, 1, 0.36, 1);
+		visibility: visible;
+		transition:
+			translate 1.1s cubic-bezier(0.22, 1, 0.36, 1),
+			visibility 1.1s;
 	}
 
 	.sky,
@@ -416,8 +469,29 @@
 		pointer-events: none;
 	}
 
+	/* The light behind the page stays with the strip as the page scrolls. */
 	.light {
+		position: fixed;
 		z-index: -1;
+	}
+
+	/* The dim behind the dialog, over the page and its top bar, under the strip. A flat dim, so it never bands. */
+	.dim {
+		position: fixed;
+		inset: 0;
+		z-index: 29;
+		background: rgb(0 0 0 / 0.5);
+		opacity: 0;
+		visibility: hidden;
+		pointer-events: none;
+		transition:
+			opacity 200ms var(--ease),
+			visibility 200ms;
+	}
+
+	.dim.opened {
+		opacity: 1;
+		visibility: visible;
 	}
 
 	/* The light is made for a dark page: on a light one, deeper colors keep it from washing out. */

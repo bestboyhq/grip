@@ -79,6 +79,8 @@
 	--pad: 40px;
 	--col: min(1200px, 100vw - 2 * var(--gutter));
 	--bar-h: calc(64px + env(safe-area-inset-top));
+	/* What stays over the top bar as the page scrolls: the contest's strip (`Disco.svelte`) while it shows. */
+	--strip: 0px;
 	--crosses:
 		linear-gradient(var(--frame) 0 0) 0 4px / 100% 1px,
 		linear-gradient(var(--cross) 0 0) calc(50vw - var(--col) / 2) 0 / 1px 9px,
@@ -118,7 +120,7 @@
 
 	html {
 		-webkit-text-size-adjust: 100%;
-		scroll-padding-top: var(--bar-h);
+		scroll-padding-top: calc(var(--strip) + var(--bar-h));
 		scrollbar-width: thin;
 		scrollbar-color: var(--border-default) transparent;
 		scrollbar-gutter: stable;
@@ -393,10 +395,13 @@
 	border-radius: 8px;
 	background: var(--surface-inverse);
 	color: var(--surface-root);
+	/* Out of sight above the page, unseen too, so a page pulled down past its top shows nothing there. */
+	opacity: 0;
 }
 
 .skip:focus {
 	top: 12px;
+	opacity: 1;
 }
 
 .button {

@@ -46,7 +46,7 @@
 
 	.faq-intro {
 		position: sticky;
-		top: calc(var(--bar-h) + 32px);
+		top: calc(var(--strip) + var(--bar-h) + 32px);
 		display: flex;
 		flex-direction: column;
 		gap: 20px;
