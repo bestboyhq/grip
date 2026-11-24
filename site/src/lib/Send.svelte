@@ -138,8 +138,14 @@
 		}
 		sending = false;
 		const error = r?.ok ? undefined : (reply.error ?? 'Something went wrong. Try again.');
-		if (!demo) answer = error ? { error, field: reply.field } : { entered: reply };
-		else {
+		if (!demo) {
+			answer = error ? { error, field: reply.field } : { entered: reply };
+			// A demo in empties the form, so the focus goes to Done, the way on that comes with it.
+			if (!error) {
+				await tick();
+				send?.querySelector<HTMLElement>(`[data-step="${step}"] .acts .primary`)?.focus();
+			}
+		} else {
 			answer = error ? { refused: error } : { withdrawn: reply.title };
 			// A withdrawn row goes, so the focus goes back to the field.
 			send?.querySelector<HTMLElement>('input[name="link"]')?.focus();
