@@ -133,7 +133,7 @@
 
 	.meta {
 		position: sticky;
-		top: calc(var(--bar-h) + 32px);
+		top: calc(var(--strip) + var(--bar-h) + 32px);
 		align-self: start;
 		display: flex;
 		flex-direction: column;

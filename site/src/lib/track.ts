@@ -1,12 +1,13 @@
 // What the page reports to Logdash: every press of a link, button, or question, each part of the page as it comes
-// into view, and how far down the page was read. Logdash itself counts page views, exits, and errors.
+// into view, and how far down the page was read. Logdash itself counts page views, exits, and errors. Disco December
+// reports its own steps (`Disco.svelte`, `Send.svelte`).
 import { DOWNLOAD_URL } from '#lib/links.ts';
 
 type Props = Record<string, string | number | boolean | undefined>;
 
 // Logdash's script is deferred, so the page can start before it runs; a browser it does not count (an automated one)
 // never gets it, and the event is dropped.
-function track(name: string, props: Props): void {
+export function track(name: string, props: Props): void {
 	if (window.logdash) return window.logdash.track(name, props);
 	document
 		.querySelector('script[data-site]')
