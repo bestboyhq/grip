@@ -283,7 +283,7 @@
 
 	/* The strip stays over the page as it scrolls, with the top bar under it. */
 	:global(:root:has([data-place='disco'])) {
-		--strip: 40px;
+		--strip: 32px;
 	}
 
 	.disco {
