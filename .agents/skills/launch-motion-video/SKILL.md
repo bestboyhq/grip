@@ -5,7 +5,8 @@ description: Make a rendered motion graphics video - a launch film, a product fi
 
 # Launch motion video
 
-The bar for every film: "it shows what an incredible motion designer you are, like it's your showreel for a résumé. go all out. music, tempo, beat matching - the bar is set very high."
+The bar for every film: it shows what an incredible motion designer you are, like your showreel for a résumé.
+Go all out on music, tempo, and beat matching - the bar is set very high.
 
 ## The way to work
 
@@ -18,13 +19,13 @@ Speed is where the quality comes from: the same effort yields many cuts instead 
 
 1. **Map the music.**
    The track decides the film.
-   Ask for the track by ear, the way Simon names one: "for music use flu and flute in downloads (logo version 2)".
+   Ask for the track the way a person names one: the artist, the version, and where the file lives.
    The track sets the length: a 24 s logo track makes a 24 s film, and "24s is fine" - keep the track's whole run.
    Draw the waveform and spectrum, then write the beat grid: tempo in BPM, every beat time, the phrase boundaries, the hit.
    **Done when** the beat grid is a list of constants in the source file, with one idea mapped to each phrase.
 
 2. **Write the script on the grid.**
-   The script names the product's real act: "the script should go like press the shortcut, zoom on what's important. Edit it like a dog and then continue the regular script that we already have."
+   The script names the product's real act: press the shortcut, zoom on what is important, then continue the product's regular flow.
    The logo lands on the hit.
    Motion follows meaning: zoom on what's important while the narration talks about it.
    **Done when** the script reads as one sentence a person can retell, and no phrase carries two ideas.
@@ -52,12 +53,11 @@ Speed is where the quality comes from: the same effort yields many cuts instead 
 ## Craft rules
 
 - **Pace over flash.**
-  "The pace was good overall" - when the pace holds, keep it.
+  When the pace holds, keep it.
   A flash is an accent: one or two in a film, each with a chosen strength.
-  "There's like screen flashing very often" is the failure: a moment that only lands through a flash has weak motion, so rework the scene instead of adding another flash.
+  A moment that only lands through a flash has weak motion: rework the scene instead of adding another flash.
 
 - **Cohesion.**
-  "We lack cohesion in this motion and currently it's quite chaotic."
   Build every scene from one system: one engine, one light, one motion language, one grid.
   Ten scenes from one system read as one film; ten systems read as noise.
 

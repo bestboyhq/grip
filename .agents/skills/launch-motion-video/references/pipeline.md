@@ -16,7 +16,7 @@ The concrete loop that makes changes fast and cheap.
 ## Frame server
 
 - Serve the composition as one page; the page draws frame `t` and writes each posted frame to disk.
-- Malini's browser is the render engine: headless and offscreen, so the user's Mac stays untouched.
+- The browser is the render engine: headless and offscreen, so the user's machine stays untouched.
 - 1080p60 means 1440 frames for a 24 s film.
 
 ## Render loop
