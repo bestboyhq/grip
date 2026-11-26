@@ -81,6 +81,7 @@ Turning clicks and typing into camera direction.
   Loupes on different targets show as separate lenses; loupes on one target share one lens at the largest size and deepest level.
 - Loupes back to back, or less than a second apart, share one lens: it glides to the next target and into the next level, size, and shape on the curve.
   Fading one lens out and the next in at another spot reads as two unrelated effects.
-- Zoomed text stays sharp: capture at native resolution, and past the source pixel density upscale with a local super-resolution model trained on UI text.
+- Zoomed text stays sharp: capture at native resolution, and past the source pixel density the compositor redraws what the frame shows with a small network trained on UI text (the `compositor` skill).
+  Bilinear past 1:1 smears every glyph edge, and an area recording narrower than the export sits past 1:1 before any zoom: 1526 px wide at 1440p shows each recording px over 1.7 output px.
 
 Done when the zoomed view moves smoothly, keeps the cursor in frame, and keeps every clicked element whole.

@@ -52,5 +52,11 @@ GPU composition of each output frame.
   Dropping it with its press erases what the user saw in footage they kept.
   The click effect plays on mid-animation, since the cut changes the picture under it anyway; the shortcut label enters at the cut, so the stack of labels lasting across it slides instead of jumping.
 - Device mockups match each model: bezel, corner radius, Dynamic Island, portrait and landscape.
+- Past the recording's pixel density, screen samples read the UI-text upscaler's redraw instead of the bare recording (`upscale.ts`, `upscale.wgsl`).
+  Compute passes redraw the part the view and the lenses show, 2x denser, or 4x under 0.5 source px per output px, once per decoded frame.
+  The network adds luma detail over bilinear and keeps bilinear color: the recording's chroma is half resolution anyway.
+  It fades in from 1 to 0.85 source px per output px, so a zoom through 1:1 shows no step.
+  It trains on random UI pages rendered at 1x, 2x, and 4x, the low side averaged down and, half the time, put through the recorder's HEVC (`scripts/upscale/`).
+  On held-out recorded pages bicubic gains 1.5 dB over bilinear, the network about 10.
 
 Done when a frame grab of any export holds up at 200% zoom with no banding, aliasing, or misaligned layers.

@@ -85,6 +85,7 @@ Grip's side is `electron/upload.ts` and `electron/account.ts`; `STUDIO_SHARE_URL
   The page's hero is the editor itself: `node scripts/readme/editor.ts` captures it from the running app, one take per wallpaper a visitor can pick.
   `npx electron scripts/og.ts` renders its Open Graph image from the hero, and the site's tests ask for a re-render whenever what the image shows changes.
   `.github/workflows/site.yml` deploys it on merge, so a site-only change is a `chore(site)` or `docs(site)` and never ships an app release.
+- `npx electron scripts/run.ts scripts/upscale/make.ts <dir>` renders the UI-text upscaler's training pages, and `uv run scripts/upscale/train.py <dir> --scale 2`, then `--scale 4`, trains it into `src/engine/gpu/upscale.json` (ffmpeg with VideoToolbox, outside the sandbox).
 - `npx electron scripts/fixture/make.ts [out.grip]` generates a synthetic 24 s recording with events, camera, mic speech, and system audio, by default at `.context/fixtures/Demo #1 ✨ café.grip`.
 - `npx electron scripts/run.ts <script.ts> [args]` runs a scratch Electron script, such as a capture under `.context/`: any error, a syntax error included, prints and exits 1.
   Run bare, a failing script opens a modal dialog on the user's screen and hangs until they dismiss it.

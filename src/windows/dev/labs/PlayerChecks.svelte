@@ -15,6 +15,7 @@
   import { exportProject } from '../../../engine/export/index.ts'
   import { defaultOptions } from '../../../engine/export/options.ts'
   import { ALL_FORMATS, BufferSource, Input, VideoSampleSink } from 'mediabunny'
+  import { Renderer } from '../../../engine/gpu/renderer.ts'
 
   let { params }: { params: URLSearchParams } = $props()
   type Check = { name: string; ok: boolean; detail: string }
@@ -123,6 +124,56 @@
         got.push(`${trc} -> ${g}`)
       }
       return got.join(', ')
+    })
+    // A recording shown at twice its density: text drawn at 2x, averaged down to 1x as a screen at 1x draws it,
+    // must come out of the compositor near the 2x drawing, well past what bilinear makes of it.
+    await check('text recorded at 1x and shown at 2x comes out sharp (UI-text upscaler)', async () => {
+      const [w, h] = [480, 270]
+      const page = new OffscreenCanvas(w * 2, h * 2).getContext('2d', { willReadFrequently: true })!
+      page.fillStyle = '#fff'
+      page.fillRect(0, 0, w * 2, h * 2)
+      page.scale(2, 2)
+      page.fillStyle = '#1d1d1f'
+      ;[11, 12, 13, 15, 20].forEach((size, i) => {
+        page.font = `${size}px system-ui`
+        page.fillText('Export settings: 1440p, 60 fps, HEVC - Share link copied', 12, 30 + i * 46)
+        page.font = `${size}px Menlo`
+        page.fillText('const view = kx / z // recording px per output px', 12, 50 + i * 46)
+      })
+      const truth = page.getImageData(0, 0, w * 2, h * 2).data
+      const low = new Uint8ClampedArray(w * h * 4)
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) for (let c = 0; c < 4; c++) {
+        const at = (dx: number, dy: number) => truth[((y * 2 + dy) * w * 2 + x * 2 + dx) * 4 + c]
+        low[(y * w + x) * 4 + c] = Math.round((at(0, 0) + at(1, 0) + at(0, 1) + at(1, 1)) / 4)
+      }
+      const project = createProject('t', { duration: 1, screen: { file: 's.mp4', width: w, height: h, fps: 30, scale: 1 } })
+      const scene = sceneAt(prepare({ project, events: [], transcript: null, width: w * 2, height: h * 2 }), 0.5)
+      const canvas = new OffscreenCanvas(w * 2, h * 2)
+      const r = await Renderer.create(canvas, (rel) => rel)
+      const screen = new VideoFrame(low, { format: 'RGBA', codedWidth: w, codedHeight: h, timestamp: 0 })
+      await r.draw(scene, { screen, camera: null })
+      await r.finished()
+      screen.close()
+      const out = new OffscreenCanvas(w * 2, h * 2).getContext('2d')!
+      out.drawImage(canvas.transferToImageBitmap(), 0, 0)
+      r.destroy()
+      const got = out.getImageData(0, 0, w * 2, h * 2).data
+      // Bilinear from the 1x pixels, as the compositor samples without the upscaler.
+      const lin = (x: number, y: number) => {
+        const sx = Math.min(Math.max((x + 0.5) / 2 - 0.5, 0), w - 1), sy = Math.min(Math.max((y + 0.5) / 2 - 0.5, 0), h - 1)
+        const x0 = Math.floor(sx), y0 = Math.floor(sy), fx = sx - x0, fy = sy - y0
+        const px = (xx: number, yy: number) => low[(Math.min(yy, h - 1) * w + Math.min(xx, w - 1)) * 4]
+        return (px(x0, y0) * (1 - fx) + px(x0 + 1, y0) * fx) * (1 - fy) + (px(x0, y0 + 1) * (1 - fx) + px(x0 + 1, y0 + 1) * fx) * fy
+      }
+      let net = 0, bil = 0
+      for (let y = 0; y < h * 2; y++) for (let x = 0; x < w * 2; x++) {
+        const t = truth[(y * w * 2 + x) * 4]
+        net += (got[(y * w * 2 + x) * 4] - t) ** 2
+        bil += (lin(x, y) - t) ** 2
+      }
+      const db = (e: number) => 10 * Math.log10(255 ** 2 / (e / (w * h * 4)))
+      assert(db(net) > db(bil) + 4, `${db(net).toFixed(1)} dB against the 2x drawing, bilinear ${db(bil).toFixed(1)} dB`)
+      return `${db(net).toFixed(1)} dB against the 2x drawing, bilinear ${db(bil).toFixed(1)} dB`
     })
     await check('a portrait phone video (landscape frames plus a rotation) comes out upright', async () => {
       // 128x64 frames, left half white, displayed turned 90 degrees: 64x128, white at the bottom.
