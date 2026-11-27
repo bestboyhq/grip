@@ -28,7 +28,7 @@
   import { mix } from '../../engine/motion/spring.ts'
   import { lensIn, lensOut, LOUPE_FLAT, LOUPE_GLASS, LOUPE_TOP } from '../../engine/zoom/index.ts'
   import { loupe, type Loupe } from './loupe.ts'
-  import { measure, type Edges, type Measure } from './measure.ts'
+  import { even, measure, type Box, type Edges, type Measure } from './measure.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
@@ -198,6 +198,7 @@
   function move(e: PointerEvent) {
     mouse = { x: e.clientX, y: e.clientY }
     track(e)
+    shifted = e.shiftKey
     if (!drag) return
     for (const c of e.getCoalescedEvents?.() ?? [e]) samples.push({ t: c.timeStamp, x: c.clientX, y: c.clientY })
     if (press) shove += Math.max(0, e.movementX * press.x + e.movementY * press.y) // the cursor stopped, the hand did not
@@ -213,7 +214,15 @@
     }
     const r = roomRect
     if (kind === 'move') sel = { ...orig, x: clamp(orig.x + p.x - drag.x, r.x, r.x + r.width - orig.width), y: clamp(orig.y + p.y - drag.y, r.y, r.y + r.height - orig.height) }
+    else if (shifted && !ASPECTS[aspect]) sel = evenOut(resizeIn(orig, kind, p.x, p.y, null, r), kind)
     else sel = resizeIn(orig, kind, p.x, p.y, ASPECTS[aspect], r)
+  }
+  /** Shift, held through a corner drag, evens out the corner's two margins (evenOut). */
+  let shifted = false
+  function shift(e: KeyboardEvent) {
+    if (e.key !== 'Shift' || shifted === e.shiftKey) return
+    shifted = e.shiftKey
+    applyDrag()
   }
 
   // ---- Measure lines: from the sides a drag moves in to the first content, with their length in pixels ----
@@ -236,32 +245,39 @@
     edgeWorker.postMessage({ id, px: { width: src.width, height: src.height, data: src.data } })
   })
   onMount(() => () => edgeWorker?.terminate())
-  /** While a drag fits the area, the sides it moves, where the user looks: the dragged handle's (a new
-   *  area's, the pointer's corner), all four moving the area. Each has its measure line in the edge map's
-   *  pixels and in screen points, as near the pointer as the content allows, and its length in pixels.
-   *  A resized side measures only the stretch of it the lens shows (picked up, its flat top clear of the
-   *  rim), lens up or not: a line far along the side lands outside the glass, where the user never looks. */
+  type Side = keyof Measure
+  /** The sides a drag of `kind` moves, where the user looks: the dragged handle's (a new area's, the
+   *  pointer's corner), all four moving the area. */
+  function movedSides(kind: Handle | 'new' | 'move', r: Rect): Side[] {
+    const p = toWorld(stick(client))
+    const moved = (handle: RegExp, q: number, lo: number, size: number, a: Side, b: Side): Side[] =>
+      kind === 'move' ? [a, b] : kind === 'new' || handle.test(kind) ? [Math.abs(q - lo) < Math.abs(q - lo - size) ? a : b] : []
+    return [...moved(/[ew]/, p.x, r.x, r.width, 'left', 'right'), ...moved(/[ns]/, p.y, r.y, r.height, 'top', 'bottom')]
+  }
+  /** Area `box` (the edge map's pixels) measured as near the pointer as the content allows, its `sides`
+   *  moved by a drag of `kind`. A resized side measures only the stretch of it the lens shows (picked up,
+   *  its flat top clear of the rim), lens up or not: a line far along the side lands outside the glass,
+   *  where the user never looks. */
+  function gauge(box: Box, sides: Side[], kind: Handle | 'new' | 'move', m: { e: Edges; dx: number; dy: number }) {
+    const p = toWorld(stick(client))
+    const [nx, ny] = [Math.round(p.x * density) + m.dx, Math.round(p.y * density) + m.dy]
+    if (kind === 'move') return measure(m.e, box, [nx, ny])
+    const { c, r, mag } = lensFrame(1)
+    const s = density / (mag * z.current) // edge map px per point in the lens
+    const [cx, cy, R] = [nx + (c.x - client.x) * s, ny + (c.y - client.y) * s, (LOUPE_TOP * r - 16) * s]
+    const half = (o: number) => Math.sqrt(Math.max(0, R * R - o * o)) // of the chord o off the middle
+    const [hx, hy] = [half(box[sides.includes('bottom') ? 3 : 1] - cy), half(box[sides.includes('right') ? 2 : 0] - cx)]
+    return measure(m.e, box, [nx, ny], [cx - hx, cy - hy, cx + hx, cy + hy])
+  }
+  /** While a drag fits the area, the sides it moves, each with its measure line in the edge map's pixels
+   *  and in screen points, and its length in pixels. */
   const rules = $derived.by(() => {
     const m = edgeMap
-    if (!dragging || !drag || !sel || !m) return []
-    const k = drag.kind
-    const p = toWorld(stick(client)) // a new sel each pointer move brings this along
-    const [x0, y0, x1, y1] = inMap(sel, m)
-    const [nx, ny] = [Math.round(p.x * density) + m.dx, Math.round(p.y * density) + m.dy]
-    type S = keyof Measure
-    const moved = (handle: RegExp, q: number, lo: number, size: number, a: S, b: S): S[] =>
-      k === 'move' ? [a, b] : k === 'new' || handle.test(k) ? [Math.abs(q - lo) < Math.abs(q - lo - size) ? a : b] : []
-    const sides = [...moved(/[ew]/, p.x, sel.x, sel.width, 'left', 'right'), ...moved(/[ns]/, p.y, sel.y, sel.height, 'top', 'bottom')]
-    let band: number[] | undefined
-    if (k !== 'move') {
-      const { c, r, mag } = lensFrame(1)
-      const s = density / (mag * z.current) // edge map px per point in the lens
-      const [cx, cy, R] = [nx + (c.x - client.x) * s, ny + (c.y - client.y) * s, (LOUPE_TOP * r - 16) * s]
-      const half = (o: number) => Math.sqrt(Math.max(0, R * R - o * o)) // of the chord o off the middle
-      const [hx, hy] = [half((sides.includes('bottom') ? y1 : y0) - cy), half((sides.includes('right') ? x1 : x0) - cx)]
-      band = [cx - hx, cy - hy, cx + hx, cy + hy]
-    }
-    const measured = measure(m.e, [x0, y0, x1, y1], [nx, ny], band)
+    if (!dragging || !drag || !sel || !m) return [] // a new sel each pointer move brings this along
+    const box = inMap(sel, m)
+    const sides = movedSides(drag.kind, sel)
+    const measured = gauge(box, sides, drag.kind, m)
+    const [x0, y0, x1, y1] = box
     const onScreen = (x: number, y: number) => ({ x: W / 2 + ((x - m.dx) / density - W / 2) * z.current, y: H / 2 + ((y - m.dy) / density - H / 2) * z.current })
     return sides.flatMap((side) => {
       const s = measured[side]
@@ -270,10 +286,20 @@
       const from = { left: x0, right: x1, top: y0, bottom: y1 }[side]
       const to = from + (side === 'left' || side === 'top' ? s.d : -s.d)
       const at = Math.round(s.at) // on a pixel edge: crisp at true size
-      const line: [number, number, number, number] = h ? [from, at, to, at] : [at, from, at, to]
+      const line: Box = h ? [from, at, to, at] : [at, from, at, to]
       return [{ side, d: s.d, h, line, a: onScreen(line[0], line[1]), b: onScreen(line[2], line[3]) }]
     })
   })
+  /** Area `r` resized by its corner with Shift held: the corner where its two sides lie as far from the
+   *  content as each other, the pointer setting how far (measure.ts `even`). */
+  function evenOut(r: Rect, kind: Handle | 'new'): Rect {
+    const m = edgeMap
+    const [a, b] = movedSides(kind, r) as ['left' | 'right', ('top' | 'bottom')?]
+    if (!m || !b) return r // an edge alone: nothing to even out with
+    const box = inMap(r, m)
+    const [l, t, rt, bt] = even(box, a, b, (o) => gauge(o, [a, b], kind, m)).map((v, i) => (v - box[i]) / density)
+    return { x: r.x + l, y: r.y + t, width: r.width - l + rt, height: r.height - t + bt }
+  }
 
   let press: P | null = null // the way the drag presses past the display's edge (-1, 0, or 1 on each axis)
   let pressSince = 0
@@ -763,7 +789,7 @@
   const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 </script>
 
-<svelte:window onkeydown={key} />
+<svelte:window onkeydown={(e) => (shift(e), key(e))} onkeyup={shift} />
 
 {#if still}
   <!-- The frozen screen and, once an area presses past its edge, what lies past it (a checkerboard where

@@ -36,7 +36,9 @@ Screen, window, area, and device recording.
   Content is a step between two pixels, never a soft shadow or a gradient.
   A resized side measures only the stretch of it the lens shows, lens up or not, and with the lens up the line and its length show only inside it.
   The user looks into the glass: a line to content further along the side lands outside it and reads as a stray.
-  Only the dragged sides measure, and nothing snaps: lines on all four sides are noise, and a magnet fights the user's hand.
+  Only the dragged sides measure, and nothing snaps on its own: lines on all four sides are noise, and a magnet fights the user's hand.
+  Shift, held on a corner, moves it to where its two lines are as long as each other, the pointer setting how long: even padding around what the user frames.
+  An edge alone has nothing to match, and neither has a corner with only one line in the lens.
 - The camera preview is for the person recording, never a layout: it starts under the camera, at the top center of the display, so looking at yourself is looking into the lens.
   It drags anywhere, settles back under the camera when dropped near it, and fades while the pointer is over it.
   Each display keeps where it was dropped; where the video puts the camera is an edit.

@@ -58,6 +58,9 @@ function prev(w: Uint32Array, base: number, from: number, lo: number) {
   return -1
 }
 
+/** An area's pixel edges: x0, y0, x1, y1. */
+export type Box = [number, number, number, number]
+
 /** A side's measure: `d` pixels from it to the first content, at `at` along it (pixels: the middle of
  *  the pixel row or column nearest the pointer of those that near it). */
 export interface Side {
@@ -88,7 +91,7 @@ function side(from: number, to: number, near: number, ray: (i: number, cap: numb
  *  the side, flush with it. Only along the stretch of each side inside `band` (pixels x0, y0, x1, y1:
  *  what the lens shows), so a line never lands where the user does not look. A side past the pixels `e`
  *  has (the room past the screen, before its edges come) measures nothing. */
-export function measure(e: Edges, r: [number, number, number, number], [nx, ny]: [number, number], band = [-Infinity, -Infinity, Infinity, Infinity]): Measure {
+export function measure(e: Edges, r: Box, [nx, ny]: [number, number], band = [-Infinity, -Infinity, Infinity, Infinity]): Measure {
   const [x0, y0, x1, y1] = r.map(Math.round)
   const rw = (e.width + 31) >> 5
   const cw = (e.height + 31) >> 5
@@ -101,4 +104,23 @@ export function measure(e: Edges, r: [number, number, number, number], [nx, ny]:
     top: y0 < 0 ? null : side(c0, c1, nx, (x, cap) => { const b = next(e.v, x * cw, y0, Math.min(b1, y0 + cap + 1)); return pos(b, b - y0) }),
     bottom: y1 > e.height ? null : side(c0, c1, nx, (x, cap) => { const b = prev(e.v, x * cw, Math.min(y1, e.height - 1), Math.max(b0 + 1, y1 - cap)); return pos(b, y1 - b) }),
   }
+}
+
+/** Area `r` with the corner where sides `a` and `b` meet moved so both lie as far from the content as
+ *  each other: on the diagonal through the content's corner, as near where the corner is as that allows.
+ *  `at` measures an area. What a move brings into the area can change what a side reaches, so each move
+ *  measures again; a corner moved past what `at` can measure stays where it last could. */
+export function even(r: Box, a: 'left' | 'right', b: 'top' | 'bottom', at: (r: Box) => Measure): Box {
+  let last = r
+  for (let i = 0; i < 4; i++) { // ponytail: 4 tries; what a move brings in rarely changes the target more than once
+    const m = at(r)
+    const [h, v] = [m[a], m[b]]
+    if (!h || !v) return last
+    if (h.d === v.d) return r
+    last = r
+    const d = Math.round((h.d + v.d) / 2)
+    const [x, y] = [d - h.d, d - v.d] // pixels each side moves out
+    r = [r[0] - (a === 'left' ? x : 0), r[1] - (b === 'top' ? y : 0), r[2] + (a === 'right' ? x : 0), r[3] + (b === 'bottom' ? y : 0)]
+  }
+  return last
 }

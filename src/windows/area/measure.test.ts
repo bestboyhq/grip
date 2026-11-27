@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { edges, measure } from './measure.ts'
+import { edges, even, measure } from './measure.ts'
 
 // A 100 x 40 screen: a horizontal ramp (a gradient: no content) with a dark box at x 40..69, y 10..29.
 const W = 100
@@ -66,3 +66,12 @@ test('the nearest content on each side, as a pixel by pixel look finds it', () =
   }
 })
 
+test('a corner evened out lies as far from the content on both its sides', () => {
+  const e = edges(screen(box))
+  const at = (r: [number, number, number, number]) => measure(e, r, [30, 4])
+  // 10 to the box's left, 6 above it: both 8, the left side in by 2 and the top out by 2.
+  assert.deepEqual(even([30, 4, 97, 38], 'left', 'top', at), [32, 2, 97, 38])
+  assert.deepEqual([at([32, 2, 97, 38]).left?.d, at([32, 2, 97, 38]).top?.d], [8, 8])
+  // Evened out, the bottom would pass the screen's last row: the corner stays.
+  assert.deepEqual(even([3, 2, 90, 34], 'right', 'bottom', at), [3, 2, 90, 34])
+})
