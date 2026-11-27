@@ -159,9 +159,11 @@ export const floating: BrowserWindowConstructorOptions = {
   show: false,
 }
 /** A panel floats over fullscreen apps without Electron hiding the dock icon for it (updateDock owns that
- *  icon), and stays when the user hides other apps: the recording controls must not go with them. */
+ *  icon), and stays when the user hides other apps: the recording controls must not go with them.
+ *  A release keeps it out of other apps' captures and screen shares too. A dev run lets them in, so a
+ *  released Grip (another app to the dev run's Electron) or any recorder can film the picker at work. */
 export function protect(win: BrowserWindow, level: number) {
-  win.setContentProtection(true)
+  win.setContentProtection(app.isPackaged)
   win.setAlwaysOnTop(true, 'screen-saver', level)
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
   native.keepOnHide(win.getNativeWindowHandle())

@@ -15,6 +15,8 @@ Screen, window, area, and device recording.
   ScreenCaptureKit labels its frames with BT.709's curve: written as labeled, or converted from that label, the file plays washed out in QuickTime (gray 128 shows as 139).
 - Our own UI stays out of the capture: recording widget, speaker notes and prompter, camera preview, area picker.
   System notifications and, optionally, desktop icons stay out too.
+  A release also keeps that UI out of other apps' captures and screen shares (content protection).
+  A dev run does not, so a released Grip records the dev run's picker for demos: a Grip leaves out only its own app.
 - The picker opens at once (shortcut or menu bar click) and freezes every display under it; the freeze ends when a countdown starts.
   Its overlays and toolbar show first, click-through and never key, so menus and hover states stay for the capture, and they take the mouse once the frozen frame is in.
   ScreenCaptureKit takes about 100 ms to shoot a display: waiting for that before showing anything made every open take 200 ms, and 450 ms the first time after launch.
