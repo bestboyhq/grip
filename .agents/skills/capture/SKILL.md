@@ -34,7 +34,8 @@ Screen, window, area, and device recording.
   The body holds the pointer during a drag, and Chromium then shows the body's arrow, not the cursor of the handle under it.
 - While an area drags, the sides it moves measure in to the first content (`src/windows/area/measure.ts`): a blue line with its length in pixels, as near the pointer as that content allows.
   Content is a step between two pixels, never a soft shadow or a gradient.
-  With the lens up, the length shows on the magnified line inside it, since the user looks there and misses anything outside it.
+  A resized side measures only the stretch of it the lens shows, lens up or not, and with the lens up the line and its length show only inside it.
+  The user looks into the glass: a line to content further along the side lands outside it and reads as a stray.
   Only the dragged sides measure, and nothing snaps: lines on all four sides are noise, and a magnet fights the user's hand.
 - The camera preview is for the person recording, never a layout: it starts under the camera, at the top center of the display, so looking at yourself is looking into the lens.
   It drags anywhere, settles back under the camera when dropped near it, and fades while the pointer is over it.

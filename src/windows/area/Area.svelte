@@ -238,19 +238,32 @@
   onMount(() => () => edgeWorker?.terminate())
   /** While a drag fits the area, the sides it moves, where the user looks: the dragged handle's (a new
    *  area's, the pointer's corner), all four moving the area. Each has its measure line in the edge map's
-   *  pixels and in screen points, as near the pointer as the content allows, and its length in pixels. */
+   *  pixels and in screen points, as near the pointer as the content allows, and its length in pixels.
+   *  A resized side measures only the stretch of it the lens shows (picked up, its flat top clear of the
+   *  rim), lens up or not: a line far along the side lands outside the glass, where the user never looks. */
   const rules = $derived.by(() => {
     const m = edgeMap
     if (!dragging || !drag || !sel || !m) return []
     const k = drag.kind
     const p = toWorld(stick(client)) // a new sel each pointer move brings this along
     const [x0, y0, x1, y1] = inMap(sel, m)
-    const measured = measure(m.e, [x0, y0, x1, y1], [Math.round(p.x * density) + m.dx, Math.round(p.y * density) + m.dy])
+    const [nx, ny] = [Math.round(p.x * density) + m.dx, Math.round(p.y * density) + m.dy]
     type S = keyof Measure
     const moved = (handle: RegExp, q: number, lo: number, size: number, a: S, b: S): S[] =>
       k === 'move' ? [a, b] : k === 'new' || handle.test(k) ? [Math.abs(q - lo) < Math.abs(q - lo - size) ? a : b] : []
+    const sides = [...moved(/[ew]/, p.x, sel.x, sel.width, 'left', 'right'), ...moved(/[ns]/, p.y, sel.y, sel.height, 'top', 'bottom')]
+    let band: number[] | undefined
+    if (k !== 'move') {
+      const { c, r, mag } = lensFrame(1)
+      const s = density / (mag * z.current) // edge map px per point in the lens
+      const [cx, cy, R] = [nx + (c.x - client.x) * s, ny + (c.y - client.y) * s, (LOUPE_TOP * r - 16) * s]
+      const half = (o: number) => Math.sqrt(Math.max(0, R * R - o * o)) // of the chord o off the middle
+      const [hx, hy] = [half((sides.includes('bottom') ? y1 : y0) - cy), half((sides.includes('right') ? x1 : x0) - cx)]
+      band = [cx - hx, cy - hy, cx + hx, cy + hy]
+    }
+    const measured = measure(m.e, [x0, y0, x1, y1], [nx, ny], band)
     const onScreen = (x: number, y: number) => ({ x: W / 2 + ((x - m.dx) / density - W / 2) * z.current, y: H / 2 + ((y - m.dy) / density - H / 2) * z.current })
-    return [...moved(/[ew]/, p.x, sel.x, sel.width, 'left', 'right'), ...moved(/[ns]/, p.y, sel.y, sel.height, 'top', 'bottom')].flatMap((side) => {
+    return sides.flatMap((side) => {
       const s = measured[side]
       if (!s?.d) return [] // flush with the content, or none to measure to
       const h = side === 'left' || side === 'right'
@@ -335,6 +348,14 @@
     return [...g.getImageData(0, 0, 1, 1).data.subarray(0, 3)].map((v) => v / 255)
   }
 
+  /** The lens picked up `p` of the way: its center in toward the area's middle, never past it, its
+   *  radius, and its magnification. The pointer stays on the pixel it magnifies. */
+  function lensFrame(p: number) {
+    const r = RADIUS * mix(LOUPE_FLAT, 1, p)
+    const v = view ? { x: view.x + view.width / 2 - client.x, y: view.y + view.height / 2 - client.y } : { x: 0, y: 0 }
+    const lean = Math.min(1, (LEAN * r) / (Math.hypot(v.x, v.y) || 1))
+    return { c: { x: client.x + v.x * lean, y: client.y + v.y * lean }, r, mag: MAG ** p }
+  }
   /** The lens over the pointer, picked up `lift` of the way, with the area's edges, the dim around it,
    *  and the measure lines. */
   function drawLens(now: number) {
@@ -346,12 +367,7 @@
     const w = toWorld(stuck)
     const at = (v: number, d: number) => Math.round(v * density) + d // the pixel corner an edge here lands on
     if (!checker.length) checker = [p3('--surface-100', lens), p3('--surface-150', lens), p3('--brand', lens)] // .room.clear, .ruler
-    const r = RADIUS * mix(LOUPE_FLAT, 1, p)
-    const mag = MAG ** p
-    // In toward the area's middle, never past it. The pointer stays on the pixel it magnifies.
-    const v = view ? { x: view.x + view.width / 2 - client.x, y: view.y + view.height / 2 - client.y } : { x: 0, y: 0 }
-    const lean = Math.min(1, (LEAN * r) / (Math.hypot(v.x, v.y) || 1))
-    const c = { x: client.x + v.x * lean, y: client.y + v.y * lean }
+    const { c, r, mag } = lensFrame(p)
     lensAt = { x: c.x, y: c.y, px: client.x, py: client.y, sx: stuck.x, sy: stuck.y, r, mag }
     const [ex, ey] = edgeMap ? [dx - edgeMap.dx, dy - edgeMap.dy] : [0, 0] // the edge map may still be the still's
     const toPx = density / z.current / mag // still px per screen point, magnified
@@ -375,13 +391,11 @@
     })
   }
   /** Where the length of a measure line from screen point `a` to `b` shows, and how long the line shows
-   *  there: on the middle of what the lens's flat top shows of it, magnified, where the user looks; else
-   *  on its own middle or, under the rest of the glass, just past the rim toward it. */
-  function label(a: P, b: P): P & { len: number; pinned?: boolean } {
+   *  there: on its middle; with the lens up, on the middle of what its flat top shows of it, magnified,
+   *  or nowhere: the user looks into the glass, and a length outside it reads as some other line's. */
+  function label(a: P, b: P): (P & { len: number }) | null {
     const l = lensAt
-    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-    const len = Math.hypot(b.x - a.x, b.y - a.y)
-    if (!l) return { ...mid, len }
+    if (!l) return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, len: Math.hypot(b.x - a.x, b.y - a.y) }
     // The line magnified, from A along d, cut to the flat top: a circle about the lens's center.
     const A = { x: l.px + (a.x - l.sx) * l.mag, y: l.py + (a.y - l.sy) * l.mag }
     const d = { x: (b.x - a.x) * l.mag, y: (b.y - a.y) * l.mag }
@@ -389,18 +403,12 @@
     const [qa, qb, qc] = [d.x * d.x + d.y * d.y, f.x * d.x + f.y * d.y, f.x * f.x + f.y * f.y - (LOUPE_TOP * l.r) ** 2]
     const root = Math.sqrt(Math.max(0, qb * qb - qa * qc))
     const [t0, t1] = [Math.max(0, (-qb - root) / qa), Math.min(1, (-qb + root) / qa)]
-    if (qa && qb * qb > qa * qc && t1 > t0) return { x: A.x + (d.x * (t0 + t1)) / 2, y: A.y + (d.y * (t0 + t1)) / 2, len: (t1 - t0) * Math.sqrt(qa) }
-    const [dx, dy] = [mid.x - l.x, mid.y - l.y]
-    const far = Math.hypot(dx, dy)
-    if (far >= l.r + 16) return { ...mid, len }
-    const [ux, uy] = far ? [dx / far, dy / far] : [0, -1]
-    const out = l.r + 8 + 14 * Math.abs(ux) + 9 * Math.abs(uy) // the label's half width or height clear of the rim
-    return { x: clamp(l.x + ux * out, 20, W - 20), y: clamp(l.y + uy * out, 12, H - 12), len, pinned: true }
+    return qa && qb * qb > qa * qc && t1 > t0 ? { x: A.x + (d.x * (t0 + t1)) / 2, y: A.y + (d.y * (t0 + t1)) / 2, len: (t1 - t0) * Math.sqrt(qa) } : null
   }
   const gaps = $derived(
-    rules.map((l) => {
+    rules.flatMap((l) => {
       const at = label(l.a, l.b)
-      return { ...l, at, beside: !at.pinned && at.len < (l.h ? 16 + 7 * String(l.d).length : 25) } // the label and a tick each side
+      return at ? [{ ...l, at, beside: at.len < (l.h ? 16 + 7 * String(l.d).length : 25) }] : [] // the label and a tick each side
     }),
   )
 
@@ -860,8 +868,8 @@
         {@const e = toScreen(screenRect)}
         <div class="edge" style:left="{e.x}px" style:top="{e.y}px" style:width="{e.width}px" style:height="{e.height}px" style:opacity={(1 - z.current) / (1 - STEP)}></div>
       {/if}
-      <!-- From each side in to the first content, under the handles: the lens draws them too (loupe.wgsl). -->
-      {#each rules as l (l.side)}
+      <!-- From each side in to the first content, under the handles; with the lens up, only in it (loupe.wgsl). -->
+      {#each lensAt ? [] : rules as l (l.side)}
         {@const [x, y] = [Math.min(l.a.x, l.b.x), Math.min(l.a.y, l.b.y)]}
         <div class="ruler" class:h={l.h} style:left="{x}px" style:top="{y}px" style:width={l.h ? `${Math.abs(l.b.x - l.a.x)}px` : null} style:height={l.h ? null : `${Math.abs(l.b.y - l.a.y)}px`}></div>
       {/each}

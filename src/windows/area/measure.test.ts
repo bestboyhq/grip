@@ -25,6 +25,10 @@ test('from each side of the area to the first content inside it', () => {
   assert.deepEqual(measure(edges(screen(box)), [42, 12, 68, 28], [0, 0]), { left: null, right: null, top: null, bottom: null })
   // Past the pixels it has: that side measures nothing.
   assert.equal(measure(edges(screen(box)), [-5, 2, 97, 38], [0, 0]).left, null)
+  // Only along the stretch the lens shows: rows 25 to 35 cross the box, rows 32 to 38 miss it.
+  const shown = measure(edges(screen(box)), [3, 2, 97, 38], [97, 38], [80, 25, 100, 35.5])
+  assert.deepEqual([shown.left, shown.top], [{ d: 37, at: 29.5 }, null])
+  assert.equal(measure(edges(screen(box)), [3, 2, 97, 38], [97, 38], [0, 32, 100, 38]).left, null)
 })
 
 test('the nearest content on each side, as a pixel by pixel look finds it', () => {
@@ -38,6 +42,8 @@ test('the nearest content on each side, as a pixel by pixel look finds it', () =
     const [x0, x1] = [Math.floor(rand() * 50), 50 + Math.floor(rand() * 50)]
     const [y0, y1] = [Math.floor(rand() * 20), 20 + Math.floor(rand() * 20)]
     const [nx, ny] = [Math.floor(rand() * W), Math.floor(rand() * H)] // the pointer
+    const band = k % 2 ? [nx - 20 * rand(), ny - 10 * rand(), nx + 20 * rand(), ny + 10 * rand()] : undefined // what the lens shows
+    const inBand = (i: number, lo: number, hi: number) => !band || (i >= Math.ceil(band[lo]) && i < Math.ceil(band[hi]))
     // Every ray to its first change; the nearest, on the ray nearest the pointer (the first of two as near).
     const look = (n: number, rays: number[], near: number, at: (ray: number, i: number) => [number, number, number, number]) => {
       const hits = rays.flatMap((r) => {
@@ -50,9 +56,9 @@ test('the nearest content on each side, as a pixel by pixel look finds it', () =
       const best = Math.min(...hits.map((h) => h.d))
       return hits.filter((h) => h.d === best).reduce<{ d: number; at: number } | null>((a, h) => (a && Math.abs(a.at - 0.5 - near) <= Math.abs(h.at - 0.5 - near) ? a : h), null)
     }
-    const rows = Array.from({ length: y1 - y0 }, (_, i) => y0 + i)
-    const cols = Array.from({ length: x1 - x0 }, (_, i) => x0 + i)
-    const m = measure(e, [x0, y0, x1, y1], [nx, ny])
+    const rows = Array.from({ length: y1 - y0 }, (_, i) => y0 + i).filter((y) => inBand(y, 1, 3))
+    const cols = Array.from({ length: x1 - x0 }, (_, i) => x0 + i).filter((x) => inBand(x, 0, 2))
+    const m = measure(e, [x0, y0, x1, y1], [nx, ny], band)
     assert.deepEqual(m.left, look(x1 - x0, rows, ny, (y, i) => [x0 + i, y, x0 + i - 1, y]))
     assert.deepEqual(m.right, look(x1 - x0, rows, ny, (y, i) => [x1 - 1 - i, y, x1 - i, y])) // flush: x1 - 1 against x1
     assert.deepEqual(m.top, look(y1 - y0, cols, nx, (x, i) => [x, y0 + i, x, y0 + i - 1]))
