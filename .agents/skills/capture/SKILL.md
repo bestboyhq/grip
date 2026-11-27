@@ -25,6 +25,11 @@ Screen, window, area, and device recording.
   Picking a display or a window, ⌘C copies it without drawing; a window comes alone, as macOS takes it: nothing in front of it, clear corners, no shadow.
   The overlay under the pointer holds the keyboard, so ↩ and ⌘C reach the display the user is looking at.
   They leave out our UI and the cursor like recordings do, and carry their pixel density (144 dpi on Retina) so they paste at on-screen size.
+- An area held or pushed against a display's edge steps the screen back, so a window at the edge can get a margin.
+  Past the edge shows the desktop picture alone, mirrored, with shadows that cross the edge fading out.
+  A screenshot takes it; a recording stays on the screen, since the editor adds room around it.
+- A resize that slows down picks up the editor's glass lens (`src/engine/gpu/glass.wgsl`) in place under the pointer.
+  A loupe beside the pointer that flips sides as the pointer crosses the area's middle jumps around while the user aims.
 - The camera preview is for the person recording, never a layout: it starts under the camera, at the top center of the display, so looking at yourself is looking into the lens.
   It drags anywhere, settles back under the camera when dropped near it, and fades while the pointer is over it.
   Each display keeps where it was dropped; where the video puts the camera is an edit.

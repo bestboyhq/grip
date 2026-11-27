@@ -2,7 +2,7 @@
 // (HTMLCanvasElement for preview, OffscreenCanvas for export). Resolution independent: all
 // geometry comes from the Scene in output px.
 //
-// Passes per frame (shaders.wgsl):
+// Passes per frame (shaders.wgsl, the lens's optics in glass.wgsl):
 //   small      screen frame -> quarter-res mip pyramid, only while blur/pixelate masks show
 //   upscale    compute: the part of the screen frame shown past its pixel density, redrawn 2x or 4x denser by
 //              the UI-text network (upscale.wgsl), which the screen samples read there instead
@@ -26,6 +26,7 @@ import { oklab, parseColor, wallpaper, DEFAULT_WALLPAPER } from '../backgrounds/
 import { CURSORS, CURSOR_RES, type BuiltinName } from '../../assets/cursors.ts'
 import { GRADE, gradeLut, parseCube, type Lut } from './lut.ts'
 import { MODELS, upRegion, type UpRegion } from './upscale.ts'
+import glass from './glass.wgsl?raw'
 import shaders from './shaders.wgsl?raw'
 import upscale from './upscale.wgsl?raw'
 
@@ -34,6 +35,7 @@ import upscale from './upscale.wgsl?raw'
 const styleCode = import.meta.glob<string>('./wallpapers/*.wgsl', { query: '?raw', import: 'default', eager: true })
 const STYLES = Object.keys(styleCode).sort().map((k) => k.slice('./wallpapers/'.length, -'.wgsl'.length))
 const shaderCode = (styles: string[]) => [
+  glass,
   shaders,
   upscale,
   ...styles.map((s) => styleCode[`./wallpapers/${s}.wgsl`]),

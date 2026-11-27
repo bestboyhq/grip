@@ -24,7 +24,10 @@
   import { ASPECTS, clamp, constrainIn, formAt, presetFrame, presetSize, PRESETS, resizeIn, toolsAt, type Handle } from './geometry.ts'
   import { COLORS, FONT, FONT_FAMILY, moved, P3, paintShapes, shapeAt, tiny, TOOLS, type P, type Shape, type Tool } from './annotate.ts'
   import { beyond, type Pixels } from './beyond.ts'
-  import { easeOut, GLIDE_MS, still as calm } from '../../ui/motion.ts'
+  import { easeGlide, easeOut, still as calm } from '../../ui/motion.ts'
+  import { mix } from '../../engine/motion/spring.ts'
+  import { lensIn, lensOut, LOUPE_FLAT, LOUPE_GLASS } from '../../engine/zoom/index.ts'
+  import { loupe, type Loupe } from './loupe.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
@@ -234,102 +237,72 @@
     y: d.y < 0 ? 18 : d.y > 0 ? floor - 18 - pushH : clamp(client.y - pushH / 2 - (d.x ? 40 : 0), 12, floor - pushH - 12),
   })
 
-  // ---- The loupe: a resize that slows down shows the true pixels around the pointer ----
+  // ---- The loupe: a resize that slows down picks up the editor's glass lens, in place under the pointer ----
 
   const SLOW = 70 // pt/s: slower than this for SETTLE ms, the loupe comes
   const SETTLE = 140
   const FAST = 320 // pt/s: faster, it goes
-  const LENS = 156 // its size, points
-  const CELL = 4 // loupe points per screen pixel: 8x on a Retina display
+  const RADIUS = 200 // points
+  const MAG = 6 // a still pixel shows 3 points wide on a Retina display
+  const REACH = Math.ceil(3.3 * RADIUS) // points from its center to where its shadow ends: half the canvas
   let lens = $state<HTMLCanvasElement>()
-  let stillCanvas = $state<HTMLCanvasElement>()
-  let roomCanvas = $state<HTMLCanvasElement>()
+  let gpu = $state.raw<Loupe | null>(null)
   let lensOn = $state(false)
-  let lensAt = $state({ x: 0, y: 0, sx: 1, sy: 1 })
-  let lensGlide = $state(false)
-  let lensText = $state('')
+  /** How far it is picked up off the screen, on the glide curve, as the editor's loupe (zoom/index.ts). */
+  const lift = new Tween(0, { easing: easeGlide })
+  const lensShown = $derived(lensOn || lift.current > 0)
+  let lensPos = $state({ x: 0, y: 0 })
+  let liftSince = 0 // when it set off up: its glass shows over LOUPE_GLASS
   let slowSince = 0
-  let glideEnd: ReturnType<typeof setTimeout> | undefined
+  let checker: number[][] = []
 
-  /** Beside the pointer, outside the area on the dragged edge's side; flipped where the screen ends. */
-  function placeLens() {
-    let sx = view && client.x < view.x + view.width / 2 ? -1 : 1
-    let sy = view && client.y < view.y + view.height / 2 ? -1 : 1
-    const o = 0.75 * (LENS / 2 + 22)
-    const box = () => ({ x: client.x + sx * o - LENS / 2, y: client.y + sy * o - LENS / 2 })
-    let b = box()
-    if (b.x < 8 || b.x + LENS > W - 8) sx = -sx
-    if (b.y < 8 || b.y + LENS + 34 > floor - 8) sy = -sy
-    b = box()
-    if (lensOn && (sx !== lensAt.sx || sy !== lensAt.sy)) {
-      lensGlide = true
-      clearTimeout(glideEnd)
-      glideEnd = setTimeout(() => (lensGlide = false), GLIDE_MS + 10)
+  $effect(() => {
+    const canvas = lens
+    if (!canvas) return
+    let gone = false
+    loupe(canvas).then((l) => (gone ? l?.destroy() : (gpu = l)))
+    return () => {
+      gone = true
+      gpu?.destroy()
+      gpu = null
     }
-    lensAt = { x: clamp(b.x, 8, W - LENS - 8), y: clamp(b.y, 8, floor - LENS - 42), sx, sy }
+  })
+  $effect(() => gpu?.source(room ?? still))
+
+  /** A theme color as the canvas's P3, 0 to 1. */
+  function p3(name: string, at: Element) {
+    const g = new OffscreenCanvas(1, 1).getContext('2d', P3)!
+    g.fillStyle = getComputedStyle(at).getPropertyValue(name)
+    g.fillRect(0, 0, 1, 1)
+    return [...g.getImageData(0, 0, 1, 1).data.subarray(0, 3)].map((v) => v / 255)
   }
 
-  /** The pixels around the pointer, CELL points each, with the area's edges where the screenshot cuts them. */
-  function paintLens() {
-    const g = lens?.getContext('2d', P3)
-    const src = room ? roomCanvas : stillCanvas
-    if (!g || !src) return
-    const p = toWorld(stick(client))
-    const cx = Math.round(p.x * density) // the pixel corner an edge dragged here lands on
-    const cy = Math.round(p.y * density)
+  /** The lens over the pointer, picked up `lift` of the way, with the area's edges and the dim around it. */
+  function drawLens(now: number) {
+    if (!gpu || !lens || !still) return
+    const p = lift.current
+    const pt = devicePixelRatio
     const [dx, dy] = room ? [OX, OY] : [0, 0]
-    const n = Math.ceil(LENS / CELL / 2) + 1 // pixels from the center to past the rim
-    const c = LENS / 2
-    const at = (X: number, from: number) => c + (X - from) * CELL
-    g.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
-    g.imageSmoothingEnabled = false
-    g.fillStyle = '#000'
-    g.fillRect(0, 0, LENS, LENS)
-    g.drawImage(src, cx - n + dx, cy - n + dy, 2 * n, 2 * n, c - n * CELL, c - n * CELL, 2 * n * CELL, 2 * n * CELL)
-    g.strokeStyle = 'rgb(128 128 128 / 0.18)' // the pixel grid
-    g.lineWidth = 0.5
-    g.beginPath()
-    for (let i = -n; i <= n; i++) {
-      g.moveTo(c + i * CELL, 0)
-      g.lineTo(c + i * CELL, LENS)
-      g.moveTo(0, c + i * CELL)
-      g.lineTo(LENS, c + i * CELL)
-    }
-    g.stroke()
-    if (sel) {
-      const [x0, x1] = [sel.x, sel.x + sel.width].map((v) => at(Math.round(v * density), cx))
-      const [y0, y1] = [sel.y, sel.y + sel.height].map((v) => at(Math.round(v * density), cy))
-      g.fillStyle = 'rgb(0 0 0 / 0.42)' // the shade's dim
-      g.beginPath()
-      g.rect(0, 0, LENS, LENS)
-      g.rect(x0, y0, x1 - x0, y1 - y0)
-      g.fill('evenodd')
-      for (const [w, color] of [[3, 'rgb(0 0 0 / 0.35)'], [1.25, '#fff']] as const) {
-        g.lineWidth = w
-        g.strokeStyle = color
-        g.strokeRect(x0, y0, x1 - x0, y1 - y0)
-      }
-    }
-    if (back && still) {
-      // The screen's real edge, dashed as on screen.
-      g.setLineDash([6, 4])
-      g.lineWidth = 1
-      g.strokeStyle = 'rgb(255 255 255 / 0.9)'
-      g.strokeRect(at(0, cx), at(0, cy), still.width * CELL, still.height * CELL)
-      g.setLineDash([])
-    }
-    g.lineCap = 'round' // ticks around the point an edge lands on
-    for (const [w, color] of [[3, 'rgb(0 0 0 / 0.4)'], [1.25, '#fff']] as const) {
-      g.lineWidth = w
-      g.strokeStyle = color
-      g.beginPath()
-      for (const [ux, uy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        g.moveTo(c + ux * 7, c + uy * 7)
-        g.lineTo(c + ux * 15, c + uy * 15)
-      }
-      g.stroke()
-    }
-    lensText = sel ? `${px(sel.width)} × ${px(sel.height)}` : ''
+    const w = toWorld(stick(client))
+    const at = (v: number, d: number) => Math.round(v * density) + d // the pixel corner an edge here lands on
+    if (!checker.length) checker = [p3('--surface-100', lens), p3('--surface-150', lens)] // .room.clear
+    lensPos = { x: client.x - REACH, y: client.y - REACH }
+    gpu.draw({
+      x: REACH * pt,
+      y: REACH * pt,
+      radius: RADIUS * pt * mix(LOUPE_FLAT, 1, p),
+      mag: MAG ** p,
+      glass: lensOn ? Math.min((now - liftSince) / (1000 * LOUPE_GLASS), 1) : p,
+      lift: p,
+      pt,
+      at: { x: w.x * density + dx, y: w.y * density + dy },
+      perPx: density / (pt * z.current),
+      cell: 8 * density,
+      area: sel && [at(sel.x, dx), at(sel.y, dy), at(sel.x + sel.width, dx), at(sel.y + sel.height, dy)],
+      screen: room && back ? [dx, dy, dx + still.width, dy + still.height] : null,
+      even: checker[0],
+      odd: checker[1],
+    })
   }
 
   /** Each frame of a drag: the press past the edge, the screen stepping, and the loupe. */
@@ -358,13 +331,14 @@
       slowSince ||= now
       if (now - slowSince > SETTLE) lensOn = true
     }
-    if (lensOn) {
-      placeLens()
-      paintLens()
+    if (lensOn !== (lift.target === 1)) {
+      if (lensOn) liftSince = now
+      lift.set(lensOn ? 1 : 0, { duration: calm() ? 0 : 1000 * (lensOn ? lensIn(MAG) : lensOut(MAG)) })
     }
+    if (lensShown) drawLens(now)
   }
   $effect(() => {
-    if (!drag) return
+    if (!drag && !lensShown) return // a lens let go of goes back down
     let id = requestAnimationFrame(function tick(now) {
       onFrame(now)
       id = requestAnimationFrame(tick)
@@ -697,11 +671,10 @@
         style:top="{wide.y}px"
         style:width="{wide.width}px"
         style:height="{wide.height}px"
-        bind:this={roomCanvas}
         {@attach paintRoom}
       ></canvas>
     {/if}
-    <canvas class="still" width={still.width} height={still.height} bind:this={stillCanvas} {@attach paint}></canvas>
+    <canvas class="still" width={still.width} height={still.height} {@attach paint}></canvas>
   </div>
 {/if}
 <svelte:body onpointerenter={takeKeys} onpointermove={move} onpointerup={up} onpointerleave={() => drag || (mouse = null)} />
@@ -901,10 +874,16 @@
         Keep pushing to go past the screen<i style:width="{pushing.fill * 100}%"></i>
       </div>
     {/if}
-    <div class="lens" class:on={lensOn} class:glide={lensGlide} style:translate="{lensAt.x}px {lensAt.y}px" style:transform-origin="{lensAt.sx > 0 ? 0 : 100}% {lensAt.sy > 0 ? 0 : 100}%" aria-hidden="true">
-      <canvas bind:this={lens} width={LENS * devicePixelRatio} height={LENS * devicePixelRatio}></canvas>
-      {#if lensText}<span>{lensText}</span>{/if}
-    </div>
+    <canvas
+      class="lens"
+      class:on={lensShown}
+      width={2 * REACH * devicePixelRatio}
+      height={2 * REACH * devicePixelRatio}
+      style:width="{2 * REACH}px"
+      style:translate="{lensPos.x}px {lensPos.y}px"
+      aria-hidden="true"
+      bind:this={lens}
+    ></canvas>
   {/if}
   <!-- Outside the branches above, so it bursts away even as the recording's backdrop replaces them. -->
   {#if count > 0 && target}
@@ -1253,6 +1232,7 @@
   .e, .w { cursor: ew-resize; }
   .form {
     position: absolute;
+    z-index: 1; /* over the loupe */
     display: flex;
     align-items: center;
     gap: 10px;
@@ -1330,61 +1310,22 @@
     height: 2px;
     background: var(--brand);
   }
-  /* The loupe: the screen's true pixels around the pointer, with the area's edges and the dim around it. */
+  /* The loupe: the editor's glass lens in place under the pointer, its shadow around it (loupe.wgsl). */
   .lens {
     position: absolute;
     left: 0;
     top: 0;
-    width: 156px;
+    aspect-ratio: 1;
     pointer-events: none;
-    opacity: 0;
-    scale: var(--drop-scale);
-    transition:
-      opacity var(--drop-out) var(--ease-out),
-      scale var(--drop-out) var(--ease-out);
+    visibility: hidden;
   }
   .lens.on {
-    opacity: 1;
-    scale: 1;
-    transition-duration: var(--come);
-  }
-  .lens.glide {
-    transition:
-      opacity var(--come) var(--ease-out),
-      scale var(--come) var(--ease-out),
-      translate 250ms var(--ease-glide);
-  }
-  .lens canvas {
-    display: block;
-    width: 156px;
-    height: 156px;
-    border-radius: 50%;
-    box-shadow:
-      0 0 0 1px rgb(255 255 255 / 0.9),
-      0 0 0 1.5px rgb(0 0 0 / 0.35),
-      0 16px 40px -8px rgb(0 0 0 / 0.6);
-  }
-  .lens span {
-    display: table;
-    margin: 8px auto 0;
-    padding: 4px 9px;
-    border-radius: var(--radius);
-    background: var(--surface-root);
-    box-shadow: /* the hint's edges: it reads on any content */
-      0 0 0 0.5px rgb(0 0 0 / 0.6),
-      0 2px 6px rgb(0 0 0 / 0.25),
-      inset 0 0 0 0.5px var(--border-default);
-    color: var(--fg-default);
-    font-size: 12px;
-    font-weight: 500;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+    visibility: visible;
   }
   @media (prefers-reduced-motion: reduce) {
     .third { animation: none; }
     .frame { transition: none; }
     .push { animation: none; }
-    .lens, .lens.glide { transition: none; }
   }
   /* Secondary action beside the accent one: same height, a control on the panel. */
   .action {
@@ -1462,6 +1403,7 @@
   /* Drawing tools beside the area: a column of tools, colors, and undo. */
   .tools {
     position: absolute;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
