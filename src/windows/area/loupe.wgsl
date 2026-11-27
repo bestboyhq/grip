@@ -10,6 +10,9 @@ struct Uniforms {
   screen: vec4f, // the display (texture px): x0, y0, x1, y1; dashed where it ends when x1 > x0
   even: vec4f,   // the checkerboard where nothing lies past the screen (Area.svelte .room.clear)
   odd: vec4f,
+  rule: array<vec4f, 4>, // the measure lines (texture px): x0, y0, x1, y1
+  ruleOn: vec4f, // each line: 1 drawn, 0 none
+  brand: vec4f,  // their color
 }
 @group(0) @binding(0) var<uniform> U: Uniforms;
 @group(0) @binding(1) var tex: texture_2d<f32>;
@@ -29,8 +32,17 @@ fn sdRect(t: vec2f, r: vec4f) -> f32 {
   return min(max(e.x, e.y), 0.0) + length(max(e, vec2f(0.0)));
 }
 
+// How much of a measure line (Area.svelte .ruler) covers a point u px along it and v px across it, a line
+// len px long: hw px either side of it, with a tick hl px either side across each end.
+fn ruleCover(u: f32, v: f32, len: f32, hw: f32, hl: f32) -> f32 {
+  let body = cover(max(abs(u - 0.5 * len) - 0.5 * len, v - hw), 1.0);
+  let tick = cover(max(min(abs(u), abs(u - len)) - hw, v - hl), 1.0);
+  return max(body, tick);
+}
+
 // What the screen shows at texture px t, foot texture px per output px: the frozen screen, the shade's
-// dim outside the area and its hairline a point wide just outside it, and dashes where the display ends.
+// dim outside the area and its hairline a point wide just outside it, dashes where the display ends, and
+// the measure lines, a point wide with 7 pt ticks, in the brand's color.
 // Lines keep their width on screen: the lens magnifies the pixels they mark, not the lines.
 fn under(t: vec2f, foot: f32) -> vec3f {
   let size = vec2f(textureDimensions(tex));
@@ -50,6 +62,19 @@ fn under(t: vec2f, foot: f32) -> vec3f {
     let o = sdRect(t, U.area) / foot; // px out from the area's edge
     col *= 1.0 - DIM * (1.0 - cover(o, 1.0));
     col = mix(col, vec3f(1.0), 0.95 * (cover(o - pt, 1.0) - cover(o, 1.0)));
+  }
+  for (var i = 0; i < 4; i++) {
+    let on = U.ruleOn[i];
+    let r = U.rule[i];
+    let ab = r.zw - r.xy;
+    let n = length(ab);
+    if (on < 0.5 || n < 1e-3) { continue; }
+    let dir = ab / n;
+    let rel = (t - r.xy) / foot;
+    let u = dot(rel, dir);
+    let v = abs(dot(rel, vec2f(-dir.y, dir.x)));
+    let len = n / foot;
+    col = mix(col, U.brand.rgb, ruleCover(u, v, len, 0.5 * pt, 3.5 * pt));
   }
   return col;
 }

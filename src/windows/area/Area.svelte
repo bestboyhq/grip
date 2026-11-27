@@ -26,8 +26,9 @@
   import { beyond, type Pixels } from './beyond.ts'
   import { easeGlide, easeOut, still as calm } from '../../ui/motion.ts'
   import { mix } from '../../engine/motion/spring.ts'
-  import { lensIn, lensOut, LOUPE_FLAT, LOUPE_GLASS } from '../../engine/zoom/index.ts'
+  import { lensIn, lensOut, LOUPE_FLAT, LOUPE_GLASS, LOUPE_TOP } from '../../engine/zoom/index.ts'
   import { loupe, type Loupe } from './loupe.ts'
+  import { measure, type Edges, type Measure } from './measure.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
@@ -207,6 +208,52 @@
     else sel = resizeIn(orig, kind, p.x, p.y, ASPECTS[aspect], r)
   }
 
+  // ---- Measure lines: from the sides a drag moves in to the first content, with their length in pixels ----
+
+  /** Where the frozen screen's pixels change (measure.ts): in the still, or in the room around it once
+   *  there is one (its pixels `dx`, `dy` past the still's top left). Made off the main thread. */
+  let edgeMap = $state.raw<{ e: Edges; dx: number; dy: number } | null>(null)
+  /** Area `r` (points) in the edge map's pixels, its edges rounded as the screenshot cuts them. */
+  const inMap = (r: Rect, m: { dx: number; dy: number }) =>
+    [r.x, r.y, r.x + r.width, r.y + r.height].map((v, i) => Math.round(v * density) + (i % 2 ? m.dy : m.dx)) as [number, number, number, number]
+  let edgeWorker: Worker | null = null
+  let asked = 0
+  $effect(() => {
+    const src = room ?? still
+    if (shell.mode !== 'area' || !shown || !src) return
+    const at = room ? { dx: OX, dy: OY } : { dx: 0, dy: 0 }
+    const id = ++asked
+    edgeWorker ??= new Worker(new URL('./edges.worker.ts', import.meta.url), { type: 'module' })
+    edgeWorker.onmessage = ({ data }: MessageEvent<{ id: number; edges: Edges }>) => void (data.id === asked && (edgeMap = { e: data.edges, ...at }))
+    edgeWorker.postMessage({ id, px: { width: src.width, height: src.height, data: src.data } })
+  })
+  onMount(() => () => edgeWorker?.terminate())
+  /** While a drag fits the area, the sides it moves, where the user looks: the dragged handle's (a new
+   *  area's, the pointer's corner), all four moving the area. Each has its measure line in the edge map's
+   *  pixels and in screen points, as near the pointer as the content allows, and its length in pixels. */
+  const rules = $derived.by(() => {
+    const m = edgeMap
+    if (!dragging || !drag || !sel || !m) return []
+    const k = drag.kind
+    const p = toWorld(stick(client)) // a new sel each pointer move brings this along
+    const [x0, y0, x1, y1] = inMap(sel, m)
+    const measured = measure(m.e, [x0, y0, x1, y1], [Math.round(p.x * density) + m.dx, Math.round(p.y * density) + m.dy])
+    type S = keyof Measure
+    const moved = (handle: RegExp, q: number, lo: number, size: number, a: S, b: S): S[] =>
+      k === 'move' ? [a, b] : k === 'new' || handle.test(k) ? [Math.abs(q - lo) < Math.abs(q - lo - size) ? a : b] : []
+    const onScreen = (x: number, y: number) => ({ x: W / 2 + ((x - m.dx) / density - W / 2) * z.current, y: H / 2 + ((y - m.dy) / density - H / 2) * z.current })
+    return [...moved(/[ew]/, p.x, sel.x, sel.width, 'left', 'right'), ...moved(/[ns]/, p.y, sel.y, sel.height, 'top', 'bottom')].flatMap((side) => {
+      const s = measured[side]
+      if (!s?.d) return [] // flush with the content, or none to measure to
+      const h = side === 'left' || side === 'right'
+      const from = { left: x0, right: x1, top: y0, bottom: y1 }[side]
+      const to = from + (side === 'left' || side === 'top' ? s.d : -s.d)
+      const at = Math.round(s.at) // on a pixel edge: crisp at true size
+      const line: [number, number, number, number] = h ? [from, at, to, at] : [at, from, at, to]
+      return [{ side, d: s.d, h, line, a: onScreen(line[0], line[1]), b: onScreen(line[2], line[3]) }]
+    })
+  })
+
   let press: P | null = null // the way the drag presses past the display's edge (-1, 0, or 1 on each axis)
   let pressSince = 0
   let pressAt: P = { x: 0, y: 0 }
@@ -242,16 +289,19 @@
   const SLOW = 70 // pt/s: slower than this for SETTLE ms, the loupe comes
   const SETTLE = 140
   const FAST = 320 // pt/s: faster, it goes
-  const RADIUS = 200 // points
+  const RADIUS = 300 // points: too big costs nothing, too small hides what the user aims at
   const MAG = 6 // a still pixel shows 3 points wide on a Retina display
-  const REACH = Math.ceil(3.3 * RADIUS) // points from its center to where its shadow ends: half the canvas
+  const LEAN = 0.3 // of the radius: the lens leans in toward the area's middle, where what the user frames lies
   let lens = $state<HTMLCanvasElement>()
   let gpu = $state.raw<Loupe | null>(null)
   let lensOn = $state(false)
   /** How far it is picked up off the screen, on the glide curve, as the editor's loupe (zoom/index.ts). */
   const lift = new Tween(0, { easing: easeGlide })
   const lensShown = $derived(lensOn || lift.current > 0)
-  let lensPos = $state({ x: 0, y: 0 })
+  /** The lens as it last drew, in screen points: its center, the pointer, the point it magnifies there
+   *  (the pointer, on the edge where it stops), its radius, and its magnification. The measure lines'
+   *  lengths show through it. */
+  let lensAt = $state.raw<{ x: number; y: number; px: number; py: number; sx: number; sy: number; r: number; mag: number } | null>(null)
   let liftSince = 0 // when it set off up: its glass shows over LOUPE_GLASS
   let slowSince = 0
   let checker: number[][] = []
@@ -277,33 +327,74 @@
     return [...g.getImageData(0, 0, 1, 1).data.subarray(0, 3)].map((v) => v / 255)
   }
 
-  /** The lens over the pointer, picked up `lift` of the way, with the area's edges and the dim around it. */
+  /** The lens over the pointer, picked up `lift` of the way, with the area's edges, the dim around it,
+   *  and the measure lines. */
   function drawLens(now: number) {
     if (!gpu || !lens || !still) return
     const p = lift.current
     const pt = devicePixelRatio
     const [dx, dy] = room ? [OX, OY] : [0, 0]
-    const w = toWorld(stick(client))
+    const stuck = stick(client)
+    const w = toWorld(stuck)
     const at = (v: number, d: number) => Math.round(v * density) + d // the pixel corner an edge here lands on
-    if (!checker.length) checker = [p3('--surface-100', lens), p3('--surface-150', lens)] // .room.clear
-    lensPos = { x: client.x - REACH, y: client.y - REACH }
+    if (!checker.length) checker = [p3('--surface-100', lens), p3('--surface-150', lens), p3('--brand', lens)] // .room.clear, .ruler
+    const r = RADIUS * mix(LOUPE_FLAT, 1, p)
+    const mag = MAG ** p
+    // In toward the area's middle, never past it. The pointer stays on the pixel it magnifies.
+    const v = view ? { x: view.x + view.width / 2 - client.x, y: view.y + view.height / 2 - client.y } : { x: 0, y: 0 }
+    const lean = Math.min(1, (LEAN * r) / (Math.hypot(v.x, v.y) || 1))
+    const c = { x: client.x + v.x * lean, y: client.y + v.y * lean }
+    lensAt = { x: c.x, y: c.y, px: client.x, py: client.y, sx: stuck.x, sy: stuck.y, r, mag }
+    const [ex, ey] = edgeMap ? [dx - edgeMap.dx, dy - edgeMap.dy] : [0, 0] // the edge map may still be the still's
+    const toPx = density / z.current / mag // still px per screen point, magnified
     gpu.draw({
-      x: REACH * pt,
-      y: REACH * pt,
-      radius: RADIUS * pt * mix(LOUPE_FLAT, 1, p),
-      mag: MAG ** p,
+      x: c.x * pt,
+      y: c.y * pt,
+      radius: r * pt,
+      mag,
       glass: lensOn ? Math.min((now - liftSince) / (1000 * LOUPE_GLASS), 1) : p,
       lift: p,
       pt,
-      at: { x: w.x * density + dx, y: w.y * density + dy },
+      at: { x: w.x * density + dx + (c.x - client.x) * toPx, y: w.y * density + dy + (c.y - client.y) * toPx },
       perPx: density / (pt * z.current),
       cell: 8 * density,
       area: sel && [at(sel.x, dx), at(sel.y, dy), at(sel.x + sel.width, dx), at(sel.y + sel.height, dy)],
       screen: room && back ? [dx, dy, dx + still.width, dy + still.height] : null,
       even: checker[0],
       odd: checker[1],
+      rules: rules.map((l) => [l.line[0] + ex, l.line[1] + ey, l.line[2] + ex, l.line[3] + ey]),
+      brand: checker[2],
     })
   }
+  /** Where the length of a measure line from screen point `a` to `b` shows, and how long the line shows
+   *  there: on the middle of what the lens's flat top shows of it, magnified, where the user looks; else
+   *  on its own middle or, under the rest of the glass, just past the rim toward it. */
+  function label(a: P, b: P): P & { len: number; pinned?: boolean } {
+    const l = lensAt
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+    const len = Math.hypot(b.x - a.x, b.y - a.y)
+    if (!l) return { ...mid, len }
+    // The line magnified, from A along d, cut to the flat top: a circle about the lens's center.
+    const A = { x: l.px + (a.x - l.sx) * l.mag, y: l.py + (a.y - l.sy) * l.mag }
+    const d = { x: (b.x - a.x) * l.mag, y: (b.y - a.y) * l.mag }
+    const f = { x: A.x - l.x, y: A.y - l.y }
+    const [qa, qb, qc] = [d.x * d.x + d.y * d.y, f.x * d.x + f.y * d.y, f.x * f.x + f.y * f.y - (LOUPE_TOP * l.r) ** 2]
+    const root = Math.sqrt(Math.max(0, qb * qb - qa * qc))
+    const [t0, t1] = [Math.max(0, (-qb - root) / qa), Math.min(1, (-qb + root) / qa)]
+    if (qa && qb * qb > qa * qc && t1 > t0) return { x: A.x + (d.x * (t0 + t1)) / 2, y: A.y + (d.y * (t0 + t1)) / 2, len: (t1 - t0) * Math.sqrt(qa) }
+    const [dx, dy] = [mid.x - l.x, mid.y - l.y]
+    const far = Math.hypot(dx, dy)
+    if (far >= l.r + 16) return { ...mid, len }
+    const [ux, uy] = far ? [dx / far, dy / far] : [0, -1]
+    const out = l.r + 8 + 14 * Math.abs(ux) + 9 * Math.abs(uy) // the label's half width or height clear of the rim
+    return { x: clamp(l.x + ux * out, 20, W - 20), y: clamp(l.y + uy * out, 12, H - 12), len, pinned: true }
+  }
+  const gaps = $derived(
+    rules.map((l) => {
+      const at = label(l.a, l.b)
+      return { ...l, at, beside: !at.pinned && at.len < (l.h ? 16 + 7 * String(l.d).length : 25) } // the label and a tick each side
+    }),
+  )
 
   /** Each frame of a drag: the press past the edge, the screen stepping, and the loupe. */
   function onFrame(now: number) {
@@ -336,6 +427,7 @@
       lift.set(lensOn ? 1 : 0, { duration: calm() ? 0 : 1000 * (lensOn ? lensIn(MAG) : lensOut(MAG)) })
     }
     if (lensShown) drawLens(now)
+    else if (lensAt) lensAt = null
   }
   $effect(() => {
     if (!drag && !lensShown) return // a lens let go of goes back down
@@ -345,7 +437,7 @@
     })
     return () => {
       cancelAnimationFrame(id)
-      ;[press, pressSince, shove, pushing, lensOn, slowSince] = [null, 0, 0, null, false, 0]
+      ;[press, pressSince, shove, pushing, lensOn, slowSince, lensAt] = [null, 0, 0, null, false, 0, null]
     }
   })
   // Back to true size once there is no area to take past the edge.
@@ -760,6 +852,11 @@
         {@const e = toScreen(screenRect)}
         <div class="edge" style:left="{e.x}px" style:top="{e.y}px" style:width="{e.width}px" style:height="{e.height}px" style:opacity={(1 - z.current) / (1 - STEP)}></div>
       {/if}
+      <!-- From each side in to the first content, under the handles: the lens draws them too (loupe.wgsl). -->
+      {#each rules as l (l.side)}
+        {@const [x, y] = [Math.min(l.a.x, l.b.x), Math.min(l.a.y, l.b.y)]}
+        <div class="ruler" class:h={l.h} style:left="{x}px" style:top="{y}px" style:width={l.h ? `${Math.abs(l.b.x - l.a.x)}px` : null} style:height={l.h ? null : `${Math.abs(l.b.y - l.a.y)}px`}></div>
+      {/each}
       <div class="sel" class:frozen={!!shot} style:left="{view.x}px" style:top="{view.y}px" style:width="{view.width}px" style:height="{view.height}px" role="presentation" onpointerdown={(e) => down(e, 'move')}>
         {#if shot}
           <!-- In the area's own points, shown at the screen's scale. -->
@@ -874,16 +971,10 @@
         Keep pushing to go past the screen<i style:width="{pushing.fill * 100}%"></i>
       </div>
     {/if}
-    <canvas
-      class="lens"
-      class:on={lensShown}
-      width={2 * REACH * devicePixelRatio}
-      height={2 * REACH * devicePixelRatio}
-      style:width="{2 * REACH}px"
-      style:translate="{lensPos.x}px {lensPos.y}px"
-      aria-hidden="true"
-      bind:this={lens}
-    ></canvas>
+    <canvas class="lens" class:on={lensShown} width={Math.round(W * devicePixelRatio)} height={Math.round(H * devicePixelRatio)} aria-hidden="true" bind:this={lens}></canvas>
+    {#each gaps as g (g.side)}
+      <span class="gap" class:h={g.h} class:beside={g.beside} style:left="{g.at.x}px" style:top="{g.at.y}px">{g.d}</span>
+    {/each}
   {/if}
   <!-- Outside the branches above, so it bursts away even as the recording's backdrop replaces them. -->
   {#if count > 0 && target}
@@ -1232,7 +1323,6 @@
   .e, .w { cursor: ew-resize; }
   .form {
     position: absolute;
-    z-index: 1; /* over the loupe */
     display: flex;
     align-items: center;
     gap: 10px;
@@ -1313,15 +1403,55 @@
   /* The loupe: the editor's glass lens in place under the pointer, its shadow around it (loupe.wgsl). */
   .lens {
     position: absolute;
-    left: 0;
-    top: 0;
-    aspect-ratio: 1;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     pointer-events: none;
     visibility: hidden;
   }
   .lens.on {
     visibility: visible;
   }
+  /* Measure lines while a drag fits the area: from the sides it moves in to the first content, a point
+     wide with a tick across each end (loupe.wgsl draws them the same through the lens). */
+  .ruler {
+    position: absolute;
+    background: var(--brand);
+    pointer-events: none;
+  }
+  .ruler.h { height: 1px; margin-top: -0.5px; }
+  .ruler:not(.h) { width: 1px; margin-left: -0.5px; }
+  .ruler::before,
+  .ruler::after {
+    content: '';
+    position: absolute;
+    background: inherit;
+  }
+  .ruler.h::before, .ruler.h::after { top: -3px; width: 1px; height: 7px; }
+  .ruler.h::before { left: -0.5px; }
+  .ruler.h::after { right: -0.5px; }
+  .ruler:not(.h)::before, .ruler:not(.h)::after { left: -3px; width: 7px; height: 1px; }
+  .ruler:not(.h)::before { top: -0.5px; }
+  .ruler:not(.h)::after { bottom: -0.5px; }
+  /* A measure line's length in pixels: on its middle, or beside a line too short to hold it. Over the
+     lens, on the line where its flat top shows it magnified. */
+  .gap {
+    position: absolute;
+    translate: -50% -50%;
+    padding: 0 5px;
+    border-radius: var(--radius-sm);
+    background: var(--brand);
+    box-shadow: 0 1px 4px rgb(0 0 0 / 0.3);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 17px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .gap.beside.h { translate: -50% calc(-100% - 6px); }
+  .gap.beside:not(.h) { translate: 6px -50%; }
   @media (prefers-reduced-motion: reduce) {
     .third { animation: none; }
     .frame { transition: none; }
@@ -1403,7 +1533,6 @@
   /* Drawing tools beside the area: a column of tools, colors, and undo. */
   .tools {
     position: absolute;
-    z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;

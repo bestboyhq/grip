@@ -1,5 +1,5 @@
 // Owner: capture. The area picker's loupe on the GPU: the editor's glass lens (src/engine/gpu/glass.wgsl)
-// over the frozen screen, drawn by loupe.wgsl onto a canvas of its own.
+// over the frozen screen, drawn by loupe.wgsl onto a canvas of its own over the whole window.
 import glass from '../../engine/gpu/glass.wgsl?raw'
 import code from './loupe.wgsl?raw'
 import type { Pixels } from './beyond.ts'
@@ -21,6 +21,8 @@ export interface Lens {
   screen: Rect4 | null // texture px: where the display ends, dashed
   even: number[] // checkerboard colors, 0 to 1
   odd: number[]
+  rules: Rect4[] // the measure lines, texture px: up to four
+  brand: number[] // their color, 0 to 1
 }
 
 export type Loupe = NonNullable<Awaited<ReturnType<typeof loupe>>>
@@ -39,7 +41,7 @@ export async function loupe(canvas: HTMLCanvasElement) {
     vertex: { module, entryPoint: 'vs' },
     fragment: { module, entryPoint: 'fs', targets: [{ format }] },
   })
-  const uniforms = device.createBuffer({ size: 7 * 16, usage: 64 | 8 }) // UNIFORM | COPY_DST: GPUBufferUsage is not typed here
+  const uniforms = device.createBuffer({ size: 13 * 16, usage: 64 | 8 }) // UNIFORM | COPY_DST: GPUBufferUsage is not typed here
   const sampler = device.createSampler({ magFilter: 'nearest', minFilter: 'linear' })
   let texture: GPUTexture | null = null
   let group: GPUBindGroup | null = null
@@ -63,6 +65,7 @@ export async function loupe(canvas: HTMLCanvasElement) {
     draw(l: Lens) {
       if (!group) return
       const none: Rect4 = [0, 0, 0, 0]
+      const rules = [0, 1, 2, 3].map((i) => l.rules[i])
       device.queue.writeBuffer(uniforms, 0, new Float32Array([
         l.x, l.y, l.radius, l.mag,
         l.glass, l.lift, l.pt, l.area ? 1 : 0,
@@ -71,12 +74,23 @@ export async function loupe(canvas: HTMLCanvasElement) {
         ...(l.screen ?? none),
         ...l.even, 1,
         ...l.odd, 1,
+        ...rules.flatMap((r) => r ?? none),
+        ...rules.map((r) => (r ? 1 : 0)),
+        ...l.brand, 1,
       ]))
+      // Only around the lens and its shadow: the canvas covers the window.
+      const { width: cw, height: ch } = ctx.canvas
+      const reach = 3.3 * l.radius
+      const [x0, y0] = [Math.max(0, Math.floor(l.x - reach)), Math.max(0, Math.floor(l.y - reach))]
+      const [x1, y1] = [Math.min(cw, Math.ceil(l.x + reach)), Math.min(ch, Math.ceil(l.y + reach))]
       const enc = device.createCommandEncoder()
       const pass = enc.beginRenderPass({ colorAttachments: [{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', clearValue: [0, 0, 0, 0], storeOp: 'store' }] })
-      pass.setPipeline(pipeline)
-      pass.setBindGroup(0, group)
-      pass.draw(3)
+      if (x1 > x0 && y1 > y0) {
+        pass.setScissorRect(x0, y0, x1 - x0, y1 - y0)
+        pass.setPipeline(pipeline)
+        pass.setBindGroup(0, group)
+        pass.draw(3)
+      }
       pass.end()
       device.queue.submit([enc.finish()])
     },

@@ -28,8 +28,12 @@ Screen, window, area, and device recording.
 - An area held or pushed against a display's edge steps the screen back, so a window at the edge can get a margin.
   Past the edge shows the desktop picture alone, mirrored, with shadows that cross the edge fading out.
   A screenshot takes it; a recording stays on the screen, since the editor adds room around it.
-- A resize that slows down picks up the editor's glass lens (`src/engine/gpu/glass.wgsl`) in place under the pointer.
+- A resize that slows down picks up the editor's glass lens (`src/engine/gpu/glass.wgsl`) under the pointer, leaning a little toward the area's middle, with the pointer still on the pixel it magnifies.
   A loupe beside the pointer that flips sides as the pointer crosses the area's middle jumps around while the user aims.
+- While an area drags, the sides it moves measure in to the first content (`src/windows/area/measure.ts`): a blue line with its length in pixels, as near the pointer as that content allows.
+  Content is a step between two pixels, never a soft shadow or a gradient.
+  With the lens up, the length shows on the magnified line inside it, since the user looks there and misses anything outside it.
+  Only the dragged sides measure, and nothing snaps: lines on all four sides are noise, and a magnet fights the user's hand.
 - The camera preview is for the person recording, never a layout: it starts under the camera, at the top center of the display, so looking at yourself is looking into the lens.
   It drags anywhere, settles back under the camera when dropped near it, and fades while the pointer is over it.
   Each display keeps where it was dropped; where the video puts the camera is an edit.

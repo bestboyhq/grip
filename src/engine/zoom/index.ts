@@ -99,7 +99,7 @@ export const LOUPE_GLASS = 0.08
 const LOUPE_GLIDE = zoomTime(2, PACE.focused) // s: one loupe glides into the next's target, level, size, and shape
 const LOUPE_FOLLOW: SpringConfig = { stiffness: 120, damping: 2 * 0.65 * Math.sqrt(120), mass: 1 } // follows the cursor softly, a little overshoot
 const LOUPE_LEAD = LOUPE_FOLLOW.damping / LOUPE_FOLLOW.stiffness // s: the follow spring trails a steady glide by this, so it aims that far ahead
-const LOUPE_TOP = 0.85 // the flat top's share of the lens radius (glass.wgsl BEVEL): only it shows the content magnified
+export const LOUPE_TOP = 0.85 // the flat top's share of the lens radius (glass.wgsl BEVEL): only it shows the content magnified
 const LOUPE_WALL = 0.7 // the cursor never gets further from the lens center than this share of what the flat top shows
 /** Loupe lens radius in units (Zoom.size): what fits depends on what it shows, a button or a paragraph.
  *  At 540 (half of 1080) the lens spans the frame's short side; past it, the frame crops the lens. */
