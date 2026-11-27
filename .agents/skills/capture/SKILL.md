@@ -30,6 +30,8 @@ Screen, window, area, and device recording.
   A screenshot takes it; a recording stays on the screen, since the editor adds room around it.
 - A resize that slows down picks up the editor's glass lens (`src/engine/gpu/glass.wgsl`) under the pointer, leaning a little toward the area's middle, with the pointer still on the pixel it magnifies.
   A loupe beside the pointer that flips sides as the pointer crosses the area's middle jumps around while the user aims.
+- Sizing an area shows a crosshair everywhere, and moving it shows the move cursor, set on every element while the drag lasts.
+  The body holds the pointer during a drag, and Chromium then shows the body's arrow, not the cursor of the handle under it.
 - While an area drags, the sides it moves measure in to the first content (`src/windows/area/measure.ts`): a blue line with its length in pixels, as near the pointer as that content allows.
   Content is a step between two pixels, never a soft shadow or a gradient.
   With the lens up, the length shows on the magnified line inside it, since the user looks there and misses anything outside it.

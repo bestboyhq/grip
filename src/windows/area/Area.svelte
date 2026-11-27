@@ -187,6 +187,14 @@
   }
   /** A drag (new area, move, or resize) on its way: a new area only once the pointer moves. */
   const dragging = $derived(!!drag && (drag.kind !== 'new' || !!drag.moved))
+  // The body holds the pointer while it drags, and the cursor turns into the body's arrow: the drag's own
+  // goes on every element instead. Sizing the area, a crosshair, its center on the pixel the lens magnifies.
+  $effect(() => {
+    if (!drag) return
+    const root = document.documentElement
+    root.dataset.drag = drag.kind === 'move' ? 'move' : 'aim'
+    return () => delete root.dataset.drag
+  })
   function move(e: PointerEvent) {
     mouse = { x: e.clientX, y: e.clientY }
     track(e)
@@ -1024,6 +1032,16 @@
   }
   main.area:has(.sel) {
     background: none;
+  }
+  /* A drag's cursor wherever it goes (data-drag, set while it drags): over the body that holds the
+     pointer, the handle it dragged, and the lens. */
+  :global(html[data-drag='aim']),
+  :global(html[data-drag='aim'] *) {
+    cursor: crosshair !important;
+  }
+  :global(html[data-drag='move']),
+  :global(html[data-drag='move'] *) {
+    cursor: move !important;
   }
   .display {
     position: absolute;
