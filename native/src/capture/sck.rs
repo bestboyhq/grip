@@ -20,7 +20,7 @@ use objc2_core_foundation::{CFArray, CFDictionary, CFRetained, CFString, CFType,
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGColorSpace, CGContext, CGDisplayBounds, CGDisplayCopyDisplayMode, CGDisplayIsBuiltin,
     CGDisplayIsMain, CGDisplayIsOnline, CGDisplayMode, CGGetActiveDisplayList, CGImage, CGImageAlphaInfo, CGImageByteOrderInfo, CGPreflightScreenCaptureAccess, CGRectMakeWithDictionaryRepresentation,
-    CGWindowListCopyWindowInfo, CGWindowListOption, kCGColorSpaceDisplayP3, kCGColorSpaceSRGB, kCGDisplayStreamYCbCrMatrix_ITU_R_709_2,
+    CGWindowLevelForKey, CGWindowLevelKey, CGWindowListCopyWindowInfo, CGWindowListOption, kCGColorSpaceDisplayP3, kCGColorSpaceSRGB, kCGDisplayStreamYCbCrMatrix_ITU_R_709_2,
     kCGWindowAlpha, kCGWindowBounds, kCGWindowLayer, kCGWindowNumber, kCGWindowOwnerPID,
 };
 use objc2_core_media::{CMSampleBuffer, CMTime};
@@ -124,6 +124,11 @@ pub fn displays() -> Vec<Display> {
 
 /// Shareable content from ScreenCaptureKit. Without permission: the one-line reason.
 fn content(on_screen_only: bool) -> Result<Retained<SCShareableContent>, String> {
+    listing(true, on_screen_only)
+}
+
+/// `content`, with the desktop's own windows (wallpaper, icons) listed too unless `no_desktop`.
+fn listing(no_desktop: bool, on_screen_only: bool) -> Result<Retained<SCShareableContent>, String> {
     if !CGPreflightScreenCaptureAccess() {
         return Err(missing(Permission::Screen).into());
     }
@@ -135,7 +140,7 @@ fn content(on_screen_only: bool) -> Result<Retained<SCShareableContent>, String>
     });
     unsafe {
         SCShareableContent::getShareableContentExcludingDesktopWindows_onScreenWindowsOnly_completionHandler(
-            true,
+            no_desktop,
             on_screen_only,
             &done,
         )
@@ -627,6 +632,23 @@ pub fn still(display_id: u32, ours: &[u32]) -> Result<(u32, u32, Vec<u8>), Strin
     }
     let b = CGDisplayBounds(display_id);
     grab(display_id, Rect { x: 0.0, y: 0.0, w: b.size.width, h: b.size.height }, rgba)
+}
+
+/// The display's wallpaper alone, as raw RGBA like `still`: the windows below the desktop icons'
+/// level, with no icons, windows, or menu bar. The picker fills an area past the screen's edge with it.
+pub fn wallpaper(display_id: u32) -> Result<(u32, u32, Vec<u8>), String> {
+    let content = listing(false, true)?;
+    let display = find_display(&content, display_id).ok_or("That display is no longer connected.")?;
+    let icons = CGWindowLevelForKey(CGWindowLevelKey::DesktopIconWindowLevelKey) as isize;
+    let walls: Vec<_> = unsafe { content.windows() }.iter().filter(|w| unsafe { w.windowLayer() } < icons).collect();
+    if walls.is_empty() {
+        return Err("No wallpaper is on screen.".into());
+    }
+    let filter = unsafe {
+        SCContentFilter::initWithDisplay_includingWindows(SCContentFilter::alloc(), &display, &NSArray::from_retained_slice(&walls))
+    };
+    let b = CGDisplayBounds(display_id);
+    shoot(&filter, &shot_config(&filter, b.size.width, b.size.height), rgba)
 }
 
 /// Window `id` alone, like macOS window screenshots: nothing in front of it, clear rounded corners,

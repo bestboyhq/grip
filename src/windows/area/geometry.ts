@@ -10,7 +10,7 @@ export type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
 export const ASPECTS: Record<string, number | null> = { free: null, '16:9': 16 / 9, '4:3': 4 / 3, '1:1': 1, '9:16': 9 / 16 }
 const MIN = 32
-const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi))
+export const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi))
 
 /** Window presets: per aspect, common sizes in points, largest first. */
 export const PRESETS = [
@@ -89,6 +89,13 @@ export function constrain(r: Rect, ratio: number | null, W: number, H: number): 
   h = Math.max(MIN, Math.min(h * k, H))
   return { width: w, height: h, x: clamp(r.x + r.width / 2 - w / 2, 0, W - w), y: clamp(r.y + r.height / 2 - h / 2, 0, H - h) }
 }
+
+const shift = (r: Rect, dx: number, dy: number): Rect => ({ ...r, x: r.x + dx, y: r.y + dy })
+/** `resize` within `room`, a box that may reach past the display's edges, instead of the display. */
+export const resizeIn = (o: Rect, h: Handle | 'new', px: number, py: number, ratio: number | null, room: Rect) =>
+  shift(resize(shift(o, -room.x, -room.y), h, px - room.x, py - room.y, ratio, room.width, room.height), room.x, room.y)
+/** `constrain` within `room`, as `resizeIn`. */
+export const constrainIn = (r: Rect, ratio: number | null, room: Rect) => shift(constrain(shift(r, -room.x, -room.y), ratio, room.width, room.height), room.x, room.y)
 
 /** Top-left of the w x h tool strip beside area `sel`: right of it, else left of it, else inside its
  *  right edge; level with its top, but clear of `form` (the panel under or over the area) and

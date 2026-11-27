@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { constrain, formAt, presetFrame, presetSize, resize, toolsAt } from './geometry.ts'
+import { constrain, constrainIn, formAt, presetFrame, presetSize, resize, resizeIn, toolsAt } from './geometry.ts'
 
 const W = 1512
 const H = 982
@@ -61,4 +61,15 @@ test('tool strip placement', () => {
   // A short area with its form under it: the strip goes up, clear of the form.
   const form = { x: 0, y: 214, width: 700, height: 50 }
   assert.deepEqual(toolsAt({ x: 200, y: 100, width: 200, height: 100 }, 44, 300, W, H, form), { x: 410, y: 12 })
+})
+
+test('an area past the display, in a wider room', () => {
+  const room = { x: -144, y: -94, width: W + 288, height: H + 188 }
+  // The right edge goes past the display, as far as the room.
+  assert.deepEqual(resizeIn({ x: 1000, y: 100, width: 400, height: 300 }, 'e', 1600, 200, null, room), { x: 1000, y: 100, width: 600, height: 300 })
+  assert.deepEqual(resizeIn({ x: 1000, y: 100, width: 400, height: 300 }, 'e', 9999, 200, null, room), { x: 1000, y: 100, width: W + 144 - 1000, height: 300 })
+  // The display itself as the room: the same as resize.
+  assert.deepEqual(resizeIn({ x: 1000, y: 100, width: 400, height: 300 }, 'e', 1600, 200, null, { x: 0, y: 0, width: W, height: H }), resize({ x: 1000, y: 100, width: 400, height: 300 }, 'e', 1600, 200, null, W, H))
+  // Moved inside the room, not the display.
+  assert.deepEqual(constrainIn({ x: -300, y: 50, width: 400, height: 300 }, null, room), { x: -144, y: 50, width: 400, height: 300 })
 })

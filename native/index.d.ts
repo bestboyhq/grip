@@ -67,6 +67,9 @@ export declare function captureScreenshot(displayId: number, rect: Rect): Promis
  */
 export declare function captureStill(displayId: number, ours?: Array<number> | undefined | null): Promise<Still>
 
+/** The display's wallpaper alone (no icons, windows, or menu bar), in raw pixels like `capture_still`. */
+export declare function captureWallpaper(displayId: number): Promise<Still>
+
 /**
  * PNG of window `window_id` alone (clear corners, nothing in front of it, no shadow or cursor) at
  * its pixel density. A `frame` (global points) moves and resizes it there first (Accessibility).

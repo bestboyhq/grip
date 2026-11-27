@@ -16,6 +16,8 @@
 //   shell:pick(mode | null)       enter or leave a picking mode (opens overlays per display)
 //   shell:still(displayId) -> Still | null   overlay: its display frozen as it was when the picker opened (raw
 //                                 RGBA); a loaded overlay asks ahead and gets it when a pick opens
+//   shell:wallpaper(displayId) -> Still | null   area overlay: its display's desktop picture alone (raw RGBA),
+//                                 to show past the screen's edges; null while recording, or if it fails
 //   shell:ready                   overlay: painted its still: it takes the mouse and keys (shown before that, out
 //                                 of the way, unless it was still loading: then it shows now)
 //   shell:painted                 toolbar: drawn with its settings and devices; it may show now, and takes commands
@@ -886,6 +888,7 @@ export function registerRecorder() {
   ipcMain.handle('shell:pick', (_e, m: Mode | null) => pick(['display', 'window', 'area', 'device'].includes(m as string) ? m : null))
   ipcMain.handle('shell:close-picker', () => closePicker())
   ipcMain.handle('shell:still', (_e, id: unknown) => stillOf(Number(id)).promise)
+  ipcMain.handle('shell:wallpaper', (_e, id: unknown) => (status === 'idle' ? capture.wallpaper(Number(id)).catch(() => null) : null))
   ipcMain.handle('shell:ready', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender)
     if (w && windowsOf('area').includes(w)) showOverlay(w)

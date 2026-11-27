@@ -13,6 +13,7 @@
 //   capture.screenshot(displayId, rect) -> PNG (the stand-in's thumbnail, at the rect's pixel size)
 //   capture.windowScreenshot(windowId, frame?) -> PNG (the same, at the window's pixel size)
 //   capture.still(displayId, ours) -> { width, height, data: RGBA } (the same, of the whole display)
+//   capture.wallpaper(displayId) -> the same as capture.still, windows and all: the stand-in has no desktop alone
 //   recording:draw(phase, x, y, color?, width?): pen strokes land in the take's events.jsonl
 //   broadcasts recording:state(state), recording:finished(bundle, { reason }); recordingEvents too
 //   camera:list -> [{ id, name, kind: 'built-in' | 'external' | 'continuity' | 'ios', formats }]
@@ -102,6 +103,7 @@ export function registerFakeRecording(bundle: string) {
     for (let i = 0; i < data.length; i += 4) [data[i], data[i + 2]] = [data[i + 2], data[i]]
     return { ...image.getSize(), data }
   }
+  capture.wallpaper = (id) => capture.still(id)
   // Pen strokes in the stand-in's screen pixels, as if the primary display were the screen source.
   let t0 = 0
   let ink: string[] = []
