@@ -853,6 +853,13 @@ pub async fn capture_still(display_id: u32, ours: Option<Vec<u32>>) -> napi::Res
     Ok(Still { width, height, data: data.into() })
 }
 
+/// The display's wallpaper alone (no icons, windows, or menu bar), in raw pixels like `capture_still`.
+#[napi]
+pub async fn capture_wallpaper(display_id: u32) -> napi::Result<Still> {
+    let (width, height, data) = blocking(move || sck::wallpaper(display_id)).await?;
+    Ok(Still { width, height, data: data.into() })
+}
+
 /// A point of a pen stroke drawn over the screen while recording, in global points: a stroke is
 /// "start" (with its #rrggbb color and width in points), "move"s, and "end". It goes into the input
 /// event stream on the session clock. False when nothing records it (no recording, or paused).

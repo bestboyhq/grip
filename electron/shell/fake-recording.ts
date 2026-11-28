@@ -13,6 +13,7 @@
 //   capture.screenshot(displayId, rect) -> PNG (the stand-in's thumbnail, at the rect's pixel size)
 //   capture.windowScreenshot(windowId, frame?) -> PNG (the same, at the window's pixel size)
 //   capture.still(displayId, ours) -> { width, height, data: RGBA } (the same, of the whole display)
+//   capture.wallpaper(displayId) -> the same, of the bundle's wallpaper.png if it has one: the desktop picture alone
 //   recording:draw(phase, x, y, color?, width?): pen strokes land in the take's events.jsonl
 //   broadcasts recording:state(state), recording:finished(bundle, { reason }); recordingEvents too
 //   camera:list -> [{ id, name, kind: 'built-in' | 'external' | 'continuity' | 'ios', formats }]
@@ -82,26 +83,30 @@ export function registerFakeRecording(bundle: string) {
     }, 33)
   })
   handle('recording:micMonitorStop', () => clearInterval(meter))
-  capture.screenshot = async (id, r) => {
+  /** The stand-in bundle's picture `file` at `w` by `h` points of display `id`. A bundle never opened in the
+   *  editor has no thumbnail: a gradient of four BGRA pixels stands in. */
+  const picture = (file: string, id: number, w: number, h: number) => {
     const scale = screen.getAllDisplays().find((d) => d.id === Number(id))?.scaleFactor ?? 2
-    const size = { width: Math.round(r.w * scale), height: Math.round(r.h * scale), quality: 'best' as const }
-    const thumbnail = nativeImage.createFromPath(join(bundle, 'thumbnail.png'))
-    // A bundle never opened in the editor has no thumbnail: a gradient of four BGRA pixels stands in.
-    const image = thumbnail.isEmpty() ? nativeImage.createFromBitmap(Buffer.from([200, 120, 40, 255, 80, 160, 240, 255, 60, 200, 120, 255, 230, 230, 230, 255]), { width: 2, height: 2 }) : thumbnail
-    return image.resize(size).toPNG()
+    const image = nativeImage.createFromPath(join(bundle, file))
+    const shown = image.isEmpty() ? nativeImage.createFromBitmap(Buffer.from([200, 120, 40, 255, 80, 160, 240, 255, 60, 200, 120, 255, 230, 230, 230, 255]), { width: 2, height: 2 }) : image
+    return shown.resize({ width: Math.round(w * scale), height: Math.round(h * scale), quality: 'best' })
   }
+  capture.screenshot = async (id, r) => picture('thumbnail.png', id, r.w, r.h).toPNG()
   capture.windowScreenshot = async (id, frame) => {
     const w = windows().find((w) => w.id === id)
     if (!w) throw new Error('That window is no longer open.')
     return capture.screenshot(screen.getPrimaryDisplay().id, frame ?? w.frame)
   }
-  capture.still = async (id) => {
+  /** All of display `id` as the bundle's picture `file`, in raw RGBA. */
+  const whole = async (id: number, file: string) => {
     const { width, height } = screen.getAllDisplays().find((d) => d.id === Number(id))?.bounds ?? screen.getPrimaryDisplay().bounds
-    const image = nativeImage.createFromBuffer(Buffer.from(await capture.screenshot(id, { x: 0, y: 0, w: width, h: height })))
+    const image = picture(file, id, width, height)
     const data = image.toBitmap() // BGRA: swap to RGBA
     for (let i = 0; i < data.length; i += 4) [data[i], data[i + 2]] = [data[i + 2], data[i]]
     return { ...image.getSize(), data }
   }
+  capture.still = (id) => whole(id, 'thumbnail.png')
+  capture.wallpaper = (id) => whole(id, existsSync(join(bundle, 'wallpaper.png')) ? 'wallpaper.png' : 'thumbnail.png')
   // Pen strokes in the stand-in's screen pixels, as if the primary display were the screen source.
   let t0 = 0
   let ink: string[] = []

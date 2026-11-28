@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { inTurn, parseLaunch, parseGripUrl } from './url.ts'
 import { plainError } from './errors.ts'
-import { areaOf, arrangement, fit, place, reachable, under, underCamera } from './bounds.ts'
+import { areaOf, arrangement, fit, inPlaceOf, place, reachable, spotOn, under, underCamera } from './bounds.ts'
 import { hold, release } from './session.ts'
 import { pngInfo, ring, withScale } from './png.ts'
 import { whatsNew } from './changes.ts'
@@ -100,6 +100,26 @@ test('window placement', () => {
   // The camera bubble: under the camera at the top center of the display, wherever the Dock puts the work area.
   const docked = { bounds: { x: 0, y: 0, width: 1512, height: 982 }, workArea: { x: 64, y: 38, width: 1448, height: 944 } }
   assert.deepEqual(underCamera(216, docked), { x: 648, y: 38, width: 216, height: 216 })
+})
+
+test('the recording controls show where the toolbar was, on two displays of one model', () => {
+  // Two "Studio Display"s side by side: one name, one size, two ids.
+  const left = { workArea: { x: 0, y: 25, width: 2560, height: 1415 } }
+  const right = { workArea: { x: 2560, y: 25, width: 2560, height: 1415 } }
+  const bar = { width: 896, height: 64 }
+  // The toolbar opens where it was left on its display, at the bottom center before that.
+  const dragged = { x: 3000, y: 100, ...bar }
+  assert.deepEqual(spotOn(bar, right, dragged, 20), dragged)
+  assert.deepEqual(spotOn(bar, left, dragged, 20), { x: 832, y: 1356, ...bar })
+  assert.deepEqual(spotOn(bar, left, undefined, 20), { x: 832, y: 1356, ...bar })
+  // Left half off the edge: it comes back whole, where it was.
+  assert.deepEqual(spotOn(bar, right, { x: 4700, y: 900, ...bar }, 20), { x: 4224, y: 900, ...bar })
+  // The widget takes the toolbar's place, centered on it, on the toolbar's display.
+  const widget = { width: 316, height: 48 }
+  assert.deepEqual(inPlaceOf(widget, dragged, right.workArea), { x: 3290, y: 108, ...widget })
+  assert.deepEqual(inPlaceOf(widget, spotOn(bar, left, undefined, 20), left.workArea), { x: 1122, y: 1364, ...widget })
+  // A toolbar on the display's edge: the widget stays whole on it.
+  assert.deepEqual(inPlaceOf(widget, { x: 2560, y: 25, width: 300, height: 64 }, right.workArea), { x: 2560, y: 33, ...widget })
 })
 
 test('the packaged app opens .grip bundles by their type, declared once', () => {

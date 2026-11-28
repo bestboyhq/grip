@@ -12,6 +12,7 @@
      goes into the recording, fading out on screen like it will in the video. -->
 <script lang="ts">
   import { onMount, tick } from 'svelte'
+  import { Tween } from 'svelte/motion'
   import logoDot from '../../../build/Grip.icon/Assets/dot.svg'
   import { invoke, on } from '../../lib/ipc.ts'
   import Icon from '../recorder/Icon.svelte'
@@ -20,8 +21,14 @@
   import UiIcon from '../../ui/Icon.svelte'
   import { paintStroke, visibleStrokes, type Stroke } from '../../engine/overlays/drawings.ts'
   import { fromEngine, shell, startRequest, toEngine, windowList, type Rect, type Settings, type StartRequest, type WindowSource } from '../recorder/shell.svelte.ts'
-  import { ASPECTS, constrain, formAt, presetFrame, presetSize, PRESETS, resize, toolsAt, type Handle } from './geometry.ts'
+  import { ASPECTS, clamp, constrainIn, formAt, presetFrame, presetSize, PRESETS, resizeIn, toolsAt, type Handle } from './geometry.ts'
   import { COLORS, FONT, FONT_FAMILY, moved, P3, paintShapes, shapeAt, tiny, TOOLS, type P, type Shape, type Tool } from './annotate.ts'
+  import { beyond, type Pixels } from './beyond.ts'
+  import { easeGlide, easeOut, still as calm } from '../../ui/motion.ts'
+  import { mix } from '../../engine/motion/spring.ts'
+  import { lensIn, lensOut, LOUPE_FLAT, LOUPE_GLASS, LOUPE_TOP } from '../../engine/zoom/index.ts'
+  import { loupe, type Loupe } from './loupe.ts'
+  import { even, measure, type Box, type Edges, type Measure } from './measure.ts'
 
   let { params }: { params: URLSearchParams } = $props()
 
@@ -31,7 +38,6 @@
     bounds: Rect
     workArea: Rect
     scaleFactor: number
-    toolbarTop: number // the recording toolbar's top edge, local points
   }
   let display = $state<DisplayInfo | null>(null)
   let windows = $state<WindowSource[]>([])
@@ -47,7 +53,15 @@
 
   const W = $derived(display?.bounds.width ?? innerWidth)
   const H = $derived(display?.bounds.height ?? innerHeight)
-  const floor = $derived(display?.toolbarTop ?? H) // cards stay above the toolbar
+  /** Cards stay above the toolbar while it sits in the lower half of this display (local points).
+   *  ponytail: a toolbar dragged to the top half sets no ceiling, so a card over a near full-height area can sit
+   *  under it; give formAt a ceiling too if that shows up. */
+  const floor = $derived.by(() => {
+    const t = shell.toolbar
+    const b = display?.bounds
+    const top = t && b && t.x < b.x + b.width && t.x + t.width > b.x ? t.y - b.y : H
+    return top > H / 2 && top < H ? top : H
+  })
   const scale = $derived(display?.scaleFactor ?? 2)
   const px = (pt: number) => Math.round(pt * scale)
   const toLocal = (r: Rect): Rect => ({ ...r, x: r.x - (display?.bounds.x ?? 0), y: r.y - (display?.bounds.y ?? 0) })
@@ -95,6 +109,50 @@
     return () => offs.forEach((off) => off())
   })
 
+  // ---- Past the screen's edge: pressed against it, the screen steps back, and the area may go past it ----
+
+  const STEP = 0.84 // the screen's scale, stepped back: room for an area past its edges
+  const DWELL = 450 // ms held against the edge before it steps back...
+  const SHOVE = 40 // ...or points pushed past it
+  /** The screen as it shows: 1, or stepping back toward STEP around its center. */
+  const z = new Tween(1, { duration: 280, easing: easeOut })
+  let back = $state(false) // stepped back, or on its way: a drag may take the area past the edges
+  const density = $derived(still ? still.width / W : scale) // still pixels per point
+  const OX = $derived(still ? Math.round((still.width * (1 / STEP - 1)) / 2) : 0) // still pixels past each side
+  const OY = $derived(still ? Math.round((still.height * (1 / STEP - 1)) / 2) : 0)
+  const screenRect = $derived({ x: 0, y: 0, width: W, height: H })
+  /** Where an area may go once the screen steps back: the display and what fills the screen around it. */
+  const wide = $derived({ x: -OX / density, y: -OY / density, width: W + (2 * OX) / density, height: H + (2 * OY) / density })
+  const roomRect = $derived(back ? wide : screenRect)
+  const toWorld = (q: P): P => ({ x: W / 2 + (q.x - W / 2) / z.current, y: H / 2 + (q.y - H / 2) / z.current })
+  /** Where `r` (display points) shows on the screen as it steps back. */
+  const toScreen = (r: Rect): Rect => ({ x: W / 2 + (r.x - W / 2) * z.current, y: H / 2 + (r.y - H / 2) * z.current, width: r.width * z.current, height: r.height * z.current })
+  const outside = (r: Rect | null) => !!r && (r.x < -0.01 || r.y < -0.01 || r.x + r.width > W + 0.01 || r.y + r.height > H + 0.01)
+  function stepBack(on: boolean) {
+    if (on === back) return
+    back = on
+    z.set(on ? STEP : 1, { duration: calm() ? 0 : 280 })
+  }
+
+  /** The desktop picture alone, asked for once an area pick opens; null if it failed: past the edges is
+   *  transparent then. */
+  let wall = $state.raw<Pixels | null>(null)
+  let walled = false
+  /** The still with what lies past its edges (beyond.ts), made once an area first presses past them. */
+  let room = $state.raw<ImageData | null>(null)
+  const fill = (s: ImageData) => (room = new ImageData(beyond(s, wall, OX, OY, density), s.width + 2 * OX, s.height + 2 * OY, { colorSpace: 'display-p3' }))
+  const paintRoom = (canvas: HTMLCanvasElement) => void (room && canvas.getContext('2d', P3)!.putImageData(room, 0, 0))
+  $effect(() => {
+    if (shell.mode !== 'area' || !still || !display || walled) return
+    walled = true
+    invoke('shell:wallpaper', display.id)
+      .catch(() => null)
+      .then((w: Pixels | null) => {
+        wall = w
+        if (room && still) fill(still)
+      })
+  })
+
   // Window mode: the engine's window list (front to back), minus our own windows.
   $effect(() => {
     if (shell.mode === 'window') windowList().then((list) => (windows = list))
@@ -109,11 +167,19 @@
   // here. Local edits override it until they are saved back. A pick opens with none: the last area
   // (settings) is only an outline, which a click picks again.
   const remembered = $derived(shell.settings?.area)
-  const here = (a: Settings['area'] | undefined) => (a && display && a.display === display.id ? constrain(a.rect, null, W, H) : null)
-  let sel = $derived<Rect | null>(here(shell.selection))
-  const last = $derived(here(remembered))
+  // The area is in display points, and may reach past the display (into `wide`) once the screen steps back.
+  const here = (a: Settings['area'] | undefined, room: Rect) => (a && display && a.display === display.id ? constrainIn(a.rect, null, room) : null)
+  let sel = $derived<Rect | null>(here(shell.selection, wide))
+  const last = $derived(here(remembered, screenRect))
+  const view = $derived(sel && toScreen(sel)) // where the area shows
   let aspect = $derived(shell.selection?.aspect ?? remembered?.aspect ?? 'free')
   const save = () => invoke('shell:select', sel && display ? { display: display.id, rect: $state.snapshot(sel), aspect } : null)
+
+  let client: P = { x: 0, y: 0 } // the pointer, held inside the display as macOS holds the cursor
+  const track = (e: PointerEvent) => (client = { x: clamp(e.clientX, 0, W - 1), y: clamp(e.clientY, 0, H - 1) })
+  /** The cursor stops on the display's last point: there, it means the edge itself. */
+  const stick = (q: P): P => ({ x: q.x >= W - 1 ? W : q.x, y: q.y >= H - 1 ? H : q.y })
+  let samples: { t: number; x: number; y: number }[] = [] // the pointer's last moves, for its speed
 
   function down(e: PointerEvent, kind: 'new' | 'move' | Handle) {
     // Window mode: a click picks the window under it (recording waits for Start or ↩); off any window, it lets go.
@@ -121,25 +187,313 @@
     if (shell.mode !== 'area' || target || shot || e.button !== 0) return
     e.stopPropagation()
     ;(document.body as Element).setPointerCapture(e.pointerId)
-    const orig = kind === 'new' ? { x: e.clientX, y: e.clientY, width: 0, height: 0 } : sel!
-    drag = { kind, x: e.clientX, y: e.clientY, orig }
+    track(e)
+    const p = toWorld(stick(client))
+    drag = { kind, x: p.x, y: p.y, orig: kind === 'new' ? { ...p, width: 0, height: 0 } : sel! }
+    samples = [{ t: e.timeStamp, x: e.clientX, y: e.clientY }]
   }
   /** A drag (new area, move, or resize) on its way: a new area only once the pointer moves. */
   const dragging = $derived(!!drag && (drag.kind !== 'new' || !!drag.moved))
+  // The body holds the pointer while it drags, and the cursor turns into the body's arrow: the drag's own
+  // goes on every element instead. Sizing the area, a crosshair, its center on the pixel the lens magnifies.
+  $effect(() => {
+    if (!drag) return
+    const root = document.documentElement
+    root.dataset.drag = drag.kind === 'move' ? 'move' : 'aim'
+    return () => delete root.dataset.drag
+  })
   function move(e: PointerEvent) {
     mouse = { x: e.clientX, y: e.clientY }
+    track(e)
+    shifted = e.shiftKey
+    if (!drag) return
+    for (const c of e.getCoalescedEvents?.() ?? [e]) samples.push({ t: c.timeStamp, x: c.clientX, y: c.clientY })
+    if (press) shove += Math.max(0, e.movementX * press.x + e.movementY * press.y) // the cursor stopped, the hand did not
+    applyDrag()
+  }
+  function applyDrag() {
     if (!drag) return
     const { kind, orig } = drag
+    const p = toWorld(stick(client))
     if (kind === 'new' && !drag.moved) {
-      if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 4) return // a click so far
+      if (Math.hypot(p.x - drag.x, p.y - drag.y) * z.current < 4) return // a click so far
       drag.moved = true
     }
-    if (kind === 'move') {
-      const x = Math.min(Math.max(orig.x + e.clientX - drag.x, 0), W - orig.width)
-      const y = Math.min(Math.max(orig.y + e.clientY - drag.y, 0), H - orig.height)
-      sel = { ...orig, x, y }
-    } else sel = resize(orig, kind === 'new' ? 'new' : kind, e.clientX, e.clientY, ASPECTS[aspect], W, H)
+    const r = roomRect
+    if (kind === 'move') sel = { ...orig, x: clamp(orig.x + p.x - drag.x, r.x, r.x + r.width - orig.width), y: clamp(orig.y + p.y - drag.y, r.y, r.y + r.height - orig.height) }
+    else if (shifted && !ASPECTS[aspect]) sel = evenOut(resizeIn(orig, kind, p.x, p.y, null, r), kind)
+    else sel = resizeIn(orig, kind, p.x, p.y, ASPECTS[aspect], r)
   }
+  /** Shift, held through a corner drag, evens out the corner's two margins (evenOut). */
+  let shifted = false
+  function shift(e: KeyboardEvent) {
+    if (e.key !== 'Shift' || shifted === e.shiftKey) return
+    shifted = e.shiftKey
+    applyDrag()
+  }
+
+  // ---- Measure lines: from the sides a drag moves in to the first content, with their length in pixels ----
+
+  /** Where the frozen screen's pixels change (measure.ts): in the still, or in the room around it once
+   *  there is one (its pixels `dx`, `dy` past the still's top left). Made off the main thread. */
+  let edgeMap = $state.raw<{ e: Edges; dx: number; dy: number } | null>(null)
+  /** Area `r` (points) in the edge map's pixels, its edges rounded as the screenshot cuts them. */
+  const inMap = (r: Rect, m: { dx: number; dy: number }) =>
+    [r.x, r.y, r.x + r.width, r.y + r.height].map((v, i) => Math.round(v * density) + (i % 2 ? m.dy : m.dx)) as [number, number, number, number]
+  let edgeWorker: Worker | null = null
+  let asked = 0
+  $effect(() => {
+    const src = room ?? still
+    if (shell.mode !== 'area' || !shown || !src) return
+    const at = room ? { dx: OX, dy: OY } : { dx: 0, dy: 0 }
+    const id = ++asked
+    edgeWorker ??= new Worker(new URL('./edges.worker.ts', import.meta.url), { type: 'module' })
+    edgeWorker.onmessage = ({ data }: MessageEvent<{ id: number; edges: Edges }>) => void (data.id === asked && (edgeMap = { e: data.edges, ...at }))
+    edgeWorker.postMessage({ id, px: { width: src.width, height: src.height, data: src.data } })
+  })
+  onMount(() => () => edgeWorker?.terminate())
+  type Side = keyof Measure
+  /** The sides a drag of `kind` moves, where the user looks: the dragged handle's (a new area's, the
+   *  pointer's corner), all four moving the area. */
+  function movedSides(kind: Handle | 'new' | 'move', r: Rect): Side[] {
+    const p = toWorld(stick(client))
+    const moved = (handle: RegExp, q: number, lo: number, size: number, a: Side, b: Side): Side[] =>
+      kind === 'move' ? [a, b] : kind === 'new' || handle.test(kind) ? [Math.abs(q - lo) < Math.abs(q - lo - size) ? a : b] : []
+    return [...moved(/[ew]/, p.x, r.x, r.width, 'left', 'right'), ...moved(/[ns]/, p.y, r.y, r.height, 'top', 'bottom')]
+  }
+  /** Area `box` (the edge map's pixels) measured as near the pointer as the content allows, its `sides`
+   *  moved by a drag of `kind`. A resized side measures only the stretch of it the lens shows (picked up,
+   *  its flat top clear of the rim), lens up or not: a line far along the side lands outside the glass,
+   *  where the user never looks. */
+  function gauge(box: Box, sides: Side[], kind: Handle | 'new' | 'move', m: { e: Edges; dx: number; dy: number }) {
+    const p = toWorld(stick(client))
+    const [nx, ny] = [Math.round(p.x * density) + m.dx, Math.round(p.y * density) + m.dy]
+    if (kind === 'move') return measure(m.e, box, [nx, ny])
+    const { c, r, mag } = lensFrame(1)
+    const s = density / (mag * z.current) // edge map px per point in the lens
+    const [cx, cy, R] = [nx + (c.x - client.x) * s, ny + (c.y - client.y) * s, (LOUPE_TOP * r - 16) * s]
+    const half = (o: number) => Math.sqrt(Math.max(0, R * R - o * o)) // of the chord o off the middle
+    const [hx, hy] = [half(box[sides.includes('bottom') ? 3 : 1] - cy), half(box[sides.includes('right') ? 2 : 0] - cx)]
+    return measure(m.e, box, [nx, ny], [cx - hx, cy - hy, cx + hx, cy + hy])
+  }
+  /** While a drag fits the area, the sides it moves, each with its measure line in the edge map's pixels
+   *  and in screen points, and its length in pixels. */
+  const rules = $derived.by(() => {
+    const m = edgeMap
+    if (!dragging || !drag || !sel || !m) return [] // a new sel each pointer move brings this along
+    const box = inMap(sel, m)
+    const sides = movedSides(drag.kind, sel)
+    const measured = gauge(box, sides, drag.kind, m)
+    const [x0, y0, x1, y1] = box
+    const onScreen = (x: number, y: number) => ({ x: W / 2 + ((x - m.dx) / density - W / 2) * z.current, y: H / 2 + ((y - m.dy) / density - H / 2) * z.current })
+    return sides.flatMap((side) => {
+      const s = measured[side]
+      if (!s?.d) return [] // flush with the content, or none to measure to
+      const h = side === 'left' || side === 'right'
+      const from = { left: x0, right: x1, top: y0, bottom: y1 }[side]
+      const to = from + (side === 'left' || side === 'top' ? s.d : -s.d)
+      const at = Math.round(s.at) // on a pixel edge: crisp at true size
+      const line: Box = h ? [from, at, to, at] : [at, from, at, to]
+      return [{ side, d: s.d, h, line, a: onScreen(line[0], line[1]), b: onScreen(line[2], line[3]) }]
+    })
+  })
+  /** Area `r` resized by its corner with Shift held: the corner where its two sides lie as far from the
+   *  content as each other, the pointer setting how far (measure.ts `even`). */
+  function evenOut(r: Rect, kind: Handle | 'new'): Rect {
+    const m = edgeMap
+    const [a, b] = movedSides(kind, r) as ['left' | 'right', ('top' | 'bottom')?]
+    if (!m || !b) return r // an edge alone: nothing to even out with
+    const box = inMap(r, m)
+    const [l, t, rt, bt] = even(box, a, b, (o) => gauge(o, [a, b], kind, m)).map((v, i) => (v - box[i]) / density)
+    return { x: r.x + l, y: r.y + t, width: r.width - l + rt, height: r.height - t + bt }
+  }
+
+  let press: P | null = null // the way the drag presses past the display's edge (-1, 0, or 1 on each axis)
+  let pressSince = 0
+  let pressAt: P = { x: 0, y: 0 }
+  let shove = 0 // points the pointer pushed on past the edge
+  let pushing = $state<{ fill: number; x: number; y: number } | null>(null)
+  let pushW = $state(0)
+  let pushH = $state(0)
+  /** Which way the drag presses past the display's edge, and how far: moving the area, it asks for a
+   *  place past the edge; resizing it, the pointer holds on the edge, where the cursor stops. */
+  function pressing(): { d: P; over: number } | null {
+    if (!drag || !dragging || !sel || back || !still || shot) return null
+    const side = (lo: boolean, hi: boolean) => (lo ? -1 : hi ? 1 : 0)
+    if (drag.kind === 'move') {
+      const p = toWorld(stick(client))
+      const x = drag.orig.x + p.x - drag.x
+      const y = drag.orig.y + p.y - drag.y
+      const d = { x: side(x < 0, x + sel.width > W), y: side(y < 0, y + sel.height > H) }
+      return d.x || d.y ? { d, over: Math.max(-x, x + sel.width - W, -y, y + sel.height - H) } : null
+    }
+    const ax = drag.kind === 'new' || /[ew]/.test(drag.kind)
+    const ay = drag.kind === 'new' || /[ns]/.test(drag.kind)
+    const d = { x: ax ? side(client.x <= 0, client.x >= W - 1) : 0, y: ay ? side(client.y <= 0, client.y >= H - 1) : 0 }
+    return d.x || d.y ? { d, over: shove } : null
+  }
+  /** The push pill: on the pressed edge, beside the pointer, clear of the toolbar. */
+  const pushAt = (d: P) => ({
+    x: d.x < 0 ? 18 : d.x > 0 ? W - 18 - pushW : clamp(client.x - pushW / 2, 12, W - pushW - 12),
+    y: d.y < 0 ? 18 : d.y > 0 ? floor - 18 - pushH : clamp(client.y - pushH / 2 - (d.x ? 40 : 0), 12, floor - pushH - 12),
+  })
+
+  // ---- The loupe: a resize that slows down picks up the editor's glass lens, in place under the pointer ----
+
+  const SLOW = 70 // pt/s: slower than this for SETTLE ms, the loupe comes
+  const SETTLE = 140
+  const FAST = 320 // pt/s: faster, it goes
+  const RADIUS = 300 // points: too big costs nothing, too small hides what the user aims at
+  const MAG = 6 // a still pixel shows 3 points wide on a Retina display
+  const LEAN = 0.3 // of the radius: the lens leans in toward the area's middle, where what the user frames lies
+  let lens = $state<HTMLCanvasElement>()
+  let gpu = $state.raw<Loupe | null>(null)
+  let lensOn = $state(false)
+  /** How far it is picked up off the screen, on the glide curve, as the editor's loupe (zoom/index.ts). */
+  const lift = new Tween(0, { easing: easeGlide })
+  const lensShown = $derived(lensOn || lift.current > 0)
+  /** The lens as it last drew, in screen points: its center, the pointer, the point it magnifies there
+   *  (the pointer, on the edge where it stops), its radius, and its magnification. The measure lines'
+   *  lengths show through it. */
+  let lensAt = $state.raw<{ x: number; y: number; px: number; py: number; sx: number; sy: number; r: number; mag: number } | null>(null)
+  let liftSince = 0 // when it set off up: its glass shows over LOUPE_GLASS
+  let slowSince = 0
+  let checker: number[][] = []
+
+  $effect(() => {
+    const canvas = lens
+    if (!canvas) return
+    let gone = false
+    loupe(canvas).then((l) => (gone ? l?.destroy() : (gpu = l)))
+    return () => {
+      gone = true
+      gpu?.destroy()
+      gpu = null
+    }
+  })
+  $effect(() => gpu?.source(room ?? still))
+
+  /** A theme color as the canvas's P3, 0 to 1. */
+  function p3(name: string, at: Element) {
+    const g = new OffscreenCanvas(1, 1).getContext('2d', P3)!
+    g.fillStyle = getComputedStyle(at).getPropertyValue(name)
+    g.fillRect(0, 0, 1, 1)
+    return [...g.getImageData(0, 0, 1, 1).data.subarray(0, 3)].map((v) => v / 255)
+  }
+
+  /** The lens picked up `p` of the way: its center in toward the area's middle, never past it, its
+   *  radius, and its magnification. The pointer stays on the pixel it magnifies. */
+  function lensFrame(p: number) {
+    const r = RADIUS * mix(LOUPE_FLAT, 1, p)
+    const v = view ? { x: view.x + view.width / 2 - client.x, y: view.y + view.height / 2 - client.y } : { x: 0, y: 0 }
+    const lean = Math.min(1, (LEAN * r) / (Math.hypot(v.x, v.y) || 1))
+    return { c: { x: client.x + v.x * lean, y: client.y + v.y * lean }, r, mag: MAG ** p }
+  }
+  /** The lens over the pointer, picked up `lift` of the way, with the area's edges, the dim around it,
+   *  and the measure lines. */
+  function drawLens(now: number) {
+    if (!gpu || !lens || !still) return
+    const p = lift.current
+    const pt = devicePixelRatio
+    const [dx, dy] = room ? [OX, OY] : [0, 0]
+    const stuck = stick(client)
+    const w = toWorld(stuck)
+    const at = (v: number, d: number) => Math.round(v * density) + d // the pixel corner an edge here lands on
+    if (!checker.length) checker = [p3('--surface-100', lens), p3('--surface-150', lens), p3('--brand', lens)] // .room.clear, .ruler
+    const { c, r, mag } = lensFrame(p)
+    lensAt = { x: c.x, y: c.y, px: client.x, py: client.y, sx: stuck.x, sy: stuck.y, r, mag }
+    const [ex, ey] = edgeMap ? [dx - edgeMap.dx, dy - edgeMap.dy] : [0, 0] // the edge map may still be the still's
+    const toPx = density / z.current / mag // still px per screen point, magnified
+    gpu.draw({
+      x: c.x * pt,
+      y: c.y * pt,
+      radius: r * pt,
+      mag,
+      glass: lensOn ? Math.min((now - liftSince) / (1000 * LOUPE_GLASS), 1) : p,
+      lift: p,
+      pt,
+      at: { x: w.x * density + dx + (c.x - client.x) * toPx, y: w.y * density + dy + (c.y - client.y) * toPx },
+      flat: { x: toWorld(c).x * density + dx, y: toWorld(c).y * density + dy },
+      perPx: density / (pt * z.current),
+      cell: 8 * density,
+      area: sel && [at(sel.x, dx), at(sel.y, dy), at(sel.x + sel.width, dx), at(sel.y + sel.height, dy)],
+      screen: room && back ? [dx, dy, dx + still.width, dy + still.height] : null,
+      even: checker[0],
+      odd: checker[1],
+      rules: rules.map((l) => [l.line[0] + ex, l.line[1] + ey, l.line[2] + ex, l.line[3] + ey]),
+      brand: checker[2],
+    })
+  }
+  /** Where the length of a measure line from screen point `a` to `b` shows, and how long the line shows
+   *  there: on its middle; with the lens up, on the middle of what its flat top shows of it, magnified,
+   *  or nowhere: the user looks into the glass, and a length outside it reads as some other line's. */
+  function label(a: P, b: P): (P & { len: number }) | null {
+    const l = lensAt
+    if (!l) return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, len: Math.hypot(b.x - a.x, b.y - a.y) }
+    // The line magnified, from A along d, cut to the flat top: a circle about the lens's center.
+    const A = { x: l.px + (a.x - l.sx) * l.mag, y: l.py + (a.y - l.sy) * l.mag }
+    const d = { x: (b.x - a.x) * l.mag, y: (b.y - a.y) * l.mag }
+    const f = { x: A.x - l.x, y: A.y - l.y }
+    const [qa, qb, qc] = [d.x * d.x + d.y * d.y, f.x * d.x + f.y * d.y, f.x * f.x + f.y * f.y - (LOUPE_TOP * l.r) ** 2]
+    const root = Math.sqrt(Math.max(0, qb * qb - qa * qc))
+    const [t0, t1] = [Math.max(0, (-qb - root) / qa), Math.min(1, (-qb + root) / qa)]
+    return qa && qb * qb > qa * qc && t1 > t0 ? { x: A.x + (d.x * (t0 + t1)) / 2, y: A.y + (d.y * (t0 + t1)) / 2, len: (t1 - t0) * Math.sqrt(qa) } : null
+  }
+  const gaps = $derived(
+    rules.flatMap((l) => {
+      const at = label(l.a, l.b)
+      return at ? [{ ...l, at, beside: at.len < (l.h ? 16 + 7 * String(l.d).length : 25) }] : [] // the label and a tick each side
+    }),
+  )
+
+  /** Each frame of a drag: the press past the edge, the screen stepping, and the loupe. */
+  function onFrame(now: number) {
+    if (z.current !== z.target) applyDrag() // the dragged edge stays under the pointer while the screen steps
+    const p = pressing()
+    press = p?.d ?? null
+    if (p) {
+      if (!room && still) fill(still) // ahead of the step back, so what lies past the edge shows at once
+      // The dwell counts while the pointer holds still; sliding along the edge starts it again.
+      if (!pressSince || Math.hypot(client.x - pressAt.x, client.y - pressAt.y) > 6) [pressSince, pressAt] = [now, client]
+      const full = Math.max((now - pressSince) / DWELL, p.over / SHOVE)
+      if (full >= 1) {
+        stepBack(true)
+        ;[press, pressSince, shove, pushing] = [null, 0, 0, null]
+      } else pushing = now - pressSince > 120 || p.over > 4 ? { fill: full, ...pushAt(p.d) } : null
+    } else [pressSince, shove, pushing] = [0, 0, null]
+
+    samples = samples.filter((s) => now - s.t < 120)
+    let dist = 0
+    for (let i = 1; i < samples.length; i++) dist += Math.hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y)
+    const speed = dist / 0.12 // points per second
+    // Pressed on the edge, the area is the edge itself: nothing to calibrate.
+    if (!dragging || drag?.kind === 'move' || p || !still || speed > FAST) [lensOn, slowSince] = [false, 0]
+    else if (speed < SLOW) {
+      slowSince ||= now
+      if (now - slowSince > SETTLE) lensOn = true
+    }
+    if (lensOn !== (lift.target === 1)) {
+      if (lensOn) liftSince = now
+      lift.set(lensOn ? 1 : 0, { duration: calm() ? 0 : 1000 * (lensOn ? lensIn(MAG) : lensOut(MAG)) })
+    }
+    if (lensShown) drawLens(now)
+    else if (lensAt) lensAt = null
+  }
+  $effect(() => {
+    if (!drag && !lensShown) return // a lens let go of goes back down
+    let id = requestAnimationFrame(function tick(now) {
+      onFrame(now)
+      id = requestAnimationFrame(tick)
+    })
+    return () => {
+      cancelAnimationFrame(id)
+      ;[press, pressSince, shove, pushing, lensOn, slowSince, lensAt] = [null, 0, 0, null, false, 0, null]
+    }
+  })
+  // Back to true size once there is no area to take past the edge.
+  $effect(() => {
+    if (shell.mode !== 'area' || (!sel && !drag)) stepBack(false)
+  })
   /** Picking a display or window, the keys (↩, ⌘C) go to the display the pointer is on. An area keeps
    *  the keyboard on its own display. */
   const takeKeys = () => (shell.mode === 'display' || shell.mode === 'window') && !target && invoke('shell:focus')
@@ -150,6 +504,7 @@
     // A click lets go of the area, or picks the last one again on its outline. A tiny new area is a click too.
     if (kind === 'new' && !moved) sel = !sel && last && inside(last, { x, y }) ? last : null
     else if (kind === 'new' && sel && (sel.width < 32 || sel.height < 32)) sel = null
+    if (!outside(sel)) stepBack(false) // back to true size once the area is all on the screen
     save()
   }
 
@@ -161,21 +516,22 @@
       const pt = value / scale
       const next = { ...sel, [axis]: pt }
       if (ratio) axis === 'width' ? (next.height = pt / ratio) : (next.width = pt * ratio)
-      sel = constrain(next, ratio, W, H)
+      sel = constrainIn(next, ratio, roomRect)
       save()
     }
     input.value = String(px(sel[axis])) // the size it really is: clamped to the display, or the entry undone
   }
   function setAspect(a: string) {
     aspect = a
-    if (sel) sel = constrain(sel, ASPECTS[a], W, H)
+    if (sel) sel = constrainIn(sel, ASPECTS[a], roomRect)
+    if (!outside(sel)) stepBack(false)
     save()
   }
 
-  const form = $derived(sel && formAt(sel, formW, formH, W, floor))
+  const form = $derived(view && formAt(view, formW, formH, W, floor))
   let toolsW = $state(0)
   let toolsH = $state(0)
-  const tools = $derived(sel && form && toolsAt(sel, toolsW, toolsH, W, H, { ...form, width: formW, height: formH }))
+  const tools = $derived(view && form && toolsAt(view, toolsW, toolsH, W, H, { ...form, width: formW, height: formH }))
 
   // ---- Screenshot: the area frozen into an image, drawn on, then copied or saved ----
 
@@ -206,6 +562,7 @@
         if (from && !win) {
           const k = from.width / W // still px per point
           const [x, y, w, h] = [rect.x, rect.y, rect.width, rect.height].map((v) => Math.round(v * k))
+          if (outside(rect)) return { image: await createImageBitmap(room ?? fill(from), x + OX, y + OY, w, h), rect }
           return { image: await createImageBitmap(from, x, y, w, h), rect }
         }
         const png: Uint8Array = win ? await invoke('recording:windowScreenshot', win.id, win.frame) : await invoke('recording:screenshot', id, toEngine(rect))
@@ -278,10 +635,10 @@
     paintShapes(ctx, draft ? [...shapes, draft] : shapes, shot.image, k)
   }
 
-  /** Where `e` is on the board; `on`: the event the board got (coalesced events have no target). */
+  /** Where `e` is on the board, in its points (it shows at z); `on`: the event the board got (coalesced events have no target). */
   const at = (e: PointerEvent, on = e): P => {
     const r = (on.currentTarget as Element).getBoundingClientRect()
-    return { x: e.clientX - r.left, y: e.clientY - r.top }
+    return { x: (e.clientX - r.left) / z.current, y: (e.clientY - r.top) / z.current }
   }
   /** A pen point, with a stylus's pressure; a mouse's ink goes by its speed (paintStroke). */
   const inkAt = (e: PointerEvent, on = e) => ({ ...at(e, on), ...(e.pointerType === 'pen' && { p: e.pressure }) })
@@ -409,8 +766,9 @@
     begin(startRequest({ kind: 'window', windowId: hovered.id, ...(preset === 'current' ? {} : { frame: toEngine(toGlobal(frame)) }) }), frame)
   }
   function startArea() {
-    // The engine takes an area relative to its display, which is exactly the overlay's space.
-    if (sel && display) begin(startRequest({ kind: 'area', displayId: display.id, rect: toEngine(sel) }), sel)
+    // The engine takes an area relative to its display, which is exactly the overlay's space. Past its
+    // edges, it is a screenshot only: a recording stays on the screen, and the editor adds room around it.
+    if (sel && display && !outside(sel)) begin(startRequest({ kind: 'area', displayId: display.id, rect: toEngine(sel) }), sel)
   }
   function key(e: KeyboardEvent) {
     if (target || ['INPUT', 'TEXTAREA'].includes((e.target as Element).tagName)) return
@@ -439,9 +797,28 @@
   const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 </script>
 
-<svelte:window onkeydown={key} />
+<svelte:window onkeydown={(e) => (shift(e), key(e))} onkeyup={shift} />
 
-{#if still}<canvas class="still" width={still.width} height={still.height} {@attach paint}></canvas>{/if}
+{#if still}
+  <!-- The frozen screen and, once an area presses past its edge, what lies past it (a checkerboard where
+       nothing does): both step back together. -->
+  <div class="screen" style:scale={z.current}>
+    {#if room}
+      <canvas
+        class="room"
+        class:clear={!wall}
+        width={room.width}
+        height={room.height}
+        style:left="{wide.x}px"
+        style:top="{wide.y}px"
+        style:width="{wide.width}px"
+        style:height="{wide.height}px"
+        {@attach paintRoom}
+      ></canvas>
+    {/if}
+    <canvas class="still" width={still.width} height={still.height} {@attach paint}></canvas>
+  </div>
+{/if}
 <svelte:body onpointerenter={takeKeys} onpointermove={move} onpointerup={up} onpointerleave={() => drag || (mouse = null)} />
 
 <!-- The dim around a region: four solid layers, edges on device pixels so they meet without seams.
@@ -518,32 +895,45 @@
       <div class="hint">Move the pointer over a window to capture it · Esc to cancel</div>
     {/if}
   {:else if shell.mode === 'area'}
-    {#if sel}
-      {@render shade(sel)}
-      <div class="sel" class:frozen={!!shot} style:left="{sel.x}px" style:top="{sel.y}px" style:width="{sel.width}px" style:height="{sel.height}px" role="presentation" onpointerdown={(e) => down(e, 'move')}>
+    {#if sel && view}
+      {@render shade(view)}
+      {#if z.current < 0.999}
+        <!-- The screen's real edge, once it steps back: dashed as the last area is. -->
+        {@const e = toScreen(screenRect)}
+        <div class="edge" style:left="{e.x}px" style:top="{e.y}px" style:width="{e.width}px" style:height="{e.height}px" style:opacity={(1 - z.current) / (1 - STEP)}></div>
+      {/if}
+      <!-- From each side in to the first content, under the handles; with the lens up, only in it (loupe.wgsl). -->
+      {#each lensAt ? [] : rules as l (l.side)}
+        {@const [x, y] = [Math.min(l.a.x, l.b.x), Math.min(l.a.y, l.b.y)]}
+        <div class="ruler" class:h={l.h} style:left="{x}px" style:top="{y}px" style:width={l.h ? `${Math.abs(l.b.x - l.a.x)}px` : null} style:height={l.h ? null : `${Math.abs(l.b.y - l.a.y)}px`}></div>
+      {/each}
+      <div class="sel" class:frozen={!!shot} style:left="{view.x}px" style:top="{view.y}px" style:width="{view.width}px" style:height="{view.height}px" role="presentation" onpointerdown={(e) => down(e, 'move')}>
         {#if shot}
-          <canvas class="board" class:pointing={!!tool && tool !== 'text'} class:typing={tool === 'text'} class:over {@attach board} onpointerdown={boardDown} onpointermove={boardMove} onpointerup={boardUp}></canvas>
-          {#if typing}
-            <!-- Enter places the text, ⇧↩ starts a new line. -->
-            <textarea
-              class="type"
-              style:left="{typing.at.x}px"
-              style:top="{typing.at.y}px"
-              style:color
-              style:font="600 {FONT}px/{FONT * 1.25}px {FONT_FAMILY}"
-              rows={typing.text.split('\n').length}
-              spellcheck="false"
-              aria-label="Text"
-              bind:value={typing.text}
-              {@attach (el) => el.focus()}
-              onpointerdown={(e) => e.stopPropagation()}
-              onkeydown={(e) => {
-                if (e.key !== 'Enter' || e.shiftKey) return
-                e.preventDefault()
-                commitText()
-              }}
-            ></textarea>
-          {/if}
+          <!-- In the area's own points, shown at the screen's scale. -->
+          <div class="paper" style:width="{sel.width}px" style:height="{sel.height}px" style:scale={z.current}>
+            <canvas class="board" class:pointing={!!tool && tool !== 'text'} class:typing={tool === 'text'} class:over {@attach board} onpointerdown={boardDown} onpointermove={boardMove} onpointerup={boardUp}></canvas>
+            {#if typing}
+              <!-- Enter places the text, ⇧↩ starts a new line. -->
+              <textarea
+                class="type"
+                style:left="{typing.at.x}px"
+                style:top="{typing.at.y}px"
+                style:color
+                style:font="600 {FONT}px/{FONT * 1.25}px {FONT_FAMILY}"
+                rows={typing.text.split('\n').length}
+                spellcheck="false"
+                aria-label="Text"
+                bind:value={typing.text}
+                {@attach (el) => el.focus()}
+                onpointerdown={(e) => e.stopPropagation()}
+                onkeydown={(e) => {
+                  if (e.key !== 'Enter' || e.shiftKey) return
+                  e.preventDefault()
+                  commitText()
+                }}
+              ></textarea>
+            {/if}
+          </div>
         {:else}
           {#if dragging && drag?.kind !== 'move'}
             {#each [1, 2] as k (k)}
@@ -586,7 +976,9 @@
               {/each}
             </div>
             <button class="action" onclick={() => finishShot(false)}><UiIcon name="copy" size={16} />Screenshot<kbd>⌘C</kbd></button>
-            <button class="start" onclick={startArea}><span class="dot" style:background-image="url({logoDot})"></span>Record<kbd>↩</kbd></button>
+            <button class="start" onclick={startArea} disabled={outside(sel)} title={outside(sel) ? 'A recording stays on the screen. The editor adds room around it.' : undefined}
+              ><span class="dot" style:background-image="url({logoDot})"></span>Record<kbd>↩</kbd></button
+            >
           {/if}
         </div>
       {/if}
@@ -618,11 +1010,21 @@
       {/if}
     {:else}
       {#if last}
-        {@const [x0, y0, x1, y1] = [last.x, last.y, last.x + last.width, last.y + last.height].map((v) => px(v) / scale)}
+        {@const l = toScreen(last)}
+        {@const [x0, y0, x1, y1] = [l.x, l.y, l.x + l.width, l.y + l.height].map((v) => px(v) / scale)}
         <div class="last" style:left="{x0}px" style:top="{y0}px" style:width="{x1 - x0}px" style:height="{y1 - y0}px"><span class="tag">Last area</span></div>
       {/if}
       <div class="hint">Drag over what you want to capture · Esc to cancel</div>
     {/if}
+    {#if pushing}
+      <div class="push" role="status" style:left="{pushing.x}px" style:top="{pushing.y}px" bind:offsetWidth={pushW} bind:offsetHeight={pushH}>
+        Keep pushing to go past the screen<i style:width="{pushing.fill * 100}%"></i>
+      </div>
+    {/if}
+    <canvas class="lens" class:on={lensShown} width={Math.round(W * devicePixelRatio)} height={Math.round(H * devicePixelRatio)} aria-hidden="true" bind:this={lens}></canvas>
+    {#each gaps as g (g.side)}
+      <span class="gap" class:h={g.h} class:beside={g.beside} style:left="{g.at.x}px" style:top="{g.at.y}px">{g.d}</span>
+    {/each}
   {/if}
   <!-- Outside the branches above, so it bursts away even as the recording's backdrop replaces them. -->
   {#if count > 0 && target}
@@ -643,13 +1045,23 @@
   :global(body) {
     background: transparent;
   }
-  .still {
+  .screen {
     position: fixed;
+    inset: 0;
+    pointer-events: none;
+    user-select: none;
+  }
+  .still {
+    position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    pointer-events: none;
-    user-select: none;
+  }
+  .room {
+    position: absolute;
+  }
+  .room.clear {
+    background: repeating-conic-gradient(var(--surface-150) 0 25%, var(--surface-100) 0 50%) 0 0 / 16px 16px;
   }
   main {
     position: fixed;
@@ -662,6 +1074,16 @@
   }
   main.area:has(.sel) {
     background: none;
+  }
+  /* A drag's cursor wherever it goes (data-drag, set while it drags): over the body that holds the
+     pointer, the handle it dragged, and the lens. */
+  :global(html[data-drag='aim']),
+  :global(html[data-drag='aim'] *) {
+    cursor: crosshair !important;
+  }
+  :global(html[data-drag='move']),
+  :global(html[data-drag='move'] *) {
+    cursor: move !important;
   }
   .display {
     position: absolute;
@@ -720,8 +1142,11 @@
     font-weight: 600;
     white-space: nowrap;
   }
-  .start:hover {
+  .start:hover:not(:disabled) {
     background: var(--surface-inverse-hover);
+  }
+  .start:disabled {
+    opacity: 0.35;
   }
   .start:focus-visible,
   .segmented button:focus-visible {
@@ -832,7 +1257,13 @@
     background: rgb(0 0 0 / 0.14);
     box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.28); /* the dim around it, painted once: it never resizes */
   }
-  .last::before {
+  /* The screen's real edge, once it steps back. */
+  .edge {
+    position: absolute;
+    pointer-events: none;
+  }
+  .last::before,
+  .edge::before {
     --dash: #fff 0 6px, rgb(0 0 0 / 0.45) 0 10px;
     content: '';
     position: absolute;
@@ -1008,9 +1439,83 @@
     left: 50%;
     translate: -50% 0;
   }
+  /* Pressed against the screen's edge: a pill that fills while the press holds; full, the screen steps back. */
+  .push {
+    position: absolute;
+    padding: 8px 13px 9px;
+    border-radius: var(--radius-lg);
+    background: var(--surface-root);
+    box-shadow: var(--shadow-pop);
+    color: var(--fg-default);
+    font-size: 13px;
+    white-space: nowrap;
+    pointer-events: none;
+    overflow: hidden;
+    animation: come var(--come) var(--ease-out);
+  }
+  .push i {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--brand);
+  }
+  /* The loupe: the editor's glass lens in place under the pointer, its shadow around it (loupe.wgsl). */
+  .lens {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    visibility: hidden;
+  }
+  .lens.on {
+    visibility: visible;
+  }
+  /* Measure lines while a drag fits the area: from the sides it moves in to the first content, a point
+     wide with a tick across each end (loupe.wgsl draws them the same through the lens). */
+  .ruler {
+    position: absolute;
+    background: var(--brand);
+    pointer-events: none;
+  }
+  .ruler.h { height: 1px; margin-top: -0.5px; }
+  .ruler:not(.h) { width: 1px; margin-left: -0.5px; }
+  .ruler::before,
+  .ruler::after {
+    content: '';
+    position: absolute;
+    background: inherit;
+  }
+  .ruler.h::before, .ruler.h::after { top: -3px; width: 1px; height: 7px; }
+  .ruler.h::before { left: -0.5px; }
+  .ruler.h::after { right: -0.5px; }
+  .ruler:not(.h)::before, .ruler:not(.h)::after { left: -3px; width: 7px; height: 1px; }
+  .ruler:not(.h)::before { top: -0.5px; }
+  .ruler:not(.h)::after { bottom: -0.5px; }
+  /* A measure line's length in pixels: on its middle, or beside a line too short to hold it. Over the
+     lens, on the line where its flat top shows it magnified. */
+  .gap {
+    position: absolute;
+    translate: -50% -50%;
+    padding: 0 5px;
+    border-radius: var(--radius-sm);
+    background: var(--brand);
+    box-shadow: 0 1px 4px rgb(0 0 0 / 0.3);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 17px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .gap.beside.h { translate: -50% calc(-100% - 6px); }
+  .gap.beside:not(.h) { translate: 6px -50%; }
   @media (prefers-reduced-motion: reduce) {
     .third { animation: none; }
     .frame { transition: none; }
+    .push { animation: none; }
   }
   /* Secondary action beside the accent one: same height, a control on the panel. */
   .action {
@@ -1048,6 +1553,12 @@
   }
   .sel.frozen {
     cursor: default;
+  }
+  .paper {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 0 0;
   }
   .board {
     position: absolute;

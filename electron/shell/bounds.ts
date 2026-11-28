@@ -34,6 +34,18 @@ export function place(size: { width: number; height: number }, area: Rect, botto
   return fit({ x, y, ...size }, area)
 }
 
+/** Where a `size` window goes on display `d`: where it was `left` on that display, else at the bottom
+ *  center. A spot left on another display never counts, so two displays that share a name and a size
+ *  (two of one monitor) each keep their own. */
+export function spotOn(size: { width: number; height: number }, d: { workArea: Rect }, left: Rect | undefined, bottom: number): Rect {
+  return left && reachable(left, [d.workArea]) ? fit({ x: left.x, y: left.y, ...size }, d.workArea) : place(size, d.workArea, bottom)
+}
+
+/** `size` centered on `old`, the window it takes the place of, inside `area`. */
+export function inPlaceOf(size: { width: number; height: number }, old: Rect, area: Rect): Rect {
+  return fit({ x: old.x + (old.width - size.width) / 2, y: old.y + (old.height - size.height) / 2, ...size }, area)
+}
+
 /** A `size` square under the display's camera: top center, just below the menu bar, where a built-in camera sits
  *  and most webcams clip on. Centered on the display, not on its work area, which the Dock shifts. */
 export function underCamera(size: number, d: { bounds: Rect; workArea: Rect }): Rect {

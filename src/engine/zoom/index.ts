@@ -90,16 +90,16 @@ const FAR_JUMPS_PER_S = 0.5 // an auto zoom panning a half view more often than 
 /** s a lens at `level` takes to be picked up off the screen: a quarter less than the camera takes to zoom
  *  in that far. It lies flat at LOUPE_FLAT of its radius at 1x, its shadow tight under its rim; pulled up
  *  on the glide curve, it grows, magnifies, and its shadow drops away. It goes back down 30% faster. */
-const lensIn = (level: number) => 0.75 * zoomTime(level, PACE.focused)
-const lensOut = (level: number) => 0.7 * lensIn(level)
-const LOUPE_FLAT = 0.78
+export const lensIn = (level: number) => 0.75 * zoomTime(level, PACE.focused)
+export const lensOut = (level: number) => 0.7 * lensIn(level)
+export const LOUPE_FLAT = 0.78
 /** s the glass (bevel light, dispersion) takes to show as a lens picks up. Put down, it dissolves with the
  *  move instead: flat glass left on the screen shows only its rim, a ring with nothing in it. */
-const LOUPE_GLASS = 0.08
+export const LOUPE_GLASS = 0.08
 const LOUPE_GLIDE = zoomTime(2, PACE.focused) // s: one loupe glides into the next's target, level, size, and shape
 const LOUPE_FOLLOW: SpringConfig = { stiffness: 120, damping: 2 * 0.65 * Math.sqrt(120), mass: 1 } // follows the cursor softly, a little overshoot
 const LOUPE_LEAD = LOUPE_FOLLOW.damping / LOUPE_FOLLOW.stiffness // s: the follow spring trails a steady glide by this, so it aims that far ahead
-const LOUPE_TOP = 0.85 // the flat top's share of the lens radius (shaders.wgsl BEVEL): only it shows the content magnified
+export const LOUPE_TOP = 0.85 // the flat top's share of the lens radius (glass.wgsl BEVEL): only it shows the content magnified
 const LOUPE_WALL = 0.7 // the cursor never gets further from the lens center than this share of what the flat top shows
 /** Loupe lens radius in units (Zoom.size): what fits depends on what it shows, a button or a paragraph.
  *  At 540 (half of 1080) the lens spans the frame's short side; past it, the frame crops the lens. */

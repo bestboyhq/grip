@@ -44,6 +44,8 @@ GPU composition of each output frame.
   Masks stay locked to content through zooms.
 - The keystroke overlay draws each key as its own keycap with the macOS symbol and name.
   A repeated shortcut counts only the presses made so far: a ×3 badge on the first of three presses gives the ending away.
+  A modifier pressed alone shows nothing, but held while a mouse button is down it is the gesture (⇧ on a drag, ⌥ on a duplicate, ⌘ on a click), and its keycap shows until either lets go.
+  macOS sends no repeats for a held modifier, so the hold's release, not a repeat, keeps it on screen.
 - Click effects: swell, wave, circle, focus ring.
   All four live on the screen's glass, so they are drawn in the screen pass, not on the overlay canvas: the loupe and motion blur carry them, and the cursor stays sharp above them.
   A crest narrower than a few times its refraction folds text into rainbow noise and reads as a ring drawn over the UI; keep crests broad so text bends and swells.

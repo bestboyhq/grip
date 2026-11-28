@@ -1,5 +1,5 @@
-<!-- Recording toolbar, bottom center of the active display: close, Display / Window / Area / Device,
-     camera, microphone with a live level, system audio, settings. A downloaded update veils it until
+<!-- Recording toolbar, bottom center of the active display or where it was dragged there: a handle, close,
+     Display / Window / Area / Device, camera, microphone with a live level, system audio, settings. A downloaded update veils it until
      the user restarts or puts it off (Later, Esc) for a day.
      It is also the session controller (electron/shell/recorder.ts): it runs the shell's commands
      against the capture engine and reports the engine's errors and warnings to the shell. -->
@@ -356,6 +356,8 @@
   ondragover={(e) => e.preventDefault()}
   ondrop={(e) => dropFiles(e).catch((err: Error) => invoke('shell:warn', err.message))}
 />
+<!-- The keyboard comes here while the pointer is on the bar: only the key window shows its cursor. -->
+<svelte:body onpointerenter={() => invoke('shell:hover')} />
 
 {#snippet pill(b: Pill['box'], on: boolean)}
   <span class="pill" class:on style:translate="{b.left}px {b.top}px" style:width="{b.width}px" style:height="{b.height}px" style:border-radius={b.radius}></span>
@@ -380,6 +382,7 @@
     <!-- One veil for both: the chosen mode is the hover bubble locked in place, and where the two meet
          they merge like drops instead of adding up to a glare. -->
     <span class="veil">{@render pill(c, !!chosen.el)}{@render pill(h, !!hover.el)}</span>
+    <span class="handle"><Icon name="handle" width={8} height={14} /></span>
     <button class="close" aria-label="Close" onclick={() => invoke('shell:close-picker')}><span class="circle"><Icon name="close" size={22} stroke={2.4} /></span></button>
     <span class="sep"></span>
     {#each MODES as m (m.id)}
@@ -430,7 +433,7 @@
     inset: 0;
     display: flex;
     align-items: center;
-    padding: 0 10px; /* the end buttons' boxes; the close circle starts 20 px in, like the gear's chevron ends */
+    padding: 0 10px 0 4px; /* the gear's chevron ends 20 px in */
     border-radius: var(--radius-window);
     background: var(--surface-root);
     box-shadow: var(--hairline);
@@ -449,6 +452,15 @@
   button:focus-visible {
     outline: 2px solid var(--brand);
     outline-offset: -2px;
+  }
+  /* The bar drags anywhere between its buttons; the handle says so. The window server takes the
+     pointer there, so it has no hover or cursor of its own. */
+  .handle {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 52px;
+    color: var(--fg-faint);
   }
   .close {
     width: 43px;

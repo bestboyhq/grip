@@ -64,6 +64,7 @@ export const shell = $state({
   elapsed: 0, // seconds recorded as of `at`
   at: 0, // ms since epoch; 0 while not running
   update: '', // a downloaded version waiting for a restart
+  toolbar: null as Rect | null, // the toolbar's global bounds while picking
 })
 
 const applyState = (s: Partial<typeof shell>) => void Object.assign(shell, s)

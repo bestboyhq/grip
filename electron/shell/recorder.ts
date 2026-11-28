@@ -8,20 +8,23 @@
 // hidden when not picking, so the tray, shortcuts, URLs, and the quit prompt reach the recording.
 //
 // IPC (all windows of this flow):
-//   shell:state -> { status, mode, picking, counting, selection, area, drawing, inkDisplay, elapsed, at, update }, pushed as
+//   shell:state -> { status, mode, picking, counting, selection, area, drawing, inkDisplay, elapsed, at, update, toolbar }, pushed as
 //                                 "shell:state" on change (update: a downloaded version waiting for a restart, or '' also while put off;
-//                                 drawing: the pen is on, on display inkDisplay)
+//                                 drawing: the pen is on, on display inkDisplay; toolbar: its global bounds while picking, else null)
 //   shell:command(cmd)            widget -> controller: stop, pause, resume, toggle-pause, cancel, restart
 //   shell:warn(message)           an engine warning (disk low, a device lost), shown as a notification
 //   shell:pick(mode | null)       enter or leave a picking mode (opens overlays per display)
 //   shell:still(displayId) -> Still | null   overlay: its display frozen as it was when the picker opened (raw
 //                                 RGBA); a loaded overlay asks ahead and gets it when a pick opens
+//   shell:wallpaper(displayId) -> Still | null   area overlay: its display's desktop picture alone (raw RGBA),
+//                                 to show past the screen's edges; null while recording, or if it fails
 //   shell:ready                   overlay: painted its still: it takes the mouse and keys (shown before that, out
 //                                 of the way, unless it was still loading: then it shows now)
 //   shell:painted                 toolbar: drawn with its settings and devices; it may show now, and takes commands
 //   shell:draw(n) -> shell:drawn(n)   main -> toolbar: answered after the frame that draws everything sent before
 //                                 it, so a hidden toolbar shows with this pick's state
 //   shell:focus                   overlay: the pointer is on it, picking a display or window: it takes the keyboard
+//   shell:hover                   toolbar: the pointer is on it: it borrows the keyboard from the overlay that has it
 //   shell:select(area | null)     overlay: the area picked so far ({ display, rect, aspect }), also kept as the last area
 //   shell:close-picker            hide toolbar, overlays, and the idle camera bubble
 //   shell:countdown(on)           a countdown runs (Esc cancels it: "shell:escape")
@@ -45,7 +48,7 @@
 //                                 macOS won't give it to Grip, 'macos' if it took the keys from a macOS
 //                                 shortcut until quit; null pauses it while the user types a new one, and
 //                                 pushes each press with ⌘ or ⌃ (or an F key) as "shell:typed" (press)
-//   shell:display(id)             display geometry for an overlay, and where the toolbar sits on it
+//   shell:display(id)             display geometry for an overlay
 //   shell:popup(items, x, y)      native menu at (x, y) in the sender window -> picked id | null (icon: PNG at 2x)
 //   shell:open-project(path?)     open a bundle in the editor (no path: Open dialog)
 //   shell:open-files(paths)       dropped files: bundles open, videos import first; rejects with a reason
@@ -66,7 +69,7 @@ import { capture, recordingEvents, recordingName } from '../recording.ts'
 import { native } from '../native.ts'
 import { DRAW_FADE, DRAW_HOLD } from '../../src/engine/overlays/drawings.ts'
 import { activeDisplay, hidden, openWindow, reveal, sendAll, windowsOf, withDock } from '../windows.ts'
-import { arrangement, place, reachable, underCamera } from './bounds.ts'
+import { arrangement, inPlaceOf, place, reachable, spotOn, underCamera } from './bounds.ts'
 import { pngInfo, withScale } from './png.ts'
 import { plainError, type Permission } from './errors.ts'
 import { editorCloser, type Choice } from './closing.ts'
@@ -87,7 +90,7 @@ export type Command = 'start' | 'stop' | 'pause' | 'resume' | 'toggle-pause' | '
 
 /** Shortcuts while recording, and the prompter's. The record shortcut is the user's: settings.recordShortcut. */
 export const SHORTCUTS = { pause: 'Alt+Shift+Command+P', cancel: 'Alt+Shift+Command+Backspace', prompter: 'Alt+Command+.', draw: 'Alt+Shift+Command+D' }
-const TOOLBAR = { width: 882, height: 64 }
+const TOOLBAR = { width: 896, height: 64 }
 const WIDGET = { width: 316, height: 48 }
 const RESULT = { width: 300, height: 400 } // taller than any card, which fits its height to its content (shell:fit)
 const BUBBLE = 216 // camera bubble window; the circle inside leaves room for its shadow
@@ -96,6 +99,13 @@ const SNAP = 72 // a bubble dropped this close to its spot under the camera sett
 const NOTES = { width: 440, height: 260 }
 
 let toolbar: BrowserWindow | null = null
+/** Where the toolbar was put for this pick: a move to anywhere else is the user's drag. */
+let spot: Rectangle | null = null
+/** The toolbar on display `d`: where the user last dragged it there, else bottom center. Keyed by display id,
+ *  never its name: two monitors of one model share a name. */
+const toolbarSpot = (d: Display) => (spot = spotOn(TOOLBAR, d, settings().windows[`recorder@${d.id}`], 20))
+/** The toolbar as it was when the recording started: the widget takes its place. */
+let startedAt: Rectangle | null = null
 /** Waiting for the toolbar to draw itself (shell:painted), null once it has: shown before that it is an
  *  empty panel, and its page may not listen for commands yet. */
 let unpainted: Array<() => void> | null = []
@@ -157,9 +167,11 @@ export const floating: BrowserWindowConstructorOptions = {
   show: false,
 }
 /** A panel floats over fullscreen apps without Electron hiding the dock icon for it (updateDock owns that
- *  icon), and stays when the user hides other apps: the recording controls must not go with them. */
+ *  icon), and stays when the user hides other apps: the recording controls must not go with them.
+ *  A release keeps it out of other apps' captures and screen shares too. A dev run lets them in, so a
+ *  released Grip (another app to the dev run's Electron) or any recorder can film the picker at work. */
 export function protect(win: BrowserWindow, level: number) {
-  win.setContentProtection(true)
+  win.setContentProtection(app.isPackaged)
   win.setAlwaysOnTop(true, 'screen-saver', level)
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
   native.keepOnHide(win.getNativeWindowHandle())
@@ -218,7 +230,8 @@ function alert(message: string, detail: string) {
   return dialog.showMessageBox({ type: 'warning', message, detail })
 }
 
-const state = () => ({ status, mode, picking, counting, selection, area, drawing, inkDisplay: recDisplay, ...clock, update: toolbarUpdate() })
+const toolbarBounds = () => (picking && toolbar && !toolbar.isDestroyed() ? toolbar.getBounds() : null)
+const state = () => ({ status, mode, picking, counting, selection, area, drawing, inkDisplay: recDisplay, ...clock, update: toolbarUpdate(), toolbar: toolbarBounds() })
 const broadcast = () => sendAll('shell:state', state())
 
 // ---- Toolbar (controller) ----
@@ -227,7 +240,7 @@ function controller(): BrowserWindow {
   if (toolbar && !toolbar.isDestroyed()) return toolbar
   const win = openWindow('recorder', {
     ...floating,
-    ...place(TOOLBAR, activeDisplay().workArea, 20),
+    ...toolbarSpot(activeDisplay()),
     vibrancy: 'hud',
     visualEffectState: 'active',
     webPreferences: { backgroundThrottling: false },
@@ -235,6 +248,18 @@ function controller(): BrowserWindow {
   protect(win, 2)
   native.disableWindowAnimation(win.getNativeWindowHandle()) // shows at once, with the frozen screen
   unpainted = []
+  // Dragged by its handle (or any gap between buttons): that display keeps the spot, and the overlays keep
+  // their cards clear of it. Saved once it settles: a drag moves it every frame.
+  let settle: ReturnType<typeof setTimeout> | undefined
+  win.on('move', () => {
+    clearTimeout(settle)
+    settle = setTimeout(() => {
+      const b = toolbarBounds()
+      if (!b || JSON.stringify(b) === JSON.stringify(spot)) return
+      setSettings({ windows: { ...settings().windows, [`recorder@${screen.getDisplayMatching(b).id}`]: (spot = b) } })
+      broadcast()
+    }, 150)
+  })
   win.on('close', (e) => {
     if (quitting) return
     e.preventDefault()
@@ -259,7 +284,7 @@ function controller(): BrowserWindow {
 export function showPicker(m: Mode | null = settings().mode ?? 'area') {
   if (status !== 'idle') return showWidget()
   const win = controller()
-  win.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))
+  win.setBounds(toolbarSpot(activeDisplay()))
   picking = true
   // Overlays bring the toolbar with them (openOverlays). Ones on screen already: it shows now, before
   // pick() gives the keyboard back to the area overlay.
@@ -490,7 +515,10 @@ function escape(on: boolean) {
 function showWidget() {
   const open = windowsOf('widget')[0]
   if (open) return reveal(open, false)
-  const w = openWindow('widget', { ...floating, ...place(WIDGET, displayOf(homeDisplay).workArea, 24), vibrancy: 'hud', visualEffectState: 'active' })
+  // In the toolbar's place, on its display, wherever the recorded display is: the controls stay where the user
+  // last looked. A recording started without the toolbar has them at the bottom center of its display.
+  const at = startedAt ? inPlaceOf(WIDGET, startedAt, screen.getDisplayMatching(startedAt).workArea) : place(WIDGET, displayOf(homeDisplay).workArea, 24)
+  const w = openWindow('widget', { ...floating, ...at, vibrancy: 'hud', visualEffectState: 'active' })
   protect(w, 2)
   w.once('ready-to-show', () => reveal(w, false))
 }
@@ -886,6 +914,7 @@ export function registerRecorder() {
   ipcMain.handle('shell:pick', (_e, m: Mode | null) => pick(['display', 'window', 'area', 'device'].includes(m as string) ? m : null))
   ipcMain.handle('shell:close-picker', () => closePicker())
   ipcMain.handle('shell:still', (_e, id: unknown) => stillOf(Number(id)).promise)
+  ipcMain.handle('shell:wallpaper', (_e, id: unknown) => (status === 'idle' ? capture.wallpaper(Number(id)).catch(() => null) : null))
   ipcMain.handle('shell:ready', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender)
     if (w && windowsOf('area').includes(w)) showOverlay(w)
@@ -904,6 +933,28 @@ export function registerRecorder() {
   ipcMain.handle('shell:focus', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender)
     if (w?.isVisible() && !w.isFocused() && picking && !counting && windowsOf('area').includes(w)) reveal(w)
+  })
+  // Chromium changes the cursor only in the key window: the toolbar's buttons showed the arrow while an overlay
+  // had the keyboard. The toolbar borrows it while the pointer is on it, and gives it back once the pointer is
+  // off it and no menu of ours is open. Polled: over the handle and the gaps (drag regions) the page never
+  // hears the pointer leave. Not while a field has the keys: the borrow blurs it, which commits a half-typed size.
+  let lender: BrowserWindow | null = null
+  ipcMain.handle('shell:hover', async (e) => {
+    const t = toolbar
+    const k = BrowserWindow.getFocusedWindow()
+    if (lender || !t || e.sender !== t.webContents || !picking || counting || !k || !windowsOf('area').includes(k)) return
+    if (await k.webContents.executeJavaScript(`!!document.activeElement?.matches('input, textarea')`)) return
+    if (lender || !k.isFocused()) return
+    lender = k
+    reveal(t)
+    const poll = setInterval(() => {
+      const p = screen.getCursorScreenPoint()
+      const b = t.isDestroyed() ? null : t.getBounds()
+      if (b && picking && t.isVisible() && (menus || (p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height))) return
+      clearInterval(poll)
+      if (b && picking && !counting && !k.isDestroyed() && k.isVisible() && t.isFocused()) reveal(k)
+      lender = null
+    }, 100)
   })
   ipcMain.handle('shell:select', (_e, a: Settings['area']) => {
     selection = a ?? null
@@ -941,6 +992,7 @@ export function registerRecorder() {
     // A window records on the display it was picked on, not the one the mouse went to during the countdown.
     recDisplay = t?.kind === 'area' || t?.kind === 'display' ? t.displayId : t?.kind === 'window' ? here : null
     homeDisplay = recDisplay ?? here
+    startedAt = toolbarBounds()
     broadcast()
     return command('start', opts)
   })
@@ -1019,9 +1071,7 @@ export function registerRecorder() {
   ipcMain.handle('shell:display', (_e, id: number) => {
     const d = screen.getAllDisplays().find((d) => d.id === Number(id)) ?? screen.getPrimaryDisplay()
     // `self`: names our own windows carry in the engine's window list (dev runs as "Electron").
-    // `toolbarTop`: where the toolbar's top edge sits on this display (local points); cards stay above it.
-    const toolbarTop = place(TOOLBAR, d.workArea, 20).y - d.bounds.y
-    return { id: d.id, label: d.label, bounds: d.bounds, workArea: d.workArea, scaleFactor: d.scaleFactor, toolbarTop, self: [app.getName(), basename(process.execPath)] }
+    return { id: d.id, label: d.label, bounds: d.bounds, workArea: d.workArea, scaleFactor: d.scaleFactor, self: [app.getName(), basename(process.execPath)] }
   })
   ipcMain.handle('shell:popup', (e, items: PopupItem[], x: number, y: number) => {
     const win = BrowserWindow.fromWebContents(e.sender)
@@ -1085,7 +1135,7 @@ export function registerRecorder() {
     screen.on(e as 'display-added', () => {
       if (displays() === covered) return
       covered = displays()
-      if (picking && toolbar) toolbar.setBounds(place(TOOLBAR, activeDisplay().workArea, 20))
+      if (picking && toolbar) toolbar.setBounds(toolbarSpot(activeDisplay()))
       if (!counting) {
         const was = overlaysOpen
         closeOverlays() // fresh ones for the new arrangement

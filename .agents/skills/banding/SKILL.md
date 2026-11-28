@@ -25,7 +25,7 @@ A soft ramp bands when it spreads a few 8-bit levels over many pixels: each leve
 ## Rules
 
 - Size the ramp to its levels: it steps a level every few px, or it is not drawn.
-  The lens shadow's rule is 2 units of blur for each level it darkens (`SHADOW_STEP` in `src/engine/gpu/shaders.wgsl`).
+  The lens shadow's rule is 2 units of blur for each level it darkens (`SHADOW_STEP` in `src/engine/gpu/glass.wgsl`).
 - A ramp that can fall on any content reads that content and sizes itself per pixel, as `fs_lensshadow` does with `zoomed(u)`.
   It stays wide and soft on a light page and becomes a contact shadow on a dark one.
 - A ramp with a fixed reach is tight: the frame's shadow blurs over 30 units and the camera's over 22, a level every 9 units at worst on a dark wallpaper.

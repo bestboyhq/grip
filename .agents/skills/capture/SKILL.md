@@ -15,6 +15,8 @@ Screen, window, area, and device recording.
   ScreenCaptureKit labels its frames with BT.709's curve: written as labeled, or converted from that label, the file plays washed out in QuickTime (gray 128 shows as 139).
 - Our own UI stays out of the capture: recording widget, speaker notes and prompter, camera preview, area picker.
   System notifications and, optionally, desktop icons stay out too.
+  A release also keeps that UI out of other apps' captures and screen shares (content protection).
+  A dev run does not, so a released Grip records the dev run's picker for demos: a Grip leaves out only its own app.
 - The picker opens at once (shortcut or menu bar click) and freezes every display under it; the freeze ends when a countdown starts.
   Its overlays and toolbar show first, click-through and never key, so menus and hover states stay for the capture, and they take the mouse once the frozen frame is in.
   ScreenCaptureKit takes about 100 ms to shoot a display: waiting for that before showing anything made every open take 200 ms, and 450 ms the first time after launch.
@@ -25,6 +27,21 @@ Screen, window, area, and device recording.
   Picking a display or a window, ⌘C copies it without drawing; a window comes alone, as macOS takes it: nothing in front of it, clear corners, no shadow.
   The overlay under the pointer holds the keyboard, so ↩ and ⌘C reach the display the user is looking at.
   They leave out our UI and the cursor like recordings do, and carry their pixel density (144 dpi on Retina) so they paste at on-screen size.
+- An area held or pushed against a display's edge steps the screen back, so a window at the edge can get a margin.
+  Past the edge shows the desktop picture alone, mirrored, with shadows that cross the edge fading out.
+  A window the edge cuts stays cut: a shadow only darkens the wallpaper, keeping its hue, so a window's pixels never smear past the edge.
+  A screenshot takes it; a recording stays on the screen, since the editor adds room around it.
+- A resize that slows down picks up the editor's glass lens (`src/engine/gpu/glass.wgsl`) under the pointer, leaning a little toward the area's middle, with the pointer still on the pixel it magnifies.
+  A loupe beside the pointer that flips sides as the pointer crosses the area's middle jumps around while the user aims.
+- Sizing an area shows a crosshair everywhere, and moving it shows the move cursor, set on every element while the drag lasts.
+  The body holds the pointer during a drag, and Chromium then shows the body's arrow, not the cursor of the handle under it.
+- While an area drags, the sides it moves measure in to the first content (`src/windows/area/measure.ts`): a blue line with its length in pixels, as near the pointer as that content allows.
+  Content is a step between two pixels, never a soft shadow or a gradient.
+  A resized side measures only the stretch of it the lens shows, lens up or not, and with the lens up the line and its length show only inside it.
+  The user looks into the glass: a line to content further along the side lands outside it and reads as a stray.
+  Only the dragged sides measure, and nothing snaps on its own: lines on all four sides are noise, and a magnet fights the user's hand.
+  Shift, held on a corner, moves it to where its two lines are as long as each other, the pointer setting how long: even padding around what the user frames.
+  An edge alone has nothing to match, and neither has a corner with only one line in the lens.
 - The camera preview is for the person recording, never a layout: it starts under the camera, at the top center of the display, so looking at yourself is looking into the lens.
   It drags anywhere, settles back under the camera when dropped near it, and fades while the pointer is over it.
   Each display keeps where it was dropped; where the video puts the camera is an edit.
