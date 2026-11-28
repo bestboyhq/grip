@@ -14,6 +14,18 @@ export type Shown = '0.33' | '0.29' | '0.22' | '0.11' | '0.3';
 
 export const RELEASES: readonly Release[] = [
 	{
+		version: '0.46',
+		date: '2026-11-28',
+		title: 'Frame a screenshot to the pixel, even past the screen’s edge',
+		notes: [
+			['Past the edge.', 'Push a corner into the screen’s edge, and the screen steps back. A window at the edge gets room around it.'],
+			['A lens where you aim.', 'Slow down as you size an area, and the glass lens comes up under your pointer.'],
+			['Measure as you go.', 'The side you drag shows a blue line to the first thing inside it, with its length in pixels.'],
+			['Even padding.', 'Hold `Shift` on a corner, and its two gaps match.'],
+			['Fixes:', 'The cursor stays a crosshair while you size an area, and an area dragged to the edge reaches it.'],
+		],
+	},
+	{
 		version: '0.33',
 		date: '2026-11-12',
 		title: 'See inside every clip, and drag it into place',
