@@ -17,7 +17,7 @@ export const RELEASES: readonly Release[] = [
 		version: '0.46',
 		date: '2026-11-28',
 		title: 'Frame a screenshot to the pixel, even past the screen’s edge',
-		clip: 'An area is dragged around a window at the right edge of the screen and pushed into that edge, and the screen steps back. A glass lens comes up at the corner with blue lines of 98 and 72 pixels, and Shift evens them to 80 and 80.',
+		clip: 'An area is dragged around a window at the right edge of the screen and pushed into that edge, and the screen steps back. A glass lens comes up over the window’s corner with blue lines of 44 and 26 pixels, and Shift evens them to 35 and 35, then keeps them even as the corner moves in.',
 		notes: [
 			['Past the edge.', 'Push a corner into the screen’s edge, and the screen steps back. A window at the edge gets room around it.'],
 			['A lens where you aim.', 'Slow down as you size an area, and the glass lens comes up under your pointer.'],
