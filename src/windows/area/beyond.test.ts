@@ -34,6 +34,11 @@ test('past the edges: the wallpaper mirrored, a shadow fading out, or nothing', 
   near(at(out, ox + w, oy + 5), Math.round(200 * (1 - shadow(20)))) // the next column, as if the screen went on
   near(at(out, ox + w + 4, oy + 5), Math.round(200 * (1 - shadow(24))))
   near(at(out, W - 1, oy + 5), 200) // far out: the wallpaper as it is
+  // A window the right edge cuts is no shadow, dark or colored: the wallpaper past the edge stays as it is.
+  near(at(beyond(image((u) => (u < 12 ? 200 : 30)), wall, ox, oy, k), ox + w, oy + 5), 200)
+  const tinted = image(() => 200)
+  for (let v = 0; v < h; v++) for (let u = 12; u < w; u++) tinted.data.set([90, 140, 190], (v * w + u) * 4)
+  near(at(beyond(tinted, wall, ox, oy, k), ox + w, oy + 5), 200)
   // No wallpaper: transparent past the edges, the still inside.
   out = beyond(ramp, null, ox, oy, k)
   assert.equal(out[(5 * W + 2) * 4 + 3], 0)

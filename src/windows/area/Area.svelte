@@ -406,6 +406,7 @@
       lift: p,
       pt,
       at: { x: w.x * density + dx + (c.x - client.x) * toPx, y: w.y * density + dy + (c.y - client.y) * toPx },
+      flat: { x: toWorld(c).x * density + dx, y: toWorld(c).y * density + dy },
       perPx: density / (pt * z.current),
       cell: 8 * density,
       area: sel && [at(sel.x, dx), at(sel.y, dy), at(sel.x + sel.width, dx), at(sel.y + sel.height, dy)],

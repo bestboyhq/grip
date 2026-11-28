@@ -13,6 +13,7 @@ struct Uniforms {
   rule: array<vec4f, 4>, // the measure lines (texture px): x0, y0, x1, y1
   ruleOn: vec4f, // each line: 1 drawn, 0 none
   brand: vec4f,  // their color
+  flat: vec4f,   // texture px under the center unmagnified, where its shadow falls: x, y
 }
 @group(0) @binding(0) var<uniform> U: Uniforms;
 @group(0) @binding(1) var tex: texture_2d<f32>;
@@ -92,7 +93,7 @@ fn under(t: vec2f, foot: f32) -> vec3f {
   var out = vec4f(0.0);
   let shade = shadeOf(R, U.look.y);
   if (shadowEdge(q, vec2f(0.0), R, shade, 1.0) >= 1.0 / 1020.0) {
-    let levels = 255.0 * dot(under(U.map.xy + q * k, k), vec3f(0.2126, 0.7152, 0.0722));
+    let levels = 255.0 * dot(under(U.flat.xy + q * k, k), vec3f(0.2126, 0.7152, 0.0722));
     let sh = shadowEdge(q, vec2f(0.0), R, shade, shadowReach(shade, levels, U.look.z, 1.0));
     out = vec4f(0.0, 0.0, 0.0, clamp(sh + (ign(p) - 0.5) / 255.0, 0.0, 1.0));
   }

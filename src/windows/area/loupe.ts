@@ -14,7 +14,8 @@ export interface Lens {
   glass: number // how much the glass shows: its light and dispersion
   lift: number // 0 flat on the screen, 1 picked up: its shadow
   pt: number // canvas px per point
-  at: { x: number; y: number } // texture px under the center
+  at: { x: number; y: number } // texture px under the center, magnified: the pointer stays on its pixel
+  flat: { x: number; y: number } // texture px under the center unmagnified: what its shadow falls on
   perPx: number // texture px per canvas px, unmagnified
   cell: number // the checkerboard's cell, texture px
   area: Rect4 | null // texture px
@@ -41,7 +42,7 @@ export async function loupe(canvas: HTMLCanvasElement) {
     vertex: { module, entryPoint: 'vs' },
     fragment: { module, entryPoint: 'fs', targets: [{ format }] },
   })
-  const uniforms = device.createBuffer({ size: 13 * 16, usage: 64 | 8 }) // UNIFORM | COPY_DST: GPUBufferUsage is not typed here
+  const uniforms = device.createBuffer({ size: 14 * 16, usage: 64 | 8 }) // UNIFORM | COPY_DST: GPUBufferUsage is not typed here
   const sampler = device.createSampler({ magFilter: 'nearest', minFilter: 'linear' })
   let texture: GPUTexture | null = null
   let group: GPUBindGroup | null = null
@@ -77,6 +78,7 @@ export async function loupe(canvas: HTMLCanvasElement) {
         ...rules.flatMap((r) => r ?? none),
         ...rules.map((r) => (r ? 1 : 0)),
         ...l.brand, 1,
+        l.flat.x, l.flat.y, 0, 0,
       ]))
       // Only around the lens and its shadow: the canvas covers the window.
       const { width: cw, height: ch } = ctx.canvas

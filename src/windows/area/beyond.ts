@@ -21,14 +21,20 @@ export function beyond(still: Pixels, wall: Pixels | null, ox: number, oy: numbe
   if (!wall || wall.width !== w || wall.height !== h) return out
   const s = still.data
   const p = wall.data
-  // How much a shadow darkens the wallpaper at (u, v): 0 where the still shows the wallpaper as it is.
+  // How much a shadow darkens the wallpaper at (u, v): 0 where the still shows the wallpaper as it is, or
+  // something no shadow makes: a window the edge cuts, whose pixels would smear past the edge. A shadow
+  // takes the same share off each of the wallpaper's channels, and never most of it.
   const dark = (u: number, v: number) => {
     const i = (v * w + u) * 4
     const paper = p[i] + p[i + 1] + p[i + 2]
-    return paper ? Math.max(0, 1 - (s[i] + s[i + 1] + s[i + 2]) / paper) : 0
+    const f = paper ? (s[i] + s[i + 1] + s[i + 2]) / paper : 1
+    if (f >= 1 || f < 0.4) return 0
+    for (let c = 0; c < 3; c++) if (Math.abs(s[i + c] - f * p[i + c]) > 3 + 0.03 * p[i + c]) return 0
+    return 1 - f
   }
   // ponytail: a shadow's fade past the edge is read from two pixels inside it and carried on as an
-  // exponential, and a window the edge cuts stays cut. Fit the shadow's whole profile if one reads wrong.
+  // exponential, and a window the edge cuts stays cut, unless its pixels are the wallpaper's own hue,
+  // darker: a gray window on a gray wallpaper. Fit the shadow's whole profile if one reads wrong.
   const IN = Math.max(1, Math.round(6 * k))
   /** At edge pixel (u, v), inward (du, dv): the shadow's strength there, and the pixels over which it falls off. */
   const fade = (u: number, v: number, du: number, dv: number) => {
@@ -38,10 +44,21 @@ export function beyond(still: Pixels, wall: Pixels | null, ox: number, oy: numbe
     const reach = s1 > s0 * 1.02 ? (IN * Math.hypot(du, dv)) / Math.log(s1 / s0) : 8 * k
     return [s0, clamp(reach, 2 * k, 40 * k)]
   }
-  const top = Array.from({ length: w }, (_, u) => fade(u, 0, 0, 1))
-  const bottom = Array.from({ length: w }, (_, u) => fade(u, h - 1, 0, -1))
-  const left = Array.from({ length: h }, (_, v) => fade(0, v, 1, 0))
-  const right = Array.from({ length: h }, (_, v) => fade(w - 1, v, -1, 0))
+  /** An edge's fades, eased along it over 4 points: a shadow is soft along the edge too, and a window's
+   *  rounded corner reads as shadow on one row and not the next. */
+  const soft = (a: number[][]) => {
+    const n = Math.round(4 * k)
+    return a.map((_, i) => {
+      const [lo, hi] = [Math.max(0, i - n), Math.min(a.length - 1, i + n)]
+      let [s, r] = [0, 0]
+      for (let j = lo; j <= hi; j++) [s, r] = [s + a[j][0], r + a[j][0] * a[j][1]]
+      return s ? [s / (hi - lo + 1), r / s] : [0, 1]
+    })
+  }
+  const top = soft(Array.from({ length: w }, (_, u) => fade(u, 0, 0, 1)))
+  const bottom = soft(Array.from({ length: w }, (_, u) => fade(u, h - 1, 0, -1)))
+  const left = soft(Array.from({ length: h }, (_, v) => fade(0, v, 1, 0)))
+  const right = soft(Array.from({ length: h }, (_, v) => fade(w - 1, v, -1, 0)))
   const corners = [fade(0, 0, 1, 1), fade(w - 1, 0, -1, 1), fade(0, h - 1, 1, -1), fade(w - 1, h - 1, -1, -1)]
   const mirror = (a: number, n: number) => (a < 0 ? Math.min(-1 - a, n - 1) : a >= n ? Math.max(2 * n - 1 - a, 0) : a)
   for (let Y = 0; Y < H; Y++) {

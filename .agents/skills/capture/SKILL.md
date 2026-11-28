@@ -29,6 +29,7 @@ Screen, window, area, and device recording.
   They leave out our UI and the cursor like recordings do, and carry their pixel density (144 dpi on Retina) so they paste at on-screen size.
 - An area held or pushed against a display's edge steps the screen back, so a window at the edge can get a margin.
   Past the edge shows the desktop picture alone, mirrored, with shadows that cross the edge fading out.
+  A window the edge cuts stays cut: a shadow only darkens the wallpaper, keeping its hue, so a window's pixels never smear past the edge.
   A screenshot takes it; a recording stays on the screen, since the editor adds room around it.
 - A resize that slows down picks up the editor's glass lens (`src/engine/gpu/glass.wgsl`) under the pointer, leaning a little toward the area's middle, with the pointer still on the pixel it magnifies.
   A loupe beside the pointer that flips sides as the pointer crosses the area's middle jumps around while the user aims.
