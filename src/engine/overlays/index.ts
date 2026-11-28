@@ -5,7 +5,7 @@
 // prepareOverlays maps every item through the one time map once per project revision and output size;
 // clicksAt / drawingsAt / keystrokesAt / captionAt are pure lookups, so any frame renders alone, in any order.
 
-import { carryToOutput, toOutput, type TimeMap } from '../../shared/timemap.ts'
+import { carryToOutput, mapRange, toOutput, type TimeMap } from '../../shared/timemap.ts'
 import type { InputEvent, Modifier } from '../../shared/events.ts'
 import type { Style } from '../../shared/project.ts'
 import { outputSize, type Caption, type Click, type Drawing, type Keystroke, type Scene, type SceneInput } from '../scene.ts'
@@ -241,7 +241,8 @@ interface Group {
   end: number // latest press, release, or key repeat
 }
 
-type Press = { t: number; id: string; up: boolean; repeat: boolean; keys: string[]; bare: boolean }
+// until: source seconds a grip lets go (modifiers held through a mouse press); it shows till then.
+type Press = { t: number; id: string; up: boolean; repeat: boolean; keys: string[]; bare: boolean; until?: number }
 
 /** Key presses to show and the typing around them, in source time. */
 function keyPresses(events: InputEvent[]) {
@@ -249,13 +250,43 @@ function keyPresses(events: InputEvent[]) {
   const typing: Array<{ start: number }> = []
   const held = new Map<string, number>() // key -> latest down while held
   let secure = false
+  // A modifier pressed alone shows nothing, but held while a mouse button is down it is the gesture: ⇧ on a
+  // drag, ⌥ on a duplicate, ⌘ on a click. That grip shows from when both are down until either lets go.
+  let mods: Modifier[] = []
+  const buttons = new Set<string>()
+  let grip: Press | null = null
+  let downs = 0 // modifier presses so far: a second drag on keys held since the last one is no second press
+  let last = { id: '', downs: -1 }
+  const regrip = (t: number) => {
+    const keys = buttons.size ? mods : []
+    const id = `grip ${keys.join(' ')}` // never a key's own id, so the modifier's release is not the grip's
+    if (grip?.id === id) return
+    if (grip) grip.until = t
+    grip = null
+    if (!keys.length) return
+    presses.push((grip = { t, id, up: false, repeat: last.id === id && last.downs === downs, keys, bare: false, until: Infinity }))
+    last = { id, downs }
+  }
   for (const e of events) {
     if (e.type === 'secure') {
       secure = e.on
       held.clear()
+      mods = []
+      regrip(e.t)
+    }
+    if (e.type === 'down' || e.type === 'up') {
+      if (e.type === 'down') buttons.add(e.button)
+      else buttons.delete(e.button)
+      regrip(e.t)
     }
     if (e.type !== 'key' || secure) continue // nothing typed into a password field ever shows
     const id = keyId(e.key)
+    if (MODS.includes(id as Modifier)) {
+      // Its event lists every modifier still down, the other ⇧ included when only one side lets go.
+      if (e.down) downs++
+      mods = MODS.filter((m) => e.mods.includes(m))
+      regrip(e.t)
+    }
     if (!e.down) {
       held.delete(id)
       presses.push({ t: e.t, id, up: true, repeat: false, keys: [], bare: false })
@@ -267,6 +298,8 @@ function keyPresses(events: InputEvent[]) {
     else if (c) presses.push({ t: e.t, id, up: false, repeat: e.t - (held.get(id) ?? -Infinity) < REPEAT_GAP, ...c })
     held.set(id, e.t)
   }
+  buttons.clear()
+  regrip(events.at(-1)?.t ?? 0) // a torn file: a grip still held lasts to its last event
   return { presses, typing }
 }
 
@@ -286,20 +319,26 @@ function keyGroups(events: InputEvent[], map: TimeMap): Group[] {
     const at = carryToOutput(map, p.t, LINGER + KEY_OUT)
     if (!at) continue // inside a cut, gone before the footage kept after it
     const { out, from } = at
+    // A grip shows to its release, on through the cuts inside it, and stops where the footage jumps elsewhere.
+    let end = out
+    for (const [a, b] of p.until === undefined ? [] : mapRange(map, p.t, p.until)) if (a <= Math.max(end, from) + 1e-9) end = Math.max(end, b)
     const g = groups.at(-1)
     // `from`, not `out`: a press carried over a cut joins the same shortcut pressed just before the cut.
     const live = g && from >= g.presses.at(-1)!.out && out <= g.end + LINGER ? g : null
     if (p.up || p.repeat) {
       // Release or key repeat while held: keeps the shortcut on screen, never counts as a press.
-      if (live && live.main === p.id) live.end = Math.max(live.end, out)
-      continue
+      if (live && live.main === p.id) {
+        live.end = Math.max(live.end, end)
+        continue
+      }
+      if (p.until === undefined) continue // else a grip on keys held since one that has gone shows again
     }
     if (p.bare && nearTyping(p.t)) continue
     const sig = p.keys.join(' ')
     if (live && live.sig === sig) {
       live.presses.push(at)
-      live.end = Math.max(live.end, out)
-    } else groups.push({ keys: p.keys, sig, main: p.id, start: from, presses: [at], end: out })
+      live.end = Math.max(live.end, end)
+    } else groups.push({ keys: p.keys, sig, main: p.id, start: from, presses: [at], end })
   }
   return groups.sort((a, b) => a.start - b.start)
 }

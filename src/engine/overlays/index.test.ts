@@ -107,6 +107,32 @@ test('keystrokes: a shortcut cut out shows over the footage kept after it, as it
   assert.ok(Math.abs(c.opacity - easeOut(0.5)) < 1e-9 && Math.abs(c.age - 0.16) < 1e-9, `⌘C enters at the cut, pressed before it: ${c.opacity} ${c.age}`)
 })
 
+test('keystrokes: a modifier held while the mouse is down shows until either lets go, and alone shows nothing', () => {
+  const mod = (t: number, k: Modifier, down: boolean): InputEvent => ({ t, type: 'key', down, key: k, code: 0, mods: down ? [k] : [] })
+  const press = (t: number, type: 'down' | 'up'): InputEvent => ({ t, type, x: 0, y: 0, button: 'left' })
+  const events = [
+    mod(0.5, '⇧', true), mod(0.6, '⇧', false), // tapped alone
+    press(1, 'down'), mod(2, '⇧', true), press(5, 'up'), mod(5.1, '⇧', false), // pressed into a drag, held 3 s
+    mod(8, '⇧', true), press(9, 'down'), press(9.5, 'up'), press(10, 'down'), press(10.5, 'up'), press(12.5, 'down'), press(13, 'up'), mod(13.5, '⇧', false),
+    mod(16, '⌥', true), press(16.5, 'down'), press(16.6, 'up'), mod(17, '⌥', false), // a click
+    press(20, 'down'), mod(20.5, '⌥', true), mod(21, '⌥', false), mod(21.5, '⌥', true), mod(22, '⌥', false), press(23, 'up'),
+  ].sort((a, b) => a.t - b.t)
+  const shown = (p: ReturnType<typeof prepare>, t: number) => keystrokesAt(p.overlays, t).filter((k) => k.opacity > 0).map((k) => `${k.keys.join('')}${k.count}`)
+  const p = prepare(input(undefined, 1920, 1080, events))
+  assert.deepEqual(shown(p, 0.55), [])
+  assert.deepEqual(shown(p, 1.5), [])
+  assert.deepEqual(shown(p, 2.05), ['⇧1'])
+  assert.deepEqual(shown(p, 4.9), ['⇧1']) // held past a shortcut's linger
+  assert.deepEqual(shown(p, 5 + 1.2 + 0.3 + 0.01), [])
+  assert.deepEqual(shown(p, 10.2), ['⇧1']) // a second drag on the same held ⇧ is no second press
+  assert.deepEqual(shown(p, 12.6), ['⇧1']) // ...and shows again once the first has gone
+  assert.deepEqual(shown(p, 16.55), ['⌥1'])
+  assert.deepEqual(shown(p, 21.6), ['⌥2'])
+  // Cut 3-4 inside the 2-5 hold: it holds on through the cut to the release, now at 4, and lingers from there.
+  const cut = prepare(input([{ id: 'a', start: 0, end: 3, speed: 1, volume: 1 }, { id: 'b', start: 4, end: 30, speed: 1, volume: 1 }], 1920, 1080, events))
+  assert.deepEqual(shown(cut, 5), ['⇧1'])
+})
+
 test('clicks: mapped through cuts, positioned on the screen rect, gone after their life', () => {
   const events = [click(2, 1440, 900), click(11, 0, 0), click(11.8, 1440, 900), click(15, 2880, 1800)]
   const clips = removeSourceRange([{ id: 'a', start: 0, end: 30, speed: 1, volume: 1 }], 10, 12)
