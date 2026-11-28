@@ -35,7 +35,10 @@ The native macOS app around everything else.
   Shown again, the toolbar waits for a frame drawn with that pick's state (`whenDrawn`), never showing the last one's.
 - Windows remember positions per display and return on-screen after a display disconnects.
   Fixed-size windows keep their size: the first screen capture in a process re-sets every window's style mask, which turns a frameless one resizable and a title bar taller (`keepFixed` puts it back).
-  The recording controls, camera bubble, and result card show on the display the recording was started on, never where the mouse went since.
+  The toolbar drags by the handle at its left end, and each display keeps where it was left there, by display id: two monitors of one model share a name.
+  The recording controls open centered where the toolbar was, on its display, even when another display records: the user's eyes are there.
+  Controls that opened on the recorded display, or where they were last dragged, made the user hunt for Stop on a second screen.
+  The camera bubble and result card show on the display the recording was started on, never where the mouse went since.
 - Global shortcuts, a URL scheme for automation (Raycast), and drag-and-drop of project files onto the app or menu bar icon.
   Many users want Grip on macOS's own screenshot keys (⇧⌘5), and macOS takes those before any app sees them.
   The record shortcut has no default: people reach for different keys.

@@ -38,7 +38,6 @@
     bounds: Rect
     workArea: Rect
     scaleFactor: number
-    toolbarTop: number // the recording toolbar's top edge, local points
   }
   let display = $state<DisplayInfo | null>(null)
   let windows = $state<WindowSource[]>([])
@@ -54,7 +53,15 @@
 
   const W = $derived(display?.bounds.width ?? innerWidth)
   const H = $derived(display?.bounds.height ?? innerHeight)
-  const floor = $derived(display?.toolbarTop ?? H) // cards stay above the toolbar
+  /** Cards stay above the toolbar while it sits in the lower half of this display (local points).
+   *  ponytail: a toolbar dragged to the top half sets no ceiling, so a card over a near full-height area can sit
+   *  under it; give formAt a ceiling too if that shows up. */
+  const floor = $derived.by(() => {
+    const t = shell.toolbar
+    const b = display?.bounds
+    const top = t && b && t.x < b.x + b.width && t.x + t.width > b.x ? t.y - b.y : H
+    return top > H / 2 && top < H ? top : H
+  })
   const scale = $derived(display?.scaleFactor ?? 2)
   const px = (pt: number) => Math.round(pt * scale)
   const toLocal = (r: Rect): Rect => ({ ...r, x: r.x - (display?.bounds.x ?? 0), y: r.y - (display?.bounds.y ?? 0) })
