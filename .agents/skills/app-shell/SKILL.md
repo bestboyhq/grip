@@ -36,6 +36,8 @@ The native macOS app around everything else.
 - Windows remember positions per display and return on-screen after a display disconnects.
   Fixed-size windows keep their size: the first screen capture in a process re-sets every window's style mask, which turns a frameless one resizable and a title bar taller (`keepFixed` puts it back).
   The toolbar drags by the handle at its left end, and each display keeps where it was left there, by display id: two monitors of one model share a name.
+  Chromium shows a page's cursor only in the key window, so the toolbar borrows the keyboard from the picker's overlay while the pointer is on it (`shell:hover`).
+  Without that, every button showed the arrow while picking.
   The recording controls open centered where the toolbar was, on its display, even when another display records: the user's eyes are there.
   Controls that opened on the recorded display, or where they were last dragged, made the user hunt for Stop on a second screen.
   The camera bubble and result card show on the display the recording was started on, never where the mouse went since.

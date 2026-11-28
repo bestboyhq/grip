@@ -356,6 +356,8 @@
   ondragover={(e) => e.preventDefault()}
   ondrop={(e) => dropFiles(e).catch((err: Error) => invoke('shell:warn', err.message))}
 />
+<!-- The keyboard comes here while the pointer is on the bar: only the key window shows its cursor. -->
+<svelte:body onpointerenter={() => invoke('shell:hover')} />
 
 {#snippet pill(b: Pill['box'], on: boolean)}
   <span class="pill" class:on style:translate="{b.left}px {b.top}px" style:width="{b.width}px" style:height="{b.height}px" style:border-radius={b.radius}></span>

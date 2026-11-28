@@ -24,6 +24,7 @@
 //   shell:draw(n) -> shell:drawn(n)   main -> toolbar: answered after the frame that draws everything sent before
 //                                 it, so a hidden toolbar shows with this pick's state
 //   shell:focus                   overlay: the pointer is on it, picking a display or window: it takes the keyboard
+//   shell:hover                   toolbar: the pointer is on it: it borrows the keyboard from the overlay that has it
 //   shell:select(area | null)     overlay: the area picked so far ({ display, rect, aspect }), also kept as the last area
 //   shell:close-picker            hide toolbar, overlays, and the idle camera bubble
 //   shell:countdown(on)           a countdown runs (Esc cancels it: "shell:escape")
@@ -932,6 +933,28 @@ export function registerRecorder() {
   ipcMain.handle('shell:focus', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender)
     if (w?.isVisible() && !w.isFocused() && picking && !counting && windowsOf('area').includes(w)) reveal(w)
+  })
+  // Chromium changes the cursor only in the key window: the toolbar's buttons showed the arrow while an overlay
+  // had the keyboard. The toolbar borrows it while the pointer is on it, and gives it back once the pointer is
+  // off it and no menu of ours is open. Polled: over the handle and the gaps (drag regions) the page never
+  // hears the pointer leave. Not while a field has the keys: the borrow blurs it, which commits a half-typed size.
+  let lender: BrowserWindow | null = null
+  ipcMain.handle('shell:hover', async (e) => {
+    const t = toolbar
+    const k = BrowserWindow.getFocusedWindow()
+    if (lender || !t || e.sender !== t.webContents || !picking || counting || !k || !windowsOf('area').includes(k)) return
+    if (await k.webContents.executeJavaScript(`!!document.activeElement?.matches('input, textarea')`)) return
+    if (lender || !k.isFocused()) return
+    lender = k
+    reveal(t)
+    const poll = setInterval(() => {
+      const p = screen.getCursorScreenPoint()
+      const b = t.isDestroyed() ? null : t.getBounds()
+      if (b && picking && t.isVisible() && (menus || (p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height))) return
+      clearInterval(poll)
+      if (b && picking && !counting && !k.isDestroyed() && k.isVisible() && t.isFocused()) reveal(k)
+      lender = null
+    }, 100)
   })
   ipcMain.handle('shell:select', (_e, a: Settings['area']) => {
     selection = a ?? null
